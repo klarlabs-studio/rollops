@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 19,
+  "version": 20,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -71,8 +71,10 @@
       "elapsed_minutes": 0
     },
     "t-engine-api": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:24:19.58792+02:00",
       "elapsed_minutes": 0
     },
     "t-engine-locks": {
@@ -224,5 +226,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:19:38.167719+02:00"
+  "updated_at": "2026-06-08T20:24:19.58792+02:00"
 }
