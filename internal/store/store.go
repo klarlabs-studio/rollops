@@ -45,6 +45,9 @@ type Store interface {
 	// reconcile tick.
 	DueSchedules(ctx context.Context, now time.Time) ([]rollout.ScheduledRollout, error)
 
+	// DeleteSchedule removes a schedule once fired, so it does not re-fire.
+	DeleteSchedule(ctx context.Context, id string) error
+
 	// History returns the audit/history records for a target, newest first.
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)
 }

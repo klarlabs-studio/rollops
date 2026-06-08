@@ -16,6 +16,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -543,6 +544,71 @@ func (e *Engine) Schedule(ctx context.Context, s rollout.ScheduledRollout) error
 		s.ID = "sch-" + e.newID()
 	}
 	return e.store.Schedule(ctx, s)
+}
+
+// FireDueSchedules deploys every schedule due at now and removes it from the
+// queue. Called on each reconcile tick. Per-schedule failures are collected and
+// do not stop the others; the returned rollouts are those that were fired.
+func (e *Engine) FireDueSchedules(ctx context.Context, now time.Time) ([]rollout.Rollout, error) {
+	due, err := e.store.DueSchedules(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	var fired []rollout.Rollout
+	var errs []error
+	for _, s := range due {
+		r, err := e.applyScheduled(ctx, s)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("schedule %s: %w", s.ID, err))
+			continue
+		}
+		if err := e.store.DeleteSchedule(ctx, s.ID); err != nil {
+			errs = append(errs, err)
+		}
+		fired = append(fired, r)
+	}
+	return fired, errors.Join(errs...)
+}
+
+// applyScheduled deploys a pre-decided scheduled manifest (the gate decision was
+// made when it was queued).
+func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout) (rollout.Rollout, error) {
+	release, ok := e.locks.TryAcquire(s.TargetRef)
+	if !ok {
+		return rollout.Rollout{}, ErrTargetBusy
+	}
+	defer release()
+
+	tgt, err := e.buildTarget(s.TargetRef, s.Desired)
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	now := e.now()
+	r := rollout.Rollout{
+		ID:        e.newID(),
+		TargetRef: s.TargetRef,
+		Phase:     rollout.PhaseDeploying,
+		Strategy:  rollout.StrategyRolling,
+		Desired:   s.Desired,
+		Initiator: s.Initiator,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return rollout.Rollout{}, err
+	}
+	if _, err := tgt.Apply(ctx, s.Desired); err != nil {
+		r.Phase = rollout.PhaseRolledBack
+		r.UpdatedAt = e.now()
+		_ = e.store.SaveRollout(ctx, r)
+		return r, fmt.Errorf("apply: %w", err)
+	}
+	r.Phase = rollout.PhaseVerifying
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return rollout.Rollout{}, err
+	}
+	return r, nil
 }
 
 // buildTarget reconstructs a bound Target from a persisted manifest.

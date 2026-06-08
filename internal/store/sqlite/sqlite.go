@@ -185,6 +185,14 @@ func (s *Store) Schedule(ctx context.Context, sc rollout.ScheduledRollout) error
 	return nil
 }
 
+// DeleteSchedule removes a schedule by id (no error if it is already gone).
+func (s *Store) DeleteSchedule(ctx context.Context, id string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("sqlite: delete schedule: %w", err)
+	}
+	return nil
+}
+
 // DueSchedules returns schedules whose DueAt is at or before now, oldest first.
 func (s *Store) DueSchedules(ctx context.Context, now time.Time) ([]rollout.ScheduledRollout, error) {
 	rows, err := s.db.QueryContext(ctx, `
