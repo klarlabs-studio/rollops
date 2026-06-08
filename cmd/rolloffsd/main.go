@@ -13,8 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	mcpserver "go.klarlabs.de/mcp"
+
 	"go.klarlabs.de/rolloffs/internal/api"
 	"go.klarlabs.de/rolloffs/internal/engine"
+	"go.klarlabs.de/rolloffs/internal/mcp"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
@@ -51,6 +54,13 @@ func run() error {
 		{Perm: security.PermRollback}, {Perm: security.PermStatus}, {Perm: security.PermSchedule},
 	}})
 	policy.Bind("human:admin", "admin")
+	// Agents may plan/apply/status to non-prod by default; prod stays human-gated.
+	policy.DefineRole(security.Role{Name: "agent", Grants: []security.Grant{
+		{Perm: security.PermPlan}, {Perm: security.PermStatus},
+		{Perm: security.PermApply, Scope: security.Scope{Env: "dev"}},
+		{Perm: security.PermApply, Scope: security.Scope{Env: "staging"}},
+	}})
+	policy.Bind("agent:*", "agent")
 
 	srv := &http.Server{Addr: addr, Handler: api.New(eng, auth, policy).Handler()}
 
@@ -60,6 +70,16 @@ func run() error {
 	// Reconcile tick: fire due schedules. Git-watch reconciliation wires the
 	// reconciler over watched repos (internal/reconcile) on the same tick.
 	go scheduleLoop(ctx, eng)
+
+	// MCP agent surface, embedded by default when an address is configured.
+	if mcpAddr := os.Getenv("ROLLOFFS_MCP_ADDR"); mcpAddr != "" {
+		agent := rollout.Identity{Kind: "agent", Name: envOr("ROLLOFFS_MCP_AGENT", "local")}
+		tools := mcp.NewTools(eng, policy, agent)
+		go func() {
+			fmt.Fprintf(os.Stderr, "rolloffsd: MCP serving on %s as agent %q\n", mcpAddr, agent.Name)
+			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr)
+		}()
+	}
 
 	go func() {
 		<-ctx.Done()

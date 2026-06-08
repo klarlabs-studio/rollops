@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 74,
+  "version": 76,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -91,11 +91,15 @@
       "elapsed_minutes": 1
     },
     "t-daemon-api": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/api auth+RBAC + cmd/rolloffsd, 4 tests; gRPC transport documented as follow-up"
+      ],
       "started_at": "2026-06-08T21:20:11.058337+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:23:00.236482+02:00",
+      "elapsed_minutes": 2
     },
     "t-dep-dag": {
       "status": "done",
@@ -197,8 +201,10 @@
       "elapsed_minutes": 0
     },
     "t-mcp": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:23:04.358534+02:00",
       "elapsed_minutes": 0
     },
     "t-plugin-grpc": {
@@ -388,5 +394,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:20:11.058337+02:00"
+  "updated_at": "2026-06-08T21:23:04.358534+02:00"
 }
