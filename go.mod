@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/felixgeelhaar/decisionkit v0.1.0
 	github.com/google/cel-go v0.28.1
+	github.com/jlaffaye/ftp v0.2.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	go.klarlabs.de/axi v1.4.0
 	go.klarlabs.de/bolt v1.5.2

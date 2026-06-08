@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 32,
+  "version": 34,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -240,8 +240,10 @@
       "elapsed_minutes": 0
     },
     "t-target-ftp": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:48:03.626326+02:00",
       "elapsed_minutes": 0
     },
     "t-target-k8s": {
@@ -250,11 +252,15 @@
       "elapsed_minutes": 0
     },
     "t-target-ssh": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "SSH dumb target + Transport abstraction + conformance pass, builtin registry"
+      ],
       "started_at": "2026-06-08T20:44:53.565011+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:47:46.594626+02:00",
+      "elapsed_minutes": 2
     },
     "t-ui": {
       "status": "pending",
@@ -262,5 +268,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:44:53.565011+02:00"
+  "updated_at": "2026-06-08T20:48:03.626326+02:00"
 }

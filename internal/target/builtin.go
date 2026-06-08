@@ -1,6 +1,9 @@
 package target
 
-import "go.klarlabs.de/rolloffs/internal/target/ssh"
+import (
+	"go.klarlabs.de/rolloffs/internal/target/ftp"
+	"go.klarlabs.de/rolloffs/internal/target/ssh"
+)
 
 // Builtin returns a Registry with all first-party targets compiled in — the
 // lean common case (single binary, no plugins). Community gRPC plugins register
@@ -8,6 +11,7 @@ import "go.klarlabs.de/rolloffs/internal/target/ssh"
 func Builtin() *Registry {
 	r := NewRegistry()
 	r.Register("ssh", ssh.New)
-	// "ftp" and "kubernetes" register here as those targets land.
+	r.Register("ftp", ftp.New)
+	// "kubernetes" registers here as that target lands.
 	return r
 }
