@@ -61,9 +61,36 @@ pkg/conformance shared conformance suite (every target must pass)
 
 ## Status
 
-Greenfield scaffold: module, domain skeleton, and the two core contracts
-(`pkg/target.Target`, `store.Store`) are in place and compile. Implementation
-is tracked in Roady — `memory/status.md` has the current state.
+**P0 OSS core implemented** (37/37 planned tasks). Engine, risk gate, dependency
+DAG, SSH/FTP/Kubernetes targets + plugin protocol, progressive delivery,
+auto-rollback, secrets/audit/RBAC/guardrails/artifact-verification, Git webhook
++ watch-loop, and all four surfaces (CLI, gRPC + REST daemon, MCP, UI) plus
+Prometheus self-observability. ~175 tests; `go test ./...` green. See
+`memory/status.md` for the detailed map and remaining follow-ups.
+
+## Quickstart
+
+```sh
+make build          # -> bin/rolloffs, bin/rolloffsd
+
+# One-shot CLI (engine in-process, no daemon):
+bin/rolloffs plan   examples/rollout-config.example.yaml
+bin/rolloffs apply  examples/rollout-config.example.yaml
+bin/rolloffs status <rollout-id>
+
+# Daemon (HTTP :8080, gRPC :8090, UI behind basic auth):
+make run-daemon
+#   GET  /healthz /readyz /metrics
+#   POST /v1/plan /v1/apply   (Authorization: Bearer <token>)
+#   GET  /ui                  (basic auth: ROLLOFFS_UI_USER/PASSWORD)
+
+# CLI in daemon mode (same commands, driven over gRPC):
+ROLLOFFS_DAEMON=127.0.0.1:8090 ROLLOFFS_TOKEN=devtoken bin/rolloffs status <id>
+```
+
+Targets are configured per service in a `rolloffs.yaml`
+(see `examples/rollout-config.example.yaml`); the daemon watches repos listed in
+`ROLLOFFS_WATCH` (JSON: `[{"name","url","branch","path"}]`) and reconciles drift.
 
 ## License
 
