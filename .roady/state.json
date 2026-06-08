@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 52,
+  "version": 54,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -218,15 +218,21 @@
       "elapsed_minutes": 2
     },
     "t-schedule": {
+      "status": "done",
+      "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "FireDueSchedules + DeleteSchedule, 2 tests"
+      ],
+      "started_at": "2026-06-08T21:03:36.137586+02:00",
+      "completed_at": "2026-06-08T21:05:27.764336+02:00",
+      "elapsed_minutes": 1
+    },
+    "t-secrets": {
       "status": "in_progress",
       "path": "",
       "owner": "ai-agent",
-      "started_at": "2026-06-08T21:03:36.137586+02:00",
-      "elapsed_minutes": 0
-    },
-    "t-secrets": {
-      "status": "pending",
-      "path": "",
+      "started_at": "2026-06-08T21:05:30.329+02:00",
       "elapsed_minutes": 0
     },
     "t-security-rbac": {
@@ -322,5 +328,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:03:36.137586+02:00"
+  "updated_at": "2026-06-08T21:05:30.329+02:00"
 }
