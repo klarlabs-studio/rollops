@@ -26,8 +26,13 @@ What's implemented (all TDD, every task committed atomically):
 target verified live: kubectl apply + checksum annotation, live-cluster Observe,
 idempotent re-apply, rollout health. (Note: minikube needed `--apiserver-names=minikube`
 to dodge the empty-certSAN bug #9175.) **All three first-party targets now have
-live integration coverage.** Vault (dockerizable in dev mode) + cosign (needs a
-signed image/registry) remain.
+live integration coverage.**
+✅ **Vault + cosign** live too: Vault dev server (KV v2 resolve + Secret redaction)
+and a real cosign-signed image in a local registry (verify pass, unsigned reject)
+— CosignVerifier gained `--key` + `--allow-http-registry`. **Every external
+integration (SSH/FTP/K8s/Vault/cosign) is now verified against real infra.**
+`make integration` runs all five (K8s/Vault/cosign skip gracefully if their infra
+is absent).
 
 ### P1/P2 (out of original P0 scope)
 Historical-failure risk signal, DB rollback, notifications (Telegram), metric-based analysis (Obvia seam), multi-instance coordination, managed multi-customer studio layer.
