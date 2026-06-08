@@ -67,15 +67,18 @@ func (g ArtifactGate) Check(ctx context.Context, ref string) error {
 	}
 }
 
-// CosignVerifier verifies container artifacts with cosign. The exec runner is
-// injectable for tests; the real one shells the cosign binary.
+// CosignVerifier verifies container artifacts with cosign. Use KeyPath for
+// key-based verification, or CertIdentity/CertOIDCIssuer for keyless (Fulcio).
+// The exec runner is injectable for tests; the real one shells the cosign binary.
 type CosignVerifier struct {
+	KeyPath        string // public key for key-based verify (--key)
 	CertIdentity   string // expected signer identity (keyless)
 	CertOIDCIssuer string
+	AllowHTTP      bool // allow a plain-HTTP registry (dev/local only)
 	Run            func(ctx context.Context, name string, args ...string) (output string, err error)
 }
 
-// Verify runs `cosign verify` with the configured identity constraints.
+// Verify runs `cosign verify` with the configured constraints.
 func (c CosignVerifier) Verify(ctx context.Context, ref string) (bool, string, error) {
 	run := c.Run
 	if run == nil {
@@ -85,6 +88,12 @@ func (c CosignVerifier) Verify(ctx context.Context, ref string) (bool, string, e
 		}
 	}
 	args := []string{"verify"}
+	if c.AllowHTTP {
+		args = append(args, "--allow-http-registry")
+	}
+	if c.KeyPath != "" {
+		args = append(args, "--key", c.KeyPath)
+	}
 	if c.CertIdentity != "" {
 		args = append(args, "--certificate-identity", c.CertIdentity)
 	}

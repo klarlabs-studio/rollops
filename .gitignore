@@ -27,3 +27,4 @@
 
 # integration test keys
 test/integration/keys/
+test/integration/keys/cosign.*

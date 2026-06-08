@@ -26,3 +26,18 @@ services:
     ports:
       - "21:21"
       - "21000-21010:21000-21010"
+
+  vault:
+    image: hashicorp/vault:latest
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=roottoken
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
+  registry:
+    image: registry:2
+    ports:
+      - "5050:5000"
