@@ -8,7 +8,7 @@ Greenfield scaffold complete. Module `go.klarlabs.de/rolloffs` (Go 1.26),
 git on `main`, domain skeleton in place, builds clean (`go build ./...` OK).
 All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 2 done, 35 pending**, dependency-gated.
 
-**6/37 tasks done.** Phase A (contracts + config + store) complete. Engine (`t-engine-api`) unblocked.
+**7/37 tasks done.** Phase A complete + engine keystone (`t-engine-api`) in. Phase B underway.
 
 ## Done this session
 
@@ -21,17 +21,25 @@ All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 
 - **t-config-validate** (d10cef4): `Validate`/`Load` — jsonschema + semantic rules, aggregated errors.
 - **t-config-cel** (bc0f28a): `internal/condition` CEL evaluator, wired into validation.
 - **t-store-sqlite** (f2762a4): pure-Go SQLite `store.Store` + migrations + crash-safe persist.
+- **t-engine-api** (49d1c86): `internal/engine` 7-op surface + `internal/target.Registry`. Apply/Plan/Observe/Verify/Promote/Rollback/Schedule over Store+Registry; clock+idgen injectable.
 
-All on branch `feat/config-schema` (4 commits) + scaffold on main (9848fa6). Branch unmerged, awaiting review.
-Full suite green: config, condition, sqlite. `go vet ./...` clean.
+All on branch `feat/config-schema` (5 commits) + scaffold on main (9848fa6). Branch unmerged, awaiting review.
+Full suite green: config(13), condition(10), sqlite(8), engine(8), target(3). `go vet ./...` clean.
 
 ## Next (ready tasks)
 
-1. **t-engine-api** ← unblocked. Engine surface: plan/apply/verify/promote/rollback/observe/schedule, transport/storage-agnostic. Wires config+store+target. (`t-engine-plandiff`, `t-engine-locks` follow.)
-2. **t-conformance** — target conformance suite (idempotency/fingerprint/health).
-3. **t-config-perrepo** — per-repo config at branch+path (finishes config-model feature).
+1. **t-lifecycle** — statekit statechart formalizing the phase transitions the engine drives directly today (guards, durable transitions). Depends engine-api ✓ + store ✓.
+2. **t-engine-plandiff** — rich plan/diff (current → desired field-level) beyond the checksum-changed bool.
+3. **t-dep-dag** — dependency DAG (cycle detect, serialize chains); also feeds blast-radius.
+4. **t-conformance** — target conformance suite (idempotency/fingerprint/health). Unblocks Phase D targets.
+5. **t-engine-locks**, **t-config-perrepo** also ready.
 
 See `roadmap.md` for full phased order.
+
+## Note for next session
+Engine drives phases directly (deploying→verifying / rolled-back). `t-lifecycle` (statekit)
+will formalize transitions + guards; expect to refactor engine phase-setting to go through
+statekit then. Not rework — planned layering.
 
 ## Blocked / open
 
