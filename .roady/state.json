@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 66,
+  "version": 68,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -134,8 +134,10 @@
       "elapsed_minutes": 0
     },
     "t-env-promo": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:16:13.60644+02:00",
       "elapsed_minutes": 0
     },
     "t-git": {
@@ -204,11 +206,15 @@
       "elapsed_minutes": 1
     },
     "t-reconcile": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/reconcile drift loop, 2 tests"
+      ],
       "started_at": "2026-06-08T21:14:54.468521+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:16:10.823619+02:00",
+      "elapsed_minutes": 1
     },
     "t-risk-approval": {
       "status": "done",
@@ -364,5 +370,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:14:54.468521+02:00"
+  "updated_at": "2026-06-08T21:16:13.60644+02:00"
 }
