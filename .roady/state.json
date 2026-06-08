@@ -1,13 +1,17 @@
 {
   "project_id": "rolloffs",
-  "version": 62,
+  "version": 64,
   "task_states": {
     "t-artifact": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "ArtifactGate + CosignVerifier, 6 tests"
+      ],
       "started_at": "2026-06-08T21:12:07.62536+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:13:11.546389+02:00",
+      "elapsed_minutes": 1
     },
     "t-audit": {
       "status": "done",
@@ -135,8 +139,10 @@
       "elapsed_minutes": 0
     },
     "t-git": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:13:13.21937+02:00",
       "elapsed_minutes": 0
     },
     "t-guardrails": {
@@ -352,5 +358,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:12:07.62536+02:00"
+  "updated_at": "2026-06-08T21:13:13.21937+02:00"
 }

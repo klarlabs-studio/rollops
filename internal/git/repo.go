@@ -1,0 +1,90 @@
+package git
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os/exec"
+	"strings"
+)
+
+// Auth carries per-repo credentials. Tokens/keys come from the SecretProvider
+// at execution time, never stored locally by Rolloffs.
+type Auth struct {
+	// DeployKeyPath is an SSH private key path for git+ssh remotes.
+	DeployKeyPath string
+	// Token is a GitHub App installation / PAT token for https remotes.
+	Token string
+}
+
+// Source is a checked-out working tree for one repo at one branch.
+type Source struct {
+	dir    string
+	branch string
+	auth   Auth
+}
+
+// Clone checks out url@branch into dir. Each watched repo gets its own Source —
+// isolation is a property of Git structure.
+func Clone(ctx context.Context, url, branch, dir string, auth Auth) (*Source, error) {
+	s := &Source{dir: dir, branch: branch, auth: auth}
+	args := []string{"clone", "--depth", "1", "--branch", branch, url, dir}
+	if _, err := s.git(ctx, "", args...); err != nil {
+		return nil, fmt.Errorf("git: clone %s@%s: %w", url, branch, err)
+	}
+	return s, nil
+}
+
+// Open wraps an existing working tree (already cloned/checked out).
+func Open(dir, branch string, auth Auth) *Source {
+	return &Source{dir: dir, branch: branch, auth: auth}
+}
+
+// Dir is the working-tree path where the config is read from.
+func (s *Source) Dir() string { return s.dir }
+
+// Head returns the current HEAD commit SHA.
+func (s *Source) Head(ctx context.Context) (string, error) {
+	out, err := s.git(ctx, s.dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Pull fetches the branch and fast-forwards the working tree, reporting whether
+// HEAD moved. The poll loop calls this: a changed head triggers reconciliation,
+// and the call doubles as the drift heartbeat.
+func (s *Source) Pull(ctx context.Context) (changed bool, head string, err error) {
+	before, _ := s.Head(ctx)
+	if _, err := s.git(ctx, s.dir, "fetch", "origin", s.branch); err != nil {
+		return false, before, err
+	}
+	if _, err := s.git(ctx, s.dir, "reset", "--hard", "origin/"+s.branch); err != nil {
+		return false, before, err
+	}
+	after, err := s.Head(ctx)
+	if err != nil {
+		return false, before, err
+	}
+	return before != after, after, nil
+}
+
+// git runs a git command, threading per-repo auth via env (GIT_SSH_COMMAND for
+// deploy keys; token in the URL is handled by the caller for https).
+func (s *Source) git(ctx context.Context, workdir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if workdir != "" {
+		cmd.Dir = workdir
+	}
+	if s.auth.DeployKeyPath != "" {
+		cmd.Env = append(cmd.Environ(),
+			"GIT_SSH_COMMAND=ssh -i "+s.auth.DeployKeyPath+" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new")
+	}
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		return out.String(), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+	}
+	return out.String(), nil
+}
