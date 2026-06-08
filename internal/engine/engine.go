@@ -30,6 +30,7 @@ import (
 type Engine struct {
 	store store.Store
 	reg   *itarget.Registry
+	locks *keyedLocks
 	now   func() time.Time
 	newID func() string
 }
@@ -49,6 +50,7 @@ func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
 		store: st,
 		reg:   reg,
+		locks: newKeyedLocks(),
 		now:   func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
@@ -154,6 +156,12 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if req.Initiator.Kind == "agent" && !req.Planned {
 		return nil, fmt.Errorf("engine: apply: agent-driven rollout requires a produced plan first")
 	}
+	release, ok := e.locks.TryAcquire(req.Config.Spec.Target.Ref)
+	if !ok {
+		return nil, ErrTargetBusy
+	}
+	defer release()
+
 	m, err := manifestFromConfig(req.Config)
 	if err != nil {
 		return nil, err
@@ -284,6 +292,12 @@ func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manife
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
+	release, ok := e.locks.TryAcquire(r.TargetRef)
+	if !ok {
+		return r, ErrTargetBusy
+	}
+	defer release()
+
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
 	if err != nil {
 		return rollout.Rollout{}, err
