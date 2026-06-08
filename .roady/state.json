@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 42,
+  "version": 44,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -72,10 +72,14 @@
       "elapsed_minutes": 0
     },
     "t-dep-dag": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/depgraph DAG + layers + blast radius, 5 tests"
+      ],
       "started_at": "2026-06-08T20:56:33.734255+02:00",
+      "completed_at": "2026-06-08T20:57:27.325779+02:00",
       "elapsed_minutes": 0
     },
     "t-engine-api": {
@@ -153,8 +157,10 @@
       "elapsed_minutes": 0
     },
     "t-progressive": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:57:59.324813+02:00",
       "elapsed_minutes": 0
     },
     "t-reconcile": {
@@ -292,5 +298,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:56:33.734255+02:00"
+  "updated_at": "2026-06-08T20:57:59.324813+02:00"
 }

@@ -8,6 +8,17 @@ Greenfield scaffold complete. Module `go.klarlabs.de/rolloffs` (Go 1.26),
 git on `main`, domain skeleton in place, builds clean (`go build ./...` OK).
 All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 2 done, 35 pending**, dependency-gated.
 
+**19/37 tasks done** (autonomous "until the end" run). Phases A–D + risk gate largely complete.
+
+Done since last checkpoint: lifecycle (statekit), plandiff, locks, conformance suite, step-exec
+(fortify), SSH/FTP/K8s targets (+Builtin registry), risk gate + approve/reject, dep DAG.
+New packages: internal/{rollout(lifecycle), step, risk, depgraph}, internal/target/{ssh,ftp,kubernetes},
+pkg/conformance. Engine now drives phases via statekit, wraps targets in fortify, gates on risk.
+Remaining: config-perrepo, progressive, lifecycle-validate, git, reconcile, rollback(task),
+schedule, env-promo, secrets, audit, security-rbac, artifact, guardrails, cli, daemon-api, mcp,
+selfobs, ui, plugin-grpc. All green; `go vet ./...` clean.
+
+---
 **7/37 tasks done.** Phase A complete + engine keystone (`t-engine-api`) in. Phase B underway.
 
 ## Done this session
