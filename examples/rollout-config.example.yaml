@@ -1,0 +1,50 @@
+# Rolloffs RolloutConfig — v1 example.
+# One file per service/repo. Surface format is YAML; the published JSON Schema
+# is embedded in the binary (config.SchemaJSON) and lives at
+# internal/config/schema/rolloffs.v1.schema.json.
+apiVersion: rolloffs.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: pet-medical-api
+  labels:
+    team: platform
+spec:
+  target:
+    kind: ssh                       # ssh | ftp | kubernetes | <plugin>
+    ref: pet-medical/prod/api       # stable target identity
+    criticality: high               # low | medium | high | critical (risk weight)
+    spec:                           # target-specific desired state
+      host: api.petmedical.internal
+      path: /srv/api
+
+  environments:                     # staged promotion chain (optional)
+    - name: staging
+      promote: true
+    - name: prod
+      promote: true
+
+  strategy:
+    type: canary                    # rolling | canary | blue-green
+    steps:
+      - weight: 10                  # shift 10% traffic
+        pause: 5m
+      - weight: 50
+        pause: 5m
+
+  risk:
+    threshold: 0.7                  # auto-proceed below this score
+    sensitive: 'changeType == "schema"'   # CEL: force approval when true
+
+  rollback:
+    auto: true
+    healthCheck:                    # observability-free probe
+      http: https://api.petmedical.internal/healthz
+      timeout: 10s
+    smokeTest:
+      command: ["./smoke.sh"]
+      expectExit: 0
+
+  dependsOn:
+    - pet-medical/prod/db           # this rollout waits for the db
+
+  schedule: "2026-06-09T02:00:00Z"  # optional RFC3339 future time
