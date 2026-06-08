@@ -18,6 +18,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/api"
 	"go.klarlabs.de/rolloffs/internal/engine"
 	"go.klarlabs.de/rolloffs/internal/mcp"
+	"go.klarlabs.de/rolloffs/internal/metrics"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
@@ -62,7 +63,15 @@ func run() error {
 	}})
 	policy.Bind("agent:*", "agent")
 
-	srv := &http.Server{Addr: addr, Handler: api.New(eng, auth, policy).Handler()}
+	// Self-observability: /metrics and /readyz unauthenticated for scrapers,
+	// everything else behind the authenticated API.
+	met := metrics.New()
+	top := http.NewServeMux()
+	top.Handle("/metrics", met.Handler())
+	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	top.Handle("/", api.New(eng, auth, policy).Handler())
+
+	srv := &http.Server{Addr: addr, Handler: top}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

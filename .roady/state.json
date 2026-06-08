@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 76,
+  "version": 78,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -201,11 +201,15 @@
       "elapsed_minutes": 0
     },
     "t-mcp": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/mcp tools+RBAC + daemon embed, 3 tests"
+      ],
       "started_at": "2026-06-08T21:23:04.358534+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:27:23.783176+02:00",
+      "elapsed_minutes": 4
     },
     "t-plugin-grpc": {
       "status": "done",
@@ -307,8 +311,10 @@
       "elapsed_minutes": 1
     },
     "t-selfobs": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:27:26.287074+02:00",
       "elapsed_minutes": 0
     },
     "t-step-exec": {
@@ -394,5 +400,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:23:04.358534+02:00"
+  "updated_at": "2026-06-08T21:27:26.287074+02:00"
 }
