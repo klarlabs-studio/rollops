@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 16,
+  "version": 18,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -18,11 +18,15 @@
       "elapsed_minutes": 0
     },
     "t-config-cel": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "bc0f28a — internal/condition CEL eval + wired into config.Validate, tests pass"
+      ],
       "started_at": "2026-06-08T20:13:48.760833+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:15:52.122501+02:00",
+      "elapsed_minutes": 2
     },
     "t-config-perrepo": {
       "status": "pending",
@@ -178,8 +182,10 @@
       "elapsed_minutes": 0
     },
     "t-store-sqlite": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:16:16.217019+02:00",
       "elapsed_minutes": 0
     },
     "t-target-contract": {
@@ -214,5 +220,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:13:48.760833+02:00"
+  "updated_at": "2026-06-08T20:16:16.217019+02:00"
 }
