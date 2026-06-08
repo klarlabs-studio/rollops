@@ -10,21 +10,25 @@ All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 
 
 ## Done this session
 
-- git init + go.mod + domain directory skeleton (cmd/, internal/, pkg/).
-- Two core contracts written and building:
-  - `pkg/target.Target` (Apply/Observe/Health + Manifest/Result/Fingerprint/HealthStatus).
-  - `store.Store` + `rollout` entity model (Rollout/TargetState/ScheduledRollout/RolloutRecord/Dependency).
-- README, AGENTS.md, .gitignore.
-- Roady: full spec (22 features, 9 constraints) from vision/TDD, plan generated + approved.
-- Agent OS memory scaffolded.
+- git init + go.mod (`go.klarlabs.de/rolloffs`) + domain skeleton (cmd/, internal/, pkg/).
+- Two core contracts building: `pkg/target.Target`, `store.Store` + `rollout` model.
+- All 7 Klarlatz stack deps pinned + resolving (`internal/stack` anchor).
+- Roady: spec (23 features, 9 constraints) + **37 dependency-ordered tasks**, approved.
+- README, AGENTS.md, vision/TDD in-repo, Agent OS memory.
+- **t-config-schema DONE** (branch `feat/config-schema`, commit 1d55d34): `internal/config`
+  RolloutConfig v1 types + embedded JSON schema (`config.SchemaJSON`) + version-gated `Parse`
+  (KnownFields rejects unknown keys) + example + 6 passing tests.
 
-## Next (top 3)
+Commits: main has scaffold (9848fa6); `feat/config-schema` has config (1d55d34) — unmerged, awaiting review.
 
-1. **config-model** — config schema v1 + version field, loud Go validation, CEL hook points. Foundation; unblocks risk gate + lifecycle.
-2. **store-backend** — SQLite backend implementing `store.Store` + migrations + crash-safe per-transition persist.
-3. **engine-library** — engine API surface (plan/apply/verify/promote/rollback/observe/schedule) + plan/diff.
+## Next (ready tasks)
 
-See `roadmap.md` for the full phased build order.
+1. **t-config-validate** — deep validation (required fields, enum membership, oneOf health, CEL well-formedness) using embedded `SchemaJSON`. Loud rejection.
+2. **t-config-cel** — CEL eval for risk.sensitive / rollback.trigger / promotion criteria.
+3. **t-store-sqlite** — SQLite backend for `store.Store` + migrations + crash-safe persist.
+4. **t-conformance** — target conformance suite (idempotency/fingerprint/health).
+
+`t-config-perrepo` also ready. See `roadmap.md` for full phased order.
 
 ## Blocked / open
 

@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 12,
+  "version": 13,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -28,11 +28,15 @@
       "elapsed_minutes": 0
     },
     "t-config-schema": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "1d55d34 — internal/config types + schema/rolloffs.v1.schema.json embedded, 6 tests pass"
+      ],
       "started_at": "2026-06-08T20:06:14.388575+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:09:30.34823+02:00",
+      "elapsed_minutes": 3
     },
     "t-config-validate": {
       "status": "pending",
@@ -202,5 +206,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:06:14.388575+02:00"
+  "updated_at": "2026-06-08T20:09:30.348231+02:00"
 }
