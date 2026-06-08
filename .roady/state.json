@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 46,
+  "version": 48,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -29,10 +29,14 @@
       "elapsed_minutes": 2
     },
     "t-config-perrepo": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "config.RepoRef + LoadFromDir, 4 tests"
+      ],
       "started_at": "2026-06-08T20:59:01.734443+02:00",
+      "completed_at": "2026-06-08T20:59:58.021155+02:00",
       "elapsed_minutes": 0
     },
     "t-config-schema": {
@@ -144,8 +148,10 @@
       "elapsed_minutes": 4
     },
     "t-lifecycle-validate": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:00:00.165976+02:00",
       "elapsed_minutes": 0
     },
     "t-mcp": {
@@ -304,5 +310,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:59:01.734443+02:00"
+  "updated_at": "2026-06-08T21:00:00.165976+02:00"
 }

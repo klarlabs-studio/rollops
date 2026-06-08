@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rolloffs/internal/depgraph"
 	"go.klarlabs.de/rolloffs/internal/risk"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/step"
@@ -150,6 +151,39 @@ func short(s string) string {
 		return s
 	}
 	return s[:12]
+}
+
+// Validation is the result of the validating phase: a confirmed config, the
+// resolved deploy order, the blast radius of the target, and the plan/diff.
+type Validation struct {
+	Plan        *Plan
+	BlastRadius int
+	DeployOrder [][]string // topological layers (independents parallel, chains serialized)
+}
+
+// Validate runs the validating phase before any apply: it re-checks the config,
+// resolves the dependency DAG (rejecting cycles), computes the blast radius, and
+// produces the plan/diff. An agent-driven Apply requires a Validation to have
+// been produced (its Plan satisfies the plan-before-apply guard).
+func (e *Engine) Validate(ctx context.Context, c *config.Config, deps []rollout.Dependency) (*Validation, error) {
+	if err := config.Validate(c); err != nil {
+		return nil, err
+	}
+	nodes := []string{c.Spec.Target.Ref}
+	g := depgraph.New(nodes, deps)
+	order, err := g.Layers()
+	if err != nil {
+		return nil, fmt.Errorf("engine: validate: %w", err)
+	}
+	plan, err := e.Plan(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return &Validation{
+		Plan:        plan,
+		BlastRadius: g.BlastRadius(c.Spec.Target.Ref),
+		DeployOrder: order,
+	}, nil
 }
 
 // RiskInputs are the rollout-time signals the engine cannot derive from config
