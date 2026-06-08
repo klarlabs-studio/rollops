@@ -8,18 +8,27 @@ import (
 	"strings"
 	"testing"
 
+	"go.klarlabs.de/rolloffs/internal/engine"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 )
 
 // fakeBackend is an in-memory store of rollouts.
 type fakeBackend struct {
 	rollouts []rollout.Rollout
+	drift    []engine.DriftItem
+	records  []rollout.RolloutRecord
 	approved string
 	rejected string
 }
 
 func (f *fakeBackend) List(context.Context, int) ([]rollout.Rollout, error) {
 	return f.rollouts, nil
+}
+func (f *fakeBackend) DriftReport(context.Context) ([]engine.DriftItem, error) {
+	return f.drift, nil
+}
+func (f *fakeBackend) History(_ context.Context, _ string) ([]rollout.RolloutRecord, error) {
+	return f.records, nil
 }
 func (f *fakeBackend) Approve(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
 	f.approved = id
@@ -75,6 +84,46 @@ func TestApproveAction(t *testing.T) {
 	}
 	if be.approved != "ro-7" {
 		t.Errorf("approved = %q, want ro-7", be.approved)
+	}
+}
+
+func TestDashboard_ShowsDrift(t *testing.T) {
+	be := &fakeBackend{
+		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted}},
+		drift: []engine.DriftItem{
+			{TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Desired: "abc123", Observed: "stale99", Drifted: true},
+		},
+	}
+	rr := httptest.NewRecorder()
+	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
+	body := rr.Body.String()
+	if !strings.Contains(body, "DRIFT") || !strings.Contains(body, "drift detected") {
+		t.Errorf("drift not surfaced: %s", body)
+	}
+	if !strings.Contains(body, "/ui/history?target=") {
+		t.Error("history link missing")
+	}
+}
+
+func TestHistory_RendersRecords(t *testing.T) {
+	be := &fakeBackend{records: []rollout.RolloutRecord{
+		{RolloutID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}},
+	}}
+	rr := httptest.NewRecorder()
+	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/history?target=a/prod/api", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("history = %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "promoted") || !strings.Contains(rr.Body.String(), "ci/rec") {
+		t.Errorf("history record not rendered: %s", rr.Body)
+	}
+}
+
+func TestHistory_RequiresTarget(t *testing.T) {
+	rr := httptest.NewRecorder()
+	srv(&fakeBackend{}).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/history", nil))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("history without target = %d, want 400", rr.Code)
 	}
 }
 

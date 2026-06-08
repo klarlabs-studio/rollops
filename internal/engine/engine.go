@@ -126,7 +126,53 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: plan: observe: %w", err)
 	}
+	// Persist the observed fingerprint so drift status is queryable without
+	// re-observing every target on a dashboard render.
+	_ = e.store.SaveObservedState(ctx, rollout.TargetState{
+		TargetRef:  c.Spec.Target.Ref,
+		Observed:   cur,
+		ObservedAt: e.now(),
+	})
 	return newPlan(c.Spec.Target.Ref, m, cur), nil
+}
+
+// DriftItem reports the drift status of one target.
+type DriftItem struct {
+	TargetRef string
+	Phase     rollout.Phase
+	Desired   string // desired checksum
+	Observed  string // last observed fingerprint
+	Drifted   bool
+}
+
+// DriftReport compares the last observed fingerprint of each target against its
+// most recent rollout's desired checksum. A promoted target whose observed
+// state no longer matches desired has drifted.
+func (e *Engine) DriftReport(ctx context.Context) ([]DriftItem, error) {
+	rs, err := e.store.ListRollouts(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	var out []DriftItem
+	for _, r := range rs { // newest first
+		if seen[r.TargetRef] {
+			continue
+		}
+		seen[r.TargetRef] = true
+		observed := ""
+		if fp, err := e.store.ObservedState(ctx, r.TargetRef); err == nil {
+			observed = fp.Value
+		}
+		out = append(out, DriftItem{
+			TargetRef: r.TargetRef,
+			Phase:     r.Phase,
+			Desired:   r.Desired.Checksum,
+			Observed:  observed,
+			Drifted:   r.Phase == rollout.PhasePromoted && observed != r.Desired.Checksum,
+		})
+	}
+	return out, nil
 }
 
 // PlanAction is the high-level effect an apply would have.
