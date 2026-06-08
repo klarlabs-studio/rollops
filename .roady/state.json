@@ -1,156 +1,336 @@
 {
   "project_id": "rolloffs",
-  "version": 11,
+  "version": 81,
   "task_states": {
     "t-artifact": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "ArtifactGate + CosignVerifier, 6 tests"
+      ],
+      "started_at": "2026-06-08T21:12:07.62536+02:00",
+      "completed_at": "2026-06-08T21:13:11.546389+02:00",
+      "elapsed_minutes": 1
     },
     "t-audit": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/audit bolt + redaction + attribution, 3 tests"
+      ],
+      "started_at": "2026-06-08T21:07:12.101792+02:00",
+      "completed_at": "2026-06-08T21:08:46.924029+02:00",
+      "elapsed_minutes": 1
     },
     "t-cli": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/cli + cmd/rolloffs wiring, 4 tests"
+      ],
+      "started_at": "2026-06-08T21:18:25.27735+02:00",
+      "completed_at": "2026-06-08T21:20:09.111702+02:00",
+      "elapsed_minutes": 1
     },
     "t-config-cel": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "bc0f28a — internal/condition CEL eval + wired into config.Validate, tests pass"
+      ],
+      "started_at": "2026-06-08T20:13:48.760833+02:00",
+      "completed_at": "2026-06-08T20:15:52.122501+02:00",
+      "elapsed_minutes": 2
     },
     "t-config-perrepo": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "config.RepoRef + LoadFromDir, 4 tests"
+      ],
+      "started_at": "2026-06-08T20:59:01.734443+02:00",
+      "completed_at": "2026-06-08T20:59:58.021155+02:00",
       "elapsed_minutes": 0
     },
     "t-config-schema": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "1d55d34 — internal/config types + schema/rolloffs.v1.schema.json embedded, 6 tests pass"
+      ],
+      "started_at": "2026-06-08T20:06:14.388575+02:00",
+      "completed_at": "2026-06-08T20:09:30.34823+02:00",
+      "elapsed_minutes": 3
     },
     "t-config-validate": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "d10cef4 — Validate/Load via embedded jsonschema + semantic checks, 11 tests pass"
+      ],
+      "started_at": "2026-06-08T20:11:46.417335+02:00",
+      "completed_at": "2026-06-08T20:13:28.570462+02:00",
+      "elapsed_minutes": 1
     },
     "t-conformance": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "pkg/conformance suite + Check funcs, meta-tested, 4 tests"
+      ],
+      "started_at": "2026-06-08T20:38:57.330446+02:00",
+      "completed_at": "2026-06-08T20:40:22.040137+02:00",
+      "elapsed_minutes": 1
     },
     "t-daemon-api": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/api auth+RBAC + cmd/rolloffsd, 4 tests; gRPC transport documented as follow-up"
+      ],
+      "started_at": "2026-06-08T21:20:11.058337+02:00",
+      "completed_at": "2026-06-08T21:23:00.236482+02:00",
+      "elapsed_minutes": 2
     },
     "t-dep-dag": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/depgraph DAG + layers + blast radius, 5 tests"
+      ],
+      "started_at": "2026-06-08T20:56:33.734255+02:00",
+      "completed_at": "2026-06-08T20:57:27.325779+02:00",
       "elapsed_minutes": 0
     },
     "t-engine-api": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "49d1c86 — internal/engine 7-op surface + internal/target.Registry, 11 tests pass"
+      ],
+      "started_at": "2026-06-08T20:24:19.58792+02:00",
+      "completed_at": "2026-06-08T20:27:12.683596+02:00",
+      "elapsed_minutes": 2
     },
     "t-engine-locks": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "keyed advisory locks + Apply/Rollback wiring, race-clean, 3 tests"
+      ],
+      "started_at": "2026-06-08T20:36:50.664803+02:00",
+      "completed_at": "2026-06-08T20:38:35.858837+02:00",
+      "elapsed_minutes": 1
     },
     "t-engine-plandiff": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "structured Plan action+summary, 3 tests"
+      ],
+      "started_at": "2026-06-08T20:35:46.97469+02:00",
+      "completed_at": "2026-06-08T20:36:46.78909+02:00",
       "elapsed_minutes": 0
     },
     "t-env-promo": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/promote chain+next+per-env strategy, 4 tests"
+      ],
+      "started_at": "2026-06-08T21:16:13.60644+02:00",
+      "completed_at": "2026-06-08T21:17:06.160439+02:00",
       "elapsed_minutes": 0
     },
     "t-git": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/git webhook HMAC + clone/pull, real-git tests"
+      ],
+      "started_at": "2026-06-08T21:13:13.21937+02:00",
+      "completed_at": "2026-06-08T21:14:52.212822+02:00",
+      "elapsed_minutes": 1
     },
     "t-guardrails": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "policy floor + freeze + agent rate-limit, 4 tests"
+      ],
+      "started_at": "2026-06-08T21:10:10.398437+02:00",
+      "completed_at": "2026-06-08T21:12:03.165866+02:00",
+      "elapsed_minutes": 1
     },
     "t-lifecycle": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "151e03f — statekit statechart + engine integration, 9 lifecycle tests pass"
+      ],
+      "started_at": "2026-06-08T20:31:20.790773+02:00",
+      "completed_at": "2026-06-08T20:35:24.963409+02:00",
+      "elapsed_minutes": 4
     },
     "t-lifecycle-validate": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "engine.Validate config+deps+plan, 3 tests"
+      ],
+      "started_at": "2026-06-08T21:00:00.165976+02:00",
+      "completed_at": "2026-06-08T21:00:50.550462+02:00",
       "elapsed_minutes": 0
     },
     "t-mcp": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/mcp tools+RBAC + daemon embed, 3 tests"
+      ],
+      "started_at": "2026-06-08T21:23:04.358534+02:00",
+      "completed_at": "2026-06-08T21:27:23.783176+02:00",
+      "elapsed_minutes": 4
     },
     "t-plugin-grpc": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "versioned plugin protocol + adapter, conformance pass, 3 tests"
+      ],
+      "started_at": "2026-06-08T21:17:09.023058+02:00",
+      "completed_at": "2026-06-08T21:18:21.553928+02:00",
+      "elapsed_minutes": 1
     },
     "t-progressive": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/progressive strategies + executor, 7 tests"
+      ],
+      "started_at": "2026-06-08T20:57:59.324813+02:00",
+      "completed_at": "2026-06-08T20:58:59.583618+02:00",
+      "elapsed_minutes": 1
     },
     "t-reconcile": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/reconcile drift loop, 2 tests"
+      ],
+      "started_at": "2026-06-08T21:14:54.468521+02:00",
+      "completed_at": "2026-06-08T21:16:10.823619+02:00",
+      "elapsed_minutes": 1
     },
     "t-risk-approval": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "single gate approve/reject via lifecycle + engine.Approve/Reject, CEL threshold, committed in risk gate work"
+      ],
+      "started_at": "2026-06-08T20:56:14.803647+02:00",
+      "completed_at": "2026-06-08T20:56:22.528152+02:00",
       "elapsed_minutes": 0
     },
     "t-risk-gate": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/risk 5-signal gate + engine.EvaluateRisk, 6+ tests"
+      ],
+      "started_at": "2026-06-08T20:52:19.253526+02:00",
+      "completed_at": "2026-06-08T20:56:11.841389+02:00",
+      "elapsed_minutes": 3
     },
     "t-rollback": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "VerifyOrRollback health+smoke auto-rollback, 3 tests"
+      ],
+      "started_at": "2026-06-08T21:00:52.613178+02:00",
+      "completed_at": "2026-06-08T21:03:32.196989+02:00",
+      "elapsed_minutes": 2
     },
     "t-schedule": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "FireDueSchedules + DeleteSchedule, 2 tests"
+      ],
+      "started_at": "2026-06-08T21:03:36.137586+02:00",
+      "completed_at": "2026-06-08T21:05:27.764336+02:00",
+      "elapsed_minutes": 1
     },
     "t-secrets": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/secrets Provider+Secret+Env/Vault/Chain, 6 tests"
+      ],
+      "started_at": "2026-06-08T21:05:30.329+02:00",
+      "completed_at": "2026-06-08T21:07:09.811854+02:00",
+      "elapsed_minutes": 1
     },
     "t-security-rbac": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/security RBAC, 4 tests"
+      ],
+      "started_at": "2026-06-08T21:08:49.983841+02:00",
+      "completed_at": "2026-06-08T21:10:06.942278+02:00",
+      "elapsed_minutes": 1
     },
     "t-selfobs": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/metrics Prometheus + /metrics + /readyz, 1 test"
+      ],
+      "started_at": "2026-06-08T21:27:26.287074+02:00",
+      "completed_at": "2026-06-08T21:29:08.257643+02:00",
+      "elapsed_minutes": 1
     },
     "t-step-exec": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/step.Guarded fortify wrap + engine integration, 4 tests, race-clean"
+      ],
+      "started_at": "2026-06-08T20:40:24.088434+02:00",
+      "completed_at": "2026-06-08T20:44:16.965037+02:00",
+      "elapsed_minutes": 3
     },
     "t-store-iface": {
       "status": "done",
@@ -164,9 +344,15 @@
       "elapsed_minutes": 0
     },
     "t-store-sqlite": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "f2762a4 — modernc.org/sqlite store.Store impl + migrations, 8 tests pass"
+      ],
+      "started_at": "2026-06-08T20:16:16.217019+02:00",
+      "completed_at": "2026-06-08T20:19:38.167718+02:00",
+      "elapsed_minutes": 3
     },
     "t-target-contract": {
       "status": "done",
@@ -180,25 +366,49 @@
       "elapsed_minutes": 0
     },
     "t-target-ftp": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "FTP dumb target + conformance pass"
+      ],
+      "started_at": "2026-06-08T20:48:03.626326+02:00",
+      "completed_at": "2026-06-08T20:49:57.26556+02:00",
+      "elapsed_minutes": 1
     },
     "t-target-k8s": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "rich K8s target via kubectl, conformance pass, no client-go dep"
+      ],
+      "started_at": "2026-06-08T20:49:59.678719+02:00",
+      "completed_at": "2026-06-08T20:51:59.703403+02:00",
+      "elapsed_minutes": 2
     },
     "t-target-ssh": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "SSH dumb target + Transport abstraction + conformance pass, builtin registry"
+      ],
+      "started_at": "2026-06-08T20:44:53.565011+02:00",
+      "completed_at": "2026-06-08T20:47:46.594626+02:00",
+      "elapsed_minutes": 2
     },
     "t-ui": {
-      "status": "pending",
+      "status": "done",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/ui dashboard + approve/reject, 4 tests; mounted at /ui"
+      ],
+      "started_at": "2026-06-08T21:29:10.939132+02:00",
+      "completed_at": "2026-06-08T21:32:23.526317+02:00",
+      "elapsed_minutes": 3
     }
   },
-  "updated_at": "2026-06-08T20:00:30.86608+02:00"
+  "updated_at": "2026-06-08T21:32:23.526318+02:00"
 }

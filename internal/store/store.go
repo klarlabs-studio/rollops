@@ -8,11 +8,15 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/pkg/target"
 )
+
+// ErrNotFound is returned by lookups when the requested record does not exist.
+var ErrNotFound = errors.New("store: not found")
 
 // Store persists runtime rollout state behind a single interface so the
 // backend (SQLite / Postgres / mnemos) is a deployment choice, not a coupling.
@@ -24,8 +28,17 @@ type Store interface {
 	// LoadRollout retrieves a rollout by id.
 	LoadRollout(ctx context.Context, id string) (rollout.Rollout, error)
 
+	// ListRollouts returns the most recent rollouts, newest first (limit<=0 → all).
+	ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout, error)
+
+	// SaveObservedState records the fingerprint the reconciler observed for a
+	// target, upserting by target ref. Observed state is runtime truth; desired
+	// state always comes from Git, never the Store.
+	SaveObservedState(ctx context.Context, s rollout.TargetState) error
+
 	// ObservedState returns the last observed fingerprint for a target,
 	// against which the reconciler diffs desired state to detect drift.
+	// Returns ErrNotFound if the target has never been observed.
 	ObservedState(ctx context.Context, targetRef string) (target.Fingerprint, error)
 
 	// Schedule queues a rollout for a future time.
@@ -34,6 +47,9 @@ type Store interface {
 	// DueSchedules returns schedules whose DueAt has passed, fired on each
 	// reconcile tick.
 	DueSchedules(ctx context.Context, now time.Time) ([]rollout.ScheduledRollout, error)
+
+	// DeleteSchedule removes a schedule once fired, so it does not re-fire.
+	DeleteSchedule(ctx context.Context, id string) error
 
 	// History returns the audit/history records for a target, newest first.
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)

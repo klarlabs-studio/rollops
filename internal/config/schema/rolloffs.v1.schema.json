@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.klarlabs.de/rolloffs/v1/rollout-config.json",
+  "title": "Rolloffs RolloutConfig",
+  "description": "Declarative rollout configuration for a single service/target. Surface format is YAML; this schema is the published contract. Schema version is rolloffs.klarlabs.de/v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "rolloffs.klarlabs.de/v1",
+      "description": "Schema version. A new major bumps this so configs migrate cleanly."
+    },
+    "kind": {
+      "type": "string",
+      "const": "RolloutConfig"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "strategy"],
+      "properties": {
+        "target": { "$ref": "#/$defs/target" },
+        "environments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/environment" }
+        },
+        "strategy": { "$ref": "#/$defs/strategy" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "rollback": { "$ref": "#/$defs/rollback" },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Target refs that must complete before this one."
+        },
+        "schedule": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 future time to queue this rollout."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "criticality"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target plugin: ssh | ftp | kubernetes | <community plugin>."
+        },
+        "ref": { "type": "string", "minLength": 1, "description": "Stable target identity." },
+        "criticality": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Operator-set blast-radius weight feeding the risk gate."
+        },
+        "spec": {
+          "type": "object",
+          "description": "Target-specific desired state; validated by the target plugin.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "promote": {
+          "type": "boolean",
+          "description": "Whether this env participates in the staged promotion chain."
+        },
+        "strategy": { "$ref": "#/$defs/strategy" }
+      }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["rolling", "canary", "blue-green"]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "weight": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "pause": { "type": "string", "description": "Go duration, e.g. 5m." }
+            }
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Auto-proceed below this normalized score."
+        },
+        "sensitive": {
+          "type": "string",
+          "description": "CEL boolean expression; when true, forces human approval."
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto": { "type": "boolean" },
+        "healthCheck": { "$ref": "#/$defs/healthCheck" },
+        "smokeTest": { "$ref": "#/$defs/smokeTest" },
+        "trigger": {
+          "type": "string",
+          "description": "Optional CEL boolean expression that fires a rollback."
+        }
+      }
+    },
+    "healthCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Observability-free probe. Exactly one of http/tcp/command.",
+      "properties": {
+        "http": { "type": "string" },
+        "tcp": { "type": "string" },
+        "command": { "type": "array", "items": { "type": "string" } },
+        "timeout": { "type": "string", "description": "Go duration." }
+      },
+      "oneOf": [
+        { "required": ["http"] },
+        { "required": ["tcp"] },
+        { "required": ["command"] }
+      ]
+    },
+    "smokeTest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "expectExit": { "type": "integer", "default": 0 }
+      }
+    }
+  }
+}
