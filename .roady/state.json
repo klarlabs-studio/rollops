@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 30,
+  "version": 32,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -196,11 +196,15 @@
       "elapsed_minutes": 0
     },
     "t-step-exec": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/step.Guarded fortify wrap + engine integration, 4 tests, race-clean"
+      ],
       "started_at": "2026-06-08T20:40:24.088434+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:44:16.965037+02:00",
+      "elapsed_minutes": 3
     },
     "t-store-iface": {
       "status": "done",
@@ -246,8 +250,10 @@
       "elapsed_minutes": 0
     },
     "t-target-ssh": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:44:53.565011+02:00",
       "elapsed_minutes": 0
     },
     "t-ui": {
@@ -256,5 +262,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:40:24.088434+02:00"
+  "updated_at": "2026-06-08T20:44:53.565011+02:00"
 }
