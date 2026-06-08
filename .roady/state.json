@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 18,
+  "version": 19,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -182,11 +182,15 @@
       "elapsed_minutes": 0
     },
     "t-store-sqlite": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "f2762a4 — modernc.org/sqlite store.Store impl + migrations, 8 tests pass"
+      ],
       "started_at": "2026-06-08T20:16:16.217019+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:19:38.167718+02:00",
+      "elapsed_minutes": 3
     },
     "t-target-contract": {
       "status": "done",
@@ -220,5 +224,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:16:16.217019+02:00"
+  "updated_at": "2026-06-08T20:19:38.167719+02:00"
 }

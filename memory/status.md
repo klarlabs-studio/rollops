@@ -8,6 +8,8 @@ Greenfield scaffold complete. Module `go.klarlabs.de/rolloffs` (Go 1.26),
 git on `main`, domain skeleton in place, builds clean (`go build ./...` OK).
 All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 2 done, 35 pending**, dependency-gated.
 
+**6/37 tasks done.** Phase A (contracts + config + store) complete. Engine (`t-engine-api`) unblocked.
+
 ## Done this session
 
 - git init + go.mod (`go.klarlabs.de/rolloffs`) + domain skeleton (cmd/, internal/, pkg/).
@@ -15,20 +17,21 @@ All 7 stack deps pinned + resolving. Roady plan **ordered & approved: 37 tasks, 
 - All 7 Klarlatz stack deps pinned + resolving (`internal/stack` anchor).
 - Roady: spec (23 features, 9 constraints) + **37 dependency-ordered tasks**, approved.
 - README, AGENTS.md, vision/TDD in-repo, Agent OS memory.
-- **t-config-schema DONE** (branch `feat/config-schema`, commit 1d55d34): `internal/config`
-  RolloutConfig v1 types + embedded JSON schema (`config.SchemaJSON`) + version-gated `Parse`
-  (KnownFields rejects unknown keys) + example + 6 passing tests.
+- **t-config-schema** (1d55d34): config types + embedded JSON schema + version-gated Parse.
+- **t-config-validate** (d10cef4): `Validate`/`Load` — jsonschema + semantic rules, aggregated errors.
+- **t-config-cel** (bc0f28a): `internal/condition` CEL evaluator, wired into validation.
+- **t-store-sqlite** (f2762a4): pure-Go SQLite `store.Store` + migrations + crash-safe persist.
 
-Commits: main has scaffold (9848fa6); `feat/config-schema` has config (1d55d34) — unmerged, awaiting review.
+All on branch `feat/config-schema` (4 commits) + scaffold on main (9848fa6). Branch unmerged, awaiting review.
+Full suite green: config, condition, sqlite. `go vet ./...` clean.
 
 ## Next (ready tasks)
 
-1. **t-config-validate** — deep validation (required fields, enum membership, oneOf health, CEL well-formedness) using embedded `SchemaJSON`. Loud rejection.
-2. **t-config-cel** — CEL eval for risk.sensitive / rollback.trigger / promotion criteria.
-3. **t-store-sqlite** — SQLite backend for `store.Store` + migrations + crash-safe persist.
-4. **t-conformance** — target conformance suite (idempotency/fingerprint/health).
+1. **t-engine-api** ← unblocked. Engine surface: plan/apply/verify/promote/rollback/observe/schedule, transport/storage-agnostic. Wires config+store+target. (`t-engine-plandiff`, `t-engine-locks` follow.)
+2. **t-conformance** — target conformance suite (idempotency/fingerprint/health).
+3. **t-config-perrepo** — per-repo config at branch+path (finishes config-model feature).
 
-`t-config-perrepo` also ready. See `roadmap.md` for full phased order.
+See `roadmap.md` for full phased order.
 
 ## Blocked / open
 
