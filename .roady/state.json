@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 68,
+  "version": 70,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -134,10 +134,14 @@
       "elapsed_minutes": 0
     },
     "t-env-promo": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/promote chain+next+per-env strategy, 4 tests"
+      ],
       "started_at": "2026-06-08T21:16:13.60644+02:00",
+      "completed_at": "2026-06-08T21:17:06.160439+02:00",
       "elapsed_minutes": 0
     },
     "t-git": {
@@ -190,8 +194,10 @@
       "elapsed_minutes": 0
     },
     "t-plugin-grpc": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:17:09.023058+02:00",
       "elapsed_minutes": 0
     },
     "t-progressive": {
@@ -370,5 +376,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:16:13.60644+02:00"
+  "updated_at": "2026-06-08T21:17:09.023058+02:00"
 }
