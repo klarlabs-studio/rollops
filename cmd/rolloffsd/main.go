@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -75,7 +76,7 @@ func run() error {
 	top := http.NewServeMux()
 	top.Handle("/metrics", met.Handler())
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	uiHandler := ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"}).Handler()
+	uiHandler := basicAuth(ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"}).Handler())
 	top.Handle("/ui", uiHandler)
 	top.Handle("/ui/", uiHandler)
 	top.Handle("/", api.New(eng, auth, policy).Handler())
@@ -166,6 +167,31 @@ func loadWatchSpecs(path string) ([]reconcile.RepoSpec, error) {
 		})
 	}
 	return specs, nil
+}
+
+// basicAuth gates the browser dashboard. Credentials come from
+// ROLLOFFS_UI_USER / ROLLOFFS_UI_PASSWORD; if the password is unset the UI is
+// refused entirely rather than served anonymously.
+func basicAuth(next http.Handler) http.Handler {
+	user := envOr("ROLLOFFS_UI_USER", "admin")
+	pass := os.Getenv("ROLLOFFS_UI_PASSWORD")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if pass == "" {
+			http.Error(w, "ui disabled: set ROLLOFFS_UI_PASSWORD", http.StatusForbidden)
+			return
+		}
+		u, p, ok := r.BasicAuth()
+		if !ok || subtleEqual(u, user) == false || subtleEqual(p, pass) == false {
+			w.Header().Set("WWW-Authenticate", `Basic realm="rolloffs"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func subtleEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func envOr(key, def string) string {
