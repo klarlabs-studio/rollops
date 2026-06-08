@@ -1,0 +1,140 @@
+package reconcile
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"time"
+
+	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rolloffs/internal/git"
+	"go.klarlabs.de/rolloffs/internal/rollout"
+)
+
+// RepoSpec declares one watched repo: where it lives, how to authenticate, the
+// config location within it, and the identity reconciles are attributed to.
+type RepoSpec struct {
+	Name      string
+	URL       string
+	Ref       config.RepoRef // branch + path (defaults applied)
+	Auth      git.Auth
+	Initiator rollout.Identity
+}
+
+// Watcher watches N repos and reconciles each on every tick — the always-on
+// brain. Each tick pulls the latest desired state from Git (immediate via
+// webhook, periodic via this poll which doubles as the drift heartbeat) and
+// reconciles. Repos are independent and serialized per repo.
+type Watcher struct {
+	rec     *Reconciler
+	baseDir string
+	repos   []watched
+	locks   *repoLocks
+}
+
+type watched struct {
+	spec RepoSpec
+	src  *git.Source
+}
+
+// NewWatcher clones each repo into baseDir and returns a ready watcher.
+func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec) (*Watcher, error) {
+	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks()}
+	for _, s := range specs {
+		s.Ref = s.Ref.WithDefaults()
+		dir := filepath.Join(baseDir, s.Name)
+		src, err := git.Clone(ctx, s.URL, s.Ref.Branch, dir, s.Auth)
+		if err != nil {
+			return nil, fmt.Errorf("watch: clone %s: %w", s.Name, err)
+		}
+		w.repos = append(w.repos, watched{spec: s, src: src})
+	}
+	return w, nil
+}
+
+// AddExisting registers a repo whose working tree is already present (used in
+// tests and for pre-cloned trees).
+func (w *Watcher) AddExisting(s RepoSpec, src *git.Source) {
+	s.Ref = s.Ref.WithDefaults()
+	w.repos = append(w.repos, watched{spec: s, src: src})
+}
+
+// RepoOutcome is the result of reconciling one watched repo on a tick.
+type RepoOutcome struct {
+	Repo    string
+	Changed bool // git HEAD moved this tick
+	Outcome Outcome
+	Err     error
+}
+
+// Tick pulls and reconciles every watched repo once. Per-repo errors are
+// captured in the result, not fatal to the others.
+func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
+	out := make([]RepoOutcome, 0, len(w.repos))
+	for _, r := range w.repos {
+		out = append(out, w.tickOne(ctx, r))
+	}
+	return out
+}
+
+func (w *Watcher) tickOne(ctx context.Context, r watched) RepoOutcome {
+	release, ok := w.locks.tryAcquire(r.spec.Name)
+	if !ok {
+		return RepoOutcome{Repo: r.spec.Name, Err: fmt.Errorf("watch: repo %s busy", r.spec.Name)}
+	}
+	defer release()
+
+	changed, _, err := r.src.Pull(ctx)
+	if err != nil {
+		return RepoOutcome{Repo: r.spec.Name, Err: fmt.Errorf("watch: pull: %w", err)}
+	}
+	c, err := config.LoadFromDir(r.src.Dir(), r.spec.Ref)
+	if err != nil {
+		return RepoOutcome{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("watch: load config: %w", err)}
+	}
+	o, err := w.rec.Reconcile(ctx, c, r.spec.Initiator)
+	return RepoOutcome{Repo: r.spec.Name, Changed: changed, Outcome: o, Err: err}
+}
+
+// Run reconciles all repos on each interval tick until ctx is cancelled.
+func (w *Watcher) Run(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	w.Tick(ctx) // reconcile immediately on start
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			w.Tick(ctx)
+		}
+	}
+}
+
+// repoLocks serializes reconciles per repo (independent repos run in parallel up
+// to the caller's scheduling).
+type repoLocks struct {
+	mu   chan struct{}
+	held map[string]bool
+}
+
+func newRepoLocks() *repoLocks {
+	l := &repoLocks{mu: make(chan struct{}, 1), held: map[string]bool{}}
+	l.mu <- struct{}{}
+	return l
+}
+
+func (l *repoLocks) tryAcquire(key string) (func(), bool) {
+	<-l.mu
+	if l.held[key] {
+		l.mu <- struct{}{}
+		return nil, false
+	}
+	l.held[key] = true
+	l.mu <- struct{}{}
+	return func() {
+		<-l.mu
+		delete(l.held, key)
+		l.mu <- struct{}{}
+	}, true
+}

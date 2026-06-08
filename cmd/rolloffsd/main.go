@@ -6,19 +6,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	mcpserver "go.klarlabs.de/mcp"
 
 	"go.klarlabs.de/rolloffs/internal/api"
+	"go.klarlabs.de/rolloffs/internal/audit"
+	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/engine"
 	"go.klarlabs.de/rolloffs/internal/mcp"
 	"go.klarlabs.de/rolloffs/internal/metrics"
+	"go.klarlabs.de/rolloffs/internal/reconcile"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
@@ -80,9 +85,23 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Reconcile tick: fire due schedules. Git-watch reconciliation wires the
-	// reconciler over watched repos (internal/reconcile) on the same tick.
+	// Reconcile tick: fire due schedules.
 	go scheduleLoop(ctx, eng)
+
+	// Git-watch reconciliation: if repos are configured (ROLLOFFS_WATCH points to
+	// a JSON list of {name,url,branch,path}), watch and reconcile them on a tick.
+	if specs, err := loadWatchSpecs(os.Getenv("ROLLOFFS_WATCH")); err != nil {
+		return err
+	} else if len(specs) > 0 {
+		rec := reconcile.New(eng, audit.New(os.Stderr))
+		workdir := envOr("ROLLOFFS_WORKDIR", filepath.Join(os.TempDir(), "rolloffs-repos"))
+		watcher, err := reconcile.NewWatcher(ctx, rec, workdir, specs)
+		if err != nil {
+			return err
+		}
+		go watcher.Run(ctx, 60*time.Second)
+		fmt.Fprintf(os.Stderr, "rolloffsd: watching %d repo(s)\n", len(specs))
+	}
 
 	// MCP agent surface, embedded by default when an address is configured.
 	if mcpAddr := os.Getenv("ROLLOFFS_MCP_ADDR"); mcpAddr != "" {
@@ -119,6 +138,34 @@ func scheduleLoop(ctx context.Context, eng *engine.Engine) {
 			_, _ = eng.FireDueSchedules(ctx, now.UTC())
 		}
 	}
+}
+
+// loadWatchSpecs reads the watched-repo list from a JSON file. Empty path → no
+// repos watched (the daemon still serves the API and fires schedules).
+func loadWatchSpecs(path string) ([]reconcile.RepoSpec, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read watch config: %w", err)
+	}
+	var raw []struct {
+		Name, URL, Branch, Path string
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse watch config: %w", err)
+	}
+	specs := make([]reconcile.RepoSpec, 0, len(raw))
+	for _, r := range raw {
+		specs = append(specs, reconcile.RepoSpec{
+			Name:      r.Name,
+			URL:       r.URL,
+			Ref:       config.RepoRef{Branch: r.Branch, Path: r.Path},
+			Initiator: rollout.Identity{Kind: "ci", Name: "reconciler"},
+		})
+	}
+	return specs, nil
 }
 
 func envOr(key, def string) string {
