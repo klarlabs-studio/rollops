@@ -20,7 +20,7 @@ What's implemented (all TDD, every task committed atomically):
 ### Follow-ups — status
 - ✅ **Reconciler git-watch loop** — DONE (cb2cd58): `reconcile.Watcher` clones N repos, pulls + reconciles each per tick; `rolloffsd` watches `ROLLOFFS_WATCH` repos. Real-git tested.
 - ✅ **/ui auth** — DONE: dashboard behind Basic auth (`ROLLOFFS_UI_USER/PASSWORD`), refused if no password set.
-- ⬜ **Native gRPC + grpc-gateway codegen** (protoc) — HTTP/JSON works today; gRPC is mechanical codegen, `internal/api` is the surface shape. Needs protoc toolchain.
+- ✅ **Native gRPC** — DONE: `proto/rolloffs/v1` + generated stubs; `internal/grpcapi` server (auth interceptor + RBAC) + client adapter (cli.Operations); `rolloffsd` serves gRPC, CLI daemon mode via `ROLLOFFS_DAEMON`. bufconn-tested + verified live end-to-end. (grpc-gateway REST codegen still optional — REST already served by `internal/api`; gateway plugin not installed.)
 - ⬜ **axi-go capability modeling** of each step — deferred by design; fortify envelope (internal/step) delivers resilience now.
 - ⬜ **Integration tests** against live SSH/FTP/kubectl/Vault/cosign — logic unit-tested via injected transports; needs real infra/CI.
 
