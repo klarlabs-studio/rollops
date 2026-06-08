@@ -538,6 +538,16 @@ func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manife
 	return r, nil
 }
 
+// Status returns a rollout by id.
+func (e *Engine) Status(ctx context.Context, id string) (rollout.Rollout, error) {
+	return e.store.LoadRollout(ctx, id)
+}
+
+// History returns the audit/history records for a target, newest first.
+func (e *Engine) History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error) {
+	return e.store.History(ctx, targetRef)
+}
+
 // Schedule queues a rollout for a future time. A blank id is assigned.
 func (e *Engine) Schedule(ctx context.Context, s rollout.ScheduledRollout) error {
 	if s.ID == "" {

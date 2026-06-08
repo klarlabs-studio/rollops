@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 70,
+  "version": 72,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -25,8 +25,10 @@
       "elapsed_minutes": 1
     },
     "t-cli": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:18:25.27735+02:00",
       "elapsed_minutes": 0
     },
     "t-config-cel": {
@@ -194,11 +196,15 @@
       "elapsed_minutes": 0
     },
     "t-plugin-grpc": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "versioned plugin protocol + adapter, conformance pass, 3 tests"
+      ],
       "started_at": "2026-06-08T21:17:09.023058+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:18:21.553928+02:00",
+      "elapsed_minutes": 1
     },
     "t-progressive": {
       "status": "done",
@@ -376,5 +382,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:17:09.023058+02:00"
+  "updated_at": "2026-06-08T21:18:25.27735+02:00"
 }
