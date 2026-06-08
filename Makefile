@@ -45,8 +45,14 @@ run-daemon: build
 
 # Live integration tests: dumb targets against real SSH + FTP servers in Docker.
 # Requires Docker. Brings the env up, runs the tagged tests, tears it down.
+# (If a kube context is reachable, the K8s target test runs too; else it skips.)
 integration:
 	./test/integration/run.sh
+
+# Live Kubernetes target test against the current kube context (e.g. minikube).
+# Start one first:  minikube start --apiserver-names=minikube
+integration-k8s:
+	$(GO) test -tags integration -count=1 -run TestKubernetesTarget_Live -v ./test/integration/...
 
 clean:
 	rm -rf $(BINDIR)
