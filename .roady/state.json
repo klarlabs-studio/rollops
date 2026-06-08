@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 22,
+  "version": 24,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -87,8 +87,10 @@
       "elapsed_minutes": 0
     },
     "t-engine-plandiff": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:35:46.97469+02:00",
       "elapsed_minutes": 0
     },
     "t-env-promo": {
@@ -107,11 +109,15 @@
       "elapsed_minutes": 0
     },
     "t-lifecycle": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "151e03f — statekit statechart + engine integration, 9 lifecycle tests pass"
+      ],
       "started_at": "2026-06-08T20:31:20.790773+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:35:24.963409+02:00",
+      "elapsed_minutes": 4
     },
     "t-lifecycle-validate": {
       "status": "pending",
@@ -232,5 +238,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:31:20.790773+02:00"
+  "updated_at": "2026-06-08T20:35:46.97469+02:00"
 }

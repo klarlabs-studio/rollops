@@ -74,20 +74,63 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: plan: observe: %w", err)
 	}
-	return &Plan{
-		TargetRef: c.Spec.Target.Ref,
-		Desired:   m,
-		Current:   cur,
-		Changed:   cur.Value != m.Checksum,
-	}, nil
+	return newPlan(c.Spec.Target.Ref, m, cur), nil
 }
 
-// Plan is the result of Plan — surfaced to humans and agents before apply.
+// PlanAction is the high-level effect an apply would have.
+type PlanAction string
+
+const (
+	PlanCreate PlanAction = "create" // target has no observed state yet
+	PlanUpdate PlanAction = "update" // observed state differs from desired
+	PlanNoop   PlanAction = "noop"   // already at desired state
+)
+
+// Plan is the result of Plan — surfaced to humans and agents before apply. It
+// is the "show exactly what will change before anything is applied" contract:
+// an agent-driven Apply requires a Plan to have been produced first.
 type Plan struct {
 	TargetRef string
 	Desired   pt.Manifest
 	Current   pt.Fingerprint
 	Changed   bool
+	Action    PlanAction
+	Summary   string
+}
+
+func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint) *Plan {
+	changed := current.Value != desired.Checksum
+	action := PlanNoop
+	switch {
+	case current.Value == "":
+		action = PlanCreate
+	case changed:
+		action = PlanUpdate
+	}
+	p := &Plan{TargetRef: ref, Desired: desired, Current: current, Changed: changed, Action: action}
+	p.Summary = p.render()
+	return p
+}
+
+func (p *Plan) render() string {
+	switch p.Action {
+	case PlanNoop:
+		return fmt.Sprintf("%s [%s]: no changes (checksum %s)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+	case PlanCreate:
+		return fmt.Sprintf("%s [%s]: create — deploy checksum %s (no current state observed)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+	default:
+		return fmt.Sprintf("%s [%s]: update — %s → %s", p.TargetRef, p.Desired.Kind, short(p.Current.Value), short(p.Desired.Checksum))
+	}
+}
+
+// String renders the plan for CLI/agent display.
+func (p *Plan) String() string { return p.Summary }
+
+func short(s string) string {
+	if len(s) <= 12 {
+		return s
+	}
+	return s[:12]
 }
 
 // ApplyRequest drives Apply.
