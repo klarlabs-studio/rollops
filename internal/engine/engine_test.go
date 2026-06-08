@@ -118,6 +118,60 @@ func TestApply_TargetFailure_RecordsRolledBack(t *testing.T) {
 	}
 }
 
+func TestApply_AgentRequiresPlan(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	_, err := e.Apply(context.Background(), ApplyRequest{
+		Config:    loadConfig(t),
+		Initiator: rollout.Identity{Kind: "agent", Name: "nomi"},
+		Planned:   false,
+	})
+	if err == nil {
+		t.Fatal("agent apply without a plan must be rejected")
+	}
+	if len(fake.applied) != 0 {
+		t.Fatal("target must not be touched when apply is rejected")
+	}
+}
+
+func TestApply_AgentWithPlan_Deploys(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	r, err := e.Apply(context.Background(), ApplyRequest{
+		Config:    loadConfig(t),
+		Initiator: rollout.Identity{Kind: "agent", Name: "nomi"},
+		Planned:   true,
+	})
+	if err != nil {
+		t.Fatalf("agent apply with plan: %v", err)
+	}
+	if r.Phase != rollout.PhaseVerifying || len(fake.applied) != 1 {
+		t.Fatalf("expected deploy; phase=%q applied=%d", r.Phase, len(fake.applied))
+	}
+}
+
+func TestApply_GatedHaltsAtApproval(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	r, err := e.Apply(context.Background(), ApplyRequest{
+		Config:        loadConfig(t),
+		NeedsApproval: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if r.Phase != rollout.PhaseAwaitingApproval {
+		t.Errorf("phase = %q, want awaiting-approval", r.Phase)
+	}
+	if len(fake.applied) != 0 {
+		t.Error("gated rollout must not touch the target")
+	}
+	got, _ := db.LoadRollout(context.Background(), r.ID)
+	if got.Phase != rollout.PhaseAwaitingApproval {
+		t.Errorf("persisted phase = %q", got.Phase)
+	}
+}
+
 func TestObserve_PersistsFingerprint(t *testing.T) {
 	fake := &fakeTarget{fp: pt.Fingerprint{Value: "fp-xyz"}}
 	e, db := newEngine(t, fake)

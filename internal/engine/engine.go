@@ -94,12 +94,23 @@ type Plan struct {
 type ApplyRequest struct {
 	Config    *config.Config
 	Initiator rollout.Identity
+	// Planned records that a plan/diff was produced first. Agent-driven
+	// rollouts must set this — an agent cannot apply blind.
+	Planned bool
+	// NeedsApproval is the risk gate's verdict; when true the rollout stops at
+	// awaiting-approval instead of deploying. (Wired by the risk-gate task.)
+	NeedsApproval bool
 }
 
-// Apply deploys the desired state to the target and persists the rollout. On
-// target failure the rollout is recorded as rolled-back and the error returned;
-// on success it advances to verifying, where Verify/Promote gate completion.
+// Apply deploys the desired state to the target and persists the rollout,
+// driving phases through the statekit lifecycle so every transition is legal.
+// On target failure the rollout is recorded as rolled-back and the error
+// returned; on success it advances to verifying. If the gate requires approval
+// the rollout halts at awaiting-approval and the target is not touched.
 func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout, error) {
+	if req.Initiator.Kind == "agent" && !req.Planned {
+		return nil, fmt.Errorf("engine: apply: agent-driven rollout requires a produced plan first")
+	}
 	m, err := manifestFromConfig(req.Config)
 	if err != nil {
 		return nil, err
@@ -108,11 +119,26 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err != nil {
 		return nil, err
 	}
+
+	lc, err := rollout.NewLifecycle(rollout.LifeContext{
+		PlanProduced:  req.Planned || req.Initiator.Kind != "agent",
+		NeedsApproval: req.NeedsApproval,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := lc.Send(rollout.EventValidate); err != nil {
+		return nil, err
+	}
+	if _, err := lc.Send(rollout.EventGate); err != nil {
+		return nil, err
+	}
+
 	now := e.now()
 	r := rollout.Rollout{
 		ID:        e.newID(),
 		TargetRef: req.Config.Spec.Target.Ref,
-		Phase:     rollout.PhaseDeploying,
+		Phase:     lc.Phase(), // deploying, or awaiting-approval if gated
 		Strategy:  strategyFrom(req.Config),
 		Desired:   m,
 		Initiator: req.Initiator,
@@ -122,13 +148,21 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
+	if r.Phase == rollout.PhaseAwaitingApproval {
+		return &r, nil // halt: gate requires human approval, target untouched
+	}
+
 	if _, err := tgt.Apply(ctx, m); err != nil {
-		r.Phase = rollout.PhaseRolledBack
+		_, _ = lc.Send(rollout.EventError)
+		r.Phase = lc.Phase()
 		r.UpdatedAt = e.now()
 		_ = e.store.SaveRollout(ctx, r)
 		return &r, fmt.Errorf("engine: apply: %w", err)
 	}
-	r.Phase = rollout.PhaseVerifying
+	if _, err := lc.Send(rollout.EventDeployed); err != nil {
+		return nil, err
+	}
+	r.Phase = lc.Phase()
 	r.UpdatedAt = e.now()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
@@ -185,7 +219,14 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	r.Phase = rollout.PhasePromoted
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	if _, err := lc.Send(rollout.EventVerifyOK); err != nil {
+		return r, err // not in a promotable phase
+	}
+	r.Phase = lc.Phase()
 	r.UpdatedAt = e.now()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return rollout.Rollout{}, err
@@ -200,6 +241,13 @@ func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manife
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	if _, err := lc.Send(rollout.EventRollback); err != nil {
+		return r, err // not in a rollbackable phase
+	}
 	tgt, err := e.buildTarget(r.TargetRef, prior)
 	if err != nil {
 		return r, err
@@ -207,7 +255,7 @@ func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manife
 	if _, err := tgt.Apply(ctx, prior); err != nil {
 		return r, fmt.Errorf("engine: rollback: re-apply: %w", err)
 	}
-	r.Phase = rollout.PhaseRolledBack
+	r.Phase = lc.Phase()
 	r.Desired = prior
 	r.UpdatedAt = e.now()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
