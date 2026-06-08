@@ -2,6 +2,7 @@ package target
 
 import (
 	"go.klarlabs.de/rolloffs/internal/target/ftp"
+	"go.klarlabs.de/rolloffs/internal/target/kubernetes"
 	"go.klarlabs.de/rolloffs/internal/target/ssh"
 )
 
@@ -12,6 +13,6 @@ func Builtin() *Registry {
 	r := NewRegistry()
 	r.Register("ssh", ssh.New)
 	r.Register("ftp", ftp.New)
-	// "kubernetes" registers here as that target lands.
+	r.Register("kubernetes", kubernetes.New)
 	return r
 }

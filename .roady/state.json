@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 34,
+  "version": 36,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -240,15 +240,21 @@
       "elapsed_minutes": 0
     },
     "t-target-ftp": {
+      "status": "done",
+      "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "FTP dumb target + conformance pass"
+      ],
+      "started_at": "2026-06-08T20:48:03.626326+02:00",
+      "completed_at": "2026-06-08T20:49:57.26556+02:00",
+      "elapsed_minutes": 1
+    },
+    "t-target-k8s": {
       "status": "in_progress",
       "path": "",
       "owner": "ai-agent",
-      "started_at": "2026-06-08T20:48:03.626326+02:00",
-      "elapsed_minutes": 0
-    },
-    "t-target-k8s": {
-      "status": "pending",
-      "path": "",
+      "started_at": "2026-06-08T20:49:59.678719+02:00",
       "elapsed_minutes": 0
     },
     "t-target-ssh": {
@@ -268,5 +274,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:48:03.626326+02:00"
+  "updated_at": "2026-06-08T20:49:59.678719+02:00"
 }
