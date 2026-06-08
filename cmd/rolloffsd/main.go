@@ -28,6 +28,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/metrics"
 	"go.klarlabs.de/rolloffs/internal/reconcile"
 	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rolloffs/internal/secrets"
 	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
 	"go.klarlabs.de/rolloffs/internal/target"
@@ -50,7 +51,28 @@ func run() error {
 		return err
 	}
 	defer db.Close()
-	eng := engine.New(db, target.Builtin())
+
+	// Full enforced pipeline: audit every action, hard agent guardrails, and
+	// secret resolution at execution time. Artifact provenance is enabled when a
+	// cosign key is configured.
+	aud := audit.New(os.Stderr)
+	guard := &security.Guardrails{
+		Floor:      security.DefaultPolicyFloor(),
+		Freeze:     security.NewFreeze(),
+		AgentLimit: security.NewAgentLimiter(20, time.Minute),
+	}
+	engOpts := []engine.Option{
+		engine.WithAudit(aud),
+		engine.WithGuardrails(guard),
+		engine.WithSecrets(secrets.EnvProvider{Prefix: "ROLLOFFS_SECRET_"}),
+	}
+	if key := os.Getenv("ROLLOFFS_COSIGN_KEY"); key != "" {
+		engOpts = append(engOpts, engine.WithArtifactGate(security.ArtifactGate{
+			Mode:     security.VerifyEnforce,
+			Verifier: security.CosignVerifier{KeyPath: key},
+		}))
+	}
+	eng := engine.New(db, target.Builtin(), engOpts...)
 
 	// A single bootstrap admin token from the environment; production swaps this
 	// for mTLS / an external IdP. Never anonymous.
@@ -96,7 +118,7 @@ func run() error {
 	if specs, err := loadWatchSpecs(os.Getenv("ROLLOFFS_WATCH")); err != nil {
 		return err
 	} else if len(specs) > 0 {
-		rec := reconcile.New(eng, audit.New(os.Stderr))
+		rec := reconcile.New(eng, aud)
 		workdir := envOr("ROLLOFFS_WORKDIR", filepath.Join(os.TempDir(), "rolloffs-repos"))
 		watcher, err := reconcile.NewWatcher(ctx, rec, workdir, specs)
 		if err != nil {

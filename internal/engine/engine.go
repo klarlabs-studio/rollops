@@ -18,12 +18,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"go.klarlabs.de/rolloffs/internal/audit"
 	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/depgraph"
+	"go.klarlabs.de/rolloffs/internal/progressive"
 	"go.klarlabs.de/rolloffs/internal/risk"
 	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rolloffs/internal/secrets"
+	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/step"
 	"go.klarlabs.de/rolloffs/internal/store"
 	itarget "go.klarlabs.de/rolloffs/internal/target"
@@ -39,6 +44,14 @@ type Engine struct {
 	smoke  SmokeRunner
 	now    func() time.Time
 	newID  func() string
+
+	// Optional trust/delivery collaborators. When set, Apply enforces them in
+	// order; nil means that stage is skipped (keeps the bare engine simple for
+	// tests, while a daemon wires the full pipeline).
+	audit      *audit.Logger
+	guardrails *security.Guardrails
+	artifact   *security.ArtifactGate
+	secrets    secrets.Provider
 }
 
 // Option configures an Engine.
@@ -55,6 +68,19 @@ func WithPolicy(p step.Policy) Option { return func(e *Engine) { e.policy = p } 
 
 // WithSmokeRunner overrides the post-deploy smoke-test runner (tests).
 func WithSmokeRunner(s SmokeRunner) Option { return func(e *Engine) { e.smoke = s } }
+
+// WithAudit enables audit logging of the deploy pipeline.
+func WithAudit(a *audit.Logger) Option { return func(e *Engine) { e.audit = a } }
+
+// WithGuardrails enables the agent guardrails (freeze/rate-limit/policy floor).
+func WithGuardrails(g *security.Guardrails) Option { return func(e *Engine) { e.guardrails = g } }
+
+// WithArtifactGate enables artifact provenance verification before deploy.
+func WithArtifactGate(g security.ArtifactGate) Option { return func(e *Engine) { e.artifact = &g } }
+
+// WithSecrets enables resolution of "secret:<ref>" values in a target spec
+// through the SecretProvider at execution time.
+func WithSecrets(p secrets.Provider) Option { return func(e *Engine) { e.secrets = p } }
 
 // build resolves a target by kind and wraps it in the fortify resilience
 // envelope so every engine-driven target operation is retried/circuit-broken.
@@ -224,9 +250,12 @@ type ApplyRequest struct {
 	// Planned records that a plan/diff was produced first. Agent-driven
 	// rollouts must set this — an agent cannot apply blind.
 	Planned bool
-	// NeedsApproval is the risk gate's verdict; when true the rollout stops at
-	// awaiting-approval instead of deploying. (Wired by the risk-gate task.)
+	// NeedsApproval forces the approval gate regardless of the computed risk
+	// (callers may pre-decide; the engine also computes risk when configured).
 	NeedsApproval bool
+	// Risk inputs the engine cannot derive from config alone. Used by the risk
+	// gate and the guardrails policy floor.
+	Risk RiskInputs
 }
 
 // Apply deploys the desired state to the target and persists the rollout,
@@ -235,27 +264,75 @@ type ApplyRequest struct {
 // returned; on success it advances to verifying. If the gate requires approval
 // the rollout halts at awaiting-approval and the target is not touched.
 func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout, error) {
+	cfg := req.Config
+	ref := cfg.Spec.Target.Ref
 	if req.Initiator.Kind == "agent" && !req.Planned {
 		return nil, fmt.Errorf("engine: apply: agent-driven rollout requires a produced plan first")
 	}
-	release, ok := e.locks.TryAcquire(req.Config.Spec.Target.Ref)
+
+	// 1. Guardrails: emergency freeze, agent rate-limit, non-bypassable policy
+	//    floor. The floor can force approval regardless of the computed score.
+	needApproval := req.NeedsApproval
+	if e.guardrails != nil {
+		force, err := e.guardrails.CheckApply(ctx, req.Initiator, security.FloorInput{
+			TargetRef:   ref,
+			Environment: req.Risk.Environment,
+			ChangeType:  req.Risk.ChangeType,
+			Criticality: cfg.Spec.Target.Criticality,
+		})
+		if err != nil {
+			e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Actor: req.Initiator, Detail: "blocked: " + err.Error()})
+			return nil, err
+		}
+		needApproval = needApproval || force
+	}
+
+	// 2. Risk gate (only when configured — threshold>0 or a sensitive expr).
+	if cfg.Spec.Risk.Threshold > 0 || cfg.Spec.Risk.Sensitive != "" {
+		d, err := e.EvaluateRisk(cfg, req.Risk)
+		if err != nil {
+			return nil, err
+		}
+		needApproval = needApproval || d.NeedsApproval
+	}
+
+	release, ok := e.locks.TryAcquire(ref)
 	if !ok {
 		return nil, ErrTargetBusy
 	}
 	defer release()
 
-	m, err := manifestFromConfig(req.Config)
-	if err != nil {
-		return nil, err
-	}
-	tgt, err := e.build(req.Config.Spec.Target)
+	m, err := manifestFromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// 3. Resolve secret references in the target spec, then build the target.
+	tcfg, err := e.resolveSecrets(ctx, cfg.Spec.Target)
+	if err != nil {
+		return nil, err
+	}
+	tgt, err := e.build(tcfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. Artifact provenance: independently verify what is about to ship.
+	if e.artifact != nil {
+		if image := tcfg.Spec["image"]; image != nil {
+			if s, _ := image.(string); s != "" {
+				if err := e.artifact.Check(ctx, s); err != nil {
+					e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Actor: req.Initiator, Detail: "artifact rejected: " + err.Error()})
+					return nil, err
+				}
+			}
+		}
+	}
+
+	// 5. Lifecycle: validating → gate.
 	lc, err := rollout.NewLifecycle(rollout.LifeContext{
 		PlanProduced:  req.Planned || req.Initiator.Kind != "agent",
-		NeedsApproval: req.NeedsApproval,
+		NeedsApproval: needApproval,
 	})
 	if err != nil {
 		return nil, err
@@ -270,9 +347,9 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	now := e.now()
 	r := rollout.Rollout{
 		ID:        e.newID(),
-		TargetRef: req.Config.Spec.Target.Ref,
+		TargetRef: ref,
 		Phase:     lc.Phase(), // deploying, or awaiting-approval if gated
-		Strategy:  strategyFrom(req.Config),
+		Strategy:  strategyFrom(cfg),
 		Desired:   m,
 		Initiator: req.Initiator,
 		CreatedAt: now,
@@ -281,15 +358,43 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
+	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator})
 	if r.Phase == rollout.PhaseAwaitingApproval {
 		return &r, nil // halt: gate requires human approval, target untouched
 	}
 
-	if _, err := tgt.Apply(ctx, m); err != nil {
+	// 6. Progressive deploy: apply the desired state once, then advance through
+	//    the strategy's steps health-gated (canary/rolling bake; blue-green is a
+	//    single step). The Target contract is weightless, so re-applying per step
+	//    would be a no-op; the value is the per-step health gate.
+	plan := progressive.PlanFor(cfg.Spec.Strategy)
+	deployed := false
+	exec := progressive.Executor{
+		Deploy: func(ctx context.Context, _ int) error {
+			if deployed {
+				return nil
+			}
+			deployed = true
+			_, derr := tgt.Apply(ctx, m)
+			return derr
+		},
+		Health: func(ctx context.Context) error {
+			hs, herr := tgt.Health(ctx)
+			if herr != nil {
+				return herr
+			}
+			if hs.State == pt.HealthUnhealthy {
+				return fmt.Errorf("unhealthy: %s", hs.Reason)
+			}
+			return nil
+		},
+	}
+	if err := exec.Run(ctx, plan); err != nil {
 		_, _ = lc.Send(rollout.EventError)
 		r.Phase = lc.Phase()
 		r.UpdatedAt = e.now()
 		_ = e.store.SaveRollout(ctx, r)
+		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: err.Error()})
 		return &r, fmt.Errorf("engine: apply: %w", err)
 	}
 	if _, err := lc.Send(rollout.EventDeployed); err != nil {
@@ -300,6 +405,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
+	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: "deployed (" + plan.Strategy + ")"})
 	return &r, nil
 }
 
@@ -635,6 +741,41 @@ func (e *Engine) buildTarget(ref string, m pt.Manifest) (pt.Target, error) {
 		}
 	}
 	return e.build(config.Target{Kind: m.Kind, Ref: ref, Spec: spec})
+}
+
+// record emits an audit entry when an audit logger is configured.
+func (e *Engine) record(en audit.Entry) {
+	if e.audit != nil {
+		e.audit.Record(en)
+	}
+}
+
+// resolveSecrets replaces "secret:<ref>" string values in the target spec with
+// the value resolved from the SecretProvider at execution time. Without a
+// provider, the spec passes through unchanged. The resolved values are
+// registered with the audit redactor so they never reach the trail.
+func (e *Engine) resolveSecrets(ctx context.Context, t config.Target) (config.Target, error) {
+	if e.secrets == nil || len(t.Spec) == 0 {
+		return t, nil
+	}
+	const prefix = "secret:"
+	out := make(map[string]any, len(t.Spec))
+	for k, v := range t.Spec {
+		s, ok := v.(string)
+		if ok && strings.HasPrefix(s, prefix) {
+			sec, err := e.secrets.Resolve(ctx, strings.TrimPrefix(s, prefix))
+			if err != nil {
+				return config.Target{}, fmt.Errorf("engine: resolve secret %q: %w", k, err)
+			}
+			if e.audit != nil {
+				e.audit.Redactor().Register(sec)
+			}
+			out[k] = sec.Reveal()
+			continue
+		}
+		out[k] = v
+	}
+	return config.Target{Kind: t.Kind, Ref: t.Ref, Criticality: t.Criticality, Spec: out}, nil
 }
 
 func manifestFromConfig(c *config.Config) (pt.Manifest, error) {

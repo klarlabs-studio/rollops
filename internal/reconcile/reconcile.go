@@ -55,15 +55,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 	if err != nil {
 		return Outcome{Drift: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: apply: %w", err)
 	}
+
+	// Halted at the approval gate — nothing more to do this tick.
+	if rl.Phase == rollout.PhaseAwaitingApproval {
+		return Outcome{Drift: true, Plan: plan, Rollout: rl}, nil
+	}
+
+	// Finalize: post-deploy health/smoke gate promotes or auto-rolls-back.
+	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, rl.Desired, c)
+	if err != nil {
+		return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
+	}
+	final := out.Rollout
 	r.record(audit.Entry{
 		Action:    audit.ActionApply,
-		RolloutID: rl.ID,
-		TargetRef: rl.TargetRef,
-		Phase:     string(rl.Phase),
+		RolloutID: final.ID,
+		TargetRef: final.TargetRef,
+		Phase:     string(final.Phase),
 		Actor:     by,
 		Detail:    "reconciled drift",
 	})
-	return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: rl}, nil
+	return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: &final}, nil
 }
 
 func (r *Reconciler) record(e audit.Entry) {

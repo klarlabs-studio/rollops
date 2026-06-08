@@ -63,10 +63,13 @@ func TestVerifyOrRollback_HealthyPromotes(t *testing.T) {
 }
 
 func TestVerifyOrRollback_UnhealthyRollsBack(t *testing.T) {
-	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"}}
-	e, _ := newEngine(t, fake)
+	// Deploy succeeds healthy; the target degrades afterwards, so the
+	// post-deploy gate (not the deploy-time gate) is what rolls it back.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 0}))
 	c := loadAutoRollback(t)
 	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"} // degrade post-deploy
 
 	prior := pt.Manifest{Kind: "fake", Checksum: "prior"}
 	out, err := e.VerifyOrRollback(context.Background(), r.ID, prior, c)
