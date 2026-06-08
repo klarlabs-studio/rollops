@@ -17,12 +17,12 @@ What's implemented (all TDD, every task committed atomically):
 - **Trust**: secrets (Env/Vault + redacting Secret), bolt audit + redaction, RBAC, guardrails (policy floor + freeze + agent rate-limit), cosign artifact verification, git webhook HMAC + clone/pull.
 - **Interfaces**: CLI (cmd/rolloffs), daemon HTTP/JSON API + RBAC (cmd/rolloffsd), MCP agent server (tools 1:1), Prometheus self-observability, read-and-act UI dashboard.
 
-### Known follow-ups (documented, not blocking P0)
-- Daemon transport is HTTP/JSON; **native gRPC + grpc-gateway codegen** (protoc) is the documented next step — `internal/api` is the external surface shape.
-- **axi-go capability modeling** of each step deferred; fortify envelope (internal/step) delivers the resilience the targets need today.
-- **Reconciler git-watch loop**: `internal/reconcile` + `internal/git` exist; daemon wires schedule tick — full multi-repo watch loop wiring is a thin remaining integration.
-- `/ui` is currently unauthenticated (localhost v1); fold behind session auth before exposing.
-- Real SSH/FTP/kubectl/vault/cosign paths are unit-tested via injected transports; need integration tests against live infra.
+### Follow-ups — status
+- ✅ **Reconciler git-watch loop** — DONE (cb2cd58): `reconcile.Watcher` clones N repos, pulls + reconciles each per tick; `rolloffsd` watches `ROLLOFFS_WATCH` repos. Real-git tested.
+- ✅ **/ui auth** — DONE: dashboard behind Basic auth (`ROLLOFFS_UI_USER/PASSWORD`), refused if no password set.
+- ⬜ **Native gRPC + grpc-gateway codegen** (protoc) — HTTP/JSON works today; gRPC is mechanical codegen, `internal/api` is the surface shape. Needs protoc toolchain.
+- ⬜ **axi-go capability modeling** of each step — deferred by design; fortify envelope (internal/step) delivers resilience now.
+- ⬜ **Integration tests** against live SSH/FTP/kubectl/Vault/cosign — logic unit-tested via injected transports; needs real infra/CI.
 
 ### P1/P2 (out of original P0 scope)
 Historical-failure risk signal, DB rollback, notifications (Telegram), metric-based analysis (Obvia seam), multi-instance coordination, managed multi-customer studio layer.
