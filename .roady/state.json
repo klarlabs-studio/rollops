@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 72,
+  "version": 74,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -25,11 +25,15 @@
       "elapsed_minutes": 1
     },
     "t-cli": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/cli + cmd/rolloffs wiring, 4 tests"
+      ],
       "started_at": "2026-06-08T21:18:25.27735+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:20:09.111702+02:00",
+      "elapsed_minutes": 1
     },
     "t-config-cel": {
       "status": "done",
@@ -87,8 +91,10 @@
       "elapsed_minutes": 1
     },
     "t-daemon-api": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:20:11.058337+02:00",
       "elapsed_minutes": 0
     },
     "t-dep-dag": {
@@ -382,5 +388,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:18:25.27735+02:00"
+  "updated_at": "2026-06-08T21:20:11.058337+02:00"
 }
