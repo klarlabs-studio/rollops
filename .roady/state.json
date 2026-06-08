@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 78,
+  "version": 80,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -311,11 +311,15 @@
       "elapsed_minutes": 1
     },
     "t-selfobs": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/metrics Prometheus + /metrics + /readyz, 1 test"
+      ],
       "started_at": "2026-06-08T21:27:26.287074+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:29:08.257643+02:00",
+      "elapsed_minutes": 1
     },
     "t-step-exec": {
       "status": "done",
@@ -395,10 +399,12 @@
       "elapsed_minutes": 2
     },
     "t-ui": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:29:10.939132+02:00",
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:27:26.287074+02:00"
+  "updated_at": "2026-06-08T21:29:10.939132+02:00"
 }

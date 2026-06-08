@@ -23,6 +23,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/security"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
 	"go.klarlabs.de/rolloffs/internal/target"
+	"go.klarlabs.de/rolloffs/internal/ui"
 )
 
 func main() {
@@ -69,6 +70,9 @@ func run() error {
 	top := http.NewServeMux()
 	top.Handle("/metrics", met.Handler())
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	uiHandler := ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"}).Handler()
+	top.Handle("/ui", uiHandler)
+	top.Handle("/ui/", uiHandler)
 	top.Handle("/", api.New(eng, auth, policy).Handler())
 
 	srv := &http.Server{Addr: addr, Handler: top}

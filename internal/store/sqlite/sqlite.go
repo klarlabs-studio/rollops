@@ -125,6 +125,43 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 	return r, nil
 }
 
+// ListRollouts returns the most recent rollouts, newest first.
+func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout, error) {
+	q := `SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, created_at, updated_at
+		FROM rollouts ORDER BY updated_at DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: list rollouts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []rollout.Rollout
+	for rows.Next() {
+		var (
+			r                rollout.Rollout
+			phase, strat     string
+			manifest         []byte
+			created, updated string
+		)
+		if err := rows.Scan(&r.ID, &r.TargetRef, &phase, &strat, &manifest, &r.RiskScore,
+			&r.Initiator.Kind, &r.Initiator.Name, &created, &updated); err != nil {
+			return nil, fmt.Errorf("sqlite: scan rollout: %w", err)
+		}
+		r.Phase = rollout.Phase(phase)
+		r.Strategy = rollout.Strategy(strat)
+		_ = json.Unmarshal(manifest, &r.Desired)
+		r.CreatedAt, _ = time.Parse(timeFormat, created)
+		r.UpdatedAt, _ = time.Parse(timeFormat, updated)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // SaveObservedState upserts the last observed fingerprint for a target.
 func (s *Store) SaveObservedState(ctx context.Context, ts rollout.TargetState) error {
 	meta, err := json.Marshal(ts.Observed.Meta)

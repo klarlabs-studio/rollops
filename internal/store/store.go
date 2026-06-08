@@ -28,6 +28,9 @@ type Store interface {
 	// LoadRollout retrieves a rollout by id.
 	LoadRollout(ctx context.Context, id string) (rollout.Rollout, error)
 
+	// ListRollouts returns the most recent rollouts, newest first (limit<=0 → all).
+	ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout, error)
+
 	// SaveObservedState records the fingerprint the reconciler observed for a
 	// target, upserting by target ref. Observed state is runtime truth; desired
 	// state always comes from Git, never the Store.
