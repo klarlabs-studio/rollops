@@ -2,6 +2,23 @@
 
 *Updated: 2026-06-08*
 
+## 🚀 MVP REACHED — enforced pipeline wired + dogfood proven live
+
+Phase-0 MVP done. The previously à-la-carte P0 capabilities are now composed into
+ONE enforced deploy path (`engine.Apply`): guardrails (freeze/rate-limit/policy
+floor) → risk gate → secret resolution (`secret:<ref>`) → artifact verify (cosign)
+→ lifecycle gate → progressive deploy (apply once, health-gated per step) → audit
+throughout. Reconciler finalizes via VerifyOrRollback (promote/auto-rollback).
+`rolloffsd` constructs the full engine (audit+guardrails+secrets, +cosign opt-in).
+
+**Dogfood verified LIVE on minikube**: git repo with `rolloffs.yaml` → rolloffsd
+watches → deploys Deployment to minikube → `kubectl delete` (drift) → reconciled
+within one tick → promoted; every phase audited (deploying→verifying→promoted),
+attributed to ci/reconciler. Two real rollouts (deploy + drift-reconcile) in the
+bolt trail. Example: `examples/kubernetes-rollout.example.yaml`.
+
+184 tests, hermetic + -race green. All 5 external integrations live-verified.
+
 ## 🎉 P0 OSS core COMPLETE — 37/37 Roady tasks done
 
 Full autonomous "until the end" run finished, **merged to `main`** (merge commit
