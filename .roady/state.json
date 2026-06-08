@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 38,
+  "version": 42,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -72,8 +72,10 @@
       "elapsed_minutes": 0
     },
     "t-dep-dag": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:56:33.734255+02:00",
       "elapsed_minutes": 0
     },
     "t-engine-api": {
@@ -161,16 +163,26 @@
       "elapsed_minutes": 0
     },
     "t-risk-approval": {
-      "status": "pending",
+      "status": "done",
       "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "single gate approve/reject via lifecycle + engine.Approve/Reject, CEL threshold, committed in risk gate work"
+      ],
+      "started_at": "2026-06-08T20:56:14.803647+02:00",
+      "completed_at": "2026-06-08T20:56:22.528152+02:00",
       "elapsed_minutes": 0
     },
     "t-risk-gate": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/risk 5-signal gate + engine.EvaluateRisk, 6+ tests"
+      ],
       "started_at": "2026-06-08T20:52:19.253526+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:56:11.841389+02:00",
+      "elapsed_minutes": 3
     },
     "t-rollback": {
       "status": "pending",
@@ -280,5 +292,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:52:19.253526+02:00"
+  "updated_at": "2026-06-08T20:56:33.734255+02:00"
 }
