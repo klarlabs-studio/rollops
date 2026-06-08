@@ -4,9 +4,9 @@
 
 ## 🎉 P0 OSS core COMPLETE — 37/37 Roady tasks done
 
-Full autonomous "until the end" run finished. `go build ./...`, `go vet ./...`,
-`go test ./...` all clean. **167 test functions**, 31 packages, ~40 commits on
-`feat/config-schema`. Both binaries build and run (`rolloffs`, `rolloffsd`).
+Full autonomous "until the end" run finished, **merged to `main`** (merge commit
+d12e613, `feat/config-schema` deleted). `go build`/`go vet`/`go test ./...` all
+clean. **169 test functions**, 31 packages. Both binaries build and run.
 
 What's implemented (all TDD, every task committed atomically):
 - **Foundation**: config (YAML+schema+CEL via internal/condition), SQLite store, target+Store contracts.
