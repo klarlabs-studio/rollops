@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 64,
+  "version": 66,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -139,11 +139,15 @@
       "elapsed_minutes": 0
     },
     "t-git": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/git webhook HMAC + clone/pull, real-git tests"
+      ],
       "started_at": "2026-06-08T21:13:13.21937+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:14:52.212822+02:00",
+      "elapsed_minutes": 1
     },
     "t-guardrails": {
       "status": "done",
@@ -200,8 +204,10 @@
       "elapsed_minutes": 1
     },
     "t-reconcile": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:14:54.468521+02:00",
       "elapsed_minutes": 0
     },
     "t-risk-approval": {
@@ -358,5 +364,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:13:13.21937+02:00"
+  "updated_at": "2026-06-08T21:14:54.468521+02:00"
 }
