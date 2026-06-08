@@ -2,6 +2,34 @@
 
 *Updated: 2026-06-08*
 
+## 🎉 P0 OSS core COMPLETE — 37/37 Roady tasks done
+
+Full autonomous "until the end" run finished. `go build ./...`, `go vet ./...`,
+`go test ./...` all clean. **167 test functions**, 31 packages, ~40 commits on
+`feat/config-schema`. Both binaries build and run (`rolloffs`, `rolloffsd`).
+
+What's implemented (all TDD, every task committed atomically):
+- **Foundation**: config (YAML+schema+CEL via internal/condition), SQLite store, target+Store contracts.
+- **Engine**: 7-op surface (plan/apply/verify/promote/rollback/observe/schedule) + Approve/Reject + Validate + FireDueSchedules; statekit lifecycle; fortify step envelope; per-target locks; structured plan/diff.
+- **Risk**: blast-radius 5-signal gate + CEL sensitive override; dependency DAG (cycle detect + blast radius).
+- **Targets**: SSH + FTP (dumb, stamped) + Kubernetes (rich, kubectl, no client-go) + gRPC plugin protocol; shared conformance suite.
+- **Delivery**: progressive rolling/canary/blue-green; auto-rollback (health+smoke+step); env promotion.
+- **Trust**: secrets (Env/Vault + redacting Secret), bolt audit + redaction, RBAC, guardrails (policy floor + freeze + agent rate-limit), cosign artifact verification, git webhook HMAC + clone/pull.
+- **Interfaces**: CLI (cmd/rolloffs), daemon HTTP/JSON API + RBAC (cmd/rolloffsd), MCP agent server (tools 1:1), Prometheus self-observability, read-and-act UI dashboard.
+
+### Known follow-ups (documented, not blocking P0)
+- Daemon transport is HTTP/JSON; **native gRPC + grpc-gateway codegen** (protoc) is the documented next step — `internal/api` is the external surface shape.
+- **axi-go capability modeling** of each step deferred; fortify envelope (internal/step) delivers the resilience the targets need today.
+- **Reconciler git-watch loop**: `internal/reconcile` + `internal/git` exist; daemon wires schedule tick — full multi-repo watch loop wiring is a thin remaining integration.
+- `/ui` is currently unauthenticated (localhost v1); fold behind session auth before exposing.
+- Real SSH/FTP/kubectl/vault/cosign paths are unit-tested via injected transports; need integration tests against live infra.
+
+### P1/P2 (out of original P0 scope)
+Historical-failure risk signal, DB rollback, notifications (Telegram), metric-based analysis (Obvia seam), multi-instance coordination, managed multi-customer studio layer.
+
+---
+*(historical entries below)*
+
 ## Where we are
 
 Greenfield scaffold complete. Module `go.klarlabs.de/rolloffs` (Go 1.26),

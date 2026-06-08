@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 80,
+  "version": 81,
   "task_states": {
     "t-artifact": {
       "status": "done",
@@ -399,12 +399,16 @@
       "elapsed_minutes": 2
     },
     "t-ui": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "internal/ui dashboard + approve/reject, 4 tests; mounted at /ui"
+      ],
       "started_at": "2026-06-08T21:29:10.939132+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:32:23.526317+02:00",
+      "elapsed_minutes": 3
     }
   },
-  "updated_at": "2026-06-08T21:29:10.939132+02:00"
+  "updated_at": "2026-06-08T21:32:23.526318+02:00"
 }
