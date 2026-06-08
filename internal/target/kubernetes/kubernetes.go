@@ -12,6 +12,7 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"go.klarlabs.de/rolloffs/internal/config"
@@ -53,10 +54,23 @@ func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
 	if cur, _ := t.cl.LiveChecksum(ctx); cur == m.Checksum && m.Checksum != "" {
 		return pt.Result{Changed: false, Detail: "cluster already at desired checksum"}, nil
 	}
-	if err := t.cl.Apply(ctx, m.Spec, m.Checksum); err != nil {
+	if err := t.cl.Apply(ctx, manifestPayload(m.Spec), m.Checksum); err != nil {
 		return pt.Result{}, fmt.Errorf("kubernetes: apply: %w", err)
 	}
 	return pt.Result{Changed: true, Detail: "applied to cluster"}, nil
+}
+
+// manifestPayload extracts the deployable Kubernetes manifest. In the config
+// flow, m.Spec is the JSON-encoded target spec carrying a "manifest" string; in
+// the direct flow (and tests), m.Spec is the raw manifest. Both are supported.
+func manifestPayload(specJSON []byte) []byte {
+	var spec map[string]any
+	if json.Unmarshal(specJSON, &spec) == nil {
+		if s, ok := spec["manifest"].(string); ok && s != "" {
+			return []byte(s)
+		}
+	}
+	return specJSON
 }
 
 // Observe reads the live checksum annotation — the rich drift signal.

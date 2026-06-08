@@ -1,0 +1,32 @@
+apiVersion: rolloffs.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: dogfood
+spec:
+  target:
+    kind: kubernetes
+    ref: dogfood/prod/web
+    criticality: medium
+    spec:
+      context: minikube
+      namespace: rolloffs-dogfood
+      resource: deployment/web
+      manifest: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: web
+          namespace: rolloffs-dogfood
+        spec:
+          replicas: 1
+          selector:
+            matchLabels: {app: web}
+          template:
+            metadata:
+              labels: {app: web}
+            spec:
+              containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.9
+  strategy:
+    type: rolling

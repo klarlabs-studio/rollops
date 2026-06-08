@@ -124,8 +124,12 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		go watcher.Run(ctx, 60*time.Second)
-		fmt.Fprintf(os.Stderr, "rolloffsd: watching %d repo(s)\n", len(specs))
+		interval := 60 * time.Second
+		if d, err := time.ParseDuration(os.Getenv("ROLLOFFS_RECONCILE_INTERVAL")); err == nil && d > 0 {
+			interval = d
+		}
+		go watcher.Run(ctx, interval)
+		fmt.Fprintf(os.Stderr, "rolloffsd: watching %d repo(s) every %s\n", len(specs), interval)
 	}
 
 	// MCP agent surface, embedded by default when an address is configured.
