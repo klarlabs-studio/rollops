@@ -48,7 +48,7 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) { return f.health, nil }
 
-func newEngine(t *testing.T, fake *fakeTarget) (*Engine, *sqlite.Store) {
+func newEngine(t *testing.T, fake *fakeTarget, extra ...Option) (*Engine, *sqlite.Store) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "e.db"))
 	if err != nil {
@@ -60,10 +60,11 @@ func newEngine(t *testing.T, fake *fakeTarget) (*Engine, *sqlite.Store) {
 
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	n := 0
-	e := New(db, reg,
+	opts := append([]Option{
 		WithClock(func() time.Time { return clock }),
 		WithIDGen(func() string { n++; return "ro-test" }),
-	)
+	}, extra...)
+	e := New(db, reg, opts...)
 	return e, db
 }
 

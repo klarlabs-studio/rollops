@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 48,
+  "version": 50,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -148,10 +148,14 @@
       "elapsed_minutes": 4
     },
     "t-lifecycle-validate": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "engine.Validate config+deps+plan, 3 tests"
+      ],
       "started_at": "2026-06-08T21:00:00.165976+02:00",
+      "completed_at": "2026-06-08T21:00:50.550462+02:00",
       "elapsed_minutes": 0
     },
     "t-mcp": {
@@ -203,8 +207,10 @@
       "elapsed_minutes": 3
     },
     "t-rollback": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:00:52.613178+02:00",
       "elapsed_minutes": 0
     },
     "t-schedule": {
@@ -310,5 +316,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:00:00.165976+02:00"
+  "updated_at": "2026-06-08T21:00:52.613178+02:00"
 }

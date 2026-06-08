@@ -35,6 +35,7 @@ type Engine struct {
 	reg    *itarget.Registry
 	locks  *keyedLocks
 	policy step.Policy
+	smoke  SmokeRunner
 	now    func() time.Time
 	newID  func() string
 }
@@ -50,6 +51,9 @@ func WithIDGen(f func() string) Option { return func(e *Engine) { e.newID = f } 
 
 // WithPolicy overrides the fortify resilience policy applied to target ops.
 func WithPolicy(p step.Policy) Option { return func(e *Engine) { e.policy = p } }
+
+// WithSmokeRunner overrides the post-deploy smoke-test runner (tests).
+func WithSmokeRunner(s SmokeRunner) Option { return func(e *Engine) { e.smoke = s } }
 
 // build resolves a target by kind and wraps it in the fortify resilience
 // envelope so every engine-driven target operation is retried/circuit-broken.
@@ -69,6 +73,7 @@ func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 		reg:    reg,
 		locks:  newKeyedLocks(),
 		policy: step.DefaultPolicy(),
+		smoke:  execSmoke{},
 		now:    func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
@@ -295,6 +300,70 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		return nil, err
 	}
 	return &r, nil
+}
+
+// VerifyOutcome reports how the post-deploy gate resolved.
+type VerifyOutcome struct {
+	Rollout    rollout.Rollout
+	RolledBack bool
+	Reason     string // why it rolled back (empty on success)
+}
+
+// VerifyOrRollback runs the observability-free post-deploy gate: the target
+// Health() check and an optional smoke test (run-this-expect-exit-0). If either
+// fails and the config opts into auto-rollback, it re-applies the prior manifest
+// and the rollout ends rolled-back; otherwise it promotes. A step error/timeout
+// during the deploy itself is handled earlier in Apply — this covers the other
+// two v1 auto-rollback signals.
+func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior pt.Manifest, c *config.Config) (VerifyOutcome, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return VerifyOutcome{}, err
+	}
+	auto := c.Spec.Rollback.Auto
+
+	failed, reason := e.runPostDeployChecks(ctx, r, c)
+	if failed {
+		if !auto {
+			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
+		}
+		rb, err := e.Rollback(ctx, rolloutID, prior)
+		if err != nil {
+			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: auto-rollback after %q: %w", reason, err)
+		}
+		return VerifyOutcome{Rollout: rb, RolledBack: true, Reason: reason}, nil
+	}
+	promoted, err := e.Promote(ctx, rolloutID)
+	if err != nil {
+		return VerifyOutcome{}, err
+	}
+	return VerifyOutcome{Rollout: promoted}, nil
+}
+
+// runPostDeployChecks returns (failed, reason) for the health + smoke gates.
+func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string) {
+	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
+		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
+		if err == nil {
+			if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
+				reason := "health check failed"
+				if hs.Reason != "" {
+					reason = "health check failed: " + hs.Reason
+				}
+				return true, reason
+			}
+		}
+	}
+	if st := c.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
+		code, err := e.smoke.Run(ctx, st.Command)
+		if err != nil {
+			return true, "smoke test error: " + err.Error()
+		}
+		if code != st.ExpectExit {
+			return true, fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit)
+		}
+	}
+	return false, ""
 }
 
 // Approve resolves an awaiting-approval rollout: it deploys to the target and
