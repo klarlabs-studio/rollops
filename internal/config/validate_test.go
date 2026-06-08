@@ -88,6 +88,33 @@ func TestValidate_CanaryNeedsSteps(t *testing.T) {
 	}
 }
 
+func TestValidate_BadCELSensitive(t *testing.T) {
+	c := mustParse(t, validYAML)
+	c.Spec.Risk.Sensitive = `changeType ===` // syntax error
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "sensitive") {
+		t.Fatalf("expected risk.sensitive CEL error, got: %v", err)
+	}
+}
+
+func TestValidate_BadCELTrigger(t *testing.T) {
+	c := mustParse(t, validYAML)
+	c.Spec.Rollback.Trigger = `mystery > 1` // unknown variable
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "trigger") {
+		t.Fatalf("expected rollback.trigger CEL error, got: %v", err)
+	}
+}
+
+func TestValidate_GoodCEL(t *testing.T) {
+	c := mustParse(t, validYAML)
+	c.Spec.Risk.Sensitive = `changeType == "schema" && environment == "prod"`
+	c.Spec.Rollback.Trigger = `score > 0.9`
+	if err := Validate(c); err != nil {
+		t.Fatalf("well-formed CEL rejected: %v", err)
+	}
+}
+
 // Load is the convenience path: parse + validate in one call.
 func TestLoad_RejectsInvalid(t *testing.T) {
 	bad := strings.Replace(validYAML, "criticality: high", "criticality: extreme", 1)

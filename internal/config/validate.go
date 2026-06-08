@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"go.klarlabs.de/rolloffs/internal/condition"
 )
 
 // compiledSchema is the embedded SchemaJSON compiled once. Structural rules
@@ -84,6 +86,20 @@ func validateSemantics(c *Config) []error {
 	for i, env := range c.Spec.Environments {
 		if env.Strategy != nil {
 			errs = append(errs, validateStrategy(fmt.Sprintf("environments[%d].strategy", i), *env.Strategy)...)
+		}
+	}
+
+	// CEL conditions must be well-formed bool expressions over the rollout
+	// decision variables (internal/condition). Reject malformed logic at config
+	// load time, not at rollout time.
+	if c.Spec.Risk.Sensitive != "" {
+		if err := condition.Check(c.Spec.Risk.Sensitive); err != nil {
+			errs = append(errs, fmt.Errorf("config: risk.sensitive: %w", err))
+		}
+	}
+	if c.Spec.Rollback.Trigger != "" {
+		if err := condition.Check(c.Spec.Rollback.Trigger); err != nil {
+			errs = append(errs, fmt.Errorf("config: rollback.trigger: %w", err))
 		}
 	}
 	return errs

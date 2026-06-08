@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 14,
+  "version": 16,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -18,8 +18,10 @@
       "elapsed_minutes": 0
     },
     "t-config-cel": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:13:48.760833+02:00",
       "elapsed_minutes": 0
     },
     "t-config-perrepo": {
@@ -39,11 +41,15 @@
       "elapsed_minutes": 3
     },
     "t-config-validate": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "d10cef4 — Validate/Load via embedded jsonschema + semantic checks, 11 tests pass"
+      ],
       "started_at": "2026-06-08T20:11:46.417335+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:13:28.570462+02:00",
+      "elapsed_minutes": 1
     },
     "t-conformance": {
       "status": "pending",
@@ -208,5 +214,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:11:46.417335+02:00"
+  "updated_at": "2026-06-08T20:13:48.760833+02:00"
 }
