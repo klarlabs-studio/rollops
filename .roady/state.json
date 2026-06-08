@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 26,
+  "version": 28,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -56,8 +56,10 @@
       "elapsed_minutes": 1
     },
     "t-conformance": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:38:57.330446+02:00",
       "elapsed_minutes": 0
     },
     "t-daemon-api": {
@@ -82,11 +84,15 @@
       "elapsed_minutes": 2
     },
     "t-engine-locks": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "keyed advisory locks + Apply/Rollback wiring, race-clean, 3 tests"
+      ],
       "started_at": "2026-06-08T20:36:50.664803+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:38:35.858837+02:00",
+      "elapsed_minutes": 1
     },
     "t-engine-plandiff": {
       "status": "done",
@@ -244,5 +250,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:36:50.664803+02:00"
+  "updated_at": "2026-06-08T20:38:57.330446+02:00"
 }
