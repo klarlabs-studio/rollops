@@ -1,0 +1,342 @@
+id: rolloffs
+title: Rolloffs — Rollout operations for the agentic web
+description: Lean, infrastructure-agnostic rollout orchestration where agents and humans are peer operators.
+  The engine is a Go library at the center; CLI, daemon, MCP, and UI are thin clients over it. Built on
+  the Klarlatz stack (statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos). No Kubernetes dependency
+  in core; runs on a bare VPS. v1 risk and rollback are observability-free. Source of desired state is
+  Git; the Store holds runtime state only. This spec covers the P0 OSS core.
+version: 0.1.0
+constraints:
+- id: no-k8s-dependency
+  description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.
+- id: observability-free-v1
+  description: v1 risk scoring and auto-rollback use no metrics. Metric-based analysis is Phase 2 (Obvia
+    seam); do not bake it in.
+- id: git-is-desired-truth
+  description: Git is the only source of desired state. The Store holds runtime state only; losing it
+    must never corrupt what should be deployed.
+- id: cel-not-dsl
+  description: Conditional logic uses embedded CEL. No bespoke DSL. relicta's governance DSL stays separate.
+- id: secrets-never-local
+  description: Secrets are never stored locally. Vault via SecretProvider; redact secret material at the
+    audit/log/diff/MCP boundary.
+- id: every-interface-authenticated
+  description: gRPC, REST, and MCP require mTLS or signed tokens. RBAC on operations. The MCP agent surface
+    is privileged.
+- id: agent-guardrails-hard
+  description: Agent limits are hard, not advisory — non-bypassable policy floor, kill-switch, full attribution,
+    fortify rate-limit.
+- id: lean-single-binary
+  description: Single Go binary + SQLite is the common case. First-party targets compiled in. Every feature
+    justifies its weight.
+- id: build-on-stack
+  description: Reuse statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos rather than reinventing.
+features:
+- id: config-model
+  title: Configuration model (YAML + schema + CEL)
+  description: YAML surface format fluently written by humans and agents, backed by a strict published
+    schema and loud Go-side validation. Embedded CEL for conditional logic (risk conditions, promotion
+    criteria, rollback triggers). Schema version field for clean migration.
+  requirements:
+  - id: define-config-schema-v1-with-a
+    title: Define config schema v1 with a version
+    description: Define config schema v1 with a version field and publish it.
+  - id: go-validation-rejects-malformed-config-loudly
+    title: Go validation rejects malformed config loudly (no
+    description: Go validation rejects malformed config loudly (no silent typos).
+  - id: embed-cel-evaluation-for-risk-promotion
+    title: Embed CEL evaluation for risk/promotion/rollback hook points
+    description: Embed CEL evaluation for risk/promotion/rollback hook points.
+  - id: per-repo-config-at-a-configurable
+    title: Per-repo config at a configurable branch +
+    description: Per-repo config at a configurable branch + path.
+- id: target-contract
+  title: Target plugin contract + conformance suite
+  description: The public Target interface (Apply/Observe/Health), the manifest/result/ fingerprint/health
+    types, and the shared conformance suite every target (first-party or plugin) must pass. Optional gRPC
+    plugin escape hatch.
+  requirements:
+  - id: finalize-the-target-interface-and-supporting
+    title: Finalize the Target interface and supporting types
+    description: Finalize the Target interface and supporting types (done in scaffold).
+  - id: conformance-suite-proving-idempotency-fingerprint-stability
+    title: Conformance suite proving idempotency, fingerprint stability, health
+    description: Conformance suite proving idempotency, fingerprint stability, health semantics.
+  - id: grpc-plugin-protocol-go-plugin-style
+    title: gRPC plugin protocol (go-plugin style) with versioning
+    description: gRPC plugin protocol (go-plugin style) with versioning.
+- id: store-backend
+  title: Store interface + SQLite backend
+  description: Pluggable persistence for runtime state (rollouts, observed fingerprints, schedules, history).
+    SQLite default; Postgres and mnemos later.
+  requirements:
+  - id: store-interface-done-in-scaffold
+    title: Store interface (done in scaffold)
+    description: Store interface (done in scaffold).
+  - id: sqlite-backend-implementing-the-full-interface
+    title: SQLite backend implementing the full interface with
+    description: SQLite backend implementing the full interface with migrations.
+  - id: crash-safe-persist-statekit-state-per
+    title: 'Crash-safe: persist statekit state per transition'
+    description: 'Crash-safe: persist statekit state per transition.'
+- id: engine-library
+  title: Engine library
+  description: The central Go package exposing all operations — plan, apply, verify, promote, rollback,
+    observe, schedule — transport- and storage-agnostic. Linked directly by both the daemon and the one-shot
+    CLI.
+  requirements:
+  - id: engine-api-surface-covering-all-seven
+    title: Engine API surface covering all seven operations
+    description: Engine API surface covering all seven operations.
+  - id: plan-diff-computed-and-surfaced-before
+    title: plan/diff computed and surfaced before any apply
+    description: plan/diff computed and surfaced before any apply.
+  - id: per-target-advisory-locks-per-repo
+    title: Per-target advisory locks; per-repo reconcile serialization
+    description: Per-target advisory locks; per-repo reconcile serialization.
+- id: rollout-lifecycle
+  title: Rollout lifecycle (statekit)
+  description: 'Each rollout is a statekit statechart: pending → validating → [risk gate] → deploying
+    → verifying → promoted / rolled-back / awaiting-approval. Durable, inspectable, persisted per transition.'
+  requirements:
+  - id: model-the-statechart-in-statekit-with
+    title: Model the statechart in statekit with all
+    description: Model the statechart in statekit with all phases and transitions.
+  - id: validating-runs-schema-cel-validation-dependency
+    title: validating runs schema+CEL validation, dependency resolution, plan/diff
+    description: validating runs schema+CEL validation, dependency resolution, plan/diff.
+  - id: agent-driven-apply-requires-the-plan
+    title: Agent-driven apply requires the plan to have
+    description: Agent-driven apply requires the plan to have been produced first.
+- id: risk-gate
+  title: Risk-based approval gate (decision-kit)
+  description: 'decision-kit scores blast radius from five observability-free signals: target criticality,
+    environment, change type, blast radius, rollout strategy. Below threshold auto-proceeds; above/sensitive
+    needs a single human approval. CEL-configurable.'
+  requirements:
+  - id: compute-the-five-signal-weighted-score
+    title: Compute the five-signal weighted score via decision-kit
+    description: Compute the five-signal weighted score via decision-kit.
+  - id: cel-configurable-threshold-and-gate-conditions
+    title: CEL-configurable threshold and gate conditions
+    description: CEL-configurable threshold and gate conditions.
+  - id: single-approval-gate-approve-reject-block
+    title: Single approval gate (approve / reject /
+    description: Single approval gate (approve / reject / block); no multi-stage chains.
+- id: step-execution
+  title: Step execution (axi-go + fortify)
+  description: Every target operation runs through axi-go (sandboxed, auditable) and is wrapped in fortify
+    (retry, circuit breaker, rate limit, bulkhead).
+  requirements:
+  - id: wrap-target-apply-observe-health-in
+    title: Wrap Target.Apply/Observe/Health in fortify policies
+    description: Wrap Target.Apply/Observe/Health in fortify policies.
+  - id: execute-steps-through-axi-go-with
+    title: Execute steps through axi-go with per-step audit
+    description: Execute steps through axi-go with per-step audit.
+- id: progressive-delivery
+  title: Progressive delivery strategies
+  description: Canary, blue-green, and rolling strategies with configurable traffic shifting.
+  requirements:
+  - id: implement-rolling-canary-and-blue-green
+    title: Implement rolling, canary, and blue-green strategies
+    description: Implement rolling, canary, and blue-green strategies.
+  - id: configurable-traffic-shifting-steps-per-strategy
+    title: Configurable traffic-shifting steps per strategy
+    description: Configurable traffic-shifting steps per strategy.
+- id: first-party-targets
+  title: First-party targets (Kubernetes, SSH/VM, FTP)
+  description: Compiled-in targets covering rich (K8s, native Observe) and dumb (SSH/VM, FTP, stamped
+    manifest/checksum) cases. Each passes the conformance suite.
+  requirements:
+  - id: kubernetes-target-with-native-observe-against
+    title: Kubernetes target with native Observe against live
+    description: Kubernetes target with native Observe against live state.
+  - id: ssh-vm-target-with-stamped-manifest
+    title: SSH/VM target with stamped-manifest drift verification
+    description: SSH/VM target with stamped-manifest drift verification.
+  - id: ftp-target-with-stamped-manifest-drift
+    title: FTP target with stamped-manifest drift verification
+    description: FTP target with stamped-manifest drift verification.
+- id: reconcile-drift
+  title: Reconciliation & drift handling
+  description: 'Reconcile loop: read desired from Git, Observe each target, diff. Drift = desired fingerprint
+    != observed. On drift, detect, alert (bolt + notifications), and reconcile, subject to the risk gate.
+    Configurable verification depth for dumb targets.'
+  requirements:
+  - id: reconcile-loop-on-poll-tick-and
+    title: Reconcile loop on poll tick and webhook
+    description: Reconcile loop on poll tick and webhook event.
+  - id: drift-detection-via-fingerprint-diff-alert
+    title: Drift detection via fingerprint diff; alert and
+    description: Drift detection via fingerprint diff; alert and reconcile.
+  - id: configurable-verification-depth-shallow-marker-vs
+    title: Configurable verification depth (shallow marker vs full
+    description: Configurable verification depth (shallow marker vs full checksum).
+- id: rollback
+  title: Rollback strategies
+  description: 'Manual, automatic, and agent-driven rollback. v1 auto signals are observability-free:
+    Health() failure, post-deploy smoke-test failure, or step error/timeout from axi-go.'
+  requirements:
+  - id: manual-and-agent-driven-rollback-paths
+    title: Manual and agent-driven rollback paths
+    description: Manual and agent-driven rollback paths.
+  - id: auto-rollback-on-health-failure-smoke
+    title: Auto-rollback on Health failure, smoke-test failure, or
+    description: Auto-rollback on Health failure, smoke-test failure, or step error/timeout.
+  - id: roll-back-by-re-applying-the
+    title: Roll back by re-applying the prior manifest
+    description: Roll back by re-applying the prior manifest.
+- id: git-integration
+  title: Git integration & multi-tenancy
+  description: Webhook + poll triggers (poll doubles as drift heartbeat). GitHub App or deploy keys per
+    repo. One repo per customer/service; isolation is a property of Git structure.
+  requirements:
+  - id: github-webhook-hmac-verified-for-immediate
+    title: GitHub webhook (HMAC-verified) for immediate reconciliation
+    description: GitHub webhook (HMAC-verified) for immediate reconciliation.
+  - id: periodic-poll-as-safety-net-and
+    title: Periodic poll as safety net and drift
+    description: Periodic poll as safety net and drift heartbeat.
+  - id: per-repo-auth-github-app-deploy
+    title: Per-repo auth (GitHub App / deploy key)
+    description: Per-repo auth (GitHub App / deploy key) and config path/branch.
+- id: scheduling
+  title: Scheduled deployments
+  description: Queue a rollout for a future time; the daemon's reconcile tick fires due schedules.
+  requirements:
+  - id: scheduledrollout-queue-in-the-store
+    title: ScheduledRollout queue in the Store
+    description: ScheduledRollout queue in the Store.
+  - id: due-schedule-firing-on-reconcile-tick
+    title: Due-schedule firing on reconcile tick (human or
+    description: Due-schedule firing on reconcile tick (human or agent initiated).
+- id: dependency-ordering
+  title: Dependency ordering (DAG)
+  description: Independent service deploys by default, or explicit chains (A before B). The same DAG feeds
+    the blast-radius risk signal.
+  requirements:
+  - id: model-dependencies-as-a-dag-with
+    title: Model dependencies as a DAG with cycle
+    description: Model dependencies as a DAG with cycle detection.
+  - id: serialize-dependent-chains-parallelize-independents
+    title: Serialize dependent chains; parallelize independents
+    description: Serialize dependent chains; parallelize independents.
+- id: environment-promotion
+  title: Environment promotion
+  description: Staged promotion (dev → staging → prod) and independent per-environment configs; everything
+    configurable.
+  requirements:
+  - id: staged-promotion-path-with-configurable-gates
+    title: Staged promotion path with configurable gates
+    description: Staged promotion path with configurable gates.
+  - id: independent-per-environment-config-support
+    title: Independent per-environment config support
+    description: Independent per-environment config support.
+- id: secrets
+  title: Secrets handling (SecretProvider)
+  description: Never store secrets locally. Integrate established vaults; targets receive credentials
+    only at execution time.
+  requirements:
+  - id: secretprovider-interface
+    title: SecretProvider interface
+    description: SecretProvider interface.
+  - id: hashicorp-vault-cloud-secret-manager-integration
+    title: HashiCorp Vault / cloud secret-manager integration
+    description: HashiCorp Vault / cloud secret-manager integration.
+  - id: workload-identity-auth-where-available-vault
+    title: Workload-identity auth where available; vault-managed bootstrap fallback
+    description: Workload-identity auth where available; vault-managed bootstrap fallback.
+- id: audit
+  title: Audit & compliance logging (bolt)
+  description: Every decision, approval, execution, and rollback logged via bolt — structured, traceable
+    across layers, with secret redaction at the logging boundary and full identity attribution.
+  requirements:
+  - id: bolt-backed-structured-audit-log-for
+    title: bolt-backed structured audit log for all engine
+    description: bolt-backed structured audit log for all engine actions.
+  - id: secret-redaction-at-the-logging-boundary
+    title: Secret redaction at the logging boundary (logs/plans/diffs/MCP)
+    description: Secret redaction at the logging boundary (logs/plans/diffs/MCP).
+  - id: immutable-identity-attribution-for-every-action
+    title: Immutable identity attribution for every action
+    description: Immutable identity attribution for every action.
+- id: cli
+  title: CLI (one-shot + daemon client)
+  description: Identical command surface in two modes — in-process engine (one-shot) or gRPC client to
+    a running daemon.
+  requirements:
+  - id: command-tree-plan-apply-verify-promote
+    title: Command tree plan/apply/verify/promote/rollback/status/schedule
+    description: Command tree plan/apply/verify/promote/rollback/status/schedule.
+  - id: in-process-mode-no-daemon-and
+    title: In-process mode (no daemon) and gRPC-client mode
+    description: In-process mode (no daemon) and gRPC-client mode.
+  - id: one-shot-inherits-invoking-user-s
+    title: One-shot inherits invoking user's creds; cannot bypass
+    description: One-shot inherits invoking user's creds; cannot bypass gate or RBAC.
+- id: daemon-api
+  title: Daemon API (gRPC + REST gateway)
+  description: Daemon wraps the engine behind gRPC; grpc-gateway fronts a REST API for the browser UI.
+    mTLS/signed-token auth.
+  requirements:
+  - id: grpc-service-mirroring-engine-operations
+    title: gRPC service mirroring engine operations
+    description: gRPC service mirroring engine operations.
+  - id: grpc-gateway-rest-front-for-the
+    title: grpc-gateway REST front for the UI
+    description: grpc-gateway REST front for the UI.
+  - id: mtls-or-signed-token-authentication-on
+    title: mTLS or signed-token authentication on every call
+    description: mTLS or signed-token authentication on every call.
+- id: mcp-server
+  title: MCP server (mcp-go)
+  description: Agent surface exposing engine operations 1:1 (rollouts.plan/apply/ rollback/status). Embedded
+    in the daemon by default, runnable standalone. Authenticated identically to other interfaces.
+  requirements:
+  - id: mcp-tools-mapping-1-1-to
+    title: MCP tools mapping 1:1 to engine operations
+    description: MCP tools mapping 1:1 to engine operations.
+  - id: embedded-in-daemon-and-standalone-modes
+    title: Embedded-in-daemon and standalone modes
+    description: Embedded-in-daemon and standalone modes.
+  - id: authenticated-and-rbac-scoped-like-every
+    title: Authenticated and RBAC-scoped like every other interface
+    description: Authenticated and RBAC-scoped like every other interface.
+- id: security-trust
+  title: Security & trust boundary
+  description: RBAC on operations, least-privilege per target/repo, artifact provenance verification,
+    webhook HMAC, and hard agent guardrails (non-bypassable policy floor, kill-switch, attribution, rate
+    limiting).
+  requirements:
+  - id: rbac-role-permission-taxonomy-bound-to
+    title: RBAC role/permission taxonomy bound to human/CI/agent identities
+    description: RBAC role/permission taxonomy bound to human/CI/agent identities.
+  - id: artifact-signature-provenance-verification-cosign-slsa
+    title: Artifact signature/provenance verification (cosign/SLSA) per target, configurable
+    description: Artifact signature/provenance verification (cosign/SLSA) per target, configurable.
+  - id: non-bypassable-policy-floor-emergency-freeze
+    title: Non-bypassable policy floor, emergency freeze kill-switch, fortify
+    description: Non-bypassable policy floor, emergency freeze kill-switch, fortify agent rate-limit.
+- id: ui-dashboard
+  title: UI dashboard (read-and-act)
+  description: Browser dashboard over the REST gateway — live rollout state, history, pending approvals,
+    drift status.
+  requirements:
+  - id: live-rollout-state-and-history-views
+    title: Live rollout state and history views
+    description: Live rollout state and history views.
+  - id: pending-approval-actions-and-drift-status
+    title: Pending-approval actions and drift status
+    description: Pending-approval actions and drift status.
+- id: self-observability
+  title: Self-observability
+  description: The daemon exposes its own health and Prometheus-style metrics (reconcile latency, drift
+    count, success/failure rates).
+  requirements:
+  - id: health-endpoints-liveness-readiness
+    title: Health endpoints (liveness/readiness)
+    description: Health endpoints (liveness/readiness).
+  - id: prometheus-metrics-for-reconcile-latency-drift
+    title: Prometheus metrics for reconcile latency, drift count
+    description: Prometheus metrics for reconcile latency, drift count, rollout outcomes.

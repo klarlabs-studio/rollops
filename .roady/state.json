@@ -1,0 +1,204 @@
+{
+  "project_id": "rolloffs",
+  "version": 11,
+  "task_states": {
+    "t-artifact": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-audit": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-cli": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-config-cel": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-config-perrepo": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-config-schema": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-config-validate": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-conformance": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-daemon-api": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-dep-dag": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-engine-api": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-engine-locks": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-engine-plandiff": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-env-promo": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-git": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-guardrails": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-lifecycle": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-lifecycle-validate": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-mcp": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-plugin-grpc": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-progressive": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-reconcile": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-risk-approval": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-risk-gate": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-rollback": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-schedule": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-secrets": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-security-rbac": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-selfobs": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-step-exec": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-store-iface": {
+      "status": "done",
+      "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "internal/store/store.go + internal/rollout/model.go — builds clean"
+      ],
+      "started_at": "2026-06-08T20:00:14.383361+02:00",
+      "completed_at": "2026-06-08T20:00:30.86608+02:00",
+      "elapsed_minutes": 0
+    },
+    "t-store-sqlite": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-target-contract": {
+      "status": "done",
+      "path": "",
+      "owner": "ai-agent",
+      "evidence": [
+        "pkg/target/target.go — builds clean"
+      ],
+      "started_at": "2026-06-08T20:00:10.145946+02:00",
+      "completed_at": "2026-06-08T20:00:29.00854+02:00",
+      "elapsed_minutes": 0
+    },
+    "t-target-ftp": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-target-k8s": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-target-ssh": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "t-ui": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    }
+  },
+  "updated_at": "2026-06-08T20:00:30.86608+02:00"
+}

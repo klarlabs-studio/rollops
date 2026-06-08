@@ -1,0 +1,23 @@
+# Binaries
+/rolloffs
+/rolloffsd
+*.exe
+*.test
+*.out
+
+# Local state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Env / secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
