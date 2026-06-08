@@ -3,7 +3,7 @@ GO      ?= go
 BINDIR  ?= bin
 MODULE   = go.klarlabs.de/rolloffs
 
-.PHONY: all build test race vet fmt fmt-check tidy proto run-daemon clean
+.PHONY: all build test race vet fmt fmt-check tidy proto run-daemon integration clean
 
 all: fmt-check vet test build
 
@@ -42,6 +42,11 @@ run-daemon: build
 	ROLLOFFS_ADDR=:8080 ROLLOFFS_GRPC_ADDR=:8090 \
 	ROLLOFFS_ADMIN_TOKEN=devtoken ROLLOFFS_UI_USER=admin ROLLOFFS_UI_PASSWORD=dev \
 	./$(BINDIR)/rolloffsd
+
+# Live integration tests: dumb targets against real SSH + FTP servers in Docker.
+# Requires Docker. Brings the env up, runs the tagged tests, tears it down.
+integration:
+	./test/integration/run.sh
 
 clean:
 	rm -rf $(BINDIR)

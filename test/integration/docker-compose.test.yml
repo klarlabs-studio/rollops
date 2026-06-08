@@ -1,0 +1,28 @@
+# Integration test environment: real SSH and FTP servers the dumb targets
+# deploy to. Brought up by run.sh, which generates the SSH keypair into ./keys
+# and runs the build-tagged Go integration tests against the live containers.
+services:
+  ssh:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      - USER_NAME=deploy
+      - PUBLIC_KEY_FILE=/keys/id_test.pub
+      - PASSWORD_ACCESS=false
+      - SUDO_ACCESS=false
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./keys:/keys:ro
+    ports:
+      - "2222:2222"
+
+  ftp:
+    image: delfer/alpine-ftp-server:latest
+    environment:
+      - USERS=deploy|deploypass|/ftp/deploy|1000
+      - ADDRESS=127.0.0.1
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+    ports:
+      - "21:21"
+      - "21000-21010:21000-21010"

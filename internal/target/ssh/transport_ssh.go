@@ -89,23 +89,26 @@ func (t *sshTransport) Run(ctx context.Context, cmd string) (int, string, error)
 	}
 	defer sess.Close()
 
-	var out bytes.Buffer
-	sess.Stdout = &out
-	sess.Stderr = &out
+	// Separate buffers: x/crypto/ssh copies stdout and stderr in concurrent
+	// goroutines, so sharing one bytes.Buffer is a data race that corrupts or
+	// empties the captured output.
+	var stdout, stderr bytes.Buffer
+	sess.Stdout = &stdout
+	sess.Stderr = &stderr
 	done := make(chan error, 1)
 	go func() { done <- sess.Run(cmd) }()
 	select {
 	case <-ctx.Done():
 		_ = sess.Signal(ssh.SIGKILL)
-		return -1, out.String(), ctx.Err()
+		return -1, stdout.String(), ctx.Err()
 	case err := <-done:
 		if err == nil {
-			return 0, out.String(), nil
+			return 0, stdout.String(), nil
 		}
 		if ee, ok := err.(*ssh.ExitError); ok {
-			return ee.ExitStatus(), out.String(), nil
+			return ee.ExitStatus(), stdout.String(), nil
 		}
-		return -1, out.String(), err
+		return -1, stdout.String() + stderr.String(), err
 	}
 }
 
