@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package rolloffs.v1;
+
+option go_package = "go.klarlabs.de/rolloffs/internal/grpcapi/rolloffsv1;rolloffsv1";
+
+// RolloutService is the typed gRPC surface over the engine — the daemon
+// transport the CLI and agents use. RPCs map 1:1 to engine operations; the
+// browser UI uses the REST surface (internal/api). Every call is authenticated
+// (bearer token in the "authorization" metadata) and authorized via RBAC.
+service RolloutService {
+  // Plan shows what an apply would change.
+  rpc Plan(PlanRequest) returns (PlanResponse);
+  // Apply deploys desired state.
+  rpc Apply(ApplyRequest) returns (ApplyResponse);
+  // Status returns a rollout's current state.
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+message PlanRequest {
+  // config is the rollout config YAML.
+  string config = 1;
+}
+
+message PlanResponse {
+  string action = 1;   // create | update | noop
+  bool changed = 2;
+  string summary = 3;
+}
+
+message ApplyRequest {
+  string config = 1;
+}
+
+message ApplyResponse {
+  string id = 1;
+  string phase = 2;
+  string target = 3;
+}
+
+message StatusRequest {
+  string id = 1;
+}
+
+message StatusResponse {
+  string id = 1;
+  string phase = 2;
+  string target = 3;
+  string strategy = 4;
+}

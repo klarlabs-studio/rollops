@@ -12,6 +12,7 @@ import (
 
 	"go.klarlabs.de/rolloffs/internal/cli"
 	"go.klarlabs.de/rolloffs/internal/engine"
+	"go.klarlabs.de/rolloffs/internal/grpcapi"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/store/sqlite"
 	"go.klarlabs.de/rolloffs/internal/target"
@@ -25,6 +26,20 @@ func main() {
 }
 
 func run(args []string) error {
+	app := &cli.App{Out: os.Stdout, Actor: localUser()}
+
+	// Daemon mode: if ROLLOFFS_DAEMON points at a running daemon, drive it over
+	// gRPC. Otherwise run the engine in-process (one-shot). Identical surface.
+	if addr := os.Getenv("ROLLOFFS_DAEMON"); addr != "" {
+		client, err := grpcapi.Dial(addr, os.Getenv("ROLLOFFS_TOKEN"))
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		app.Ops = client
+		return app.Run(context.Background(), args)
+	}
+
 	dbPath := os.Getenv("ROLLOFFS_DB")
 	if dbPath == "" {
 		dbPath = "rolloffs.db"
@@ -35,12 +50,7 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
-	eng := engine.New(db, target.Builtin())
-	app := &cli.App{
-		Ops:   eng,
-		Out:   os.Stdout,
-		Actor: localUser(),
-	}
+	app.Ops = engine.New(db, target.Builtin())
 	return app.Run(context.Background(), args)
 }
 

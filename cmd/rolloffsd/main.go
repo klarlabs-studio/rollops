@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,6 +23,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/audit"
 	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/engine"
+	"go.klarlabs.de/rolloffs/internal/grpcapi"
 	"go.klarlabs.de/rolloffs/internal/mcp"
 	"go.klarlabs.de/rolloffs/internal/metrics"
 	"go.klarlabs.de/rolloffs/internal/reconcile"
@@ -111,6 +113,23 @@ func run() error {
 		go func() {
 			fmt.Fprintf(os.Stderr, "rolloffsd: MCP serving on %s as agent %q\n", mcpAddr, agent.Name)
 			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr)
+		}()
+	}
+
+	// Typed gRPC surface (CLI daemon mode + agents) on its own port.
+	if grpcAddr := os.Getenv("ROLLOFFS_GRPC_ADDR"); grpcAddr != "" {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			return err
+		}
+		gs := grpcapi.NewGRPCServer(grpcapi.New(eng, auth, policy))
+		go func() {
+			<-ctx.Done()
+			gs.GracefulStop()
+		}()
+		go func() {
+			fmt.Fprintf(os.Stderr, "rolloffsd: gRPC on %s\n", grpcAddr)
+			_ = gs.Serve(lis)
 		}()
 	}
 
