@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rolloffs/internal/risk"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/step"
 	"go.klarlabs.de/rolloffs/internal/store"
@@ -151,6 +152,31 @@ func short(s string) string {
 	return s[:12]
 }
 
+// RiskInputs are the rollout-time signals the engine cannot derive from config
+// alone: the kind of change and the deploy environment, plus the blast radius
+// (count of downstream dependents from the dependency graph).
+type RiskInputs struct {
+	ChangeType  string // config | code | schema
+	Environment string // dev | staging | prod
+	BlastRadius int
+}
+
+// EvaluateRisk runs the blast-radius gate for a config + rollout-time inputs.
+// Callers set ApplyRequest.NeedsApproval from the returned Decision.
+func (e *Engine) EvaluateRisk(c *config.Config, in RiskInputs) (risk.Decision, error) {
+	g := risk.Gate{
+		Threshold:     c.Spec.Risk.Threshold,
+		SensitiveExpr: c.Spec.Risk.Sensitive,
+	}
+	return g.Evaluate(risk.Signals{
+		Criticality: c.Spec.Target.Criticality,
+		Environment: in.Environment,
+		ChangeType:  in.ChangeType,
+		BlastRadius: in.BlastRadius,
+		Strategy:    c.Spec.Strategy.Type,
+	})
+}
+
 // ApplyRequest drives Apply.
 type ApplyRequest struct {
 	Config    *config.Config
@@ -235,6 +261,77 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		return nil, err
 	}
 	return &r, nil
+}
+
+// Approve resolves an awaiting-approval rollout: it deploys to the target and
+// advances to verifying. This is the human/agent "approve" arm of the single
+// risk gate.
+func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Identity) (rollout.Rollout, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	release, ok := e.locks.TryAcquire(r.TargetRef)
+	if !ok {
+		return r, ErrTargetBusy
+	}
+	defer release()
+
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	if _, err := lc.Send(rollout.EventApprove); err != nil {
+		return r, err // not awaiting approval
+	}
+	tgt, err := e.buildTarget(r.TargetRef, r.Desired)
+	if err != nil {
+		return r, err
+	}
+	if _, err := tgt.Apply(ctx, r.Desired); err != nil {
+		_, _ = lc.Send(rollout.EventError)
+		r.Phase = lc.Phase()
+		r.UpdatedAt = e.now()
+		_ = e.store.SaveRollout(ctx, r)
+		return r, fmt.Errorf("engine: approve: apply: %w", err)
+	}
+	if _, err := lc.Send(rollout.EventDeployed); err != nil {
+		return r, err
+	}
+	r.Phase = lc.Phase()
+	if by.Name != "" {
+		r.Initiator = by
+	}
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return rollout.Rollout{}, err
+	}
+	return r, nil
+}
+
+// Reject resolves an awaiting-approval rollout by rolling it back without
+// touching the target.
+func (e *Engine) Reject(ctx context.Context, rolloutID string, by rollout.Identity) (rollout.Rollout, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	if _, err := lc.Send(rollout.EventReject); err != nil {
+		return r, err
+	}
+	r.Phase = lc.Phase()
+	if by.Name != "" {
+		r.Initiator = by
+	}
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return rollout.Rollout{}, err
+	}
+	return r, nil
 }
 
 // Observe queries the target's live fingerprint and records it for drift
