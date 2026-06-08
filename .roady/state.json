@@ -1,10 +1,12 @@
 {
   "project_id": "rolloffs",
-  "version": 60,
+  "version": 62,
   "task_states": {
     "t-artifact": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T21:12:07.62536+02:00",
       "elapsed_minutes": 0
     },
     "t-audit": {
@@ -138,11 +140,15 @@
       "elapsed_minutes": 0
     },
     "t-guardrails": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "policy floor + freeze + agent rate-limit, 4 tests"
+      ],
       "started_at": "2026-06-08T21:10:10.398437+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T21:12:03.165866+02:00",
+      "elapsed_minutes": 1
     },
     "t-lifecycle": {
       "status": "done",
@@ -346,5 +352,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:10:10.398437+02:00"
+  "updated_at": "2026-06-08T21:12:07.62536+02:00"
 }
