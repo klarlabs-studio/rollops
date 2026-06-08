@@ -1,6 +1,6 @@
 {
   "project_id": "rolloffs",
-  "version": 28,
+  "version": 30,
   "task_states": {
     "t-artifact": {
       "status": "pending",
@@ -56,11 +56,15 @@
       "elapsed_minutes": 1
     },
     "t-conformance": {
-      "status": "in_progress",
+      "status": "done",
       "path": "",
       "owner": "ai-agent",
+      "evidence": [
+        "pkg/conformance suite + Check funcs, meta-tested, 4 tests"
+      ],
       "started_at": "2026-06-08T20:38:57.330446+02:00",
-      "elapsed_minutes": 0
+      "completed_at": "2026-06-08T20:40:22.040137+02:00",
+      "elapsed_minutes": 1
     },
     "t-daemon-api": {
       "status": "pending",
@@ -192,8 +196,10 @@
       "elapsed_minutes": 0
     },
     "t-step-exec": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "ai-agent",
+      "started_at": "2026-06-08T20:40:24.088434+02:00",
       "elapsed_minutes": 0
     },
     "t-store-iface": {
@@ -250,5 +256,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T20:38:57.330446+02:00"
+  "updated_at": "2026-06-08T20:40:24.088434+02:00"
 }

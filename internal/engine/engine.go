@@ -21,6 +21,7 @@ import (
 
 	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rolloffs/internal/step"
 	"go.klarlabs.de/rolloffs/internal/store"
 	itarget "go.klarlabs.de/rolloffs/internal/target"
 	pt "go.klarlabs.de/rolloffs/pkg/target"
@@ -28,11 +29,12 @@ import (
 
 // Engine orchestrates rollouts over a Store and a target Registry.
 type Engine struct {
-	store store.Store
-	reg   *itarget.Registry
-	locks *keyedLocks
-	now   func() time.Time
-	newID func() string
+	store  store.Store
+	reg    *itarget.Registry
+	locks  *keyedLocks
+	policy step.Policy
+	now    func() time.Time
+	newID  func() string
 }
 
 // Option configures an Engine.
@@ -44,14 +46,28 @@ func WithClock(f func() time.Time) Option { return func(e *Engine) { e.now = f }
 // WithIDGen overrides the rollout id generator (deterministic tests).
 func WithIDGen(f func() string) Option { return func(e *Engine) { e.newID = f } }
 
+// WithPolicy overrides the fortify resilience policy applied to target ops.
+func WithPolicy(p step.Policy) Option { return func(e *Engine) { e.policy = p } }
+
+// build resolves a target by kind and wraps it in the fortify resilience
+// envelope so every engine-driven target operation is retried/circuit-broken.
+func (e *Engine) build(t config.Target) (pt.Target, error) {
+	inner, err := e.reg.Build(t)
+	if err != nil {
+		return nil, err
+	}
+	return step.Wrap(inner, e.policy), nil
+}
+
 // New builds an Engine. By default ids are time-derived and the clock is
 // time.Now; both are injectable for tests.
 func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
-		store: st,
-		reg:   reg,
-		locks: newKeyedLocks(),
-		now:   func() time.Time { return time.Now().UTC() },
+		store:  st,
+		reg:    reg,
+		locks:  newKeyedLocks(),
+		policy: step.DefaultPolicy(),
+		now:    func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
 	for _, o := range opts {
@@ -68,7 +84,7 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	tgt, err := e.reg.Build(c.Spec.Target)
+	tgt, err := e.build(c.Spec.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +182,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err != nil {
 		return nil, err
 	}
-	tgt, err := e.reg.Build(req.Config.Spec.Target)
+	tgt, err := e.build(req.Config.Spec.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +240,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 // Observe queries the target's live fingerprint and records it for drift
 // detection. Returns the fingerprint observed.
 func (e *Engine) Observe(ctx context.Context, t config.Target) (pt.Fingerprint, error) {
-	tgt, err := e.reg.Build(t)
+	tgt, err := e.build(t)
 	if err != nil {
 		return pt.Fingerprint{}, err
 	}
@@ -337,7 +353,7 @@ func (e *Engine) buildTarget(ref string, m pt.Manifest) (pt.Target, error) {
 			return nil, fmt.Errorf("engine: decode manifest spec: %w", err)
 		}
 	}
-	return e.reg.Build(config.Target{Kind: m.Kind, Ref: ref, Spec: spec})
+	return e.build(config.Target{Kind: m.Kind, Ref: ref, Spec: spec})
 }
 
 func manifestFromConfig(c *config.Config) (pt.Manifest, error) {
