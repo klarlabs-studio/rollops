@@ -22,7 +22,12 @@ What's implemented (all TDD, every task committed atomically):
 - ✅ **/ui auth** — DONE: dashboard behind Basic auth (`ROLLOFFS_UI_USER/PASSWORD`), refused if no password set.
 - ✅ **Native gRPC** — DONE: `proto/rolloffs/v1` + generated stubs; `internal/grpcapi` server (auth interceptor + RBAC) + client adapter (cli.Operations); `rolloffsd` serves gRPC, CLI daemon mode via `ROLLOFFS_DAEMON`. bufconn-tested + verified live end-to-end. (grpc-gateway REST codegen still optional — REST already served by `internal/api`; gateway plugin not installed.)
 - ⬜ **axi-go capability modeling** of each step — deferred by design; fortify envelope (internal/step) delivers resilience now.
-- ✅ **Integration tests (SSH + FTP)** — DONE: docker-compose harness (real sshd + vsftpd) behind `integration` tag, `make integration` / `test/integration/run.sh`. SSH passes the full conformance suite live; FTP deploy/observe round-trips. **Found + fixed a real bug**: SSH transport `Run` shared one bytes.Buffer for stdout+stderr → data race (x/crypto/ssh copies them concurrently) → empty Observe after successful Apply. kubectl/Vault/cosign integration still needs real infra/CI service containers.
+- ✅ **Integration tests (SSH + FTP)** — DONE: docker-compose harness (real sshd + vsftpd) behind `integration` tag, `make integration` / `test/integration/run.sh`. SSH passes the full conformance suite live; FTP deploy/observe round-trips. **Found + fixed a real bug**: SSH transport `Run` shared one bytes.Buffer for stdout+stderr → data race (x/crypto/ssh copies them concurrently) → empty Observe after successful Apply. ✅ **Kubernetes** integration too (`make integration-k8s` against minikube) — rich
+target verified live: kubectl apply + checksum annotation, live-cluster Observe,
+idempotent re-apply, rollout health. (Note: minikube needed `--apiserver-names=minikube`
+to dodge the empty-certSAN bug #9175.) **All three first-party targets now have
+live integration coverage.** Vault (dockerizable in dev mode) + cosign (needs a
+signed image/registry) remain.
 
 ### P1/P2 (out of original P0 scope)
 Historical-failure risk signal, DB rollback, notifications (Telegram), metric-based analysis (Obvia seam), multi-instance coordination, managed multi-customer studio layer.
