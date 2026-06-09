@@ -1,14 +1,16 @@
-// Package ui is the read-and-act dashboard over the REST gateway: it shows the
-// live state of every rollout, the drift status of every target, per-target
-// history, and lets an operator approve or reject rollouts awaiting approval.
-// v1 leans observe-first — the only actions are the human-in-the-loop approval
-// arms of the risk gate.
+// Package ui is the Rolloffs web console: a Vue 3 single-page app (embedded,
+// self-contained — no Node build, no CDN) over a small JSON API. It shows live
+// rollout state, per-target drift, an expandable resource tree, the desired→live
+// diff, and history, and lets an operator approve/reject/rollback/sync — all
+// interactive, no page reloads.
 package ui
 
 import (
 	"context"
+	"embed"
+	"encoding/json"
 	"errors"
-	"html/template"
+	"io/fs"
 	"net/http"
 
 	"go.klarlabs.de/rolloffs/internal/engine"
@@ -16,7 +18,10 @@ import (
 	pt "go.klarlabs.de/rolloffs/pkg/target"
 )
 
-// Backend is the engine surface the dashboard needs. *engine.Engine satisfies it.
+//go:embed assets/*
+var assetsFS embed.FS
+
+// Backend is the engine surface the console needs. *engine.Engine satisfies it.
 type Backend interface {
 	List(ctx context.Context, limit int) ([]rollout.Rollout, error)
 	DriftReport(ctx context.Context) ([]engine.DriftItem, error)
@@ -28,404 +33,241 @@ type Backend interface {
 	RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error)
 }
 
-// Server renders the dashboard and handles approve/reject actions.
+// Server serves the SPA and the JSON API.
 type Server struct {
 	be     Backend
 	actor  rollout.Identity
-	sync   func(context.Context) error // optional: on-demand reconcile (Sync now)
-	dash   *template.Template
-	hist   *template.Template
-	detail *template.Template
+	sync   func(context.Context) error
+	static http.Handler
 }
 
 // Option configures the Server.
 type Option func(*Server)
 
-// WithSync enables the "Sync now" button: an on-demand reconcile of the watched
-// repos (the daemon wires this to the reconcile watcher). Argo-style manual sync.
+// WithSync enables the "Sync now" action: an on-demand reconcile of the watched
+// repos (the daemon wires this to the reconcile watcher).
 func WithSync(fn func(context.Context) error) Option {
 	return func(s *Server) { s.sync = fn }
 }
 
-var funcs = template.FuncMap{
-	"add": func(a, b int) int { return a + b },
-	"short": func(s string) string {
-		if len(s) <= 12 {
-			return s
-		}
-		return s[:12]
-	},
-}
-
-// New builds the dashboard server. actor is the authenticated operator whose
-// identity is attributed to approve/reject actions.
+// New builds the console server.
 func New(be Backend, actor rollout.Identity, opts ...Option) *Server {
-	s := &Server{
-		be:     be,
-		actor:  actor,
-		dash:   template.Must(template.New("dash").Funcs(funcs).Parse(dashboardHTML)),
-		hist:   template.Must(template.New("hist").Funcs(funcs).Parse(historyHTML)),
-		detail: template.Must(template.New("detail").Funcs(funcs).Parse(detailHTML)),
-	}
+	sub, _ := fs.Sub(assetsFS, "assets")
+	s := &Server{be: be, actor: actor, static: http.StripPrefix("/ui/", http.FileServerFS(sub))}
 	for _, o := range opts {
 		o(s)
 	}
 	return s
 }
 
-// Handler returns the routed dashboard handler.
+// Handler returns the routed console handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /ui", s.dashboard)
-	mux.HandleFunc("GET /ui/", s.dashboard)
-	mux.HandleFunc("GET /ui/history", s.history)
-	mux.HandleFunc("GET /ui/target", s.targetDetail)
-	mux.HandleFunc("POST /ui/approve", s.act(s.be.Approve))
-	mux.HandleFunc("POST /ui/reject", s.act(s.be.Reject))
-	mux.HandleFunc("POST /ui/rollback", s.handleRollback)
-	mux.HandleFunc("POST /ui/sync", s.handleSync)
+	mux.HandleFunc("GET /ui", s.index)
+	mux.HandleFunc("GET /ui/", s.index)
+	mux.HandleFunc("GET /ui/app.js", s.asset)
+	mux.HandleFunc("GET /ui/vue.global.prod.js", s.asset)
+	mux.HandleFunc("GET /ui/api/dashboard", s.apiDashboard)
+	mux.HandleFunc("GET /ui/api/target", s.apiTarget)
+	mux.HandleFunc("POST /ui/api/approve", s.apiApprove)
+	mux.HandleFunc("POST /ui/api/reject", s.apiReject)
+	mux.HandleFunc("POST /ui/api/rollback", s.apiRollback)
+	mux.HandleFunc("POST /ui/api/sync", s.apiSync)
 	return mux
 }
 
-type detailData struct {
-	Ref       string
-	Rollout   *rollout.Rollout
-	Diff      string
-	DiffNote  string
-	Resources []pt.Resource
-	Records   []rollout.RolloutRecord
-	Awaiting  bool
-	CanSync   bool
-}
-
-func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
-	ref := r.URL.Query().Get("target")
-	if ref == "" {
-		http.Error(w, "target required", http.StatusBadRequest)
-		return
-	}
-	rollouts, err := s.be.List(r.Context(), 200)
+func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
+	b, err := assetsFS.ReadFile("assets/index.html")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(b)
+}
+
+func (s *Server) asset(w http.ResponseWriter, r *http.Request) { s.static.ServeHTTP(w, r) }
+
+// --- JSON API ---
+
+type driftJSON struct {
+	Target   string `json:"target"`
+	Phase    string `json:"phase"`
+	Desired  string `json:"desired"`
+	Observed string `json:"observed"`
+	Drifted  bool   `json:"drifted"`
+}
+
+type rolloutJSON struct {
+	ID       string `json:"id"`
+	Target   string `json:"target"`
+	Phase    string `json:"phase"`
+	Strategy string `json:"strategy"`
+	By       string `json:"by"`
+}
+
+type dashboardJSON struct {
+	Counts   map[string]int `json:"counts"`
+	Drift    []driftJSON    `json:"drift"`
+	Rollouts []rolloutJSON  `json:"rollouts"`
+	CanSync  bool           `json:"canSync"`
+}
+
+func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
+	rollouts, err := s.be.List(r.Context(), 100)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	counts := map[string]int{}
+	rs := make([]rolloutJSON, 0, len(rollouts))
+	for _, rl := range rollouts {
+		counts[string(rl.Phase)]++
+		rs = append(rs, rolloutJSON{ID: rl.ID, Target: rl.TargetRef, Phase: string(rl.Phase), Strategy: string(rl.Strategy), By: rl.Initiator.Kind + "/" + rl.Initiator.Name})
+	}
+	drift, _ := s.be.DriftReport(r.Context())
+	dj := make([]driftJSON, 0, len(drift))
+	for _, d := range drift {
+		dj = append(dj, driftJSON{Target: d.TargetRef, Phase: string(d.Phase), Desired: d.Desired, Observed: d.Observed, Drifted: d.Drifted})
+	}
+	writeJSON(w, http.StatusOK, dashboardJSON{Counts: counts, Drift: dj, Rollouts: rs, CanSync: s.sync != nil})
+}
+
+type resourceJSON struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Status    string `json:"status"`
+	Parent    string `json:"parent"`
+}
+
+type historyJSON struct {
+	At      string `json:"at"`
+	Phase   string `json:"phase"`
+	Rollout string `json:"rollout"`
+	By      string `json:"by"`
+}
+
+type targetJSON struct {
+	Ref     string `json:"ref"`
+	Rollout struct {
+		ID       string `json:"id"`
+		Phase    string `json:"phase"`
+		Strategy string `json:"strategy"`
+		Desired  string `json:"desired"`
+	} `json:"rollout"`
+	Diff      string         `json:"diff"`
+	DiffNote  string         `json:"diffNote"`
+	Resources []resourceJSON `json:"resources"`
+	History   []historyJSON  `json:"history"`
+	Awaiting  bool           `json:"awaiting"`
+	CanSync   bool           `json:"canSync"`
+}
+
+func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
+	ref := r.URL.Query().Get("ref")
+	if ref == "" {
+		writeErr(w, http.StatusBadRequest, "ref required")
+		return
+	}
+	rollouts, err := s.be.List(r.Context(), 200)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	var latest *rollout.Rollout
 	for i := range rollouts {
-		if rollouts[i].TargetRef == ref { // newest first
+		if rollouts[i].TargetRef == ref {
 			latest = &rollouts[i]
 			break
 		}
 	}
 	if latest == nil {
-		http.Error(w, "no rollouts for target", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "no rollouts for target")
 		return
 	}
-	d := detailData{Ref: ref, Rollout: latest, CanSync: s.sync != nil, Awaiting: latest.Phase == rollout.PhaseAwaitingApproval}
+	var out targetJSON
+	out.Ref = ref
+	out.Rollout.ID = latest.ID
+	out.Rollout.Phase = string(latest.Phase)
+	out.Rollout.Strategy = string(latest.Strategy)
+	out.Rollout.Desired = latest.Desired.Checksum
+	out.Awaiting = latest.Phase == rollout.PhaseAwaitingApproval
+	out.CanSync = s.sync != nil
+
 	if diff, derr := s.be.Diff(r.Context(), latest.ID); derr != nil {
 		if errors.Is(derr, engine.ErrUnsupported) {
-			d.DiffNote = "this target type does not support diff"
+			out.DiffNote = "this target type does not support diff"
 		} else {
-			d.DiffNote = derr.Error()
+			out.DiffNote = derr.Error()
 		}
 	} else {
-		d.Diff = diff
+		out.Diff = diff
 	}
 	if res, rerr := s.be.Resources(r.Context(), latest.ID); rerr == nil {
-		d.Resources = res
+		for _, rsrc := range res {
+			out.Resources = append(out.Resources, resourceJSON{Kind: rsrc.Kind, Name: rsrc.Name, Namespace: rsrc.Namespace, Status: rsrc.Status, Parent: rsrc.Parent})
+		}
 	}
-	d.Records, _ = s.be.History(r.Context(), ref)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.detail.Execute(w, d)
+	if recs, herr := s.be.History(r.Context(), ref); herr == nil {
+		for _, rec := range recs {
+			out.History = append(out.History, historyJSON{At: rec.At.Format("2006-01-02 15:04:05"), Phase: string(rec.Phase), Rollout: rec.RolloutID, By: rec.Initiator.Kind + "/" + rec.Initiator.Name})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
-	ref := r.FormValue("target")
-	if ref == "" {
-		http.Error(w, "target required", http.StatusBadRequest)
+func (s *Server) apiApprove(w http.ResponseWriter, r *http.Request) { s.actByID(w, r, s.be.Approve) }
+func (s *Server) apiReject(w http.ResponseWriter, r *http.Request)  { s.actByID(w, r, s.be.Reject) }
+
+func (s *Server) actByID(w http.ResponseWriter, r *http.Request, fn func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		writeErr(w, http.StatusBadRequest, "id required")
 		return
 	}
-	if _, err := s.be.RollbackLast(r.Context(), ref); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if _, err := fn(r.Context(), body.ID, s.actor); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	http.Redirect(w, r, "/ui/target?target="+ref, http.StatusSeeOther)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Target string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Target == "" {
+		writeErr(w, http.StatusBadRequest, "target required")
+		return
+	}
+	if _, err := s.be.RollbackLast(r.Context(), body.Target); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) apiSync(w http.ResponseWriter, r *http.Request) {
 	if s.sync == nil {
-		http.Error(w, "sync not available", http.StatusNotImplemented)
+		writeErr(w, http.StatusNotImplemented, "sync not available")
 		return
 	}
 	if err := s.sync(r.Context()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	http.Redirect(w, r, "/ui", http.StatusSeeOther)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-type row struct {
-	rollout.Rollout
-	AwaitingApproval bool
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
-type dashData struct {
-	Rows     []row
-	Drift    []engine.DriftItem
-	Counts   map[string]int
-	HasDrift bool
-	CanSync  bool
+func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }
-
-func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	rollouts, err := s.be.List(r.Context(), 100)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	counts := map[string]int{}
-	rows := make([]row, 0, len(rollouts))
-	for _, rl := range rollouts {
-		counts[string(rl.Phase)]++
-		rows = append(rows, row{Rollout: rl, AwaitingApproval: rl.Phase == rollout.PhaseAwaitingApproval})
-	}
-	drift, _ := s.be.DriftReport(r.Context())
-	hasDrift := false
-	for _, d := range drift {
-		if d.Drifted {
-			hasDrift = true
-			break
-		}
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.dash.Execute(w, dashData{Rows: rows, Drift: drift, Counts: counts, HasDrift: hasDrift, CanSync: s.sync != nil})
-}
-
-type histData struct {
-	TargetRef string
-	Records   []rollout.RolloutRecord
-}
-
-func (s *Server) history(w http.ResponseWriter, r *http.Request) {
-	ref := r.URL.Query().Get("target")
-	if ref == "" {
-		http.Error(w, "target required", http.StatusBadRequest)
-		return
-	}
-	recs, err := s.be.History(r.Context(), ref)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.hist.Execute(w, histData{TargetRef: ref, Records: recs})
-}
-
-func (s *Server) act(fn func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.FormValue("id")
-		if id == "" {
-			http.Error(w, "id required", http.StatusBadRequest)
-			return
-		}
-		if _, err := fn(r.Context(), id, s.actor); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Redirect(w, r, "/ui", http.StatusSeeOther)
-	}
-}
-
-const baseCSS = `
- :root{--bg:#0f1115;--card:#171a21;--ink:#e6e9ef;--muted:#8b93a7;--line:#252a35;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#539bf5}
- *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
- a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
- header{padding:18px 28px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
- h1{font-size:18px;margin:0;letter-spacing:.3px} .sub{color:var(--muted);font-size:12px}
- main{padding:22px 28px;max-width:1100px;margin:0 auto}
- h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:26px 0 10px}
- table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
- th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
- th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
- tr:last-child td{border-bottom:0}
- .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:12px}
- .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
- .p-promoted{background:rgba(63,185,80,.15);color:var(--ok)}
- .p-rolled-back{background:rgba(248,81,73,.15);color:var(--bad)}
- .p-awaiting-approval{background:rgba(210,153,34,.16);color:var(--warn)}
- .p-deploying,.p-verifying,.p-validating,.p-pending{background:rgba(139,147,167,.15);color:var(--muted)}
- .act{display:inline-flex;gap:6px} button{cursor:pointer;border:1px solid var(--line);background:#1f2430;color:var(--ink);padding:5px 11px;border-radius:7px;font-weight:600}
- button.ok{border-color:rgba(63,185,80,.4)} button.bad{border-color:rgba(248,81,73,.4)}
- .empty{color:var(--muted);padding:24px;text-align:center}
- .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
- .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px}
- .chip b{color:var(--ink)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
- .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
- .badge.drift{background:rgba(248,81,73,.16);color:var(--bad)} .badge.sync{background:rgba(63,185,80,.12);color:var(--ok)}
- header .spacer{flex:1}
- .syncbtn{border:1px solid rgba(83,155,245,.5);background:rgba(83,155,245,.12);color:var(--accent);padding:6px 14px;border-radius:8px;font-weight:600}
- /* live phase: in-flight pills pulse so transitions read as live */
- @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
- .p-deploying,.p-verifying,.p-validating,.p-pending{animation:pulse 1.2s ease-in-out infinite}
- .p-awaiting-approval{animation:pulse 1.6s ease-in-out infinite}
-`
-
-const dashboardHTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="5"><title>Rolloffs</title>
-<style>` + baseCSS + `</style></head>
-<body>
-<header><h1>Rolloffs</h1><span class="sub">rollout operations · live state · auto-refresh 5s</span>
- <span class="spacer"></span>
- {{- if .CanSync }}<form method="post" action="/ui/sync"><button class="syncbtn">⟳ Sync now</button></form>{{ end }}
-</header>
-<main>
- <div class="chips">
-  <span class="chip">promoted <b class="ok">{{ index .Counts "promoted" }}</b></span>
-  <span class="chip">awaiting <b class="warn">{{ index .Counts "awaiting-approval" }}</b></span>
-  <span class="chip">rolled-back <b class="bad">{{ index .Counts "rolled-back" }}</b></span>
-  <span class="chip">in-flight <b>{{ add (index .Counts "deploying") (index .Counts "verifying") }}</b></span>
- </div>
-
- <h2>Targets {{ if .HasDrift }}<span class="badge drift">drift detected</span>{{ end }}</h2>
- {{- if .Drift }}
- <table>
-  <thead><tr><th>Target</th><th>State</th><th>Phase</th><th>Desired</th><th>Observed</th><th></th></tr></thead>
-  <tbody>
-  {{- range .Drift }}
-   <tr>
-    <td>{{ .TargetRef }}</td>
-    <td>{{ if .Drifted }}<span class="badge drift">DRIFT</span>{{ else }}<span class="badge sync">in sync</span>{{ end }}</td>
-    <td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td>
-    <td class="mono">{{ short .Desired }}</td>
-    <td class="mono">{{ short .Observed }}</td>
-    <td><a href="/ui/target?target={{ .TargetRef }}">details →</a></td>
-   </tr>
-  {{- end }}
-  </tbody>
- </table>
- {{- else }}<div class="empty">No targets yet.</div>{{ end }}
-
- <h2>Rollouts</h2>
- {{- if .Rows }}
- <table>
-  <thead><tr><th>Rollout</th><th>Target</th><th>Phase</th><th>Strategy</th><th>By</th><th></th></tr></thead>
-  <tbody>
-  {{- range .Rows }}
-   <tr>
-    <td class="mono">{{ .ID }}</td>
-    <td><a href="/ui/target?target={{ .TargetRef }}">{{ .TargetRef }}</a></td>
-    <td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td>
-    <td>{{ .Strategy }}</td>
-    <td class="mono">{{ .Initiator.Kind }}/{{ .Initiator.Name }}</td>
-    <td>
-    {{- if .AwaitingApproval }}
-     <span class="act">
-      <form method="post" action="/ui/approve"><input type="hidden" name="id" value="{{ .ID }}"><button class="ok">Approve</button></form>
-      <form method="post" action="/ui/reject"><input type="hidden" name="id" value="{{ .ID }}"><button class="bad">Reject</button></form>
-     </span>
-    {{- end }}
-    </td>
-   </tr>
-  {{- end }}
-  </tbody>
- </table>
- {{- else }}<div class="empty">No rollouts yet.</div>{{ end }}
-</main>
-</body></html>`
-
-const detailHTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="8"><title>Rolloffs · {{ .Ref }}</title>
-<style>` + baseCSS + `
- .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:8px 0 4px}
- .kv{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
- .kv .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
- .kv .v{font-size:15px;font-weight:600;margin-top:3px}
- pre.diff{background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:380px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap}
- pre.diff .a{color:var(--ok)} pre.diff .d{color:var(--bad)}
- .actions{display:flex;gap:8px;margin:14px 0}
- .note{color:var(--muted);font-size:13px;padding:12px}
- tr.child td{color:var(--muted);background:rgba(255,255,255,.015)} .tree{color:var(--line);font-family:ui-monospace,monospace}
-</style></head>
-<body>
-<header><h1>Rolloffs</h1><span class="sub">{{ .Ref }}</span>
- <span class="spacer"></span>
- {{- if .CanSync }}<form method="post" action="/ui/sync"><button class="syncbtn">⟳ Sync now</button></form>{{ end }}
-</header>
-<main>
- <p><a href="/ui">← dashboard</a></p>
-
- <div class="grid">
-  <div class="kv"><div class="k">Phase</div><div class="v"><span class="pill p-{{ .Rollout.Phase }}">{{ .Rollout.Phase }}</span></div></div>
-  <div class="kv"><div class="k">Strategy</div><div class="v">{{ .Rollout.Strategy }}</div></div>
-  <div class="kv"><div class="k">Desired</div><div class="v mono">{{ short .Rollout.Desired.Checksum }}</div></div>
-  <div class="kv"><div class="k">Rollout</div><div class="v mono">{{ .Rollout.ID }}</div></div>
- </div>
-
- <div class="actions">
-  {{- if .Awaiting }}
-   <form method="post" action="/ui/approve"><input type="hidden" name="id" value="{{ .Rollout.ID }}"><button class="ok">Approve</button></form>
-   <form method="post" action="/ui/reject"><input type="hidden" name="id" value="{{ .Rollout.ID }}"><button class="bad">Reject</button></form>
-  {{- end }}
-  <form method="post" action="/ui/rollback"><input type="hidden" name="target" value="{{ .Ref }}"><button class="bad">↩ Rollback</button></form>
- </div>
-
- <h2>Live resources</h2>
- {{- if .Resources }}
- <table>
-  <thead><tr><th>Kind</th><th>Name</th><th>Namespace</th><th>Status</th></tr></thead>
-  <tbody>
-  {{- range .Resources }}
-   <tr{{ if .Parent }} class="child"{{ end }}>
-    <td>{{ if .Parent }}<span class="tree">└─</span> {{ end }}{{ .Kind }}</td>
-    <td class="mono">{{ .Name }}</td>
-    <td class="mono">{{ .Namespace }}</td>
-    <td>{{ .Status }}</td>
-   </tr>
-  {{- end }}
-  </tbody>
- </table>
- {{- else }}<div class="note">No live resources reported (target may not support inspection).</div>{{ end }}
-
- <h2>Diff (desired → live)</h2>
- {{- if .Diff }}<pre class="diff">{{ .Diff }}</pre>{{ else }}<div class="note">{{ if .DiffNote }}{{ .DiffNote }}{{ else }}no diff{{ end }}</div>{{ end }}
-
- <h2>History</h2>
- {{- if .Records }}
- <table>
-  <thead><tr><th>When</th><th>Phase</th><th>Rollout</th><th>By</th></tr></thead>
-  <tbody>
-  {{- range .Records }}
-   <tr><td class="mono">{{ .At.Format "2006-01-02 15:04:05" }}</td><td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td><td class="mono">{{ .RolloutID }}</td><td class="mono">{{ .Initiator.Kind }}/{{ .Initiator.Name }}</td></tr>
-  {{- end }}
-  </tbody>
- </table>
- {{- else }}<div class="note">No history.</div>{{ end }}
-</main>
-</body></html>`
-
-const historyHTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Rolloffs · history</title>
-<style>` + baseCSS + `</style></head>
-<body>
-<header><h1>Rolloffs</h1><span class="sub">history · {{ .TargetRef }}</span></header>
-<main>
- <p><a href="/ui">← dashboard</a></p>
- <h2>Transitions ({{ .TargetRef }})</h2>
- {{- if .Records }}
- <table>
-  <thead><tr><th>When</th><th>Phase</th><th>Rollout</th><th>By</th><th>Note</th></tr></thead>
-  <tbody>
-  {{- range .Records }}
-   <tr>
-    <td class="mono">{{ .At.Format "2006-01-02 15:04:05" }}</td>
-    <td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td>
-    <td class="mono">{{ .RolloutID }}</td>
-    <td class="mono">{{ .Initiator.Kind }}/{{ .Initiator.Name }}</td>
-    <td>{{ .Note }}</td>
-   </tr>
-  {{- end }}
-  </tbody>
- </table>
- {{- else }}<div class="empty">No history for this target.</div>{{ end }}
-</main>
-</body></html>`

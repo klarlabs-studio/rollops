@@ -2,9 +2,9 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -13,29 +13,26 @@ import (
 	pt "go.klarlabs.de/rolloffs/pkg/target"
 )
 
-// fakeBackend is an in-memory store of rollouts.
 type fakeBackend struct {
 	rollouts         []rollout.Rollout
 	drift            []engine.DriftItem
 	records          []rollout.RolloutRecord
-	diff_            string
+	diff             string
 	resources        []pt.Resource
 	approved         string
 	rejected         string
 	rolledBackTarget string
 }
 
-func (f *fakeBackend) List(context.Context, int) ([]rollout.Rollout, error) {
-	return f.rollouts, nil
-}
+func (f *fakeBackend) List(context.Context, int) ([]rollout.Rollout, error) { return f.rollouts, nil }
 func (f *fakeBackend) DriftReport(context.Context) ([]engine.DriftItem, error) {
 	return f.drift, nil
 }
-func (f *fakeBackend) History(_ context.Context, _ string) ([]rollout.RolloutRecord, error) {
+func (f *fakeBackend) History(context.Context, string) ([]rollout.RolloutRecord, error) {
 	return f.records, nil
 }
-func (f *fakeBackend) Diff(_ context.Context, _ string) (string, error) { return f.diff_, nil }
-func (f *fakeBackend) Resources(_ context.Context, _ string) ([]pt.Resource, error) {
+func (f *fakeBackend) Diff(context.Context, string) (string, error) { return f.diff, nil }
+func (f *fakeBackend) Resources(context.Context, string) ([]pt.Resource, error) {
 	return f.resources, nil
 }
 func (f *fakeBackend) RollbackLast(_ context.Context, ref string) (rollout.Rollout, error) {
@@ -51,175 +48,117 @@ func (f *fakeBackend) Reject(_ context.Context, id string, _ rollout.Identity) (
 	return rollout.Rollout{ID: id, Phase: rollout.PhaseRolledBack}, nil
 }
 
-func srv(be Backend) http.Handler {
-	return New(be, rollout.Identity{Kind: "human", Name: "felix"}).Handler()
+func srv(be Backend, opts ...Option) http.Handler {
+	return New(be, rollout.Identity{Kind: "human", Name: "felix"}, opts...).Handler()
 }
 
-func TestDashboard_RendersRollouts(t *testing.T) {
-	be := &fakeBackend{rollouts: []rollout.Rollout{
-		{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary},
-		{ID: "ro-2", TargetRef: "b/prod/web", Phase: rollout.PhaseAwaitingApproval},
-	}}
+func do(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("dashboard = %d", rr.Code)
+	h.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestSPA_ServesIndexAndAssets(t *testing.T) {
+	h := srv(&fakeBackend{})
+	if rr := do(h, "GET", "/ui", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), `id="app"`) {
+		t.Fatalf("index = %d, body lacks app root", rr.Code)
 	}
-	body := rr.Body.String()
-	for _, want := range []string{"ro-1", "a/prod/api", "promoted", "ro-2", "Approve", "Reject"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("dashboard missing %q", want)
-		}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "createApp") {
+		t.Errorf("app.js not served (%d)", rr.Code)
+	}
+	if rr := do(h, "GET", "/ui/vue.global.prod.js", ""); rr.Code != 200 {
+		t.Errorf("vue runtime not served (%d)", rr.Code)
 	}
 }
 
-func TestDashboard_OnlyAwaitingShowsActions(t *testing.T) {
-	be := &fakeBackend{rollouts: []rollout.Rollout{
-		{ID: "ro-done", Phase: rollout.PhasePromoted},
-	}}
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
-	if strings.Contains(rr.Body.String(), "Approve") {
-		t.Error("promoted rollout should not show approve action")
-	}
-}
-
-func TestApproveAction(t *testing.T) {
-	be := &fakeBackend{}
-	form := url.Values{"id": {"ro-7"}}
-	req := httptest.NewRequest("POST", "/ui/approve", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, req)
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("approve = %d, want 303", rr.Code)
-	}
-	if be.approved != "ro-7" {
-		t.Errorf("approved = %q, want ro-7", be.approved)
-	}
-}
-
-func TestDashboard_ShowsDrift(t *testing.T) {
+func TestAPI_Dashboard(t *testing.T) {
 	be := &fakeBackend{
-		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted}},
-		drift: []engine.DriftItem{
-			{TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Desired: "abc123", Observed: "stale99", Drifted: true},
-		},
+		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
+		drift:    []engine.DriftItem{{TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Desired: "abc", Observed: "abc", Drifted: false}},
 	}
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
-	body := rr.Body.String()
-	if !strings.Contains(body, "DRIFT") || !strings.Contains(body, "drift detected") {
-		t.Errorf("drift not surfaced: %s", body)
+	rr := do(srv(be), "GET", "/ui/api/dashboard", "")
+	var d dashboardJSON
+	if err := json.Unmarshal(rr.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
-	if !strings.Contains(body, "/ui/target?target=") {
-		t.Error("history link missing")
+	if d.Counts["promoted"] != 1 || len(d.Rollouts) != 1 || d.Rollouts[0].By != "ci/rec" {
+		t.Errorf("dashboard = %+v", d)
 	}
-}
-
-func TestHistory_RendersRecords(t *testing.T) {
-	be := &fakeBackend{records: []rollout.RolloutRecord{
-		{RolloutID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}},
-	}}
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/history?target=a/prod/api", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("history = %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "promoted") || !strings.Contains(rr.Body.String(), "ci/rec") {
-		t.Errorf("history record not rendered: %s", rr.Body)
+	if len(d.Drift) != 1 || d.Drift[0].Target != "a/prod/api" {
+		t.Errorf("drift = %+v", d.Drift)
 	}
 }
 
-func TestHistory_RequiresTarget(t *testing.T) {
-	rr := httptest.NewRecorder()
-	srv(&fakeBackend{}).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/history", nil))
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("history without target = %d, want 400", rr.Code)
-	}
-}
-
-func TestTargetDetail_RendersAll(t *testing.T) {
+func TestAPI_TargetDetail(t *testing.T) {
 	be := &fakeBackend{
 		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary}},
-		diff_:    "- old: 1\n+ new: 2",
+		diff:     "- old\n+ new",
 		resources: []pt.Resource{
-			{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 3/3"},
-			{Kind: "Pod", Name: "api-xyz", Namespace: "prod", Status: "Running · ready", Parent: "api"},
+			{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 2/2"},
+			{Kind: "Pod", Name: "api-x", Namespace: "prod", Status: "Running", Parent: "api"},
 		},
 		records: []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
 	}
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/target?target=a/prod/api", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("detail = %d", rr.Code)
+	rr := do(srv(be), "GET", "/ui/api/target?ref=a/prod/api", "")
+	if rr.Code != 200 {
+		t.Fatalf("target = %d", rr.Code)
 	}
-	body := rr.Body.String()
-	for _, want := range []string{"Live resources", "Deployment", "ready 3/3", "Pod", "api-xyz", "child", "Diff", "new: 2", "History", "↩ Rollback"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("detail missing %q", want)
-		}
+	var tj targetJSON
+	if err := json.Unmarshal(rr.Body.Bytes(), &tj); err != nil {
+		t.Fatal(err)
+	}
+	if tj.Rollout.Phase != "promoted" || tj.Diff != "- old\n+ new" {
+		t.Errorf("detail = %+v", tj)
+	}
+	if len(tj.Resources) != 2 || tj.Resources[1].Parent != "api" {
+		t.Errorf("resource tree = %+v", tj.Resources)
+	}
+	if len(tj.History) != 1 {
+		t.Errorf("history = %+v", tj.History)
 	}
 }
 
-func TestRollbackAction(t *testing.T) {
+func TestAPI_TargetNotFound(t *testing.T) {
+	if rr := do(srv(&fakeBackend{}), "GET", "/ui/api/target?ref=missing", ""); rr.Code != http.StatusNotFound {
+		t.Errorf("missing target = %d, want 404", rr.Code)
+	}
+}
+
+func TestAPI_Actions(t *testing.T) {
 	be := &fakeBackend{}
-	form := url.Values{"target": {"a/prod/api"}}
-	req := httptest.NewRequest("POST", "/ui/rollback", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rr := httptest.NewRecorder()
-	srv(be).ServeHTTP(rr, req)
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("rollback = %d, want 303", rr.Code)
+	h := srv(be)
+	if rr := do(h, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != 200 || be.approved != "ro-7" {
+		t.Errorf("approve = %d approved=%q", rr.Code, be.approved)
 	}
-	if be.rolledBackTarget != "a/prod/api" {
-		t.Errorf("rolledBackTarget = %q", be.rolledBackTarget)
+	if rr := do(h, "POST", "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
+		t.Errorf("reject = %d rejected=%q", rr.Code, be.rejected)
 	}
-}
-
-func TestSync_ButtonAndAction(t *testing.T) {
-	called := false
-	s := New(&fakeBackend{}, rollout.Identity{Kind: "human", Name: "x"},
-		WithSync(func(context.Context) error { called = true; return nil }))
-	h := s.Handler()
-
-	// Button shown when sync is available.
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
-	if !strings.Contains(rr.Body.String(), "Sync now") {
-		t.Error("Sync now button missing when sync enabled")
+	if rr := do(h, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
+		t.Errorf("rollback = %d target=%q", rr.Code, be.rolledBackTarget)
 	}
-	// Action triggers the reconcile.
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("POST", "/ui/sync", nil))
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("sync = %d, want 303", rr.Code)
-	}
-	if !called {
-		t.Error("sync handler did not trigger reconcile")
+	if rr := do(h, "POST", "/ui/api/approve", `{}`); rr.Code != http.StatusBadRequest {
+		t.Errorf("approve without id = %d, want 400", rr.Code)
 	}
 }
 
-func TestSync_DisabledByDefault(t *testing.T) {
-	h := srv(&fakeBackend{}) // no WithSync
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
-	if strings.Contains(rr.Body.String(), "Sync now") {
-		t.Error("Sync button should be hidden when sync not wired")
-	}
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("POST", "/ui/sync", nil))
-	if rr.Code != http.StatusNotImplemented {
+func TestAPI_Sync(t *testing.T) {
+	if rr := do(srv(&fakeBackend{}), "POST", "/ui/api/sync", "{}"); rr.Code != http.StatusNotImplemented {
 		t.Errorf("sync without wiring = %d, want 501", rr.Code)
 	}
-}
-
-func TestRejectAction_RequiresID(t *testing.T) {
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/ui/reject", strings.NewReader(""))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	srv(&fakeBackend{}).ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("reject without id = %d, want 400", rr.Code)
+	called := false
+	h := srv(&fakeBackend{}, WithSync(func(context.Context) error { called = true; return nil }))
+	if rr := do(h, "POST", "/ui/api/sync", "{}"); rr.Code != 200 || !called {
+		t.Errorf("sync = %d called=%v", rr.Code, called)
+	}
+	// canSync reflected in dashboard.
+	rr := do(h, "GET", "/ui/api/dashboard", "")
+	var d dashboardJSON
+	_ = json.Unmarshal(rr.Body.Bytes(), &d)
+	if !d.CanSync {
+		t.Error("dashboard canSync should be true when sync wired")
 	}
 }

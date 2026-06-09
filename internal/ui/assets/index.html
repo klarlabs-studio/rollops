@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rolloffs</title>
+<style>
+ :root{--bg:#0f1115;--card:#171a21;--ink:#e6e9ef;--muted:#8b93a7;--line:#252a35;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#539bf5}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+ a{color:var(--accent);text-decoration:none;cursor:pointer} a:hover{text-decoration:underline}
+ header{padding:16px 28px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--bg);z-index:5}
+ h1{font-size:18px;margin:0;letter-spacing:.3px} .sub{color:var(--muted);font-size:12px}
+ .spacer{flex:1}
+ main{padding:22px 28px;max-width:1120px;margin:0 auto}
+ h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:24px 0 10px}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+ th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)} tr:last-child td{border-bottom:0}
+ th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ tbody tr.click{cursor:pointer;transition:background .12s} tbody tr.click:hover{background:rgba(83,155,245,.07)}
+ .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:12px}
+ .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+ .p-promoted{background:rgba(63,185,80,.15);color:var(--ok)}
+ .p-rolled-back{background:rgba(248,81,73,.15);color:var(--bad)}
+ .p-awaiting-approval{background:rgba(210,153,34,.16);color:var(--warn)}
+ .p-deploying,.p-verifying,.p-validating,.p-pending{background:rgba(139,147,167,.15);color:var(--muted);animation:pulse 1.2s ease-in-out infinite}
+ @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+ button{cursor:pointer;border:1px solid var(--line);background:#1f2430;color:var(--ink);padding:6px 13px;border-radius:8px;font-weight:600;font-size:13px}
+ button:hover{border-color:#3a4150} button:disabled{opacity:.5;cursor:default}
+ button.ok{border-color:rgba(63,185,80,.4);color:var(--ok)} button.bad{border-color:rgba(248,81,73,.4);color:var(--bad)}
+ button.sync{border-color:rgba(83,155,245,.5);color:var(--accent);background:rgba(83,155,245,.1)}
+ .chips{display:flex;gap:8px;flex-wrap:wrap} .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12px}
+ .chip b{color:var(--ink)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+ .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+ .badge.drift{background:rgba(248,81,73,.16);color:var(--bad)} .badge.sync{background:rgba(63,185,80,.12);color:var(--ok)}
+ .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0}
+ .kv{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px} .kv .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px} .kv .v{font-size:15px;font-weight:600;margin-top:3px}
+ .actions{display:flex;gap:8px;margin:14px 0;align-items:center}
+ pre.diff{background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:360px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;margin:0}
+ .note{color:var(--muted);font-size:13px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+ .tw{color:var(--line);font-family:ui-monospace,monospace;margin-right:4px} tr.child td{color:var(--muted);background:rgba(255,255,255,.015)}
+ .caret{display:inline-block;width:14px;color:var(--muted)}
+ .toast{position:fixed;bottom:22px;right:22px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 16px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:10}
+ .toast.err{border-color:rgba(248,81,73,.5);color:var(--bad)}
+ .empty{color:var(--muted);padding:24px;text-align:center}
+ .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+ .dot.up{background:var(--ok)} .dot.down{background:var(--bad)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="/ui/vue.global.prod.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>
