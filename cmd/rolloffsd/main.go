@@ -26,6 +26,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/grpcapi"
 	"go.klarlabs.de/rolloffs/internal/mcp"
 	"go.klarlabs.de/rolloffs/internal/metrics"
+	"go.klarlabs.de/rolloffs/internal/notify"
 	"go.klarlabs.de/rolloffs/internal/reconcile"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/secrets"
@@ -71,6 +72,9 @@ func run() error {
 			Mode:     security.VerifyEnforce,
 			Verifier: security.CosignVerifier{KeyPath: key},
 		}))
+	}
+	if n := buildNotifier(); n != nil {
+		engOpts = append(engOpts, engine.WithNotifier(n))
 	}
 	eng := engine.New(db, target.Builtin(), engOpts...)
 
@@ -237,6 +241,22 @@ func basicAuth(next http.Handler) http.Handler {
 
 func subtleEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// buildNotifier wires Telegram and/or a generic webhook from the environment.
+// Returns nil when nothing is configured.
+func buildNotifier() notify.Notifier {
+	var ns notify.Multi
+	if tok := os.Getenv("ROLLOFFS_TELEGRAM_TOKEN"); tok != "" {
+		ns = append(ns, notify.Telegram{Token: tok, ChatID: os.Getenv("ROLLOFFS_TELEGRAM_CHAT")})
+	}
+	if url := os.Getenv("ROLLOFFS_WEBHOOK_URL"); url != "" {
+		ns = append(ns, notify.Webhook{URL: url, Secret: os.Getenv("ROLLOFFS_WEBHOOK_SECRET")})
+	}
+	if len(ns) == 0 {
+		return nil
+	}
+	return ns
 }
 
 func envOr(key, def string) string {

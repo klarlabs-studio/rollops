@@ -9,6 +9,7 @@ import (
 
 	"go.klarlabs.de/rolloffs/internal/audit"
 	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rolloffs/internal/notify"
 	"go.klarlabs.de/rolloffs/internal/rollout"
 	"go.klarlabs.de/rolloffs/internal/secrets"
 	"go.klarlabs.de/rolloffs/internal/security"
@@ -141,6 +142,55 @@ func TestPipeline_SecretResolvedIntoTarget(t *testing.T) {
 	if strings.Contains(buf.String(), "real-token-value") {
 		t.Error("resolved secret leaked into the audit trail")
 	}
+}
+
+type captureNotifier struct{ events []notify.Event }
+
+func (c *captureNotifier) Notify(_ context.Context, e notify.Event) error {
+	c.events = append(c.events, e)
+	return nil
+}
+func (c *captureNotifier) kinds() []notify.Kind {
+	out := make([]notify.Kind, 0, len(c.events))
+	for _, e := range c.events {
+		out = append(out, e.Kind)
+	}
+	return out
+}
+
+func TestPipeline_NotifiesApprovalAndPromotion(t *testing.T) {
+	n := &captureNotifier{}
+	e, _, _ := wiredEngine(t, WithNotifier(n))
+	ctx := context.Background()
+
+	// Gated apply → approval-needed notification.
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadPipe(t), NeedsApproval: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Phase != rollout.PhaseAwaitingApproval {
+		t.Fatalf("phase = %q", r.Phase)
+	}
+	// Approve then finalize → promotion notification.
+	if _, err := e.Approve(ctx, r.ID, rollout.Identity{Kind: "human", Name: "felix"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.VerifyOrRollback(ctx, r.ID, r.Desired, loadPipe(t)); err != nil {
+		t.Fatal(err)
+	}
+	got := n.kinds()
+	if !contains(got, notify.ApprovalNeeded) || !contains(got, notify.Promoted) {
+		t.Errorf("notifications = %v, want approval_needed + promoted", got)
+	}
+}
+
+func contains(ks []notify.Kind, want notify.Kind) bool {
+	for _, k := range ks {
+		if k == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPipeline_PolicyFloorForcesApproval(t *testing.T) {

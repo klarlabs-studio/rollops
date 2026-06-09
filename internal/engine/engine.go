@@ -24,6 +24,7 @@ import (
 	"go.klarlabs.de/rolloffs/internal/audit"
 	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/depgraph"
+	"go.klarlabs.de/rolloffs/internal/notify"
 	"go.klarlabs.de/rolloffs/internal/progressive"
 	"go.klarlabs.de/rolloffs/internal/risk"
 	"go.klarlabs.de/rolloffs/internal/rollout"
@@ -52,6 +53,7 @@ type Engine struct {
 	guardrails *security.Guardrails
 	artifact   *security.ArtifactGate
 	secrets    secrets.Provider
+	notifier   notify.Notifier
 }
 
 // Option configures an Engine.
@@ -81,6 +83,17 @@ func WithArtifactGate(g security.ArtifactGate) Option { return func(e *Engine) {
 // WithSecrets enables resolution of "secret:<ref>" values in a target spec
 // through the SecretProvider at execution time.
 func WithSecrets(p secrets.Provider) Option { return func(e *Engine) { e.secrets = p } }
+
+// WithNotifier enables operator notifications (approvals, failures, rollbacks,
+// promotions). Best-effort: a failing notifier never blocks a rollout.
+func WithNotifier(n notify.Notifier) Option { return func(e *Engine) { e.notifier = n } }
+
+// notifyEvent delivers an event best-effort.
+func (e *Engine) notifyEvent(ctx context.Context, ev notify.Event) {
+	if e.notifier != nil {
+		_ = e.notifier.Notify(ctx, ev)
+	}
+}
 
 // build resolves a target by kind and wraps it in the fortify resilience
 // envelope so every engine-driven target operation is retried/circuit-broken.
@@ -406,6 +419,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	}
 	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator})
 	if r.Phase == rollout.PhaseAwaitingApproval {
+		e.notifyEvent(ctx, notify.Event{Kind: notify.ApprovalNeeded, TargetRef: ref, RolloutID: r.ID})
 		return &r, nil // halt: gate requires human approval, target untouched
 	}
 
@@ -441,6 +455,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		r.UpdatedAt = e.now()
 		_ = e.store.SaveRollout(ctx, r)
 		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: err.Error()})
+		e.notifyEvent(ctx, notify.Event{Kind: notify.Failed, TargetRef: ref, RolloutID: r.ID, Detail: err.Error()})
 		return &r, fmt.Errorf("engine: apply: %w", err)
 	}
 	if _, err := lc.Send(rollout.EventDeployed); err != nil {
@@ -484,12 +499,14 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 		if err != nil {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: auto-rollback after %q: %w", reason, err)
 		}
+		e.notifyEvent(ctx, notify.Event{Kind: notify.RolledBack, TargetRef: rb.TargetRef, RolloutID: rb.ID, Detail: reason})
 		return VerifyOutcome{Rollout: rb, RolledBack: true, Reason: reason}, nil
 	}
 	promoted, err := e.Promote(ctx, rolloutID)
 	if err != nil {
 		return VerifyOutcome{}, err
 	}
+	e.notifyEvent(ctx, notify.Event{Kind: notify.Promoted, TargetRef: promoted.TargetRef, RolloutID: promoted.ID})
 	return VerifyOutcome{Rollout: promoted}, nil
 }
 
