@@ -106,3 +106,69 @@ func TestKubernetesTarget_Live(t *testing.T) {
 		t.Logf("health = %v (%s) — acceptable if rollout still progressing", hs.State, hs.Reason)
 	}
 }
+
+const pruneNS = "rolloffs-prune-it"
+
+func k8sTarget(t *testing.T) pt.Target {
+	t.Helper()
+	tgt, err := kubernetes.New(config.Target{
+		Kind: "kubernetes", Ref: "int/prune",
+		Spec: map[string]any{"context": "minikube", "namespace": pruneNS, "resource": "deployment/web", "prune": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tgt
+}
+
+// TestKubernetesTarget_Prune_Live proves GitOps pruning: a resource removed from
+// desired is garbage-collected on the next apply.
+func TestKubernetesTarget_Prune_Live(t *testing.T) {
+	kubeCtx(t)
+	_ = exec.Command("kubectl", "create", "namespace", pruneNS).Run()
+	t.Cleanup(func() { _ = exec.Command("kubectl", "delete", "namespace", pruneNS, "--wait=false").Run() })
+	ctx := context.Background()
+	tgt := k8sTarget(t)
+
+	withCM := `apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: ` + pruneNS + `}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers: [{name: pause, image: registry.k8s.io/pause:3.9}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: extra, namespace: ` + pruneNS + `}
+data: {x: "1"}
+`
+	withoutCM := `apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: ` + pruneNS + `}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers: [{name: pause, image: registry.k8s.io/pause:3.9}]
+`
+	if _, err := tgt.Apply(ctx, pt.Manifest{Kind: "kubernetes", Spec: []byte(withCM), Checksum: "v1"}); err != nil {
+		t.Fatalf("apply with cm: %v", err)
+	}
+	if out, _ := kubectlGet("get", "configmap", "extra", "-n", pruneNS, "-o", "name"); out == "" {
+		t.Fatal("configmap should exist after first apply")
+	}
+
+	// Remove the configmap from desired → prune deletes it.
+	if _, err := tgt.Apply(ctx, pt.Manifest{Kind: "kubernetes", Spec: []byte(withoutCM), Checksum: "v2"}); err != nil {
+		t.Fatalf("apply without cm: %v", err)
+	}
+	if out, err := kubectlGet("get", "configmap", "extra", "-n", pruneNS, "-o", "name"); err == nil && out != "" {
+		t.Errorf("configmap should have been pruned, still present: %q", out)
+	}
+}

@@ -16,9 +16,11 @@ type kubectlCluster struct {
 	context   string
 	namespace string
 	resource  string // e.g. deployment/api
+	prune     bool   // garbage-collect resources removed from desired
+	pruneVal  string // label value selecting this target's resources
 }
 
-func newKubectl(s spec) Cluster {
+func newKubectl(s spec, ref string) Cluster {
 	ns := s.str("namespace")
 	if ns == "" {
 		ns = "default"
@@ -27,6 +29,8 @@ func newKubectl(s spec) Cluster {
 		context:   s.str("context"),
 		namespace: ns,
 		resource:  s.str("resource"),
+		prune:     s.boolVal("prune"),
+		pruneVal:  labelValue(ref),
 	}
 }
 
@@ -56,7 +60,17 @@ func (k *kubectlCluster) run(ctx context.Context, stdin []byte, args ...string) 
 }
 
 func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum string) error {
-	if _, err := k.run(ctx, manifest, "apply", "-f", "-"); err != nil {
+	args := []string{"apply", "-f", "-"}
+	if k.prune {
+		labeled, err := labelManifest(manifest, PruneLabel, k.pruneVal)
+		if err != nil {
+			return fmt.Errorf("kubernetes: label for prune: %w", err)
+		}
+		manifest = labeled
+		// Prune resources carrying our label that are no longer in the apply set.
+		args = append(args, "--prune", "--selector", fmt.Sprintf("%s=%s", PruneLabel, k.pruneVal))
+	}
+	if _, err := k.run(ctx, manifest, args...); err != nil {
 		return err
 	}
 	_, err := k.run(ctx, nil, "annotate", "--overwrite", k.resource,

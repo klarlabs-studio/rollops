@@ -49,7 +49,7 @@ func New(cfg config.Target) (pt.Target, error) {
 	if s.str("resource") == "" {
 		return nil, fmt.Errorf("kubernetes: target %q: spec.resource is required (e.g. deployment/api)", cfg.Ref)
 	}
-	return &Target{cl: newKubectl(s), run: execRunner}, nil
+	return &Target{cl: newKubectl(s, cfg.Ref), run: execRunner}, nil
 }
 
 func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
@@ -111,4 +111,9 @@ func (s spec) str(key string) string {
 		return v
 	}
 	return ""
+}
+
+func (s spec) boolVal(key string) bool {
+	b, _ := s[key].(bool)
+	return b
 }
