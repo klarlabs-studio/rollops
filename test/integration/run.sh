@@ -53,6 +53,14 @@ curl -s -H "X-Vault-Token: roottoken" -X POST \
   -d '{"data":{"password":"s3cr3t-live"}}' \
   "http://127.0.0.1:8200/v1/secret/data/myapp" >/dev/null
 
+# 5b. Prometheus: wait for the HTTP API.
+echo "waiting for prometheus..."
+for i in $(seq 1 30); do
+  if curl -s -o /dev/null "http://127.0.0.1:9090/-/ready"; then echo "prometheus ready"; break; fi
+  sleep 1
+  [ "$i" = 30 ] && { echo "prometheus did not come up"; docker compose -f docker-compose.test.yml logs prometheus; exit 1; }
+done
+
 # 6. cosign: push a signed and an unsigned image to the local registry.
 cosign_pub=""; signed_image=""; unsigned_image=""
 if command -v cosign >/dev/null 2>&1; then
@@ -82,5 +90,6 @@ cd "$repo"
 SSH_HOST=127.0.0.1 SSH_PORT=2222 SSH_USER=deploy SSH_KEY="$key" SSH_DEPLOY_PATH=/config/deploy/app \
 FTP_HOST=127.0.0.1 FTP_PORT=21 FTP_USER=deploy FTP_PASSWORD=deploypass FTP_DEPLOY_PATH=index.html \
 VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=roottoken \
+PROM_ADDR=http://127.0.0.1:9090 \
 COSIGN_PUB="$cosign_pub" COSIGN_SIGNED_IMAGE="$signed_image" COSIGN_UNSIGNED_IMAGE="$unsigned_image" \
   go test -tags integration -count=1 -v ./test/integration/...
