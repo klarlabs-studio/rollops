@@ -123,3 +123,10 @@ statekit then. Not rework — planned layering.
 - **UI: Sync-now button** (on-demand reconcile, wired to the watcher) + live phase pulse.
 - Moat unchanged + stronger: infra-agnostic (non-K8s), agent-native (MCP), lean single binary, risk gate + guardrails + audit.
 - Still open vs Argo/Flux: prune/GC, real `kubectl diff` view, resource tree, SSO, multi-cluster, image automation. Tracked for next.
+
+## Competitive round 2 (2026-06-09)
+- **Prune/GC** (k8s, opt-in spec.prune): label-inject + kubectl apply --prune -l; live-verified (configmap removed→pruned). examples + integration test.
+- **Resource tree** (Deployment→Pods) via Inspector (matchLabels→pods); UI detail renders indented tree.
+- **Rich UI detail page** (/ui/target): live diff (kubectl diff), live resource tree, rollback, history, sync. Differ/Inspector optional target capabilities; engine Diff/Resources/RollbackLast; promoted→rolled-back added to statechart.
+- **Helm + Kustomize rendering** + **Sync-now** + **phase pulse** (earlier this session).
+- Still open vs Argo: SSO, multi-cluster (deferred per user). 69 commits, 222 tests.
