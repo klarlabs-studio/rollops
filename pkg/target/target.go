@@ -86,10 +86,13 @@ type Inspector interface {
 	Resources(ctx context.Context) ([]Resource, error)
 }
 
-// Resource is one live object a target manages.
+// Resource is one live object a target manages. Parent (the name of the owning
+// resource, empty for a top-level object) lets the UI render an ownership tree
+// — Deployment → Pods, etc.
 type Resource struct {
 	Kind      string
 	Name      string
 	Namespace string
 	Status    string // ready/healthy summary, target-defined
+	Parent    string // owner resource name; empty = root
 }

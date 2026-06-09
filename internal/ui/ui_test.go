@@ -141,10 +141,13 @@ func TestHistory_RequiresTarget(t *testing.T) {
 
 func TestTargetDetail_RendersAll(t *testing.T) {
 	be := &fakeBackend{
-		rollouts:  []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary}},
-		diff_:     "- old: 1\n+ new: 2",
-		resources: []pt.Resource{{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 3/3"}},
-		records:   []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
+		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary}},
+		diff_:    "- old: 1\n+ new: 2",
+		resources: []pt.Resource{
+			{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 3/3"},
+			{Kind: "Pod", Name: "api-xyz", Namespace: "prod", Status: "Running · ready", Parent: "api"},
+		},
+		records: []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
 	}
 	rr := httptest.NewRecorder()
 	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/target?target=a/prod/api", nil))
@@ -152,7 +155,7 @@ func TestTargetDetail_RendersAll(t *testing.T) {
 		t.Fatalf("detail = %d", rr.Code)
 	}
 	body := rr.Body.String()
-	for _, want := range []string{"Live resources", "Deployment", "ready 3/3", "Diff", "new: 2", "History", "↩ Rollback"} {
+	for _, want := range []string{"Live resources", "Deployment", "ready 3/3", "Pod", "api-xyz", "child", "Diff", "new: 2", "History", "↩ Rollback"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail missing %q", want)
 		}

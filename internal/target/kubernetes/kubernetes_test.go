@@ -31,7 +31,11 @@ func (c *fakeCluster) Diff(_ context.Context, manifest []byte) (string, error) {
 	return "+ " + string(manifest), nil
 }
 func (c *fakeCluster) Resources(context.Context) ([]pt.Resource, error) {
-	return []pt.Resource{{Kind: "Deployment", Name: "web", Namespace: "ns", Status: "ready 2/2"}}, nil
+	return []pt.Resource{
+		{Kind: "Deployment", Name: "web", Namespace: "ns", Status: "ready 2/2"},
+		{Kind: "Pod", Name: "web-abc", Namespace: "ns", Status: "Running · ready", Parent: "web"},
+		{Kind: "Pod", Name: "web-def", Namespace: "ns", Status: "Running · ready", Parent: "web"},
+	}, nil
 }
 
 var sample = pt.Manifest{Kind: "kubernetes", Spec: []byte("apiVersion: apps/v1\nkind: Deployment\n"), Checksum: "sum-k8s-v5"}
@@ -79,8 +83,18 @@ func TestTarget_DifferAndInspector(t *testing.T) {
 		t.Fatal("k8s target should implement Inspector")
 	}
 	res, err := insp.Resources(ctx)
-	if err != nil || len(res) != 1 || res[0].Kind != "Deployment" {
+	if err != nil || len(res) < 1 || res[0].Kind != "Deployment" {
 		t.Fatalf("Resources: %+v %v", res, err)
+	}
+	// Tree: child pods carry Parent.
+	var children int
+	for _, r := range res {
+		if r.Parent != "" {
+			children++
+		}
+	}
+	if children == 0 {
+		t.Error("expected child pods in the resource tree")
 	}
 }
 

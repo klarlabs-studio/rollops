@@ -344,6 +344,7 @@ const detailHTML = `<!doctype html>
  pre.diff .a{color:var(--ok)} pre.diff .d{color:var(--bad)}
  .actions{display:flex;gap:8px;margin:14px 0}
  .note{color:var(--muted);font-size:13px;padding:12px}
+ tr.child td{color:var(--muted);background:rgba(255,255,255,.015)} .tree{color:var(--line);font-family:ui-monospace,monospace}
 </style></head>
 <body>
 <header><h1>Rolloffs</h1><span class="sub">{{ .Ref }}</span>
@@ -374,7 +375,12 @@ const detailHTML = `<!doctype html>
   <thead><tr><th>Kind</th><th>Name</th><th>Namespace</th><th>Status</th></tr></thead>
   <tbody>
   {{- range .Resources }}
-   <tr><td>{{ .Kind }}</td><td class="mono">{{ .Name }}</td><td class="mono">{{ .Namespace }}</td><td>{{ .Status }}</td></tr>
+   <tr{{ if .Parent }} class="child"{{ end }}>
+    <td>{{ if .Parent }}<span class="tree">└─</span> {{ end }}{{ .Kind }}</td>
+    <td class="mono">{{ .Name }}</td>
+    <td class="mono">{{ .Namespace }}</td>
+    <td>{{ .Status }}</td>
+   </tr>
   {{- end }}
   </tbody>
  </table>
