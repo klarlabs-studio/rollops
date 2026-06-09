@@ -1,0 +1,33 @@
+# Deploy a Helm chart (or Kustomize overlay) — Argo/Flux-style rendering.
+apiVersion: rolloffs.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: web
+spec:
+  target:
+    kind: kubernetes
+    ref: shop/prod/web
+    criticality: high
+    spec:
+      context: prod
+      namespace: shop
+      resource: deployment/web
+      # Render a remote Helm chart with inline values:
+      helm:
+        chart: nginx
+        repo: https://charts.bitnami.com/bitnami
+        version: 15.0.0
+        releaseName: web
+        values:
+          replicaCount: 3
+          image: {tag: "1.27"}
+      # ...or a Kustomize overlay instead of helm:
+      # kustomize:
+      #   path: github.com/acme/config//overlays/prod
+      # ...or a raw manifest:
+      # manifest: |
+      #   apiVersion: apps/v1
+      #   kind: Deployment ...
+  strategy:
+    type: canary
+    steps: [{weight: 25, pause: 2m}, {weight: 100}]

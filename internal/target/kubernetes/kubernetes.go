@@ -12,7 +12,6 @@ package kubernetes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"go.klarlabs.de/rolloffs/internal/config"
@@ -33,9 +32,11 @@ type Cluster interface {
 	Healthy(ctx context.Context) (bool, string, error)
 }
 
-// Target deploys to a Kubernetes cluster through a Cluster.
+// Target deploys to a Kubernetes cluster through a Cluster. It renders the
+// desired manifest from raw YAML, a Helm chart, or a Kustomize overlay.
 type Target struct {
-	cl Cluster
+	cl  Cluster
+	run cmdRunner // helm/kubectl renderer; injectable for tests
 }
 
 // New constructs the real kubectl-backed target from config.
@@ -44,33 +45,24 @@ func New(cfg config.Target) (pt.Target, error) {
 	if s.str("resource") == "" {
 		return nil, fmt.Errorf("kubernetes: target %q: spec.resource is required (e.g. deployment/api)", cfg.Ref)
 	}
-	return &Target{cl: newKubectl(s)}, nil
+	return &Target{cl: newKubectl(s), run: execRunner}, nil
 }
 
-func newWith(cl Cluster) *Target { return &Target{cl: cl} }
+func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
 
 // Apply applies the manifest if the live checksum differs. Idempotent.
 func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
 	if cur, _ := t.cl.LiveChecksum(ctx); cur == m.Checksum && m.Checksum != "" {
 		return pt.Result{Changed: false, Detail: "cluster already at desired checksum"}, nil
 	}
-	if err := t.cl.Apply(ctx, manifestPayload(m.Spec), m.Checksum); err != nil {
+	manifest, err := manifestFromSpec(ctx, m.Spec, t.run)
+	if err != nil {
+		return pt.Result{}, err
+	}
+	if err := t.cl.Apply(ctx, manifest, m.Checksum); err != nil {
 		return pt.Result{}, fmt.Errorf("kubernetes: apply: %w", err)
 	}
 	return pt.Result{Changed: true, Detail: "applied to cluster"}, nil
-}
-
-// manifestPayload extracts the deployable Kubernetes manifest. In the config
-// flow, m.Spec is the JSON-encoded target spec carrying a "manifest" string; in
-// the direct flow (and tests), m.Spec is the raw manifest. Both are supported.
-func manifestPayload(specJSON []byte) []byte {
-	var spec map[string]any
-	if json.Unmarshal(specJSON, &spec) == nil {
-		if s, ok := spec["manifest"].(string); ok && s != "" {
-			return []byte(s)
-		}
-	}
-	return specJSON
 }
 
 // Observe reads the live checksum annotation — the rich drift signal.
