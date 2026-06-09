@@ -758,6 +758,90 @@ func (e *Engine) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	return e.store.LoadRollout(ctx, id)
 }
 
+// ErrUnsupported is returned when a target lacks an optional capability
+// (Differ/Inspector).
+var ErrUnsupported = errors.New("engine: target does not support this operation")
+
+// rawTarget builds an unwrapped target (capabilities like Differ/Inspector live
+// on the concrete target, not the fortify wrapper). Read-only, so no resilience
+// envelope is needed.
+func (e *Engine) rawTarget(ref string, m pt.Manifest) (pt.Target, error) {
+	var spec map[string]any
+	if len(m.Spec) > 0 {
+		if err := json.Unmarshal(m.Spec, &spec); err != nil {
+			return nil, fmt.Errorf("engine: decode manifest spec: %w", err)
+		}
+	}
+	return e.reg.Build(config.Target{Kind: m.Kind, Ref: ref, Spec: spec})
+}
+
+// Diff returns the difference between a rollout's desired state and live state,
+// when the target supports it (e.g. kubectl diff).
+func (e *Engine) Diff(ctx context.Context, rolloutID string) (string, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return "", err
+	}
+	tgt, err := e.rawTarget(r.TargetRef, r.Desired)
+	if err != nil {
+		return "", err
+	}
+	d, ok := tgt.(pt.Differ)
+	if !ok {
+		return "", ErrUnsupported
+	}
+	return d.Diff(ctx, r.Desired)
+}
+
+// Resources lists the live resources a rollout's target manages, when the
+// target supports it (e.g. kubectl get).
+func (e *Engine) Resources(ctx context.Context, rolloutID string) ([]pt.Resource, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return nil, err
+	}
+	tgt, err := e.rawTarget(r.TargetRef, r.Desired)
+	if err != nil {
+		return nil, err
+	}
+	insp, ok := tgt.(pt.Inspector)
+	if !ok {
+		return nil, ErrUnsupported
+	}
+	return insp.Resources(ctx)
+}
+
+// RollbackLast rolls a target back to its previous distinct desired state by
+// re-applying the prior rollout's manifest — the UI "Rollback" action.
+func (e *Engine) RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error) {
+	rs, err := e.store.ListRollouts(ctx, 0) // newest first
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	var current *rollout.Rollout
+	var prior *pt.Manifest
+	for i := range rs {
+		if rs[i].TargetRef != targetRef {
+			continue
+		}
+		if current == nil {
+			current = &rs[i]
+			continue
+		}
+		if rs[i].Desired.Checksum != current.Desired.Checksum {
+			prior = &rs[i].Desired
+			break
+		}
+	}
+	if current == nil {
+		return rollout.Rollout{}, fmt.Errorf("engine: no rollouts for target %q", targetRef)
+	}
+	if prior == nil {
+		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
+	}
+	return e.Rollback(ctx, current.ID, *prior)
+}
+
 // List returns the most recent rollouts, newest first.
 func (e *Engine) List(ctx context.Context, limit int) ([]rollout.Rollout, error) {
 	return e.store.ListRollouts(ctx, limit)

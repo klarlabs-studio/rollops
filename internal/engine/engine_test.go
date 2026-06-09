@@ -47,6 +47,12 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 }
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) { return f.health, nil }
+func (f *fakeTarget) Diff(_ context.Context, m pt.Manifest) (string, error) {
+	return "diff for " + m.Checksum, nil
+}
+func (f *fakeTarget) Resources(context.Context) ([]pt.Resource, error) {
+	return []pt.Resource{{Kind: "Deployment", Name: "app", Status: "ready 1/1"}}, nil
+}
 
 func newEngine(t *testing.T, fake *fakeTarget, extra ...Option) (*Engine, *sqlite.Store) {
 	t.Helper()

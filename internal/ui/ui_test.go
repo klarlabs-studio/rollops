@@ -10,15 +10,19 @@ import (
 
 	"go.klarlabs.de/rolloffs/internal/engine"
 	"go.klarlabs.de/rolloffs/internal/rollout"
+	pt "go.klarlabs.de/rolloffs/pkg/target"
 )
 
 // fakeBackend is an in-memory store of rollouts.
 type fakeBackend struct {
-	rollouts []rollout.Rollout
-	drift    []engine.DriftItem
-	records  []rollout.RolloutRecord
-	approved string
-	rejected string
+	rollouts         []rollout.Rollout
+	drift            []engine.DriftItem
+	records          []rollout.RolloutRecord
+	diff_            string
+	resources        []pt.Resource
+	approved         string
+	rejected         string
+	rolledBackTarget string
 }
 
 func (f *fakeBackend) List(context.Context, int) ([]rollout.Rollout, error) {
@@ -29,6 +33,14 @@ func (f *fakeBackend) DriftReport(context.Context) ([]engine.DriftItem, error) {
 }
 func (f *fakeBackend) History(_ context.Context, _ string) ([]rollout.RolloutRecord, error) {
 	return f.records, nil
+}
+func (f *fakeBackend) Diff(_ context.Context, _ string) (string, error) { return f.diff_, nil }
+func (f *fakeBackend) Resources(_ context.Context, _ string) ([]pt.Resource, error) {
+	return f.resources, nil
+}
+func (f *fakeBackend) RollbackLast(_ context.Context, ref string) (rollout.Rollout, error) {
+	f.rolledBackTarget = ref
+	return rollout.Rollout{TargetRef: ref, Phase: rollout.PhaseRolledBack}, nil
 }
 func (f *fakeBackend) Approve(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
 	f.approved = id
@@ -100,7 +112,7 @@ func TestDashboard_ShowsDrift(t *testing.T) {
 	if !strings.Contains(body, "DRIFT") || !strings.Contains(body, "drift detected") {
 		t.Errorf("drift not surfaced: %s", body)
 	}
-	if !strings.Contains(body, "/ui/history?target=") {
+	if !strings.Contains(body, "/ui/target?target=") {
 		t.Error("history link missing")
 	}
 }
@@ -124,6 +136,41 @@ func TestHistory_RequiresTarget(t *testing.T) {
 	srv(&fakeBackend{}).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/history", nil))
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("history without target = %d, want 400", rr.Code)
+	}
+}
+
+func TestTargetDetail_RendersAll(t *testing.T) {
+	be := &fakeBackend{
+		rollouts:  []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary}},
+		diff_:     "- old: 1\n+ new: 2",
+		resources: []pt.Resource{{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 3/3"}},
+		records:   []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
+	}
+	rr := httptest.NewRecorder()
+	srv(be).ServeHTTP(rr, httptest.NewRequest("GET", "/ui/target?target=a/prod/api", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("detail = %d", rr.Code)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"Live resources", "Deployment", "ready 3/3", "Diff", "new: 2", "History", "↩ Rollback"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail missing %q", want)
+		}
+	}
+}
+
+func TestRollbackAction(t *testing.T) {
+	be := &fakeBackend{}
+	form := url.Values{"target": {"a/prod/api"}}
+	req := httptest.NewRequest("POST", "/ui/rollback", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	srv(be).ServeHTTP(rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("rollback = %d, want 303", rr.Code)
+	}
+	if be.rolledBackTarget != "a/prod/api" {
+		t.Errorf("rolledBackTarget = %q", be.rolledBackTarget)
 	}
 }
 

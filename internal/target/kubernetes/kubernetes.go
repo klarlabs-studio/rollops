@@ -30,6 +30,10 @@ type Cluster interface {
 	LiveChecksum(ctx context.Context) (string, error)
 	// Healthy reports rollout readiness.
 	Healthy(ctx context.Context) (bool, string, error)
+	// Diff returns the difference between the manifest and live state.
+	Diff(ctx context.Context, manifest []byte) (string, error)
+	// Resources lists the live managed resources.
+	Resources(ctx context.Context) ([]pt.Resource, error)
 }
 
 // Target deploys to a Kubernetes cluster through a Cluster. It renders the
@@ -72,6 +76,20 @@ func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
 		return pt.Fingerprint{}, fmt.Errorf("kubernetes: observe: %w", err)
 	}
 	return pt.Fingerprint{Value: cur}, nil
+}
+
+// Diff implements target.Differ: the diff between desired and live cluster state.
+func (t *Target) Diff(ctx context.Context, desired pt.Manifest) (string, error) {
+	manifest, err := manifestFromSpec(ctx, desired.Spec, t.run)
+	if err != nil {
+		return "", err
+	}
+	return t.cl.Diff(ctx, manifest)
+}
+
+// Resources implements target.Inspector: the live managed resources.
+func (t *Target) Resources(ctx context.Context) ([]pt.Resource, error) {
+	return t.cl.Resources(ctx)
 }
 
 // Health reports rollout readiness.

@@ -7,11 +7,13 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"net/http"
 
 	"go.klarlabs.de/rolloffs/internal/engine"
 	"go.klarlabs.de/rolloffs/internal/rollout"
+	pt "go.klarlabs.de/rolloffs/pkg/target"
 )
 
 // Backend is the engine surface the dashboard needs. *engine.Engine satisfies it.
@@ -19,17 +21,21 @@ type Backend interface {
 	List(ctx context.Context, limit int) ([]rollout.Rollout, error)
 	DriftReport(ctx context.Context) ([]engine.DriftItem, error)
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)
+	Diff(ctx context.Context, rolloutID string) (string, error)
+	Resources(ctx context.Context, rolloutID string) ([]pt.Resource, error)
 	Approve(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
+	RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error)
 }
 
 // Server renders the dashboard and handles approve/reject actions.
 type Server struct {
-	be    Backend
-	actor rollout.Identity
-	sync  func(context.Context) error // optional: on-demand reconcile (Sync now)
-	dash  *template.Template
-	hist  *template.Template
+	be     Backend
+	actor  rollout.Identity
+	sync   func(context.Context) error // optional: on-demand reconcile (Sync now)
+	dash   *template.Template
+	hist   *template.Template
+	detail *template.Template
 }
 
 // Option configures the Server.
@@ -55,10 +61,11 @@ var funcs = template.FuncMap{
 // identity is attributed to approve/reject actions.
 func New(be Backend, actor rollout.Identity, opts ...Option) *Server {
 	s := &Server{
-		be:    be,
-		actor: actor,
-		dash:  template.Must(template.New("dash").Funcs(funcs).Parse(dashboardHTML)),
-		hist:  template.Must(template.New("hist").Funcs(funcs).Parse(historyHTML)),
+		be:     be,
+		actor:  actor,
+		dash:   template.Must(template.New("dash").Funcs(funcs).Parse(dashboardHTML)),
+		hist:   template.Must(template.New("hist").Funcs(funcs).Parse(historyHTML)),
+		detail: template.Must(template.New("detail").Funcs(funcs).Parse(detailHTML)),
 	}
 	for _, o := range opts {
 		o(s)
@@ -72,10 +79,77 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui", s.dashboard)
 	mux.HandleFunc("GET /ui/", s.dashboard)
 	mux.HandleFunc("GET /ui/history", s.history)
+	mux.HandleFunc("GET /ui/target", s.targetDetail)
 	mux.HandleFunc("POST /ui/approve", s.act(s.be.Approve))
 	mux.HandleFunc("POST /ui/reject", s.act(s.be.Reject))
+	mux.HandleFunc("POST /ui/rollback", s.handleRollback)
 	mux.HandleFunc("POST /ui/sync", s.handleSync)
 	return mux
+}
+
+type detailData struct {
+	Ref       string
+	Rollout   *rollout.Rollout
+	Diff      string
+	DiffNote  string
+	Resources []pt.Resource
+	Records   []rollout.RolloutRecord
+	Awaiting  bool
+	CanSync   bool
+}
+
+func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
+	ref := r.URL.Query().Get("target")
+	if ref == "" {
+		http.Error(w, "target required", http.StatusBadRequest)
+		return
+	}
+	rollouts, err := s.be.List(r.Context(), 200)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var latest *rollout.Rollout
+	for i := range rollouts {
+		if rollouts[i].TargetRef == ref { // newest first
+			latest = &rollouts[i]
+			break
+		}
+	}
+	if latest == nil {
+		http.Error(w, "no rollouts for target", http.StatusNotFound)
+		return
+	}
+	d := detailData{Ref: ref, Rollout: latest, CanSync: s.sync != nil, Awaiting: latest.Phase == rollout.PhaseAwaitingApproval}
+	if diff, derr := s.be.Diff(r.Context(), latest.ID); derr != nil {
+		if errors.Is(derr, engine.ErrUnsupported) {
+			d.DiffNote = "this target type does not support diff"
+		} else {
+			d.DiffNote = derr.Error()
+		}
+	} else {
+		d.Diff = diff
+	}
+	if res, rerr := s.be.Resources(r.Context(), latest.ID); rerr == nil {
+		d.Resources = res
+	}
+	d.Records, _ = s.be.History(r.Context(), ref)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.detail.Execute(w, d)
+}
+
+func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
+	ref := r.FormValue("target")
+	if ref == "" {
+		http.Error(w, "target required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.be.RollbackLast(r.Context(), ref); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/ui/target?target="+ref, http.StatusSeeOther)
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +298,7 @@ const dashboardHTML = `<!doctype html>
     <td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td>
     <td class="mono">{{ short .Desired }}</td>
     <td class="mono">{{ short .Observed }}</td>
-    <td><a href="/ui/history?target={{ .TargetRef }}">history →</a></td>
+    <td><a href="/ui/target?target={{ .TargetRef }}">details →</a></td>
    </tr>
   {{- end }}
   </tbody>
@@ -239,7 +313,7 @@ const dashboardHTML = `<!doctype html>
   {{- range .Rows }}
    <tr>
     <td class="mono">{{ .ID }}</td>
-    <td><a href="/ui/history?target={{ .TargetRef }}">{{ .TargetRef }}</a></td>
+    <td><a href="/ui/target?target={{ .TargetRef }}">{{ .TargetRef }}</a></td>
     <td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td>
     <td>{{ .Strategy }}</td>
     <td class="mono">{{ .Initiator.Kind }}/{{ .Initiator.Name }}</td>
@@ -256,6 +330,70 @@ const dashboardHTML = `<!doctype html>
   </tbody>
  </table>
  {{- else }}<div class="empty">No rollouts yet.</div>{{ end }}
+</main>
+</body></html>`
+
+const detailHTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="8"><title>Rolloffs · {{ .Ref }}</title>
+<style>` + baseCSS + `
+ .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:8px 0 4px}
+ .kv{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+ .kv .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .kv .v{font-size:15px;font-weight:600;margin-top:3px}
+ pre.diff{background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:380px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap}
+ pre.diff .a{color:var(--ok)} pre.diff .d{color:var(--bad)}
+ .actions{display:flex;gap:8px;margin:14px 0}
+ .note{color:var(--muted);font-size:13px;padding:12px}
+</style></head>
+<body>
+<header><h1>Rolloffs</h1><span class="sub">{{ .Ref }}</span>
+ <span class="spacer"></span>
+ {{- if .CanSync }}<form method="post" action="/ui/sync"><button class="syncbtn">⟳ Sync now</button></form>{{ end }}
+</header>
+<main>
+ <p><a href="/ui">← dashboard</a></p>
+
+ <div class="grid">
+  <div class="kv"><div class="k">Phase</div><div class="v"><span class="pill p-{{ .Rollout.Phase }}">{{ .Rollout.Phase }}</span></div></div>
+  <div class="kv"><div class="k">Strategy</div><div class="v">{{ .Rollout.Strategy }}</div></div>
+  <div class="kv"><div class="k">Desired</div><div class="v mono">{{ short .Rollout.Desired.Checksum }}</div></div>
+  <div class="kv"><div class="k">Rollout</div><div class="v mono">{{ .Rollout.ID }}</div></div>
+ </div>
+
+ <div class="actions">
+  {{- if .Awaiting }}
+   <form method="post" action="/ui/approve"><input type="hidden" name="id" value="{{ .Rollout.ID }}"><button class="ok">Approve</button></form>
+   <form method="post" action="/ui/reject"><input type="hidden" name="id" value="{{ .Rollout.ID }}"><button class="bad">Reject</button></form>
+  {{- end }}
+  <form method="post" action="/ui/rollback"><input type="hidden" name="target" value="{{ .Ref }}"><button class="bad">↩ Rollback</button></form>
+ </div>
+
+ <h2>Live resources</h2>
+ {{- if .Resources }}
+ <table>
+  <thead><tr><th>Kind</th><th>Name</th><th>Namespace</th><th>Status</th></tr></thead>
+  <tbody>
+  {{- range .Resources }}
+   <tr><td>{{ .Kind }}</td><td class="mono">{{ .Name }}</td><td class="mono">{{ .Namespace }}</td><td>{{ .Status }}</td></tr>
+  {{- end }}
+  </tbody>
+ </table>
+ {{- else }}<div class="note">No live resources reported (target may not support inspection).</div>{{ end }}
+
+ <h2>Diff (desired → live)</h2>
+ {{- if .Diff }}<pre class="diff">{{ .Diff }}</pre>{{ else }}<div class="note">{{ if .DiffNote }}{{ .DiffNote }}{{ else }}no diff{{ end }}</div>{{ end }}
+
+ <h2>History</h2>
+ {{- if .Records }}
+ <table>
+  <thead><tr><th>When</th><th>Phase</th><th>Rollout</th><th>By</th></tr></thead>
+  <tbody>
+  {{- range .Records }}
+   <tr><td class="mono">{{ .At.Format "2006-01-02 15:04:05" }}</td><td><span class="pill p-{{ .Phase }}">{{ .Phase }}</span></td><td class="mono">{{ .RolloutID }}</td><td class="mono">{{ .Initiator.Kind }}/{{ .Initiator.Name }}</td></tr>
+  {{- end }}
+  </tbody>
+ </table>
+ {{- else }}<div class="note">No history.</div>{{ end }}
 </main>
 </body></html>`
 

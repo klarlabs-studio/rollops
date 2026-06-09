@@ -72,3 +72,24 @@ type HealthStatus struct {
 	State  HealthState
 	Reason string
 }
+
+// Differ is an OPTIONAL capability: a target that can show the diff between the
+// desired state and what is live (e.g. `kubectl diff`). The engine surfaces it
+// in the plan and the UI; targets that cannot diff simply do not implement it.
+type Differ interface {
+	Diff(ctx context.Context, desired Manifest) (string, error)
+}
+
+// Inspector is an OPTIONAL capability: a target that can list the live resources
+// it manages and their status (e.g. `kubectl get`). Surfaced in the UI.
+type Inspector interface {
+	Resources(ctx context.Context) ([]Resource, error)
+}
+
+// Resource is one live object a target manages.
+type Resource struct {
+	Kind      string
+	Name      string
+	Namespace string
+	Status    string // ready/healthy summary, target-defined
+}

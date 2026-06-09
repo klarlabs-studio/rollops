@@ -76,7 +76,10 @@ func buildMachine(initial Phase) (*statekit.Interpreter[LifeContext], error) {
 		State(statekit.StateID(PhaseVerifying)).
 		On(EventVerifyOK).Target(statekit.StateID(PhasePromoted)).
 		On(EventRollback).Target(statekit.StateID(PhaseRolledBack)).Done().
-		State(statekit.StateID(PhasePromoted)).Final().Done().
+		// promoted is the steady state, but a completed deploy can still be
+		// reverted (GitOps rollback) → rolled-back.
+		State(statekit.StateID(PhasePromoted)).
+		On(EventRollback).Target(statekit.StateID(PhaseRolledBack)).Done().
 		State(statekit.StateID(PhaseRolledBack)).Final().Done().
 		Build()
 	if err != nil {

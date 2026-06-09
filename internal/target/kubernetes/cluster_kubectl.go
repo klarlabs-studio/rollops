@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	pt "go.klarlabs.de/rolloffs/pkg/target"
 )
 
 // kubectlCluster drives a cluster through the external kubectl binary. No
@@ -78,4 +80,35 @@ func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
 		return false, strings.TrimSpace(out), nil
 	}
 	return true, "", nil
+}
+
+// Diff runs `kubectl diff` of the manifest against live state. kubectl exits
+// non-zero (1) when differences exist, with the diff on stdout — that is not an
+// error here, it is the result.
+func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, error) {
+	out, _ := k.run(ctx, manifest, "diff", "-f", "-")
+	if strings.TrimSpace(out) == "" {
+		return "no changes — live state matches desired", nil
+	}
+	return out, nil
+}
+
+// Resources lists the managed resource and (for workloads) its pods, with a
+// ready summary.
+func (k *kubectlCluster) Resources(ctx context.Context) ([]pt.Resource, error) {
+	out, err := k.run(ctx, nil, "get", k.resource,
+		"-o", "jsonpath={.kind}|{.metadata.name}|{.metadata.namespace}|{.status.readyReplicas}/{.status.replicas}")
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: list resources: %w", err)
+	}
+	parts := strings.Split(strings.TrimSpace(out), "|")
+	if len(parts) < 4 || parts[1] == "" {
+		return nil, nil
+	}
+	ns := parts[2]
+	if ns == "" {
+		ns = k.namespace
+	}
+	status := "ready " + parts[3]
+	return []pt.Resource{{Kind: parts[0], Name: parts[1], Namespace: ns, Status: status}}, nil
 }
