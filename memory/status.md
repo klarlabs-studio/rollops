@@ -17,7 +17,13 @@ within one tick → promoted; every phase audited (deploying→verifying→promo
 attributed to ci/reconciler. Two real rollouts (deploy + drift-reconcile) in the
 bolt trail. Example: `examples/kubernetes-rollout.example.yaml`.
 
-184 tests, hermetic + -race green. All 5 external integrations live-verified.
+205 tests, hermetic + -race green.
+
+**Phase-1/2 features added post-MVP**: richer UI (drift/history/live/auto-refresh),
+notifications (Telegram + webhook), and generic provider-agnostic metric-based
+analysis (CEL condition over a MetricsProvider; Prometheus impl) wired as the 4th
+post-deploy signal. **Six external integrations live-verified**: SSH, FTP, K8s,
+Vault, cosign, Prometheus — plus the git→cluster dogfood. `make integration`.
 
 ## 🎉 P0 OSS core COMPLETE — 37/37 Roady tasks done
 
