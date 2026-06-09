@@ -127,6 +127,43 @@ func TestHistory_RequiresTarget(t *testing.T) {
 	}
 }
 
+func TestSync_ButtonAndAction(t *testing.T) {
+	called := false
+	s := New(&fakeBackend{}, rollout.Identity{Kind: "human", Name: "x"},
+		WithSync(func(context.Context) error { called = true; return nil }))
+	h := s.Handler()
+
+	// Button shown when sync is available.
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
+	if !strings.Contains(rr.Body.String(), "Sync now") {
+		t.Error("Sync now button missing when sync enabled")
+	}
+	// Action triggers the reconcile.
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("POST", "/ui/sync", nil))
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("sync = %d, want 303", rr.Code)
+	}
+	if !called {
+		t.Error("sync handler did not trigger reconcile")
+	}
+}
+
+func TestSync_DisabledByDefault(t *testing.T) {
+	h := srv(&fakeBackend{}) // no WithSync
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/ui", nil))
+	if strings.Contains(rr.Body.String(), "Sync now") {
+		t.Error("Sync button should be hidden when sync not wired")
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("POST", "/ui/sync", nil))
+	if rr.Code != http.StatusNotImplemented {
+		t.Errorf("sync without wiring = %d, want 501", rr.Code)
+	}
+}
+
 func TestRejectAction_RequiresID(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/ui/reject", strings.NewReader(""))

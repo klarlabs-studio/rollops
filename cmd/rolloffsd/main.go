@@ -104,7 +104,15 @@ func run() error {
 	top := http.NewServeMux()
 	top.Handle("/metrics", met.Handler())
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	uiHandler := basicAuth(ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"}).Handler())
+	// "Sync now" triggers an immediate reconcile of the watched repos.
+	var watcher *reconcile.Watcher
+	uiHandler := basicAuth(ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"},
+		ui.WithSync(func(ctx context.Context) error {
+			if watcher != nil {
+				watcher.Tick(ctx)
+			}
+			return nil
+		})).Handler())
 	top.Handle("/ui", uiHandler)
 	top.Handle("/ui/", uiHandler)
 	top.Handle("/", api.New(eng, auth, policy).Handler())
@@ -124,10 +132,11 @@ func run() error {
 	} else if len(specs) > 0 {
 		rec := reconcile.New(eng, aud)
 		workdir := envOr("ROLLOFFS_WORKDIR", filepath.Join(os.TempDir(), "rolloffs-repos"))
-		watcher, err := reconcile.NewWatcher(ctx, rec, workdir, specs)
+		w, err := reconcile.NewWatcher(ctx, rec, workdir, specs)
 		if err != nil {
 			return err
 		}
+		watcher = w
 		interval := 60 * time.Second
 		if d, err := time.ParseDuration(os.Getenv("ROLLOFFS_RECONCILE_INTERVAL")); err == nil && d > 0 {
 			interval = d

@@ -27,8 +27,18 @@ type Backend interface {
 type Server struct {
 	be    Backend
 	actor rollout.Identity
+	sync  func(context.Context) error // optional: on-demand reconcile (Sync now)
 	dash  *template.Template
 	hist  *template.Template
+}
+
+// Option configures the Server.
+type Option func(*Server)
+
+// WithSync enables the "Sync now" button: an on-demand reconcile of the watched
+// repos (the daemon wires this to the reconcile watcher). Argo-style manual sync.
+func WithSync(fn func(context.Context) error) Option {
+	return func(s *Server) { s.sync = fn }
 }
 
 var funcs = template.FuncMap{
@@ -43,13 +53,17 @@ var funcs = template.FuncMap{
 
 // New builds the dashboard server. actor is the authenticated operator whose
 // identity is attributed to approve/reject actions.
-func New(be Backend, actor rollout.Identity) *Server {
-	return &Server{
+func New(be Backend, actor rollout.Identity, opts ...Option) *Server {
+	s := &Server{
 		be:    be,
 		actor: actor,
 		dash:  template.Must(template.New("dash").Funcs(funcs).Parse(dashboardHTML)),
 		hist:  template.Must(template.New("hist").Funcs(funcs).Parse(historyHTML)),
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Handler returns the routed dashboard handler.
@@ -60,7 +74,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui/history", s.history)
 	mux.HandleFunc("POST /ui/approve", s.act(s.be.Approve))
 	mux.HandleFunc("POST /ui/reject", s.act(s.be.Reject))
+	mux.HandleFunc("POST /ui/sync", s.handleSync)
 	return mux
+}
+
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	if s.sync == nil {
+		http.Error(w, "sync not available", http.StatusNotImplemented)
+		return
+	}
+	if err := s.sync(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/ui", http.StatusSeeOther)
 }
 
 type row struct {
@@ -73,6 +100,7 @@ type dashData struct {
 	Drift    []engine.DriftItem
 	Counts   map[string]int
 	HasDrift bool
+	CanSync  bool
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +124,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.dash.Execute(w, dashData{Rows: rows, Drift: drift, Counts: counts, HasDrift: hasDrift})
+	_ = s.dash.Execute(w, dashData{Rows: rows, Drift: drift, Counts: counts, HasDrift: hasDrift, CanSync: s.sync != nil})
 }
 
 type histData struct {
@@ -160,13 +188,22 @@ const baseCSS = `
  .chip b{color:var(--ink)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
  .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
  .badge.drift{background:rgba(248,81,73,.16);color:var(--bad)} .badge.sync{background:rgba(63,185,80,.12);color:var(--ok)}
+ header .spacer{flex:1}
+ .syncbtn{border:1px solid rgba(83,155,245,.5);background:rgba(83,155,245,.12);color:var(--accent);padding:6px 14px;border-radius:8px;font-weight:600}
+ /* live phase: in-flight pills pulse so transitions read as live */
+ @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+ .p-deploying,.p-verifying,.p-validating,.p-pending{animation:pulse 1.2s ease-in-out infinite}
+ .p-awaiting-approval{animation:pulse 1.6s ease-in-out infinite}
 `
 
 const dashboardHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="5"><title>Rolloffs</title>
 <style>` + baseCSS + `</style></head>
 <body>
-<header><h1>Rolloffs</h1><span class="sub">rollout operations · live state · auto-refresh 5s</span></header>
+<header><h1>Rolloffs</h1><span class="sub">rollout operations · live state · auto-refresh 5s</span>
+ <span class="spacer"></span>
+ {{- if .CanSync }}<form method="post" action="/ui/sync"><button class="syncbtn">⟳ Sync now</button></form>{{ end }}
+</header>
 <main>
  <div class="chips">
   <span class="chip">promoted <b class="ok">{{ index .Counts "promoted" }}</b></span>
