@@ -193,6 +193,73 @@ func contains(ks []notify.Kind, want notify.Kind) bool {
 	return false
 }
 
+const analysisYAML = `
+apiVersion: rolloffs.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: analyzed
+spec:
+  target:
+    kind: fake
+    ref: analyzed/prod/api
+    criticality: low
+    spec:
+      x: 1
+  strategy:
+    type: rolling
+  rollback:
+    auto: true
+  analysis:
+    provider: prometheus
+    address: http://prom
+    metrics:
+      - {name: errorRate, query: "rate(err[1m])"}
+    condition: "errorRate < 0.05"
+    count: 2
+    failureLimit: 1
+`
+
+type fixedMetrics float64
+
+func (f fixedMetrics) Query(context.Context, string) (float64, error) { return float64(f), nil }
+
+func TestPipeline_MetricAnalysisRollsBack(t *testing.T) {
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _, _ := wiredEngine(t, WithMetricsProvider(fixedMetrics(0.2))) // error rate breaches 0.05
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	out, err := e.VerifyOrRollback(ctx, r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !out.RolledBack {
+		t.Fatal("breaching metric analysis should auto-roll-back")
+	}
+	if !strings.Contains(out.Reason, "analysis") {
+		t.Errorf("reason = %q, want analysis failure", out.Reason)
+	}
+}
+
+func TestPipeline_MetricAnalysisPromotes(t *testing.T) {
+	c, _ := config.Load([]byte(analysisYAML))
+	e, _, _ := wiredEngine(t, WithMetricsProvider(fixedMetrics(0.01))) // healthy
+	ctx := context.Background()
+	r, _ := e.Apply(ctx, ApplyRequest{Config: c})
+	out, err := e.VerifyOrRollback(ctx, r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if out.RolledBack {
+		t.Fatalf("healthy metrics should promote; reason=%q", out.Reason)
+	}
+}
+
 func TestPipeline_PolicyFloorForcesApproval(t *testing.T) {
 	// Prod schema change: the non-bypassable floor forces approval even with no
 	// risk block configured.

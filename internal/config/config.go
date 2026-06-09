@@ -53,8 +53,28 @@ type Spec struct {
 	Strategy     Strategy      `yaml:"strategy" json:"strategy"`
 	Risk         Risk          `yaml:"risk,omitempty" json:"risk,omitempty"`
 	Rollback     Rollback      `yaml:"rollback,omitempty" json:"rollback,omitempty"`
+	Analysis     *Analysis     `yaml:"analysis,omitempty" json:"analysis,omitempty"`
 	DependsOn    []string      `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule     string        `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
+}
+
+// Analysis is the optional metric-based rollout analysis (Phase 2 seam). When
+// set, a metrics provider is queried during the post-deploy gate and a CEL
+// condition over the named metrics decides pass/fail. Provider-agnostic.
+type Analysis struct {
+	Provider     string           `yaml:"provider" json:"provider"`   // e.g. prometheus
+	Address      string           `yaml:"address" json:"address"`     // provider endpoint
+	Metrics      []AnalysisMetric `yaml:"metrics" json:"metrics"`     // named queries
+	Condition    string           `yaml:"condition" json:"condition"` // CEL bool over metric names; true == healthy
+	Interval     string           `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Count        int              `yaml:"count,omitempty" json:"count,omitempty"`
+	FailureLimit int              `yaml:"failureLimit,omitempty" json:"failureLimit,omitempty"`
+}
+
+// AnalysisMetric binds a CEL variable name to a provider query.
+type AnalysisMetric struct {
+	Name  string `yaml:"name" json:"name"`
+	Query string `yaml:"query" json:"query"`
 }
 
 // Target selects the deployment target plugin and its criticality weight.

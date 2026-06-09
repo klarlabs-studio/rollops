@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"go.klarlabs.de/rolloffs/internal/analysis"
 	"go.klarlabs.de/rolloffs/internal/audit"
 	"go.klarlabs.de/rolloffs/internal/config"
 	"go.klarlabs.de/rolloffs/internal/depgraph"
@@ -54,6 +55,7 @@ type Engine struct {
 	artifact   *security.ArtifactGate
 	secrets    secrets.Provider
 	notifier   notify.Notifier
+	metrics    analysis.MetricsProvider // optional override; else built from config
 }
 
 // Option configures an Engine.
@@ -87,6 +89,12 @@ func WithSecrets(p secrets.Provider) Option { return func(e *Engine) { e.secrets
 // WithNotifier enables operator notifications (approvals, failures, rollbacks,
 // promotions). Best-effort: a failing notifier never blocks a rollout.
 func WithNotifier(n notify.Notifier) Option { return func(e *Engine) { e.notifier = n } }
+
+// WithMetricsProvider overrides the metrics backend used for analysis (else one
+// is built from the config's analysis.provider/address).
+func WithMetricsProvider(p analysis.MetricsProvider) Option {
+	return func(e *Engine) { e.metrics = p }
+}
 
 // notifyEvent delivers an event best-effort.
 func (e *Engine) notifyEvent(ctx context.Context, ev notify.Event) {
@@ -533,7 +541,45 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 			return true, fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit)
 		}
 	}
+	// Metric-based analysis (Phase 2 seam) — the fourth post-deploy signal.
+	if c.Spec.Analysis != nil {
+		if ok, reason := e.runAnalysis(ctx, c.Spec.Analysis); !ok {
+			return true, reason
+		}
+	}
 	return false, ""
+}
+
+// runAnalysis builds an analyzer from config (using the injected metrics
+// provider, or a Prometheus provider from the config address) and runs it.
+func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, string) {
+	provider := e.metrics
+	if provider == nil {
+		if a.Provider != "prometheus" {
+			return false, fmt.Sprintf("analysis: no metrics provider for %q", a.Provider)
+		}
+		provider = analysis.Prometheus{Addr: a.Address}
+	}
+	metrics := make([]analysis.Metric, 0, len(a.Metrics))
+	for _, m := range a.Metrics {
+		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query})
+	}
+	interval, _ := time.ParseDuration(a.Interval)
+	an, err := analysis.New(provider, analysis.Template{
+		Metrics:      metrics,
+		Condition:    a.Condition,
+		Interval:     interval,
+		Count:        a.Count,
+		FailureLimit: a.FailureLimit,
+	})
+	if err != nil {
+		return false, "analysis: " + err.Error()
+	}
+	res := an.Run(ctx)
+	if !res.Passed {
+		return false, "analysis failed: " + res.Reason
+	}
+	return true, ""
 }
 
 // Approve resolves an awaiting-approval rollout: it deploys to the target and

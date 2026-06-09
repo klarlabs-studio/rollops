@@ -1,0 +1,41 @@
+# Canary with metric-based analysis (Phase-2 seam, provider-agnostic).
+# During the post-deploy gate, Rolloffs queries the metrics provider and a CEL
+# condition over the named metrics decides promote vs auto-rollback.
+apiVersion: rolloffs.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: payments-api
+spec:
+  target:
+    kind: kubernetes
+    ref: payments/prod/api
+    criticality: high
+    spec:
+      context: prod
+      namespace: payments
+      resource: deployment/api
+      manifest: |
+        # ... your Deployment YAML ...
+
+  strategy:
+    type: canary
+    steps:
+      - {weight: 10, pause: 2m}
+      - {weight: 50, pause: 2m}
+
+  rollback:
+    auto: true            # analysis failure triggers rollback
+
+  analysis:
+    provider: prometheus
+    address: http://prometheus.monitoring:9090
+    interval: 30s
+    count: 5               # 5 measurements
+    failureLimit: 1        # tolerate one bad sample, abort on the second
+    metrics:
+      - name: errorRate
+        query: 'sum(rate(http_requests_total{job="api",code=~"5.."}[1m])) / sum(rate(http_requests_total{job="api"}[1m]))'
+      - name: p99
+        query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="api"}[1m])) by (le)) * 1000'
+    # CEL over the metric names; true == healthy → promote
+    condition: 'errorRate < 0.05 && p99 < 500'

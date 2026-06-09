@@ -41,6 +41,7 @@
         "strategy": { "$ref": "#/$defs/strategy" },
         "risk": { "$ref": "#/$defs/risk" },
         "rollback": { "$ref": "#/$defs/rollback" },
+        "analysis": { "$ref": "#/$defs/analysis" },
         "dependsOn": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -165,6 +166,33 @@
       "properties": {
         "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
         "expectExit": { "type": "integer", "default": 0 }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "metrics", "condition"],
+      "description": "Metric-based rollout analysis (Phase 2 seam). Provider-agnostic.",
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "description": "e.g. prometheus" },
+        "address": { "type": "string" },
+        "condition": { "type": "string", "minLength": 1, "description": "CEL boolean over metric names; true == healthy." },
+        "interval": { "type": "string", "description": "Go duration between measurements." },
+        "count": { "type": "integer", "minimum": 1 },
+        "failureLimit": { "type": "integer", "minimum": 0 },
+        "metrics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "query"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "query": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
       }
     }
   }
