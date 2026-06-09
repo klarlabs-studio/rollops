@@ -117,3 +117,9 @@ statekit then. Not rework — planned layering.
 
 - None blocking. Stack confirmed + pinned (see decisions/open-threads).
 - Repo dir is `rollops`, project/module is `rolloffs` — intentional, noted in README.
+
+## Competitive (vs Argo/Flux) — added 2026-06-09
+- **Helm + Kustomize rendering** in the K8s target (helm template / kubectl kustomize, remote charts/overlays) — the biggest adoption gap closed. examples/helm-rollout.example.yaml.
+- **UI: Sync-now button** (on-demand reconcile, wired to the watcher) + live phase pulse.
+- Moat unchanged + stronger: infra-agnostic (non-K8s), agent-native (MCP), lean single binary, risk gate + guardrails + audit.
+- Still open vs Argo/Flux: prune/GC, real `kubectl diff` view, resource tree, SSO, multi-cluster, image automation. Tracked for next.
