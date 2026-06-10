@@ -2,6 +2,13 @@
 
 *Updated: 2026-06-10*
 
+## 🏷️ v0.2.0 TAGGED — email notifications
+
+Operator decision: email instead of Telegram. v0.2.0 ships notify channels
+briefkasten (durable MCP outbox, preferred), direct SMTP, and the HMAC
+webhook, plus the `rollops doctor` notify probe and docs/notifications.md.
+Breaking: `ROLLOPS_TELEGRAM_*` removed. Released to GitHub with archives.
+
 ## 🏷️ v0.1.0 TAGGED — first release cut
 
 The rename/productization worktree was committed as `8bb6094`

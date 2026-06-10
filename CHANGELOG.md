@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - Email Notifications
 
 - **Breaking:** replaced the Telegram notifier with email. Mail goes out
   either through a [briefkasten](https://github.com/klarlabs-studio/briefkasten)
