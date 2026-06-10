@@ -18,6 +18,7 @@ const (
 	Failed         Kind = "failed"
 	RolledBack     Kind = "rolled_back"
 	Promoted       Kind = "promoted"
+	Test           Kind = "test" // setup-time channel check (doctor)
 )
 
 // Event is a single notification.
@@ -83,3 +84,24 @@ type Noop struct{}
 
 // Notify does nothing.
 func (Noop) Notify(context.Context, Event) error { return nil }
+
+// FromEnv wires notifiers from environment variables (ROLLOPS_TELEGRAM_TOKEN/
+// ROLLOPS_TELEGRAM_CHAT, ROLLOPS_WEBHOOK_URL/ROLLOPS_WEBHOOK_SECRET) and
+// returns the configured channel names for display. Both return values are nil
+// when nothing is configured. getenv is injectable for tests (pass os.Getenv).
+func FromEnv(getenv func(string) string) (Notifier, []string) {
+	var ns Multi
+	var names []string
+	if tok := getenv("ROLLOPS_TELEGRAM_TOKEN"); tok != "" {
+		ns = append(ns, Telegram{Token: tok, ChatID: getenv("ROLLOPS_TELEGRAM_CHAT")})
+		names = append(names, "telegram")
+	}
+	if url := getenv("ROLLOPS_WEBHOOK_URL"); url != "" {
+		ns = append(ns, Webhook{URL: url, Secret: getenv("ROLLOPS_WEBHOOK_SECRET")})
+		names = append(names, "webhook")
+	}
+	if len(ns) == 0 {
+		return nil, nil
+	}
+	return ns, names
+}

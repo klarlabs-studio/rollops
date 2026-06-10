@@ -13,6 +13,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	"go.klarlabs.de/rollops/internal/version"
@@ -45,10 +46,12 @@ type DaemonProbe func(ctx context.Context, addr, token string) error
 
 // Doctor configures the CLI's release-readiness diagnostics.
 type Doctor struct {
-	DBPath     string
-	DaemonAddr string
-	Token      string
-	Probe      DaemonProbe
+	DBPath         string
+	DaemonAddr     string
+	Token          string
+	Probe          DaemonProbe
+	Notifier       notify.Notifier // when set, doctor sends a test event
+	NotifyChannels []string        // channel names for display (telegram, webhook)
 }
 
 // Run dispatches a command. Returns a non-nil error on failure; the caller maps
@@ -194,6 +197,17 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		}
 	}
 
+	if a.Doctor.Notifier != nil {
+		if err := a.Doctor.Notifier.Notify(ctx, notify.Event{Kind: notify.Test, TargetRef: "doctor"}); err != nil {
+			fmt.Fprintf(a.Out, "notify: fail (%v)\n", err)
+			failed = append(failed, "notify")
+		} else {
+			fmt.Fprintf(a.Out, "notify: ok (%s)\n", strings.Join(a.Doctor.NotifyChannels, ", "))
+		}
+	} else {
+		fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_TELEGRAM_TOKEN or ROLLOPS_WEBHOOK_URL)")
+	}
+
 	if len(failed) > 0 {
 		return fmt.Errorf("doctor failed: %s", strings.Join(failed, ", "))
 	}
@@ -201,7 +215,7 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, and daemon readiness\n  version                  print build version")
+	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  version                  print build version")
 	return nil
 }
 

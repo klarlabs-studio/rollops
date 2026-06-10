@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	itarget "go.klarlabs.de/rollops/internal/target"
@@ -228,6 +230,57 @@ func TestCLI_DoctorFailsInvalidConfig(t *testing.T) {
 		t.Fatal("doctor must fail invalid config")
 	}
 	if !strings.Contains(buf.String(), "config: fail") {
+		t.Errorf("doctor output = %q", buf.String())
+	}
+}
+
+type fakeNotifier struct {
+	got *notify.Event
+	err error
+}
+
+func (f *fakeNotifier) Notify(_ context.Context, e notify.Event) error {
+	f.got = &e
+	return f.err
+}
+
+func TestCLI_DoctorNotify(t *testing.T) {
+	app, buf, cfg := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	fn := &fakeNotifier{}
+	app.Doctor.Notifier = fn
+	app.Doctor.NotifyChannels = []string{"telegram"}
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if fn.got == nil || fn.got.Kind != notify.Test {
+		t.Fatalf("test event not sent, got %+v", fn.got)
+	}
+	if !strings.Contains(buf.String(), "notify: ok (telegram)") {
+		t.Errorf("doctor output = %q", buf.String())
+	}
+}
+
+func TestCLI_DoctorNotifyFails(t *testing.T) {
+	app, buf, cfg := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	app.Doctor.Notifier = &fakeNotifier{err: errors.New("telegram status 403")}
+	app.Doctor.NotifyChannels = []string{"telegram"}
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err == nil {
+		t.Fatal("doctor must fail when a notify channel fails")
+	}
+	if !strings.Contains(buf.String(), "notify: fail") {
+		t.Errorf("doctor output = %q", buf.String())
+	}
+}
+
+func TestCLI_DoctorNotifySkippedWhenUnconfigured(t *testing.T) {
+	app, buf, cfg := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if !strings.Contains(buf.String(), "notify: skipped") {
 		t.Errorf("doctor output = %q", buf.String())
 	}
 }

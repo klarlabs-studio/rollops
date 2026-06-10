@@ -95,3 +95,53 @@ func TestNoop(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFromEnv(t *testing.T) {
+	env := func(m map[string]string) func(string) string {
+		return func(k string) string { return m[k] }
+	}
+
+	t.Run("nothing configured", func(t *testing.T) {
+		n, names := FromEnv(env(nil))
+		if n != nil || names != nil {
+			t.Errorf("got %v %v, want nil nil", n, names)
+		}
+	})
+
+	t.Run("telegram only", func(t *testing.T) {
+		n, names := FromEnv(env(map[string]string{
+			"ROLLOPS_TELEGRAM_TOKEN": "tok", "ROLLOPS_TELEGRAM_CHAT": "42",
+		}))
+		if n == nil || len(names) != 1 || names[0] != "telegram" {
+			t.Errorf("names = %v", names)
+		}
+	})
+
+	t.Run("webhook only", func(t *testing.T) {
+		n, names := FromEnv(env(map[string]string{"ROLLOPS_WEBHOOK_URL": "https://x"}))
+		if n == nil || len(names) != 1 || names[0] != "webhook" {
+			t.Errorf("names = %v", names)
+		}
+	})
+
+	t.Run("both", func(t *testing.T) {
+		n, names := FromEnv(env(map[string]string{
+			"ROLLOPS_TELEGRAM_TOKEN": "tok", "ROLLOPS_TELEGRAM_CHAT": "42",
+			"ROLLOPS_WEBHOOK_URL": "https://x", "ROLLOPS_WEBHOOK_SECRET": "s",
+		}))
+		m, ok := n.(Multi)
+		if !ok || len(m) != 2 {
+			t.Fatalf("want Multi of 2, got %T %v", n, n)
+		}
+		if len(names) != 2 || names[0] != "telegram" || names[1] != "webhook" {
+			t.Errorf("names = %v", names)
+		}
+	})
+}
+
+func TestEvent_Message_Test(t *testing.T) {
+	m := Event{Kind: Test, TargetRef: "doctor"}.Message()
+	if !strings.Contains(m, "test") {
+		t.Errorf("message = %q", m)
+	}
+}

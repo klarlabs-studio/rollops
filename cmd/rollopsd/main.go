@@ -84,7 +84,7 @@ func run(args []string) error {
 			Verifier: security.CosignVerifier{KeyPath: key},
 		}))
 	}
-	if n := buildNotifier(); n != nil {
+	if n, _ := notify.FromEnv(os.Getenv); n != nil {
 		engOpts = append(engOpts, engine.WithNotifier(n))
 	}
 	eng := engine.New(db, target.Builtin(), engOpts...)
@@ -339,22 +339,6 @@ func buildOIDCAuth() api.Authenticator {
 		Audience:   audience,
 		HMACSecret: secret,
 	}}
-}
-
-// buildNotifier wires Telegram and/or a generic webhook from the environment.
-// Returns nil when nothing is configured.
-func buildNotifier() notify.Notifier {
-	var ns notify.Multi
-	if tok := os.Getenv("ROLLOPS_TELEGRAM_TOKEN"); tok != "" {
-		ns = append(ns, notify.Telegram{Token: tok, ChatID: os.Getenv("ROLLOPS_TELEGRAM_CHAT")})
-	}
-	if url := os.Getenv("ROLLOPS_WEBHOOK_URL"); url != "" {
-		ns = append(ns, notify.Webhook{URL: url, Secret: os.Getenv("ROLLOPS_WEBHOOK_SECRET")})
-	}
-	if len(ns) == 0 {
-		return nil
-	}
-	return ns
 }
 
 func envOr(key, def string) string {

@@ -17,6 +17,7 @@ import (
 	"go.klarlabs.de/rollops/internal/cli"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/grpcapi"
+	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	"go.klarlabs.de/rollops/internal/target"
@@ -46,6 +47,7 @@ func run(args []string) error {
 			Probe:      probeDaemon,
 		},
 	}
+	app.Doctor.Notifier, app.Doctor.NotifyChannels = notify.FromEnv(os.Getenv)
 
 	if len(args) > 0 && args[0] == "doctor" {
 		return app.Run(context.Background(), args)

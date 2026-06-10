@@ -23,6 +23,10 @@
 - Concrete RBAC role/permission taxonomy — first taxonomy exists; refine from dogfood evidence.
 
 ## Decisions needing operator input
-- Notification channel for approvals/failures (Telegram mentioned, P1).
+- ~~Notification channel for approvals/failures (Telegram mentioned, P1).~~
+  Resolved 2026-06-10: Telegram + HMAC webhook were already shipped and wired
+  (env: ROLLOPS_TELEGRAM_TOKEN/CHAT, ROLLOPS_WEBHOOK_URL/SECRET); this session
+  added docs/notifications.md, notify.FromEnv (shared CLI/daemon wiring), and a
+  `rollops doctor` notify probe that sends a test event per configured channel.
 - Default risk threshold + criticality weights — sensible defaults shipped, operator tunes via CEL.
 - Release polish priority: `doctor` command, install/systemd packaging, first-run docs/examples, RBAC docs/defaults, plugin adapter hardening, dashboard workflow refinement, release-check aggregation, version metadata, changelog, and Roady drift cleanup are done.

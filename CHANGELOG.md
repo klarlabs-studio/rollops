@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added `notify: ok|fail|skipped` check to `rollops doctor`: sends a test
+  event to every configured notification channel so a bad Telegram token or
+  webhook URL fails loudly at setup instead of being dropped at runtime.
+- Added `docs/notifications.md` covering Telegram and HMAC-signed webhook
+  setup, event kinds, and best-effort delivery semantics.
+
 ## v0.1.0 - MVP OSS Core
 
 - Implemented Rollops core engine: plan, apply, verify, promote, rollback,
