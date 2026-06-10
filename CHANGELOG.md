@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 - Console: Risk + Agent Attribution
 
 - Console: real decisionkit risk scores in the apps table and detail view,
   agent/human/CI actor attribution icons, relative timestamps, clickable

@@ -2,7 +2,11 @@
 
 *Updated: 2026-06-10*
 
-## UI competitive round 3 (2026-06-10, post-v0.2.0, unreleased)
+## 🏷️ v0.3.0 TAGGED — console risk + agent attribution
+
+UI competitive round 3 released as v0.3.0 (GitHub release with archives).
+
+## UI competitive round 3 (2026-06-10, post-v0.2.0)
 
 Review vs ArgoCD/Argo Rollouts closed remaining gaps and shipped two
 differentiators no competitor has: real decisionkit risk scores surfaced
