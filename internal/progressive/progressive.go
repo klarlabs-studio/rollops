@@ -74,6 +74,10 @@ type Executor struct {
 	Deploy Deployer
 	Health HealthGate
 	Sleep  func(time.Duration)
+	// OnStep is called after each step passes its health gate with the 1-based
+	// step index, the plan's total, and the step itself — the persistence hook
+	// for live step progress.
+	OnStep func(i, total int, s Step)
 }
 
 // Run executes each step: deploy at the step weight, settle, then gate on
@@ -94,6 +98,9 @@ func (e Executor) Run(ctx context.Context, p Plan) error {
 			if err := e.Health(ctx); err != nil {
 				return fmt.Errorf("progressive: %s step %d/%d (%d%%): health gate failed: %w", p.Strategy, i+1, len(p.Steps), step.Weight, err)
 			}
+		}
+		if e.OnStep != nil {
+			e.OnStep(i+1, len(p.Steps), step)
 		}
 	}
 	return nil

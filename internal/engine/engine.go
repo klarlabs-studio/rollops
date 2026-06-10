@@ -538,6 +538,17 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			}
 			return nil
 		},
+		// Persist step progress as it advances so operator surfaces (UI, CLI,
+		// API) see live "canary 2/3 (50%)" state; each save also appends a
+		// timeline entry. Best-effort: a persistence hiccup must not abort a
+		// healthy step sequence.
+		OnStep: func(i, total int, s progressive.Step) {
+			r.StepIndex, r.StepTotal, r.StepWeight = i, total, s.Weight
+			r.Note = fmt.Sprintf("%s step %d/%d (%d%%) passed health gate", plan.Strategy, i, total, s.Weight)
+			r.UpdatedAt = e.now()
+			_ = e.store.SaveRollout(ctx, r)
+			r.Note = ""
+		},
 	}
 	if err := exec.Run(ctx, plan); err != nil {
 		_, _ = lc.Send(rollout.EventError)

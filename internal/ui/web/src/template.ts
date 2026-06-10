@@ -64,7 +64,10 @@ export const template = `
           </td>
           <td><span :class="healthClass(a.health)"><span class="dot" :class="hue(a.health)"></span>{{ a.health }}</span></td>
           <td><span class="badge" :class="a.sync==='Synced'?'sync':'drift'">{{ a.sync }}</span></td>
-          <td><span :class="cls(a.phase)">{{ a.phase }}</span></td>
+          <td>
+            <span :class="cls(a.phase)">{{ a.phase }}</span>
+            <span v-if="a.active && a.stepTotal" class="step-mini mono" :title="a.strategy+' step '+a.stepIndex+'/'+a.stepTotal+' at '+a.stepWeight+'%'">{{ a.stepIndex }}/{{ a.stepTotal }} · {{ a.stepWeight }}%</span>
+          </td>
           <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (decisionkit)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
           <td class="mono">{{ short(a.desired) }}</td>
           <td class="mono">{{ short(a.observed) }}</td>
@@ -119,6 +122,12 @@ export const template = `
           <button :class="{active:mode==='graph'}" @click="mode='graph'" title="Tree view">⤳</button>
           <button :class="{active:mode==='list'}" @click="mode='list'" title="List view">≣</button>
         </div>
+      </div>
+
+      <div v-if="steps.length" class="stepbar" :title="detail.rollout.strategy+' — '+detail.rollout.stepIndex+'/'+detail.rollout.stepTotal+' steps, '+detail.rollout.stepWeight+'% traffic'">
+        <span class="stepbar-label">{{ detail.rollout.strategy }} steps</span>
+        <span v-for="s in steps" :key="s.n" class="step" :class="s.state"></span>
+        <span class="stepbar-meta mono">{{ detail.rollout.stepIndex }}/{{ detail.rollout.stepTotal }} · {{ detail.rollout.stepWeight }}%</span>
       </div>
 
       <div class="summary-grid">

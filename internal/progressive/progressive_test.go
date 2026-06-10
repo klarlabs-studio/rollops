@@ -37,6 +37,29 @@ func TestPlanFor_Rolling_Ramps(t *testing.T) {
 	}
 }
 
+func TestExecutor_OnStepReportsProgress(t *testing.T) {
+	type call struct{ i, total, weight int }
+	var calls []call
+	exec := Executor{
+		Deploy: func(context.Context, int) error { return nil },
+		Health: func(context.Context) error { return nil },
+		Sleep:  func(time.Duration) {},
+		OnStep: func(i, total int, s Step) { calls = append(calls, call{i, total, s.Weight}) },
+	}
+	if err := exec.Run(context.Background(), PlanFor(config.Strategy{Type: "canary", Steps: []config.StrategyStep{{Weight: 10}, {Weight: 50}}})); err != nil {
+		t.Fatal(err)
+	}
+	want := []call{{1, 3, 10}, {2, 3, 50}, {3, 3, 100}}
+	if len(calls) != len(want) {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Errorf("call %d = %v, want %v", i, calls[i], want[i])
+		}
+	}
+}
+
 func TestExecutor_RunsAllStepsInOrder(t *testing.T) {
 	var weights []int
 	exec := Executor{

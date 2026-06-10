@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +108,38 @@ func TestApply_DeploysAndPersists(t *testing.T) {
 	}
 	if got.Phase != rollout.PhaseVerifying || got.Initiator.Name != "felix" {
 		t.Errorf("persisted rollout = %+v", got)
+	}
+}
+
+func TestApply_PersistsStepProgress(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t), Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("LoadRollout: %v", err)
+	}
+	// rolling = 4 steps (25/50/75/100); all passed, so progress is complete.
+	if got.StepIndex != 4 || got.StepTotal != 4 || got.StepWeight != 100 {
+		t.Errorf("step progress = %d/%d (%d%%), want 4/4 (100%%)", got.StepIndex, got.StepTotal, got.StepWeight)
+	}
+	recs, err := db.History(ctx, "demo/prod/app")
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	var stepNotes int
+	for _, rec := range recs {
+		if strings.Contains(rec.Note, "passed health gate") {
+			stepNotes++
+		}
+	}
+	if stepNotes != 4 {
+		t.Errorf("step notes in history = %d, want 4", stepNotes)
 	}
 }
 

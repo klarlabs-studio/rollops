@@ -25,15 +25,18 @@ func openTemp(t *testing.T) *Store {
 func sampleRollout(id string, phase rollout.Phase) rollout.Rollout {
 	ts := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	return rollout.Rollout{
-		ID:        id,
-		TargetRef: "petmed/prod/api",
-		Phase:     phase,
-		Strategy:  rollout.StrategyCanary,
-		Desired:   target.Manifest{Kind: "ssh", Spec: []byte(`{"host":"x"}`), Checksum: "sha:abc"},
-		RiskScore: 0.42,
-		Initiator: rollout.Identity{Kind: "agent", Name: "nomi"},
-		CreatedAt: ts,
-		UpdatedAt: ts,
+		ID:         id,
+		TargetRef:  "petmed/prod/api",
+		Phase:      phase,
+		Strategy:   rollout.StrategyCanary,
+		Desired:    target.Manifest{Kind: "ssh", Spec: []byte(`{"host":"x"}`), Checksum: "sha:abc"},
+		RiskScore:  0.42,
+		Initiator:  rollout.Identity{Kind: "agent", Name: "nomi"},
+		StepIndex:  2,
+		StepTotal:  3,
+		StepWeight: 50,
+		CreatedAt:  ts,
+		UpdatedAt:  ts,
 	}
 }
 
@@ -72,6 +75,9 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	}
 	if got.Strategy != in.Strategy || got.RiskScore != in.RiskScore {
 		t.Errorf("strategy/score mismatch: %+v", got)
+	}
+	if got.StepIndex != 2 || got.StepTotal != 3 || got.StepWeight != 50 {
+		t.Errorf("step progress mismatch: %+v", got)
 	}
 	if got.Initiator.Kind != in.Initiator.Kind || got.Initiator.Name != in.Initiator.Name {
 		t.Errorf("initiator = %+v want %+v", got.Initiator, in.Initiator)

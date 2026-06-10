@@ -56,6 +56,9 @@ interface ApplicationRow {
   by: string;
   byKind: string;
   at: string;
+  stepIndex: number;
+  stepTotal: number;
+  stepWeight: number;
   changed: string;
   active: boolean;
   awaiting: boolean;
@@ -424,6 +427,9 @@ const App = defineComponent({
           by: r?.by || '',
           byKind: r?.byKind || '',
           at: r?.at || '',
+          stepIndex: r?.stepIndex ?? 0,
+          stepTotal: r?.stepTotal ?? 0,
+          stepWeight: r?.stepWeight ?? 0,
           changed: r?.id || '',
           active: isActive,
           awaiting: isAwaiting,
@@ -463,6 +469,18 @@ const App = defineComponent({
           .toLowerCase()
           .includes(q),
       );
+    },
+    // steps renders the progressive plan as segments for the detail step bar.
+    // stepIndex is the last step that PASSED its health gate; while deploying,
+    // the next segment is the one in flight.
+    steps(): { n: number; state: 'done' | 'current' | 'todo' }[] {
+      const r = this.detail?.rollout;
+      if (!r || !r.stepTotal) return [];
+      const inFlight = r.phase === 'deploying' && r.stepIndex < r.stepTotal ? r.stepIndex + 1 : 0;
+      return Array.from({ length: r.stepTotal }, (_, k) => {
+        const n = k + 1;
+        return { n, state: n <= r.stepIndex ? 'done' : n === inFlight ? 'current' : 'todo' };
+      });
     },
     // diffLines classifies unified-diff lines for syntax colouring.
     diffLines(): { t: string; c: string }[] {

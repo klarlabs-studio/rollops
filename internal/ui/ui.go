@@ -115,14 +115,17 @@ type driftJSON struct {
 }
 
 type rolloutJSON struct {
-	ID       string  `json:"id"`
-	Target   string  `json:"target"`
-	Phase    string  `json:"phase"`
-	Strategy string  `json:"strategy"`
-	By       string  `json:"by"`
-	ByKind   string  `json:"byKind"` // human | agent | ci
-	Risk     float64 `json:"risk"`   // decisionkit blast-radius score, 0 when ungated
-	At       string  `json:"at"`     // last transition, RFC 3339
+	ID         string  `json:"id"`
+	Target     string  `json:"target"`
+	Phase      string  `json:"phase"`
+	Strategy   string  `json:"strategy"`
+	By         string  `json:"by"`
+	ByKind     string  `json:"byKind"`     // human | agent | ci
+	Risk       float64 `json:"risk"`       // decisionkit blast-radius score, 0 when ungated
+	At         string  `json:"at"`         // last transition, RFC 3339
+	StepIndex  int     `json:"stepIndex"`  // progressive step passed (1-based, 0 = not stepping)
+	StepTotal  int     `json:"stepTotal"`  // total steps in the strategy plan
+	StepWeight int     `json:"stepWeight"` // traffic % of the current step
 }
 
 type dashboardJSON struct {
@@ -146,6 +149,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 			ID: rl.ID, Target: rl.TargetRef, Phase: string(rl.Phase), Strategy: string(rl.Strategy),
 			By: rl.Initiator.Kind + "/" + rl.Initiator.Name, ByKind: rl.Initiator.Kind,
 			Risk: rl.RiskScore, At: rl.UpdatedAt.UTC().Format(time.RFC3339),
+			StepIndex: rl.StepIndex, StepTotal: rl.StepTotal, StepWeight: rl.StepWeight,
 		})
 	}
 	drift, _ := s.be.DriftReport(r.Context())
@@ -176,12 +180,15 @@ type historyJSON struct {
 type targetJSON struct {
 	Ref     string `json:"ref"`
 	Rollout struct {
-		ID       string  `json:"id"`
-		Phase    string  `json:"phase"`
-		Strategy string  `json:"strategy"`
-		Desired  string  `json:"desired"`
-		Risk     float64 `json:"risk"`
-		At       string  `json:"at"` // last transition, RFC 3339
+		ID         string  `json:"id"`
+		Phase      string  `json:"phase"`
+		Strategy   string  `json:"strategy"`
+		Desired    string  `json:"desired"`
+		Risk       float64 `json:"risk"`
+		At         string  `json:"at"` // last transition, RFC 3339
+		StepIndex  int     `json:"stepIndex"`
+		StepTotal  int     `json:"stepTotal"`
+		StepWeight int     `json:"stepWeight"`
 	} `json:"rollout"`
 	Diff      string         `json:"diff"`
 	DiffNote  string         `json:"diffNote"`
@@ -222,6 +229,9 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	out.Rollout.Desired = latest.Desired.Checksum
 	out.Rollout.Risk = latest.RiskScore
 	out.Rollout.At = latest.UpdatedAt.UTC().Format(time.RFC3339)
+	out.Rollout.StepIndex = latest.StepIndex
+	out.Rollout.StepTotal = latest.StepTotal
+	out.Rollout.StepWeight = latest.StepWeight
 	out.Awaiting = latest.Phase == rollout.PhaseAwaitingApproval
 	out.CanSync = s.sync != nil
 	// Sync status is the authoritative drift signal (desired vs observed

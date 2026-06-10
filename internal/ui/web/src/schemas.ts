@@ -28,6 +28,9 @@ export const RolloutSchema = z.object({
   byKind: z.string().nullish().transform((v) => v ?? ''),
   risk: z.number().nullish().transform((v) => v ?? 0),
   at: z.string().nullish().transform((v) => v ?? ''),
+  stepIndex: z.number().nullish().transform((v) => v ?? 0),
+  stepTotal: z.number().nullish().transform((v) => v ?? 0),
+  stepWeight: z.number().nullish().transform((v) => v ?? 0),
 });
 
 export const DashboardSchema = z.object({
@@ -63,6 +66,9 @@ export const TargetSchema = z.object({
     desired: z.string(),
     risk: z.number().nullish().transform((v) => v ?? 0),
     at: z.string().nullish().transform((v) => v ?? ''),
+    stepIndex: z.number().nullish().transform((v) => v ?? 0),
+    stepTotal: z.number().nullish().transform((v) => v ?? 0),
+    stepWeight: z.number().nullish().transform((v) => v ?? 0),
   }),
   diff: z.string().nullish().transform((v) => v ?? ''),
   diffNote: z.string().nullish().transform((v) => v ?? ''),

@@ -51,8 +51,14 @@ type Rollout struct {
 	RiskScore float64         // decision-kit blast-radius score
 	Initiator Identity        // who/what started this (full attribution)
 	Note      string          // optional transition note, persisted only to history
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// Progressive step progress, persisted per health-gated step so operator
+	// surfaces can show "canary 2/3 (50%)" while a rollout bakes. Zero values
+	// mean the strategy has not started stepping (or predates this field).
+	StepIndex  int // 1-based step currently passed
+	StepTotal  int // total steps in the resolved plan
+	StepWeight int // traffic percentage of the current step
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —

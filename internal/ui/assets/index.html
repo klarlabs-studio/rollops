@@ -114,6 +114,14 @@
 	 .modal-actions{display:flex;gap:10px;justify-content:flex-end}
 	 .stale{position:fixed;bottom:22px;left:22px;background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.5);color:var(--warn);border-radius:10px;padding:10px 14px;font-weight:600;font-size:13px;z-index:10}
 	 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+	 /* progressive step bar */
+	 .stepbar{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:0 0 14px}
+	 .stepbar-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-right:4px}
+	 .step{flex:1;height:6px;border-radius:3px;background:var(--line);max-width:90px}
+	 .step.done{background:var(--ok)}
+	 .step.current{background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+	 .stepbar-meta{margin-left:6px;font-size:12px}
+	 .step-mini{display:inline-block;margin-left:8px;font-size:11px;color:var(--muted)}
 	 @media(max-width:980px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-table{font-size:13px}.apps-table th:nth-child(6),.apps-table td:nth-child(6),.apps-table th:nth-child(7),.apps-table td:nth-child(7){display:none}}
 	 @media(max-width:760px){main{padding:18px 14px}header{padding:14px 16px;gap:10px}th,td{padding:8px 9px}.attention-item{grid-template-columns:1fr}.att-main{grid-template-columns:1fr;gap:5px}.att-actions{justify-content:flex-start;flex-wrap:wrap}.statusbar{align-items:flex-start;flex-wrap:wrap}.summary-grid{grid-template-columns:1fr}.apps-table th:nth-child(4),.apps-table td:nth-child(4),.apps-table th:nth-child(5),.apps-table td:nth-child(5),.apps-table th:nth-child(8),.apps-table td:nth-child(8),.apps-table th:nth-child(9),.apps-table td:nth-child(9){display:none}.activity-table th:nth-child(2),.activity-table td:nth-child(2),.activity-table th:nth-child(4),.activity-table td:nth-child(4),.activity-table th:nth-child(5),.activity-table td:nth-child(5),.activity-table th:nth-child(6),.activity-table td:nth-child(6){display:none}}
 	</style>
