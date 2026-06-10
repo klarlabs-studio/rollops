@@ -25,6 +25,9 @@ export const RolloutSchema = z.object({
   phase: z.string(),
   strategy: z.string(),
   by: z.string(),
+  byKind: z.string().nullish().transform((v) => v ?? ''),
+  risk: z.number().nullish().transform((v) => v ?? 0),
+  at: z.string().nullish().transform((v) => v ?? ''),
 });
 
 export const DashboardSchema = z.object({
@@ -47,6 +50,7 @@ export const HistorySchema = z.object({
   phase: z.string(),
   rollout: z.string(),
   by: z.string(),
+  byKind: z.string().nullish().transform((v) => v ?? ''),
   note: z.string().nullish().transform((v) => v ?? ''),
 });
 
@@ -57,6 +61,8 @@ export const TargetSchema = z.object({
     phase: z.string(),
     strategy: z.string(),
     desired: z.string(),
+    risk: z.number().nullish().transform((v) => v ?? 0),
+    at: z.string().nullish().transform((v) => v ?? ''),
   }),
   diff: z.string().nullish().transform((v) => v ?? ''),
   diffNote: z.string().nullish().transform((v) => v ?? ''),

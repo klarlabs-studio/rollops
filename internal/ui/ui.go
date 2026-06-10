@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -114,11 +115,14 @@ type driftJSON struct {
 }
 
 type rolloutJSON struct {
-	ID       string `json:"id"`
-	Target   string `json:"target"`
-	Phase    string `json:"phase"`
-	Strategy string `json:"strategy"`
-	By       string `json:"by"`
+	ID       string  `json:"id"`
+	Target   string  `json:"target"`
+	Phase    string  `json:"phase"`
+	Strategy string  `json:"strategy"`
+	By       string  `json:"by"`
+	ByKind   string  `json:"byKind"` // human | agent | ci
+	Risk     float64 `json:"risk"`   // decisionkit blast-radius score, 0 when ungated
+	At       string  `json:"at"`     // last transition, RFC 3339
 }
 
 type dashboardJSON struct {
@@ -138,7 +142,11 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 	rs := make([]rolloutJSON, 0, len(rollouts))
 	for _, rl := range rollouts {
 		counts[string(rl.Phase)]++
-		rs = append(rs, rolloutJSON{ID: rl.ID, Target: rl.TargetRef, Phase: string(rl.Phase), Strategy: string(rl.Strategy), By: rl.Initiator.Kind + "/" + rl.Initiator.Name})
+		rs = append(rs, rolloutJSON{
+			ID: rl.ID, Target: rl.TargetRef, Phase: string(rl.Phase), Strategy: string(rl.Strategy),
+			By: rl.Initiator.Kind + "/" + rl.Initiator.Name, ByKind: rl.Initiator.Kind,
+			Risk: rl.RiskScore, At: rl.UpdatedAt.UTC().Format(time.RFC3339),
+		})
 	}
 	drift, _ := s.be.DriftReport(r.Context())
 	dj := make([]driftJSON, 0, len(drift))
@@ -157,20 +165,23 @@ type resourceJSON struct {
 }
 
 type historyJSON struct {
-	At      string `json:"at"`
+	At      string `json:"at"` // RFC 3339; the client renders relative time
 	Phase   string `json:"phase"`
 	Rollout string `json:"rollout"`
 	By      string `json:"by"`
+	ByKind  string `json:"byKind"`
 	Note    string `json:"note"`
 }
 
 type targetJSON struct {
 	Ref     string `json:"ref"`
 	Rollout struct {
-		ID       string `json:"id"`
-		Phase    string `json:"phase"`
-		Strategy string `json:"strategy"`
-		Desired  string `json:"desired"`
+		ID       string  `json:"id"`
+		Phase    string  `json:"phase"`
+		Strategy string  `json:"strategy"`
+		Desired  string  `json:"desired"`
+		Risk     float64 `json:"risk"`
+		At       string  `json:"at"` // last transition, RFC 3339
 	} `json:"rollout"`
 	Diff      string         `json:"diff"`
 	DiffNote  string         `json:"diffNote"`
@@ -209,6 +220,8 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	out.Rollout.Phase = string(latest.Phase)
 	out.Rollout.Strategy = string(latest.Strategy)
 	out.Rollout.Desired = latest.Desired.Checksum
+	out.Rollout.Risk = latest.RiskScore
+	out.Rollout.At = latest.UpdatedAt.UTC().Format(time.RFC3339)
 	out.Awaiting = latest.Phase == rollout.PhaseAwaitingApproval
 	out.CanSync = s.sync != nil
 	// Sync status is the authoritative drift signal (desired vs observed
@@ -239,7 +252,7 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	if recs, herr := s.be.History(r.Context(), ref); herr == nil {
 		for _, rec := range recs {
-			out.History = append(out.History, historyJSON{At: rec.At.Format("2006-01-02 15:04:05"), Phase: string(rec.Phase), Rollout: rec.RolloutID, By: rec.Initiator.Kind + "/" + rec.Initiator.Name, Note: rec.Note})
+			out.History = append(out.History, historyJSON{At: rec.At.UTC().Format(time.RFC3339), Phase: string(rec.Phase), Rollout: rec.RolloutID, By: rec.Initiator.Kind + "/" + rec.Initiator.Name, ByKind: rec.Initiator.Kind, Note: rec.Note})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

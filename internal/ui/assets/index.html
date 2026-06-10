@@ -97,8 +97,25 @@
  @keyframes spin{to{transform:rotate(360deg)}}
  .livedot{color:var(--accent);font-size:12px;font-weight:600;animation:pulse 1.2s ease-in-out infinite}
 	 .gitsrc{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px;cursor:help;vertical-align:middle}
+	 /* facet chips, actors, risk score, diff colours, modal, stale banner */
+	 button.chip{font-weight:400;padding:5px 13px;transition:border-color .12s}
+	 button.chip.on{border-color:var(--accent);color:var(--accent);background:rgba(83,155,245,.1)}
+	 .actor{display:inline-flex;align-items:center;gap:5px;min-width:0}
+	 .actor-ic{font-size:13px;line-height:1}
+	 .risk-score{margin-left:6px;font-family:ui-monospace,Menlo,monospace;font-weight:600;opacity:.8}
+	 pre.diff .dl{display:block;min-height:1.2em}
+	 pre.diff .dl.add{color:var(--ok);background:rgba(63,185,80,.07)}
+	 pre.diff .dl.del{color:var(--bad);background:rgba(248,81,73,.07)}
+	 pre.diff .dl.hunk{color:var(--accent)}
+	 .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:30}
+	 .modal{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;max-width:420px;width:calc(100% - 48px);box-shadow:0 16px 60px rgba(0,0,0,.5)}
+	 .modal h3{margin:0 0 8px;font-size:15px;word-break:break-word}
+	 .modal p{margin:0 0 16px;color:var(--muted);font-size:13px}
+	 .modal-actions{display:flex;gap:10px;justify-content:flex-end}
+	 .stale{position:fixed;bottom:22px;left:22px;background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.5);color:var(--warn);border-radius:10px;padding:10px 14px;font-weight:600;font-size:13px;z-index:10}
+	 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 	 @media(max-width:980px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-table{font-size:13px}.apps-table th:nth-child(6),.apps-table td:nth-child(6),.apps-table th:nth-child(7),.apps-table td:nth-child(7){display:none}}
-	 @media(max-width:760px){main{padding:18px 14px}header{padding:14px 16px;gap:10px}th,td{padding:8px 9px}.attention-item{grid-template-columns:1fr}.att-main{grid-template-columns:1fr;gap:5px}.att-actions{justify-content:flex-start;flex-wrap:wrap}.statusbar{align-items:flex-start;flex-wrap:wrap}.summary-grid{grid-template-columns:1fr}.apps-table th:nth-child(4),.apps-table td:nth-child(4),.apps-table th:nth-child(5),.apps-table td:nth-child(5),.apps-table th:nth-child(8),.apps-table td:nth-child(8){display:none}.activity-table th:nth-child(2),.activity-table td:nth-child(2),.activity-table th:nth-child(4),.activity-table td:nth-child(4),.activity-table th:nth-child(5),.activity-table td:nth-child(5){display:none}}
+	 @media(max-width:760px){main{padding:18px 14px}header{padding:14px 16px;gap:10px}th,td{padding:8px 9px}.attention-item{grid-template-columns:1fr}.att-main{grid-template-columns:1fr;gap:5px}.att-actions{justify-content:flex-start;flex-wrap:wrap}.statusbar{align-items:flex-start;flex-wrap:wrap}.summary-grid{grid-template-columns:1fr}.apps-table th:nth-child(4),.apps-table td:nth-child(4),.apps-table th:nth-child(5),.apps-table td:nth-child(5),.apps-table th:nth-child(8),.apps-table td:nth-child(8),.apps-table th:nth-child(9),.apps-table td:nth-child(9){display:none}.activity-table th:nth-child(2),.activity-table td:nth-child(2),.activity-table th:nth-child(4),.activity-table td:nth-child(4),.activity-table th:nth-child(5),.activity-table td:nth-child(5),.activity-table th:nth-child(6),.activity-table td:nth-child(6){display:none}}
 	</style>
 </head>
 <body>

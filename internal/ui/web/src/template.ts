@@ -15,16 +15,17 @@ export const template = `
 <main>
   <!-- DASHBOARD -->
   <template v-if="view==='dashboard'">
-    <div class="chips">
-      <span class="chip">promoted <b class="ok">{{ dash.counts.promoted||0 }}</b></span>
-      <span class="chip">awaiting <b class="warn">{{ dash.counts['awaiting-approval']||0 }}</b></span>
-      <span class="chip">rolled-back <b class="bad">{{ dash.counts['rolled-back']||0 }}</b></span>
-      <span class="chip">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.verifying||0) }}</b></span>
+    <div class="chips" role="group" aria-label="Filter by status">
+      <button class="chip" :class="{on:facet==='promoted'}" @click="toggleFacet('promoted')">promoted <b class="ok">{{ dash.counts.promoted||0 }}</b></button>
+      <button class="chip" :class="{on:facet==='awaiting'}" @click="toggleFacet('awaiting')">awaiting <b class="warn">{{ dash.counts['awaiting-approval']||0 }}</b></button>
+      <button class="chip" :class="{on:facet==='degraded'}" @click="toggleFacet('degraded')">rolled-back <b class="bad">{{ dash.counts['rolled-back']||0 }}</b></button>
+      <button class="chip" :class="{on:facet==='active'}" @click="toggleFacet('active')">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.verifying||0) }}</b></button>
+      <button class="chip" :class="{on:facet==='drift'}" @click="toggleFacet('drift')">drifted <b :class="hasDrift?'bad':''">{{ driftCount }}</b></button>
     </div>
     <div class="filter">
-      <span>⌕</span>
-      <input v-model="query" placeholder="Filter targets, phases, actors" autocomplete="off">
-      <button v-if="query" @click="query=''" title="Clear filter">×</button>
+      <span aria-hidden="true">⌕</span>
+      <input ref="filter" v-model="query" placeholder="Filter targets, phases, actors — press /" aria-label="Filter applications" autocomplete="off">
+      <button v-if="query" @click="query=''" title="Clear filter" aria-label="Clear filter">×</button>
     </div>
 
     <template v-if="attention.length">
@@ -54,7 +55,7 @@ export const template = `
 
     <h2>Applications <span v-if="hasDrift" class="badge drift">drift detected</span></h2>
     <table v-if="filteredApps.length" class="apps-table">
-      <thead><tr><th>Application</th><th>Health</th><th>Sync</th><th>Phase</th><th>Operational risk</th><th>Desired</th><th>Observed</th><th>Last actor</th></tr></thead>
+      <thead><tr><th>Application</th><th>Health</th><th>Sync</th><th>Phase</th><th>Operational risk</th><th>Desired</th><th>Observed</th><th>Last actor</th><th>Updated</th></tr></thead>
       <tbody>
         <tr v-for="a in filteredApps" :key="a.target" class="click" @click="open(a.target)">
           <td>
@@ -64,10 +65,11 @@ export const template = `
           <td><span :class="healthClass(a.health)"><span class="dot" :class="hue(a.health)"></span>{{ a.health }}</span></td>
           <td><span class="badge" :class="a.sync==='Synced'?'sync':'drift'">{{ a.sync }}</span></td>
           <td><span :class="cls(a.phase)">{{ a.phase }}</span></td>
-          <td><span :class="riskClass(a.risk)">{{ a.risk }}</span></td>
+          <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (decisionkit)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
           <td class="mono">{{ short(a.desired) }}</td>
           <td class="mono">{{ short(a.observed) }}</td>
-          <td class="mono">{{ a.by }}</td>
+          <td><span v-if="a.by" class="actor" :title="a.byKind || 'actor'"><span class="actor-ic" aria-hidden="true">{{ actorIcon(a.byKind) }}</span><span class="mono">{{ actorName(a.by) }}</span></span></td>
+          <td class="mono" :title="absTime(a.at)">{{ ago(a.at) }}</td>
         </tr>
       </tbody>
     </table>
@@ -75,14 +77,15 @@ export const template = `
 
     <h2>Activity</h2>
     <table v-if="filteredRollouts.length" class="activity-table">
-      <thead><tr><th>Rollout</th><th>Target</th><th>Phase</th><th>Strategy</th><th>By</th><th></th></tr></thead>
+      <thead><tr><th>Rollout</th><th>Target</th><th>Phase</th><th>Strategy</th><th>By</th><th>When</th><th></th></tr></thead>
       <tbody>
         <tr v-for="r in filteredRollouts" :key="r.id" class="click" @click="open(r.target)">
           <td class="mono">{{ r.id }}</td>
           <td>{{ r.target }}</td>
           <td><span :class="cls(r.phase)">{{ r.phase }}</span></td>
           <td>{{ r.strategy }}</td>
-          <td class="mono">{{ r.by }}</td>
+          <td><span class="actor" :title="r.byKind || 'actor'"><span class="actor-ic" aria-hidden="true">{{ actorIcon(r.byKind) }}</span><span class="mono">{{ actorName(r.by) }}</span></span></td>
+          <td class="mono" :title="absTime(r.at)">{{ ago(r.at) }}</td>
           <td>
             <span v-if="r.phase==='awaiting-approval'" @click.stop>
               <button class="ok" :disabled="busy" @click="approve(r.id)">Approve</button>
@@ -105,6 +108,8 @@ export const template = `
         <div class="stat"><div class="sl">Sync</div><div class="sv"><span class="badge" :class="synced?'sync':'drift'">{{ synced?'Synced':'OutOfSync' }}</span></div></div>
         <div class="stat"><div class="sl">Strategy</div><div class="sv">{{ detail.rollout.strategy }} <span class="gitsrc" title="Strategy is desired state — defined in the rollout config in Git. To change it, edit the config and Sync. (GitOps: Git is the source of truth.)">⌥ from Git</span></div></div>
         <div class="stat"><div class="sl">Desired</div><div class="sv mono">{{ short(detail.rollout.desired) }}</div></div>
+        <div class="stat" v-if="detail.rollout.risk>0"><div class="sl">Risk</div><div class="sv"><span :class="riskClass(riskOf(detail.rollout.risk))" :title="'decisionkit score'">{{ riskOf(detail.rollout.risk) }} {{ detail.rollout.risk.toFixed(2) }}</span></div></div>
+        <div class="stat" v-if="detail.rollout.at"><div class="sl">Updated</div><div class="sv mono" :title="absTime(detail.rollout.at)">{{ ago(detail.rollout.at) }}</div></div>
         <span class="spacer"></span>
         <div class="actions">
           <button v-if="detail.awaiting" class="ok" :disabled="busy" @click="approve(detail.rollout.id)">Approve</button>
@@ -192,7 +197,8 @@ export const template = `
       <div class="cols">
         <div>
           <h2>Diff (desired → live)</h2>
-          <pre v-if="detail.diff" class="diff">{{ detail.diff }}</pre>
+          <pre v-if="detail.diff" class="diff"><span v-for="(l,i) in diffLines" :key="i" class="dl" :class="l.c">{{ l.t }}
+</span></pre>
           <div v-else class="note">{{ detail.diffNote || 'no changes — live matches desired' }}</div>
         </div>
         <div>
@@ -203,7 +209,7 @@ export const template = `
               <div class="event-body">
                 <div><span :class="cls(h.phase)">{{ h.phase }}</span> <span class="mono">{{ h.rollout }}</span></div>
                 <div v-if="h.note" class="event-note">{{ h.note }}</div>
-                <div class="event-meta"><span class="mono">{{ h.at }}</span><span class="mono">{{ h.by }}</span></div>
+                <div class="event-meta"><span class="mono" :title="absTime(h.at)">{{ ago(h.at) }}</span><span class="actor" :title="h.byKind || 'actor'"><span class="actor-ic" aria-hidden="true">{{ actorIcon(h.byKind) }}</span><span class="mono">{{ actorName(h.by) }}</span></span></div>
               </div>
             </div>
           </div>
@@ -213,6 +219,18 @@ export const template = `
     </template>
   </template>
 
-  <div v-if="toast" class="toast" :class="{err:toastErr}">{{ toast }}</div>
+  <div v-if="toast" class="toast" :class="{err:toastErr}" role="status" aria-live="polite">{{ toast }}</div>
+  <div v-if="failures>2" class="stale" role="alert">⚠ live updates unavailable — showing last known state</div>
+
+  <div v-if="confirmTarget" class="modal-back" @click.self="confirmTarget=''">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Confirm rollback">
+      <h3>Roll back {{ confirmTarget }}?</h3>
+      <p>The target returns to its previous desired state. The change is recorded in history and audit.</p>
+      <div class="modal-actions">
+        <button @click="confirmTarget=''">Cancel</button>
+        <button class="bad" :disabled="busy" @click="confirmRollback">↩ Roll back</button>
+      </div>
+    </div>
+  </div>
 </main>
 `;

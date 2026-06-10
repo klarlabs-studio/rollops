@@ -48,14 +48,40 @@ interface ApplicationRow {
   sync: 'Synced' | 'OutOfSync';
   health: 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown';
   risk: 'Low' | 'Medium' | 'High';
+  riskScore: number; // real decisionkit score (0 when the risk gate is off)
   desired: string;
   observed: string;
   rolloutID: string;
   strategy: string;
   by: string;
+  byKind: string;
+  at: string;
   changed: string;
   active: boolean;
   awaiting: boolean;
+}
+
+// ago renders an RFC 3339 timestamp as a compact relative time ("2m ago").
+function ago(iso: string): string {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 45) return s + 's ago';
+  const m = Math.round(s / 60);
+  if (m < 45) return m + 'm ago';
+  const h = Math.round(m / 60);
+  if (h < 36) return h + 'h ago';
+  return Math.round(h / 24) + 'd ago';
+}
+
+// actorIcon distinguishes the three operator kinds — agents are first-class
+// operators in Rollops, so the console shows *what kind* of actor acted.
+function actorIcon(kind: string): string {
+  if (kind === 'agent') return '🤖';
+  if (kind === 'ci') return '⚙';
+  if (kind === 'human') return '👤';
+  return '·';
 }
 // render is generated from template.ts at build time (see build.mjs) so the
 // runtime needs no template compiler and no eval — strict CSP compatible.
@@ -80,9 +106,13 @@ interface State {
   sel: string | null;
   expanded: Record<string, boolean>;
   query: string;
+  facet: string; // chip facet: '' | 'promoted' | 'awaiting' | 'degraded' | 'active' | 'drift'
   toast: string;
   toastErr: boolean;
   busy: boolean;
+  confirmTarget: string; // rollback confirmation modal ('' = closed)
+  failures: number; // consecutive refresh failures → stale banner
+  now: number; // ticking clock for relative timestamps
 }
 
 function hueOf(s: string): Hue {
@@ -104,14 +134,41 @@ const App = defineComponent({
       sel: null,
       expanded: {},
       query: '',
+      facet: '',
       toast: '',
       toastErr: false,
       busy: false,
+      confirmTarget: '',
+      failures: 0,
+      now: Date.now(),
     };
   },
   mounted() {
     void this.refresh();
-    setInterval(() => void this.refresh(), 4000);
+    // Steady 4s poll, paused while the tab is hidden; an immediate refresh on
+    // return keeps the console honest without polling in the background.
+    setInterval(() => {
+      if (!document.hidden) void this.refresh();
+    }, 4000);
+    setInterval(() => {
+      this.now = Date.now();
+    }, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void this.refresh();
+    });
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        (this.$refs.filter as HTMLInputElement | undefined)?.focus();
+      } else if (e.key === 'Escape') {
+        if (this.confirmTarget) this.confirmTarget = '';
+        else if (this.query || this.facet) {
+          this.query = '';
+          this.facet = '';
+        } else if (this.view === 'detail') this.back();
+      }
+    });
     const m = location.hash.match(/target=(.+)$/);
     if (m && m[1]) this.open(decodeURIComponent(m[1]));
   },
@@ -134,9 +191,14 @@ const App = defineComponent({
             await this.fetchJSON('/ui/api/target?ref=' + encodeURIComponent(this.ref)),
           );
         }
+        this.failures = 0;
       } catch {
-        /* transient or validation miss; keep last good state */
+        // transient or validation miss; keep last good state, count for the
+        // stale banner so the operator knows the view stopped updating.
+        this.failures++;
       }
+      const n = this.attention.length;
+      document.title = n ? `(${n}) Rollops` : 'Rollops';
     },
     open(ref: string): void {
       this.ref = ref;
@@ -185,7 +247,12 @@ const App = defineComponent({
       void this.act('/ui/api/reject', { id }, 'rejected').then(() => this.burst());
     },
     rollback(t: string): void {
-      if (confirm('Roll back ' + t + ' to its previous state?'))
+      this.confirmTarget = t;
+    },
+    confirmRollback(): void {
+      const t = this.confirmTarget;
+      this.confirmTarget = '';
+      if (t)
         void this.act('/ui/api/rollback', { target: t }, 'rollback started').then(() => this.burst());
     },
     sync(): void {
@@ -257,6 +324,26 @@ const App = defineComponent({
       return 'health h-' + health.toLowerCase();
     },
     hue: hueOf,
+    ago(iso: string): string {
+      void this.now; // reactive dependency: re-render as the clock ticks
+      return ago(iso);
+    },
+    absTime(iso: string): string {
+      const t = Date.parse(iso);
+      return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
+    },
+    actorIcon,
+    actorName(by: string): string {
+      const i = by.indexOf('/');
+      return i >= 0 ? by.slice(i + 1) : by;
+    },
+    riskOf(score: number): 'Low' | 'Medium' | 'High' {
+      // decisionkit blast-radius scale: approval threshold conventionally 0.5.
+      return score < 0.34 ? 'Low' : score < 0.67 ? 'Medium' : 'High';
+    },
+    toggleFacet(f: string): void {
+      this.facet = this.facet === f ? '' : f;
+    },
     icon(kind: string): string {
       const k = (kind || '').toLowerCase();
       if (k === 'app') return '◈';
@@ -312,29 +399,54 @@ const App = defineComponent({
             : phase === 'promoted'
               ? 'Healthy'
               : 'Unknown';
+        // Real decisionkit score when the risk gate ran; situational heuristic
+        // (drift / degraded / in-flight) when ungated.
+        const score = r?.risk ?? 0;
         const risk: ApplicationRow['risk'] =
-          d?.drifted || degraded(phase) ? 'High' : isActive || isAwaiting ? 'Medium' : 'Low';
+          score > 0
+            ? this.riskOf(score)
+            : d?.drifted || degraded(phase)
+              ? 'High'
+              : isActive || isAwaiting
+                ? 'Medium'
+                : 'Low';
         return {
           target,
           phase,
           sync: d?.drifted ? 'OutOfSync' : 'Synced',
           health,
           risk,
+          riskScore: score,
           desired: d?.desired || '',
           observed: d?.observed || '',
           rolloutID: r?.id || '',
           strategy: r?.strategy || '',
           by: r?.by || '',
+          byKind: r?.byKind || '',
+          at: r?.at || '',
           changed: r?.id || '',
           active: isActive,
           awaiting: isAwaiting,
         };
       });
     },
+    facetApps(): ApplicationRow[] {
+      const f = this.facet;
+      if (!f) return this.apps;
+      const degraded = (p: string) => /^(rolled-back|failed|rejected)$/.test(p);
+      return this.apps.filter((a) => {
+        if (f === 'promoted') return a.phase === 'promoted';
+        if (f === 'awaiting') return a.awaiting;
+        if (f === 'degraded') return degraded(a.phase);
+        if (f === 'active') return a.active;
+        if (f === 'drift') return a.sync === 'OutOfSync';
+        return true;
+      });
+    },
     filteredApps(): ApplicationRow[] {
       const q = this.needle;
-      if (!q) return this.apps;
-      return this.apps.filter((a) =>
+      if (!q) return this.facetApps;
+      return this.facetApps.filter((a) =>
         [
           a.target,
           a.phase,
@@ -351,6 +463,15 @@ const App = defineComponent({
           .toLowerCase()
           .includes(q),
       );
+    },
+    // diffLines classifies unified-diff lines for syntax colouring.
+    diffLines(): { t: string; c: string }[] {
+      const d = this.detail?.diff ?? '';
+      if (!d) return [];
+      return d.split('\n').map((t) => ({
+        t,
+        c: t.startsWith('+') ? 'add' : t.startsWith('-') ? 'del' : t.startsWith('@@') ? 'hunk' : '',
+      }));
     },
     attention(): AttentionItem[] {
       const items: AttentionItem[] = [];
@@ -398,6 +519,9 @@ const App = defineComponent({
     },
     hasDrift(): boolean {
       return this.dash.drift.some((d) => d.drifted);
+    },
+    driftCount(): number {
+      return this.dash.drift.filter((d) => d.drifted).length;
     },
     synced(): boolean {
       // Authoritative drift signal from the backend (desired vs observed

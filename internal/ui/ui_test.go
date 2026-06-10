@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -117,6 +118,26 @@ func TestAPI_Dashboard(t *testing.T) {
 	}
 	if len(d.Drift) != 1 || d.Drift[0].Target != "a/prod/api" {
 		t.Errorf("drift = %+v", d.Drift)
+	}
+}
+
+func TestAPI_DashboardCarriesRiskActorAndTime(t *testing.T) {
+	at := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	be := &fakeBackend{
+		rollouts: []rollout.Rollout{{
+			ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhaseAwaitingApproval,
+			Strategy: rollout.StrategyBlueGreen, RiskScore: 0.81,
+			Initiator: rollout.Identity{Kind: "agent", Name: "release-bot"}, UpdatedAt: at,
+		}},
+	}
+	rr := do(srv(be), "GET", "/ui/api/dashboard", "")
+	var d dashboardJSON
+	if err := json.Unmarshal(rr.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	r := d.Rollouts[0]
+	if r.Risk != 0.81 || r.ByKind != "agent" || r.At != "2026-06-10T12:00:00Z" {
+		t.Errorf("rollout = %+v", r)
 	}
 }
 
