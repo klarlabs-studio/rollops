@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 - Live Progressive Step Progress
 
 - Live progressive step progress: the engine persists each health-gated
   step (index/total/weight, sqlite migration 0002) with a timeline note;
   the console shows a step bar on the target detail and a mini step
   indicator in the applications table while a rollout deploys.
+- Step progress parity across surfaces: the gRPC StatusResponse carries
+  the step fields and `rollops status` prints "steps 2/4 (50%)" in both
+  one-shot and daemon mode.
 
 ## v0.3.0 - Console: Risk + Agent Attribution
 

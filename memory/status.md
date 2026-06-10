@@ -2,6 +2,12 @@
 
 *Updated: 2026-06-10*
 
+## 🏷️ v0.4.0 TAGGED — live progressive step progress
+
+Engine persists per-step progress (migration 0002), console step bar +
+mini indicator, gRPC/CLI parity (`steps 2/4 (50%)` in status). Released
+to GitHub with archives. All headline Argo Rollouts gaps closed.
+
 ## 🏷️ v0.3.0 TAGGED — console risk + agent attribution
 
 UI competitive round 3 released as v0.3.0 (GitHub release with archives).
