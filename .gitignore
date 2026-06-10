@@ -1,6 +1,6 @@
 # Binaries
-/rolloffs
-/rolloffsd
+/rollops
+/rollopsd
 *.exe
 *.test
 *.out
@@ -22,9 +22,15 @@
 .idea/
 .vscode/
 
+# Test session artifacts
+.playwright-mcp/
+
 # Build output
 /bin/
+/dist/
+node_modules/
 
 # integration test keys
 test/integration/keys/
 test/integration/keys/cosign.*
+internal/ui/web/src/render.generated.ts

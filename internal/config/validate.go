@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"go.klarlabs.de/rolloffs/internal/condition"
+	"go.klarlabs.de/rollops/internal/analysis"
+	"go.klarlabs.de/rollops/internal/condition"
 )
 
 // compiledSchema is the embedded SchemaJSON compiled once. Structural rules
@@ -31,11 +33,11 @@ func loadSchema() (*jsonschema.Schema, error) {
 			return
 		}
 		c := jsonschema.NewCompiler()
-		if err := c.AddResource("rolloffs.v1.json", doc); err != nil {
+		if err := c.AddResource("rollops.v1.json", doc); err != nil {
 			schemaErr = fmt.Errorf("config: add schema resource: %w", err)
 			return
 		}
-		schema, schemaErr = c.Compile("rolloffs.v1.json")
+		schema, schemaErr = c.Compile("rollops.v1.json")
 	})
 	return schema, schemaErr
 }
@@ -97,10 +99,72 @@ func validateSemantics(c *Config) []error {
 			errs = append(errs, fmt.Errorf("config: risk.sensitive: %w", err))
 		}
 	}
+	errs = append(errs, validateRiskHistory(c.Spec.Risk.History)...)
 	if c.Spec.Rollback.Trigger != "" {
 		if err := condition.Check(c.Spec.Rollback.Trigger); err != nil {
 			errs = append(errs, fmt.Errorf("config: rollback.trigger: %w", err))
 		}
+	}
+	if c.Spec.Rollback.Database != nil {
+		errs = append(errs, validateDatabaseRollback(c.Spec.Rollback.Database)...)
+	}
+	if c.Spec.Analysis != nil {
+		errs = append(errs, validateAnalysis(c.Spec.Analysis)...)
+	}
+	return errs
+}
+
+func validateDatabaseRollback(db *DatabaseRollback) []error {
+	var errs []error
+	if len(db.Command) == 0 {
+		errs = append(errs, fmt.Errorf("config: rollback.database.command must not be empty"))
+	}
+	if db.Timeout != "" {
+		if _, err := time.ParseDuration(db.Timeout); err != nil {
+			errs = append(errs, fmt.Errorf("config: rollback.database.timeout %q is not a Go duration: %w", db.Timeout, err))
+		}
+	}
+	return errs
+}
+
+func validateRiskHistory(h RiskHistory) []error {
+	var errs []error
+	if h.Lookback < 0 {
+		errs = append(errs, fmt.Errorf("config: risk.history.lookback must be >= 0"))
+	}
+	if h.Weight < 0 || h.Weight > 1 {
+		errs = append(errs, fmt.Errorf("config: risk.history.weight must be between 0 and 1"))
+	}
+	if h.MaxFailures < 0 {
+		errs = append(errs, fmt.Errorf("config: risk.history.maxFailures must be >= 0"))
+	}
+	return errs
+}
+
+func validateAnalysis(a *Analysis) []error {
+	var errs []error
+	if a.Provider != "prometheus" {
+		errs = append(errs, fmt.Errorf("config: analysis.provider %q is unsupported (supported: prometheus)", a.Provider))
+	}
+	if a.Provider == "prometheus" && strings.TrimSpace(a.Address) == "" {
+		errs = append(errs, fmt.Errorf("config: analysis.address is required for prometheus"))
+	}
+	if a.Interval != "" {
+		if _, err := time.ParseDuration(a.Interval); err != nil {
+			errs = append(errs, fmt.Errorf("config: analysis.interval %q is not a Go duration: %w", a.Interval, err))
+		}
+	}
+	metrics := make([]analysis.Metric, 0, len(a.Metrics))
+	for _, m := range a.Metrics {
+		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query})
+	}
+	if _, err := analysis.New(nil, analysis.Template{
+		Metrics:      metrics,
+		Condition:    a.Condition,
+		Count:        a.Count,
+		FailureLimit: a.FailureLimit,
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("config: analysis: %w", err))
 	}
 	return errs
 }

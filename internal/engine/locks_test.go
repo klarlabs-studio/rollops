@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestKeyedLocks_MutualExclusion(t *testing.T) {
@@ -46,6 +47,33 @@ func TestApply_TargetBusy(t *testing.T) {
 	defer release()
 
 	_, err := e.Apply(context.Background(), ApplyRequest{Config: c})
+	if err != ErrTargetBusy {
+		t.Fatalf("err = %v, want ErrTargetBusy", err)
+	}
+	if len(fake.applied) != 0 {
+		t.Fatal("busy target must not be applied to")
+	}
+}
+
+func TestApply_TargetBusyAcrossEngineInstances(t *testing.T) {
+	fake := &fakeTarget{}
+	e1, db := newEngine(t, fake, WithLeaseOwner("one"), WithLeaseTTL(time.Minute))
+	e2 := *e1
+	e2.locks = newKeyedLocks()
+	e2.owner = "two"
+
+	c := loadConfig(t)
+	release, ok, err := e1.acquireTarget(context.Background(), c.Spec.Target.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("precondition: acquire shared target lease")
+	}
+	defer release()
+	_ = db
+
+	_, err = e2.Apply(context.Background(), ApplyRequest{Config: c})
 	if err != ErrTargetBusy {
 		t.Fatalf("err = %v, want ErrTargetBusy", err)
 	}

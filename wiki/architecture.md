@@ -4,7 +4,7 @@ updated: 2026-06-08
 
 # Architecture (reference)
 
-Canonical source: `rolloffs-tdd.md`. This is the quick map.
+Canonical source: `rollops-tdd.md`. This is the quick map.
 
 ## Shape
 

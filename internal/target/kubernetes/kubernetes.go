@@ -6,7 +6,7 @@
 //
 // To honour the core constraint "no Kubernetes dependency", this target drives
 // the cluster through the external kubectl binary via the Cluster interface —
-// client-go is never compiled into the Rolloffs core. The logic is testable
+// client-go is never compiled into the Rollops core. The logic is testable
 // with an in-memory fake cluster.
 package kubernetes
 
@@ -14,12 +14,12 @@ import (
 	"context"
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // ChecksumAnnotation is where the deployed checksum is recorded on the resource.
-const ChecksumAnnotation = "rolloffs.klarlabs.de/checksum"
+const ChecksumAnnotation = "rollops.klarlabs.de/checksum"
 
 // Cluster abstracts the live cluster operations the target needs.
 type Cluster interface {

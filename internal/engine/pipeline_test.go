@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/audit"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/notify"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/secrets"
-	"go.klarlabs.de/rolloffs/internal/security"
-	"go.klarlabs.de/rolloffs/internal/store/sqlite"
-	itarget "go.klarlabs.de/rolloffs/internal/target"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/audit"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/notify"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/secrets"
+	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 const pipeYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: pay
@@ -194,7 +194,7 @@ func contains(ks []notify.Kind, want notify.Kind) bool {
 }
 
 const analysisYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: analyzed
@@ -244,6 +244,33 @@ func TestPipeline_MetricAnalysisRollsBack(t *testing.T) {
 	if !strings.Contains(out.Reason, "analysis") {
 		t.Errorf("reason = %q, want analysis failure", out.Reason)
 	}
+	hist, err := e.History(ctx, "analyzed/prod/api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) == 0 || !strings.Contains(hist[0].Note, "analysis failed") {
+		t.Fatalf("history note = %+v, want analysis failure note", hist)
+	}
+}
+
+func TestPipeline_MetricAnalysisDisabledByDefault(t *testing.T) {
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _, _ := wiredEngine(t)
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	out, err := e.VerifyOrRollback(ctx, r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if out.RolledBack {
+		t.Fatal("metric analysis must be disabled by default for observability-free v1 rollback")
+	}
 }
 
 func TestPipeline_MetricAnalysisPromotes(t *testing.T) {
@@ -257,6 +284,13 @@ func TestPipeline_MetricAnalysisPromotes(t *testing.T) {
 	}
 	if out.RolledBack {
 		t.Fatalf("healthy metrics should promote; reason=%q", out.Reason)
+	}
+	hist, err := e.History(ctx, "analyzed/prod/api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) == 0 || !strings.Contains(hist[0].Note, "analysis passed") {
+		t.Fatalf("history note = %+v, want analysis pass note", hist)
 	}
 }
 

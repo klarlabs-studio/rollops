@@ -1,4 +1,4 @@
-// Package target defines the public contract every Rolloffs deployment
+// Package target defines the public contract every Rollops deployment
 // target must satisfy — first-party (Kubernetes, SSH/VM, FTP) and
 // community gRPC plugins alike. It is the heart of "infrastructure-agnostic":
 // a single Go contract serving both rich targets that query live state and

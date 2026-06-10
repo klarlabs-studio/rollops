@@ -2,10 +2,11 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/pkg/conformance"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/conformance"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // fakeRPC is an in-memory stamped plugin backend.
@@ -49,5 +50,38 @@ func TestPluginTarget_ForwardsHealthState(t *testing.T) {
 	}
 	if hs.State != pt.HealthHealthy {
 		t.Errorf("health state = %v, want healthy", hs.State)
+	}
+}
+
+func TestPluginTarget_NilRPCReturnsError(t *testing.T) {
+	tgt := NewTarget(nil)
+	if _, err := tgt.Apply(context.Background(), pt.Manifest{}); !errors.Is(err, ErrNoRPC) {
+		t.Fatalf("Apply error = %v, want ErrNoRPC", err)
+	}
+	if _, err := tgt.Observe(context.Background()); !errors.Is(err, ErrNoRPC) {
+		t.Fatalf("Observe error = %v, want ErrNoRPC", err)
+	}
+	if _, err := tgt.Health(context.Background()); !errors.Is(err, ErrNoRPC) {
+		t.Fatalf("Health error = %v, want ErrNoRPC", err)
+	}
+}
+
+type badHealthRPC struct {
+	fakeRPC
+	state int
+}
+
+func (b badHealthRPC) Health(context.Context) (int, string, error) {
+	return b.state, "", nil
+}
+
+func TestPluginTarget_RejectsInvalidHealthStates(t *testing.T) {
+	for _, state := range []int{int(pt.HealthUnknown), -1, 99} {
+		t.Run("state", func(t *testing.T) {
+			tgt := NewTarget(&badHealthRPC{state: state})
+			if _, err := tgt.Health(context.Background()); err == nil {
+				t.Fatalf("expected invalid health state %d to be rejected", state)
+			}
+		})
 	}
 }

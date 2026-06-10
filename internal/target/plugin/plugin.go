@@ -13,17 +13,21 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // ProtocolVersion is bumped on any breaking change to the RPC below.
 const ProtocolVersion = 1
 
 // Cookie is the magic handshake value; a mismatch means the subprocess is not a
-// Rolloffs target plugin.
-const Cookie = "ROLLOFFS_TARGET_PLUGIN_V1"
+// Rollops target plugin.
+const Cookie = "ROLLOPS_TARGET_PLUGIN_V1"
+
+// ErrNoRPC means the target was constructed without an established plugin RPC.
+var ErrNoRPC = errors.New("plugin: rpc is nil")
 
 // Handshake is exchanged when a plugin starts.
 type Handshake struct {
@@ -61,6 +65,9 @@ func NewTarget(rpc RPC) *Target { return &Target{rpc: rpc} }
 
 // Apply forwards to the plugin.
 func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
+	if t.rpc == nil {
+		return pt.Result{}, ErrNoRPC
+	}
 	changed, detail, err := t.rpc.Apply(ctx, m.Kind, m.Spec, m.Checksum)
 	if err != nil {
 		return pt.Result{}, fmt.Errorf("plugin: apply: %w", err)
@@ -70,6 +77,9 @@ func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
 
 // Observe forwards to the plugin.
 func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
+	if t.rpc == nil {
+		return pt.Fingerprint{}, ErrNoRPC
+	}
 	value, meta, err := t.rpc.Observe(ctx)
 	if err != nil {
 		return pt.Fingerprint{}, fmt.Errorf("plugin: observe: %w", err)
@@ -79,9 +89,25 @@ func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
 
 // Health forwards to the plugin, mapping the wire state to HealthState.
 func (t *Target) Health(ctx context.Context) (pt.HealthStatus, error) {
+	if t.rpc == nil {
+		return pt.HealthStatus{}, ErrNoRPC
+	}
 	state, reason, err := t.rpc.Health(ctx)
 	if err != nil {
 		return pt.HealthStatus{}, fmt.Errorf("plugin: health: %w", err)
 	}
-	return pt.HealthStatus{State: pt.HealthState(state), Reason: reason}, nil
+	healthState := pt.HealthState(state)
+	if !validHealthState(healthState) {
+		return pt.HealthStatus{}, fmt.Errorf("plugin: invalid health state %d", state)
+	}
+	return pt.HealthStatus{State: healthState, Reason: reason}, nil
+}
+
+func validHealthState(state pt.HealthState) bool {
+	switch state {
+	case pt.HealthHealthy, pt.HealthDegraded, pt.HealthUnhealthy:
+		return true
+	default:
+		return false
+	}
 }

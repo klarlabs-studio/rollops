@@ -1,4 +1,49 @@
-# Roadmap — Rolloffs P0 build order
+# Roadmap — Rollops
+
+## Current near roadmap — closed
+
+P0/Roady is complete, verified, and drift-free. Near-roadmap release polish and
+the Argo-like operator UI pass are closed as of 2026-06-09.
+
+### Argo-like operator UI
+
+Goal: make `/ui` the default daily operator surface, not just a status page.
+
+- [x] Application/target list with health, sync/drift, risk, phase, last actor, and
+  last change at a glance.
+- [x] Target detail that behaves like Argo's app detail: resource tree, rollout
+  timeline, history, diff, live status, sync, rollback, approve/reject.
+- [x] Clear sync/drift vocabulary: desired from Git, observed from target, runtime
+  state from Store.
+- [x] Better visual hierarchy: dense tables for fleets, detail panes for one target,
+  explicit attention queue for approvals/drift/failures.
+- [x] Live updates without page refresh; keep polling first unless server push proves
+  necessary.
+- [x] Preserve hard auth/RBAC boundaries: UI actions are the same operations as CLI,
+  gRPC, HTTP, and MCP.
+
+Closed pass: filterable dashboard, attention queue, dense application list,
+derived health/sync/risk, target detail summary cards, graph/list resource
+views, desired/live diff, rollout timeline, rollback/sync/approve/reject, and
+responsive desktop/mobile layouts.
+
+Next UI work should only enter P2/studio or be driven by dogfood findings.
+
+## P2 / ecosystem
+
+- Metric-based rollout analysis as a stable feature, likely the Obvia seam.
+- Historical-failure risk signal.
+- DB rollback workflows.
+- Multi-instance coordination / leader election.
+- SSO and enterprise auth integration.
+- Image automation workflows.
+- Managed multi-customer studio layer.
+- Optional deeper observability, feature flag, and governance integrations.
+- Multi-stage approval chains only if dogfood proves real demand.
+
+---
+
+# Historical — Rollops P0 build order
 
 Roady has the 63 atomic tasks (1:1 per requirement, no inter-task deps wired).
 This is the **phased dependency order** to execute them in. Build bottom-up:

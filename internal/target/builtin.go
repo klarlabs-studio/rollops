@@ -1,9 +1,9 @@
 package target
 
 import (
-	"go.klarlabs.de/rolloffs/internal/target/ftp"
-	"go.klarlabs.de/rolloffs/internal/target/kubernetes"
-	"go.klarlabs.de/rolloffs/internal/target/ssh"
+	"go.klarlabs.de/rollops/internal/target/ftp"
+	"go.klarlabs.de/rollops/internal/target/kubernetes"
+	"go.klarlabs.de/rollops/internal/target/ssh"
 )
 
 // Builtin returns a Registry with all first-party targets compiled in — the

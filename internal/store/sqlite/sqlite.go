@@ -19,9 +19,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/store"
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/store"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 //go:embed migrations/0001_init.sql
@@ -81,9 +81,9 @@ func (s *Store) SaveRollout(ctx context.Context, r rollout.Rollout) error {
 		return fmt.Errorf("sqlite: save rollout: %w", err)
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO history (rollout_id, target_ref, phase, initiator_kind, initiator_name, at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		r.ID, r.TargetRef, string(r.Phase), r.Initiator.Kind, r.Initiator.Name, r.UpdatedAt.Format(timeFormat))
+		INSERT INTO history (rollout_id, target_ref, phase, note, initiator_kind, initiator_name, at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.TargetRef, string(r.Phase), r.Note, r.Initiator.Kind, r.Initiator.Name, r.UpdatedAt.Format(timeFormat))
 	if err != nil {
 		return fmt.Errorf("sqlite: append history: %w", err)
 	}
@@ -288,4 +288,47 @@ func (s *Store) History(ctx context.Context, targetRef string) ([]rollout.Rollou
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+// AcquireLease takes or renews a runtime lease. A lease can be acquired when it
+// is absent, expired, or already owned by the caller.
+func (s *Store) AcquireLease(ctx context.Context, key, owner string, ttl time.Duration, now time.Time) (bool, error) {
+	if ttl <= 0 {
+		return false, fmt.Errorf("sqlite: acquire lease: ttl must be positive")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("sqlite: lease begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	nowText := now.Format(timeFormat)
+	expires := now.Add(ttl).Format(timeFormat)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE key = ? AND expires_at <= ?`, key, nowText); err != nil {
+		return false, fmt.Errorf("sqlite: expire lease: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO leases (key, owner, expires_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET owner=excluded.owner, expires_at=excluded.expires_at
+		WHERE leases.owner = excluded.owner`,
+		key, owner, expires)
+	if err != nil {
+		return false, fmt.Errorf("sqlite: acquire lease: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("sqlite: lease rows affected: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("sqlite: lease commit: %w", err)
+	}
+	return n > 0, nil
+}
+
+// ReleaseLease releases a runtime lease only if the caller still owns it.
+func (s *Store) ReleaseLease(ctx context.Context, key, owner string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM leases WHERE key = ? AND owner = ?`, key, owner); err != nil {
+		return fmt.Errorf("sqlite: release lease: %w", err)
+	}
+	return nil
 }

@@ -1,10 +1,10 @@
-# Context budget — Rolloffs
+# Context budget — Rollops
 
-*Updated: 2026-06-08*
+*Updated: 2026-06-09*
 
-- Sessions logged: 0 (capture not yet run for session 1).
+- Sessions logged: 1 (`memory/session-2026-06-09-productization.md`).
 - Archive digests: none.
-- Read-on-entry set: `AGENTS.md`, `memory/status.md`, `memory/roadmap.md`, `memory/open-threads.md`.
-- Canonical design docs (large, read on demand): `rolloffs-vision.md`, `rolloffs-tdd.md`.
+- Read-on-entry set: `AGENTS.md`, `memory/status.md`, `memory/open-threads.md`, latest `memory/session-*.md`.
+- Canonical design docs (large, read on demand): `rollops-vision.md`, `rollops-tdd.md`.
 
 No compaction needed yet (< 30 session files).

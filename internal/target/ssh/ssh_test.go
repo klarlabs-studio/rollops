@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/pkg/conformance"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/conformance"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // fakeTransport is an in-memory host: a file map plus a command runner.

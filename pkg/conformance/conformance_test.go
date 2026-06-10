@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 var sample = target.Manifest{Kind: "fake", Spec: []byte(`{"v":1}`), Checksum: "sum-v1"}

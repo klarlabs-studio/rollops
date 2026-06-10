@@ -1,4 +1,4 @@
-# Rolloffs — Vision Document
+# Rollops — Vision Document
 
 *Rollout operations for the agentic web*
 **Umbrella:** Klarlatz · **Status:** Concept / pre-MVP
@@ -7,7 +7,7 @@
 
 ## One-liner
 
-Rolloffs is a lightweight, infrastructure-agnostic rollout orchestration system. It is a modern, far leaner alternative to ArgoCD and Flux — built so that **agents, not just humans, are first-class operators**. You declare what you want deployed and where; Rolloffs handles the rollout, the risk gate, the drift, and the rollback.
+Rollops is a lightweight, infrastructure-agnostic rollout orchestration system. It is a modern, far leaner alternative to ArgoCD and Flux — built so that **agents, not just humans, are first-class operators**. You declare what you want deployed and where; Rollops handles the rollout, the risk gate, the drift, and the rollback.
 
 ---
 
@@ -21,7 +21,7 @@ For a **solopreneur or small studio shipping many products across heterogeneous 
 
 ## Vision
 
-Rolloffs becomes the **nervous system of the studio**: a single declarative control plane that manages deployments across every product and, as the studio scales to serving many customers, across every customer's infrastructure — without the operator drowning in complexity.
+Rollops becomes the **nervous system of the studio**: a single declarative control plane that manages deployments across every product and, as the studio scales to serving many customers, across every customer's infrastructure — without the operator drowning in complexity.
 
 It is dogfooded internally first across the existing product portfolio, then open-sourced publicly (the same path the consumer products take) for the audience that is currently underserved: **solopreneurs and small teams for whom Kubernetes-grade GitOps is far too big**.
 
@@ -41,7 +41,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 
 ## Non-Goals (for now)
 
-- **Not another Kubernetes / orchestrator.** Rolloffs configures and drives deployment *through* existing infrastructure; it does not replace the runtime.
+- **Not another Kubernetes / orchestrator.** Rollops configures and drives deployment *through* existing infrastructure; it does not replace the runtime.
 - **Not coupled to Obvia.** Observability integration is deliberately left out of the MVP. Technology may be reused later; the dependency is not baked in yet.
 - **Not a feature-flag platform.** Application-level flags (LaunchDarkly/Flagsmith/Statsig) stay a separate concern. Integration hooks are a future consideration, not v1.
 - **Not tightly coupled to Relicta.** Risk evaluation uses decision-kit directly; a deeper Relicta change-governance binding is optional and deferred.
@@ -62,7 +62,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 - **Layer:** Developer tooling (alongside scout, coverctl, tokenops), under the **Klarlatz** umbrella.
 - **decision-kit** — calculates the blast-radius / risk score that drives the approval gate.
 - **bolt** — structured, compliance-grade audit logging across layers.
-- **MCP (mcp-go)** — the agent interface; how Nomi and other agents operate Rolloffs natively.
+- **MCP (mcp-go)** — the agent interface; how Nomi and other agents operate Rollops natively.
 - Dogfood targets at launch: **Armada, Obvia, Pet Medical, Brotwerk, IRI.**
 
 ---
@@ -130,7 +130,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 
 ## Open-Core Boundary
 
-- **OSS core (single-tenant, self-hosted):** engine, CLI, MCP server, target plugins, progressive delivery, drift reconciliation, rollback, YAML/CEL config, Git-based multi-tenancy, and decision-kit risk scoring (decision-kit and bolt are already open). Anyone can run Rolloffs against as many repos as they want, for free.
+- **OSS core (single-tenant, self-hosted):** engine, CLI, MCP server, target plugins, progressive delivery, drift reconciliation, rollback, YAML/CEL config, Git-based multi-tenancy, and decision-kit risk scoring (decision-kit and bolt are already open). Anyone can run Rollops against as many repos as they want, for free.
 - **Studio / commercial layer:** managed coordination *at scale* — one pane of glass orchestrating many customers, hosted dashboard, tenancy controls, billing. This is the "manage fifty customers easily" value, following the same open-core split as Argo/Codefresh and Flux/Weave.
 
 ---

@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Conn stores and retrieves files on an FTP server and reports reachability.
@@ -50,7 +50,7 @@ func newWith(conn Conn, s spec) *Target {
 	}
 	stampPath := s.str("stampPath")
 	if stampPath == "" {
-		stampPath = deployPath + ".rolloffs-stamp"
+		stampPath = deployPath + ".rollops-stamp"
 	}
 	return &Target{conn: conn, deployPath: deployPath, stampPath: stampPath}
 }

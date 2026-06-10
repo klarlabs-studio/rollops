@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sort"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 // Graph is a dependency DAG over target refs.

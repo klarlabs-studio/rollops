@@ -12,7 +12,7 @@ func TestLabelValue(t *testing.T) {
 	cases := map[string]string{
 		"shop/prod/web":          "shop-prod-web",
 		"Payments/Prod/API":      "payments-prod-api",
-		"":                       "rolloffs",
+		"":                       "rollops",
 		strings.Repeat("x", 100): strings.Repeat("x", 63),
 	}
 	for in, want := range cases {

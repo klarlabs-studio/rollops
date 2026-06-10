@@ -5,17 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/security"
-	"go.klarlabs.de/rolloffs/internal/store/sqlite"
-	itarget "go.klarlabs.de/rolloffs/internal/target"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 const cfgYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: demo
@@ -30,10 +30,10 @@ spec:
     type: rolling
 `
 
-type fakeTarget struct{ applied int }
+type fakeTarget struct{ applied []pt.Manifest }
 
-func (f *fakeTarget) Apply(context.Context, pt.Manifest) (pt.Result, error) {
-	f.applied++
+func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
+	f.applied = append(f.applied, m)
 	return pt.Result{Changed: true}, nil
 }
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return pt.Fingerprint{}, nil }
@@ -50,11 +50,18 @@ func newTools(t *testing.T, id rollout.Identity) *Tools {
 	t.Cleanup(func() { db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil })
-	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return time.Unix(0, 0) }), engine.WithIDGen(func() string { return "ro-mcp" }))
+	n := 0
+	eng := engine.New(db, reg,
+		engine.WithClock(func() time.Time { return time.Unix(int64(n+1), 0) }),
+		engine.WithIDGen(func() string {
+			n++
+			return "ro-mcp-" + string(rune('0'+n))
+		}),
+	)
 
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "agent", Grants: []security.Grant{
-		{Perm: security.PermPlan}, {Perm: security.PermApply, Scope: security.Scope{Env: ""}}, {Perm: security.PermStatus},
+		{Perm: security.PermPlan}, {Perm: security.PermApply, Scope: security.Scope{Env: ""}}, {Perm: security.PermRollback}, {Perm: security.PermStatus},
 	}})
 	pol.DefineRole(security.Role{Name: "readonly", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("agent:nomi", "agent")
@@ -77,10 +84,10 @@ func TestTools_PlanApplyStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if a.RolloutID != "ro-mcp" || a.Phase != "verifying" {
+	if a.RolloutID != "ro-mcp-1" || a.Phase != "verifying" {
 		t.Errorf("apply output = %+v", a)
 	}
-	s, err := tl.Status(ctx, StatusInput{RolloutID: "ro-mcp"})
+	s, err := tl.Status(ctx, StatusInput{RolloutID: "ro-mcp-1"})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -101,10 +108,52 @@ func TestTools_RBACDeniesApply(t *testing.T) {
 	}
 }
 
+func TestTools_Rollback(t *testing.T) {
+	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
+	ctx := context.Background()
+	c1, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2.Spec.Target.Spec = map[string]any{"x": 2}
+	y1 := cfgYAML
+	y2 := `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/staging/app
+    criticality: low
+    spec:
+      x: 2
+  strategy:
+    type: rolling
+`
+	if _, err := tl.Apply(ctx, ApplyInput{Config: y1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tl.Apply(ctx, ApplyInput{Config: y2}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := tl.Rollback(ctx, RollbackInput{TargetRef: c1.Spec.Target.Ref})
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if out.Target != c2.Spec.Target.Ref || out.Phase != "rolled-back" {
+		t.Errorf("rollback output = %+v", out)
+	}
+}
+
 func TestNewServer_RegistersTools(t *testing.T) {
 	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
 	srv := NewServer(tl)
-	for _, name := range []string{"rollouts.plan", "rollouts.apply", "rollouts.status"} {
+	for _, name := range []string{"rollouts.plan", "rollouts.apply", "rollouts.rollback", "rollouts.status"} {
 		if _, ok := srv.GetTool(name); !ok {
 			t.Errorf("tool %q not registered", name)
 		}

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
 // Auth carries per-repo credentials. Tokens/keys come from the SecretProvider
-// at execution time, never stored locally by Rolloffs.
+// at execution time, never stored locally by Rollops.
 type Auth struct {
 	// DeployKeyPath is an SSH private key path for git+ssh remotes.
 	DeployKeyPath string
@@ -68,6 +70,38 @@ func (s *Source) Pull(ctx context.Context) (changed bool, head string, err error
 		return false, before, err
 	}
 	return before != after, after, nil
+}
+
+// CommitFile writes one file inside the working tree and commits it when it
+// changes. It does not push; callers decide when and where writeback is allowed.
+func (s *Source) CommitFile(ctx context.Context, relPath string, content []byte, message string) (bool, string, error) {
+	clean := filepath.Clean(relPath)
+	if clean == "." || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+		return false, "", fmt.Errorf("git: invalid relative path %q", relPath)
+	}
+	path := filepath.Join(s.dir, clean)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, "", fmt.Errorf("git: mkdir: %w", err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return false, "", fmt.Errorf("git: write file: %w", err)
+	}
+	if _, err := s.git(ctx, s.dir, "add", clean); err != nil {
+		return false, "", err
+	}
+	if out, err := s.git(ctx, s.dir, "diff", "--cached", "--quiet"); err == nil {
+		return false, "", nil
+	} else if out != "" {
+		return false, "", err
+	}
+	if _, err := s.git(ctx, s.dir, "-c", "user.name=rollops", "-c", "user.email=rollops@localhost", "commit", "-m", message); err != nil {
+		return false, "", err
+	}
+	head, err := s.Head(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	return true, head, nil
 }
 
 // git runs a git command, threading per-repo auth via env (GIT_SSH_COMMAND for

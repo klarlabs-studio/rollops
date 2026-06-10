@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v7.35.0
-// source: rolloffs/v1/rolloffs.proto
+// source: rollops/v1/rollops.proto
 
-package rolloffsv1
+package rollopsv1
 
 import (
 	context "context"
@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RolloutService_Plan_FullMethodName   = "/rolloffs.v1.RolloutService/Plan"
-	RolloutService_Apply_FullMethodName  = "/rolloffs.v1.RolloutService/Apply"
-	RolloutService_Status_FullMethodName = "/rolloffs.v1.RolloutService/Status"
+	RolloutService_Plan_FullMethodName     = "/rollops.v1.RolloutService/Plan"
+	RolloutService_Apply_FullMethodName    = "/rollops.v1.RolloutService/Apply"
+	RolloutService_Status_FullMethodName   = "/rollops.v1.RolloutService/Status"
+	RolloutService_Rollback_FullMethodName = "/rollops.v1.RolloutService/Rollback"
 )
 
 // RolloutServiceClient is the client API for RolloutService service.
@@ -30,8 +31,9 @@ const (
 //
 // RolloutService is the typed gRPC surface over the engine — the daemon
 // transport the CLI and agents use. RPCs map 1:1 to engine operations; the
-// browser UI uses the REST surface (internal/api). Every call is authenticated
-// (bearer token in the "authorization" metadata) and authorized via RBAC.
+// browser UI uses the HTTP/JSON surface (internal/api). Every call is
+// authenticated (bearer token in the "authorization" metadata by default) and
+// authorized via RBAC.
 type RolloutServiceClient interface {
 	// Plan shows what an apply would change.
 	Plan(ctx context.Context, in *PlanRequest, opts ...grpc.CallOption) (*PlanResponse, error)
@@ -39,6 +41,8 @@ type RolloutServiceClient interface {
 	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
 	// Status returns a rollout's current state.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	// Rollback rolls a target back to its previous desired state.
+	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 }
 
 type rolloutServiceClient struct {
@@ -79,14 +83,25 @@ func (c *rolloutServiceClient) Status(ctx context.Context, in *StatusRequest, op
 	return out, nil
 }
 
+func (c *rolloutServiceClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Rollback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RolloutServiceServer is the server API for RolloutService service.
 // All implementations must embed UnimplementedRolloutServiceServer
 // for forward compatibility.
 //
 // RolloutService is the typed gRPC surface over the engine — the daemon
 // transport the CLI and agents use. RPCs map 1:1 to engine operations; the
-// browser UI uses the REST surface (internal/api). Every call is authenticated
-// (bearer token in the "authorization" metadata) and authorized via RBAC.
+// browser UI uses the HTTP/JSON surface (internal/api). Every call is
+// authenticated (bearer token in the "authorization" metadata by default) and
+// authorized via RBAC.
 type RolloutServiceServer interface {
 	// Plan shows what an apply would change.
 	Plan(context.Context, *PlanRequest) (*PlanResponse, error)
@@ -94,6 +109,8 @@ type RolloutServiceServer interface {
 	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
 	// Status returns a rollout's current state.
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
+	// Rollback rolls a target back to its previous desired state.
+	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
 	mustEmbedUnimplementedRolloutServiceServer()
 }
 
@@ -112,6 +129,9 @@ func (UnimplementedRolloutServiceServer) Apply(context.Context, *ApplyRequest) (
 }
 func (UnimplementedRolloutServiceServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedRolloutServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
 }
 func (UnimplementedRolloutServiceServer) mustEmbedUnimplementedRolloutServiceServer() {}
 func (UnimplementedRolloutServiceServer) testEmbeddedByValue()                        {}
@@ -188,11 +208,29 @@ func _RolloutService_Status_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RolloutService_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Rollback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Rollback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Rollback(ctx, req.(*RollbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RolloutService_ServiceDesc is the grpc.ServiceDesc for RolloutService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var RolloutService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "rolloffs.v1.RolloutService",
+	ServiceName: "rollops.v1.RolloutService",
 	HandlerType: (*RolloutServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -207,7 +245,11 @@ var RolloutService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Status",
 			Handler:    _RolloutService_Status_Handler,
 		},
+		{
+			MethodName: "Rollback",
+			Handler:    _RolloutService_Rollback_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rolloffs/v1/rolloffs.proto",
+	Metadata: "rollops/v1/rollops.proto",
 }

@@ -1,4 +1,4 @@
-// Package engine is the central Go library of Rolloffs. Every interface — the
+// Package engine is the central Go library of Rollops. Every interface — the
 // one-shot CLI, the daemon (gRPC/REST), and the MCP server — is a thin client
 // over this package, which is why the two control paths stay behaviourally
 // identical. It is transport-agnostic and storage-agnostic: it depends only on
@@ -18,34 +18,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/analysis"
-	"go.klarlabs.de/rolloffs/internal/audit"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/depgraph"
-	"go.klarlabs.de/rolloffs/internal/notify"
-	"go.klarlabs.de/rolloffs/internal/progressive"
-	"go.klarlabs.de/rolloffs/internal/risk"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/secrets"
-	"go.klarlabs.de/rolloffs/internal/security"
-	"go.klarlabs.de/rolloffs/internal/step"
-	"go.klarlabs.de/rolloffs/internal/store"
-	itarget "go.klarlabs.de/rolloffs/internal/target"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/analysis"
+	"go.klarlabs.de/rollops/internal/audit"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/depgraph"
+	"go.klarlabs.de/rollops/internal/notify"
+	"go.klarlabs.de/rollops/internal/progressive"
+	"go.klarlabs.de/rollops/internal/risk"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/secrets"
+	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/step"
+	"go.klarlabs.de/rollops/internal/store"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Engine orchestrates rollouts over a Store and a target Registry.
 type Engine struct {
-	store  store.Store
-	reg    *itarget.Registry
-	locks  *keyedLocks
-	policy step.Policy
-	smoke  SmokeRunner
-	now    func() time.Time
-	newID  func() string
+	store    store.Store
+	reg      *itarget.Registry
+	locks    *keyedLocks
+	policy   step.Policy
+	smoke    SmokeRunner
+	now      func() time.Time
+	newID    func() string
+	owner    string
+	leaseTTL time.Duration
 
 	// Optional trust/delivery collaborators. When set, Apply enforces them in
 	// order; nil means that stage is skipped (keeps the bare engine simple for
@@ -56,6 +59,8 @@ type Engine struct {
 	secrets    secrets.Provider
 	notifier   notify.Notifier
 	metrics    analysis.MetricsProvider // optional override; else built from config
+	analysis   bool
+	dbRollback DatabaseRollbackRunner
 }
 
 // Option configures an Engine.
@@ -67,11 +72,27 @@ func WithClock(f func() time.Time) Option { return func(e *Engine) { e.now = f }
 // WithIDGen overrides the rollout id generator (deterministic tests).
 func WithIDGen(f func() string) Option { return func(e *Engine) { e.newID = f } }
 
+// WithLeaseOwner sets the owner id used for shared Store leases.
+func WithLeaseOwner(owner string) Option { return func(e *Engine) { e.owner = owner } }
+
+// WithLeaseTTL sets the TTL used for shared Store leases.
+func WithLeaseTTL(ttl time.Duration) Option { return func(e *Engine) { e.leaseTTL = ttl } }
+
 // WithPolicy overrides the fortify resilience policy applied to target ops.
 func WithPolicy(p step.Policy) Option { return func(e *Engine) { e.policy = p } }
 
 // WithSmokeRunner overrides the post-deploy smoke-test runner (tests).
 func WithSmokeRunner(s SmokeRunner) Option { return func(e *Engine) { e.smoke = s } }
+
+// DatabaseRollbackRunner executes the optional rollback.database hook.
+type DatabaseRollbackRunner interface {
+	Run(ctx context.Context, command []string) error
+}
+
+// WithDatabaseRollbackRunner overrides the database rollback hook runner.
+func WithDatabaseRollbackRunner(r DatabaseRollbackRunner) Option {
+	return func(e *Engine) { e.dbRollback = r }
+}
 
 // WithAudit enables audit logging of the deploy pipeline.
 func WithAudit(a *audit.Logger) Option { return func(e *Engine) { e.audit = a } }
@@ -90,11 +111,18 @@ func WithSecrets(p secrets.Provider) Option { return func(e *Engine) { e.secrets
 // promotions). Best-effort: a failing notifier never blocks a rollout.
 func WithNotifier(n notify.Notifier) Option { return func(e *Engine) { e.notifier = n } }
 
-// WithMetricsProvider overrides the metrics backend used for analysis (else one
-// is built from the config's analysis.provider/address).
+// WithMetricsProvider enables metric analysis and overrides the metrics backend
+// used for analysis.
 func WithMetricsProvider(p analysis.MetricsProvider) Option {
-	return func(e *Engine) { e.metrics = p }
+	return func(e *Engine) {
+		e.metrics = p
+		e.analysis = true
+	}
 }
+
+// WithMetricAnalysis enables metric analysis. It is off by default so the base
+// rollback path remains observability-free.
+func WithMetricAnalysis() Option { return func(e *Engine) { e.analysis = true } }
 
 // notifyEvent delivers an event best-effort.
 func (e *Engine) notifyEvent(ctx context.Context, ev notify.Event) {
@@ -117,18 +145,29 @@ func (e *Engine) build(t config.Target) (pt.Target, error) {
 // time.Now; both are injectable for tests.
 func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
-		store:  st,
-		reg:    reg,
-		locks:  newKeyedLocks(),
-		policy: step.DefaultPolicy(),
-		smoke:  execSmoke{},
-		now:    func() time.Time { return time.Now().UTC() },
+		store:      st,
+		reg:        reg,
+		locks:      newKeyedLocks(),
+		policy:     step.DefaultPolicy(),
+		smoke:      execSmoke{},
+		dbRollback: execDBRollback{},
+		owner:      defaultOwner(),
+		leaseTTL:   2 * time.Minute,
+		now:        func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
 	for _, o := range opts {
 		o(e)
 	}
 	return e
+}
+
+func defaultOwner() string {
+	host, _ := os.Hostname()
+	if host == "" {
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s:%d", host, os.Getpid())
 }
 
 // Plan computes what an apply would change without applying it: the desired
@@ -296,18 +335,58 @@ type RiskInputs struct {
 
 // EvaluateRisk runs the blast-radius gate for a config + rollout-time inputs.
 // Callers set ApplyRequest.NeedsApproval from the returned Decision.
-func (e *Engine) EvaluateRisk(c *config.Config, in RiskInputs) (risk.Decision, error) {
+func (e *Engine) EvaluateRisk(ctx context.Context, c *config.Config, in RiskInputs) (risk.Decision, error) {
+	weights, recentFailures, err := e.riskWeights(ctx, c)
+	if err != nil {
+		return risk.Decision{}, err
+	}
 	g := risk.Gate{
 		Threshold:     c.Spec.Risk.Threshold,
+		Weights:       weights,
 		SensitiveExpr: c.Spec.Risk.Sensitive,
 	}
 	return g.Evaluate(risk.Signals{
-		Criticality: c.Spec.Target.Criticality,
-		Environment: in.Environment,
-		ChangeType:  in.ChangeType,
-		BlastRadius: in.BlastRadius,
-		Strategy:    c.Spec.Strategy.Type,
+		Criticality:    c.Spec.Target.Criticality,
+		Environment:    in.Environment,
+		ChangeType:     in.ChangeType,
+		BlastRadius:    in.BlastRadius,
+		Strategy:       c.Spec.Strategy.Type,
+		RecentFailures: recentFailures,
 	})
+}
+
+func (e *Engine) riskWeights(ctx context.Context, c *config.Config) (risk.Weights, int, error) {
+	w := risk.DefaultWeights()
+	h := c.Spec.Risk.History
+	if h.Lookback <= 0 && h.Weight == 0 && h.MaxFailures == 0 {
+		return w, 0, nil
+	}
+	if h.Lookback <= 0 {
+		h.Lookback = 10
+	}
+	if h.Weight == 0 {
+		h.Weight = 0.15
+	}
+	if h.MaxFailures <= 0 {
+		h.MaxFailures = 3
+	}
+	w.History = h.Weight
+	w.MaxRecentFailures = h.MaxFailures
+
+	hist, err := e.store.History(ctx, c.Spec.Target.Ref)
+	if err != nil {
+		return risk.Weights{}, 0, fmt.Errorf("engine: risk history: %w", err)
+	}
+	recentFailures := 0
+	for i, rec := range hist {
+		if i >= h.Lookback {
+			break
+		}
+		if rec.Phase == rollout.PhaseRolledBack {
+			recentFailures++
+		}
+	}
+	return w, recentFailures, nil
 }
 
 // ApplyRequest drives Apply.
@@ -356,14 +435,17 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 
 	// 2. Risk gate (only when configured — threshold>0 or a sensitive expr).
 	if cfg.Spec.Risk.Threshold > 0 || cfg.Spec.Risk.Sensitive != "" {
-		d, err := e.EvaluateRisk(cfg, req.Risk)
+		d, err := e.EvaluateRisk(ctx, cfg, req.Risk)
 		if err != nil {
 			return nil, err
 		}
 		needApproval = needApproval || d.NeedsApproval
 	}
 
-	release, ok := e.locks.TryAcquire(ref)
+	release, ok, err := e.acquireTarget(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, ErrTargetBusy
 	}
@@ -498,19 +580,19 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	}
 	auto := c.Spec.Rollback.Auto
 
-	failed, reason := e.runPostDeployChecks(ctx, r, c)
+	failed, reason, successNote := e.runPostDeployChecks(ctx, r, c)
 	if failed {
 		if !auto {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
 		}
-		rb, err := e.Rollback(ctx, rolloutID, prior)
+		rb, err := e.rollbackWithDatabase(ctx, rolloutID, prior, reason, c.Spec.Rollback.Database)
 		if err != nil {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: auto-rollback after %q: %w", reason, err)
 		}
 		e.notifyEvent(ctx, notify.Event{Kind: notify.RolledBack, TargetRef: rb.TargetRef, RolloutID: rb.ID, Detail: reason})
 		return VerifyOutcome{Rollout: rb, RolledBack: true, Reason: reason}, nil
 	}
-	promoted, err := e.Promote(ctx, rolloutID)
+	promoted, err := e.promoteWithNote(ctx, rolloutID, successNote)
 	if err != nil {
 		return VerifyOutcome{}, err
 	}
@@ -518,8 +600,9 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	return VerifyOutcome{Rollout: promoted}, nil
 }
 
-// runPostDeployChecks returns (failed, reason) for the health + smoke gates.
-func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string) {
+// runPostDeployChecks returns (failed, failure reason, success note) for the
+// health, smoke, and optional metric-analysis gates.
+func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
 	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
 		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
 		if err == nil {
@@ -528,26 +611,29 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 				if hs.Reason != "" {
 					reason = "health check failed: " + hs.Reason
 				}
-				return true, reason
+				return true, reason, ""
 			}
 		}
 	}
 	if st := c.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
 		code, err := e.smoke.Run(ctx, st.Command)
 		if err != nil {
-			return true, "smoke test error: " + err.Error()
+			return true, "smoke test error: " + err.Error(), ""
 		}
 		if code != st.ExpectExit {
-			return true, fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit)
+			return true, fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit), ""
 		}
 	}
-	// Metric-based analysis (Phase 2 seam) — the fourth post-deploy signal.
-	if c.Spec.Analysis != nil {
-		if ok, reason := e.runAnalysis(ctx, c.Spec.Analysis); !ok {
-			return true, reason
+	// Metric-based analysis is a stable Phase 2 feature. It remains opt-in at
+	// engine construction so v1 rollback stays observability-free by default.
+	if e.analysis && c.Spec.Analysis != nil {
+		if ok, note := e.runAnalysis(ctx, c.Spec.Analysis); !ok {
+			return true, note, ""
+		} else if note != "" {
+			return false, "", note
 		}
 	}
-	return false, ""
+	return false, "", ""
 }
 
 // runAnalysis builds an analyzer from config (using the injected metrics
@@ -579,7 +665,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 	if !res.Passed {
 		return false, "analysis failed: " + res.Reason
 	}
-	return true, ""
+	return true, fmt.Sprintf("analysis passed: %d measurement(s)", len(res.Measurements))
 }
 
 // Approve resolves an awaiting-approval rollout: it deploys to the target and
@@ -590,7 +676,10 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	release, ok := e.locks.TryAcquire(r.TargetRef)
+	release, ok, err := e.acquireTarget(ctx, r.TargetRef)
+	if err != nil {
+		return r, err
+	}
 	if !ok {
 		return r, ErrTargetBusy
 	}
@@ -698,6 +787,10 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 
 // Promote marks a verified rollout as promoted.
 func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
+	return e.promoteWithNote(ctx, rolloutID, "")
+}
+
+func (e *Engine) promoteWithNote(ctx context.Context, rolloutID, note string) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return rollout.Rollout{}, err
@@ -710,6 +803,7 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout
 		return r, err // not in a promotable phase
 	}
 	r.Phase = lc.Phase()
+	r.Note = note
 	r.UpdatedAt = e.now()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return rollout.Rollout{}, err
@@ -720,11 +814,22 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout
 // Rollback re-applies a prior manifest to the target — the observability-free
 // recovery path, driveable manually, by an agent, or automatically.
 func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manifest) (rollout.Rollout, error) {
+	return e.rollbackWithNote(ctx, rolloutID, prior, "")
+}
+
+func (e *Engine) rollbackWithNote(ctx context.Context, rolloutID string, prior pt.Manifest, note string) (rollout.Rollout, error) {
+	return e.rollbackWithDatabase(ctx, rolloutID, prior, note, nil)
+}
+
+func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, prior pt.Manifest, note string, db *config.DatabaseRollback) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	release, ok := e.locks.TryAcquire(r.TargetRef)
+	release, ok, err := e.acquireTarget(ctx, r.TargetRef)
+	if err != nil {
+		return r, err
+	}
 	if !ok {
 		return r, ErrTargetBusy
 	}
@@ -747,10 +852,44 @@ func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manife
 	r.Phase = lc.Phase()
 	r.Desired = prior
 	r.UpdatedAt = e.now()
+	if db != nil && len(db.Command) > 0 {
+		if err := e.runDatabaseRollback(ctx, db); err != nil {
+			r.Note = appendNote(note, "database rollback: failed: "+err.Error())
+			_ = e.store.SaveRollout(ctx, r)
+			return r, fmt.Errorf("database rollback: %w", err)
+		}
+		r.Note = appendNote(note, "database rollback: succeeded")
+	} else {
+		r.Note = note
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return rollout.Rollout{}, err
 	}
 	return r, nil
+}
+
+func (e *Engine) runDatabaseRollback(ctx context.Context, db *config.DatabaseRollback) error {
+	if db.Timeout != "" {
+		d, err := time.ParseDuration(db.Timeout)
+		if err != nil {
+			return err
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
+	}
+	return e.dbRollback.Run(ctx, db.Command)
+}
+
+func appendNote(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "; " + b
+	}
 }
 
 // Status returns a rollout by id.
@@ -887,7 +1026,10 @@ func (e *Engine) FireDueSchedules(ctx context.Context, now time.Time) ([]rollout
 // applyScheduled deploys a pre-decided scheduled manifest (the gate decision was
 // made when it was queued).
 func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout) (rollout.Rollout, error) {
-	release, ok := e.locks.TryAcquire(s.TargetRef)
+	release, ok, err := e.acquireTarget(ctx, s.TargetRef)
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
 	if !ok {
 		return rollout.Rollout{}, ErrTargetBusy
 	}

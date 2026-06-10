@@ -1,4 +1,4 @@
--- 0001_init: runtime state for Rolloffs. Git holds desired state; these tables
+-- 0001_init: runtime state for Rollops. Git holds desired state; these tables
 -- hold observed state, in-flight rollouts, schedules, and history only.
 
 CREATE TABLE IF NOT EXISTS rollouts (
@@ -45,3 +45,13 @@ CREATE TABLE IF NOT EXISTS history (
     at             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_history_target ON history(target_ref, seq DESC);
+
+-- Runtime leases for multi-instance coordination (target locks, reconcile
+-- leader election). Expired leases are stealable; desired state never lives
+-- here.
+CREATE TABLE IF NOT EXISTS leases (
+    key        TEXT PRIMARY KEY,
+    owner      TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_leases_expires ON leases(expires_at);

@@ -1,7 +1,7 @@
 # Canary with metric-based analysis (Phase-2 seam, provider-agnostic).
-# During the post-deploy gate, Rolloffs queries the metrics provider and a CEL
+# During the post-deploy gate, Rollops queries the metrics provider and a CEL
 # condition over the named metrics decides promote vs auto-rollback.
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: payments-api

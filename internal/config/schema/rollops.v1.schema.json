@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.klarlabs.de/rolloffs/v1/rollout-config.json",
-  "title": "Rolloffs RolloutConfig",
-  "description": "Declarative rollout configuration for a single service/target. Surface format is YAML; this schema is the published contract. Schema version is rolloffs.klarlabs.de/v1.",
+  "$id": "https://schema.klarlabs.de/rollops/v1/rollout-config.json",
+  "title": "Rollops RolloutConfig",
+  "description": "Declarative rollout configuration for a single service/target. Surface format is YAML; this schema is the published contract. Schema version is rollops.klarlabs.de/v1.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
     "apiVersion": {
       "type": "string",
-      "const": "rolloffs.klarlabs.de/v1",
+      "const": "rollops.klarlabs.de/v1",
       "description": "Schema version. A new major bumps this so configs migrate cleanly."
     },
     "kind": {
@@ -127,6 +127,30 @@
         "sensitive": {
           "type": "string",
           "description": "CEL boolean expression; when true, forces human approval."
+        },
+        "history": { "$ref": "#/$defs/riskHistory" }
+      }
+    },
+    "riskHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional recent rollback history signal for the risk gate. Lookback is a number of recent target history records.",
+      "properties": {
+        "lookback": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Recent target history records to inspect. Zero disables the history signal."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Additional normalized score weight assigned to rollback history."
+        },
+        "maxFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rollback count treated as maximum historical risk."
         }
       }
     },
@@ -137,9 +161,28 @@
         "auto": { "type": "boolean" },
         "healthCheck": { "$ref": "#/$defs/healthCheck" },
         "smokeTest": { "$ref": "#/$defs/smokeTest" },
+        "database": { "$ref": "#/$defs/databaseRollback" },
         "trigger": {
           "type": "string",
           "description": "Optional CEL boolean expression that fires a rollback."
+        }
+      }
+    },
+    "databaseRollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "description": "Optional command hook run after manifest auto-rollback for database migration rollback.",
+      "properties": {
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Executable and args, e.g. [\"goose\", \"down\"]."
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Go duration for the rollback command."
         }
       }
     },
@@ -172,7 +215,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["provider", "metrics", "condition"],
-      "description": "Metric-based rollout analysis (Phase 2 seam). Provider-agnostic.",
+      "description": "Metric-based rollout analysis. Provider-agnostic.",
       "properties": {
         "provider": { "type": "string", "minLength": 1, "description": "e.g. prometheus" },
         "address": { "type": "string" },

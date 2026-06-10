@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/pkg/conformance"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/conformance"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // fakeCluster is an in-memory cluster: it records the deployed checksum live.

@@ -1,10 +1,10 @@
-# Decisions — Rolloffs
+# Decisions — Rollops
 
 Append-only. Superseded entries get `→ superseded [date]`, never deleted.
 
 ## 2026-06-08 — Scaffold & plan
 
-- **Module path** = `github.com/klarlabs/rolloffs`. Repo dir is `rollops`; project name is `rolloffs` (matches all docs). Kept the mismatch; noted in README.
+- **Module path** = `github.com/klarlabs/rollops`. Repo dir is `rollops`; project name is `rollops` (matches all docs). Kept the mismatch; noted in README.
 - **Packages by domain, not layer** (per klarlabs best-practice). `internal/` for engine guts, `pkg/` for the public Target plugin contract + conformance suite (community plugins import it).
 - **Target contract is public** (`pkg/target`) so third-party gRPC plugins can implement it. Store stays `internal` (no external implementers expected in OSS core).
 - **Domain entities live in `internal/rollout`** to avoid import cycles (Store imports rollout + pkg/target).
@@ -14,7 +14,7 @@ Append-only. Superseded entries get `→ superseded [date]`, never deleted.
 
 ## 2026-06-08 — Stack pinned + plan ordered
 
-- **Module path = `go.klarlabs.de/rolloffs`** (changed from github.com/klarlabs/rolloffs) to match org vanity-import convention. Imports updated.
+- **Module path = `go.klarlabs.de/rollops`** (changed from github.com/klarlabs/rollops) to match org vanity-import convention. Imports updated.
 - **Stack components published + pinned** as direct deps (full build resolves):
   `go.klarlabs.de/statekit v1.8.0`, `axi v1.4.0`, `fortify v1.6.0`, `bolt v1.5.2`, `mcp v1.15.0`, `mnemos v0.19.0`; `github.com/felixgeelhaar/decisionkit v0.1.0`.
   Module names are `axi`/`mcp` (not `-go`). decisionkit root has no package — risk gate imports `decisionkit/risk`.

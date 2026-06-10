@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 type noopTarget struct{}

@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.35.0
-// source: rolloffs/v1/rolloffs.proto
+// source: rollops/v1/rollops.proto
 
-package rolloffsv1
+package rollopsv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -31,7 +31,7 @@ type PlanRequest struct {
 
 func (x *PlanRequest) Reset() {
 	*x = PlanRequest{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[0]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +43,7 @@ func (x *PlanRequest) String() string {
 func (*PlanRequest) ProtoMessage() {}
 
 func (x *PlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[0]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +56,7 @@ func (x *PlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
 func (*PlanRequest) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{0}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *PlanRequest) GetConfig() string {
@@ -77,7 +77,7 @@ type PlanResponse struct {
 
 func (x *PlanResponse) Reset() {
 	*x = PlanResponse{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[1]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -89,7 +89,7 @@ func (x *PlanResponse) String() string {
 func (*PlanResponse) ProtoMessage() {}
 
 func (x *PlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[1]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -102,7 +102,7 @@ func (x *PlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
 func (*PlanResponse) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{1}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PlanResponse) GetAction() string {
@@ -135,7 +135,7 @@ type ApplyRequest struct {
 
 func (x *ApplyRequest) Reset() {
 	*x = ApplyRequest{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[2]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -147,7 +147,7 @@ func (x *ApplyRequest) String() string {
 func (*ApplyRequest) ProtoMessage() {}
 
 func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[2]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -160,7 +160,7 @@ func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyRequest.ProtoReflect.Descriptor instead.
 func (*ApplyRequest) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{2}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ApplyRequest) GetConfig() string {
@@ -181,7 +181,7 @@ type ApplyResponse struct {
 
 func (x *ApplyResponse) Reset() {
 	*x = ApplyResponse{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[3]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -193,7 +193,7 @@ func (x *ApplyResponse) String() string {
 func (*ApplyResponse) ProtoMessage() {}
 
 func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[3]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -206,7 +206,7 @@ func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyResponse.ProtoReflect.Descriptor instead.
 func (*ApplyResponse) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{3}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ApplyResponse) GetId() string {
@@ -239,7 +239,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[4]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -251,7 +251,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[4]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -264,7 +264,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{4}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StatusRequest) GetId() string {
@@ -286,7 +286,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[5]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +298,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rolloffs_v1_rolloffs_proto_msgTypes[5]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,7 +311,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_rolloffs_v1_rolloffs_proto_rawDescGZIP(), []int{5}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StatusResponse) GetId() string {
@@ -342,11 +342,116 @@ func (x *StatusResponse) GetStrategy() string {
 	return ""
 }
 
-var File_rolloffs_v1_rolloffs_proto protoreflect.FileDescriptor
+type RollbackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Target        string                 `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_rolloffs_v1_rolloffs_proto_rawDesc = "" +
+func (x *RollbackRequest) Reset() {
+	*x = RollbackRequest{}
+	mi := &file_rollops_v1_rollops_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackRequest) ProtoMessage() {}
+
+func (x *RollbackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_v1_rollops_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackRequest.ProtoReflect.Descriptor instead.
+func (*RollbackRequest) Descriptor() ([]byte, []int) {
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RollbackRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+type RollbackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackResponse) Reset() {
+	*x = RollbackResponse{}
+	mi := &file_rollops_v1_rollops_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackResponse) ProtoMessage() {}
+
+func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_v1_rollops_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackResponse.ProtoReflect.Descriptor instead.
+func (*RollbackResponse) Descriptor() ([]byte, []int) {
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RollbackResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RollbackResponse) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *RollbackResponse) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+var File_rollops_v1_rollops_proto protoreflect.FileDescriptor
+
+const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\n" +
-	"\x1arolloffs/v1/rolloffs.proto\x12\vrolloffs.v1\"%\n" +
+	"\x18rollops/v1/rollops.proto\x12\n" +
+	"rollops.v1\"%\n" +
 	"\vPlanRequest\x12\x16\n" +
 	"\x06config\x18\x01 \x01(\tR\x06config\"Z\n" +
 	"\fPlanResponse\x12\x16\n" +
@@ -365,67 +470,78 @@ const file_rolloffs_v1_rolloffs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\x12\x1a\n" +
-	"\bstrategy\x18\x04 \x01(\tR\bstrategy2\xd0\x01\n" +
-	"\x0eRolloutService\x12;\n" +
-	"\x04Plan\x12\x18.rolloffs.v1.PlanRequest\x1a\x19.rolloffs.v1.PlanResponse\x12>\n" +
-	"\x05Apply\x12\x19.rolloffs.v1.ApplyRequest\x1a\x1a.rolloffs.v1.ApplyResponse\x12A\n" +
-	"\x06Status\x12\x1a.rolloffs.v1.StatusRequest\x1a\x1b.rolloffs.v1.StatusResponseB@Z>go.klarlabs.de/rolloffs/internal/grpcapi/rolloffsv1;rolloffsv1b\x06proto3"
+	"\bstrategy\x18\x04 \x01(\tR\bstrategy\")\n" +
+	"\x0fRollbackRequest\x12\x16\n" +
+	"\x06target\x18\x01 \x01(\tR\x06target\"P\n" +
+	"\x10RollbackResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target2\x91\x02\n" +
+	"\x0eRolloutService\x129\n" +
+	"\x04Plan\x12\x17.rollops.v1.PlanRequest\x1a\x18.rollops.v1.PlanResponse\x12<\n" +
+	"\x05Apply\x12\x18.rollops.v1.ApplyRequest\x1a\x19.rollops.v1.ApplyResponse\x12?\n" +
+	"\x06Status\x12\x19.rollops.v1.StatusRequest\x1a\x1a.rollops.v1.StatusResponse\x12E\n" +
+	"\bRollback\x12\x1b.rollops.v1.RollbackRequest\x1a\x1c.rollops.v1.RollbackResponseB=Z;go.klarlabs.de/rollops/internal/grpcapi/rollopsv1;rollopsv1b\x06proto3"
 
 var (
-	file_rolloffs_v1_rolloffs_proto_rawDescOnce sync.Once
-	file_rolloffs_v1_rolloffs_proto_rawDescData []byte
+	file_rollops_v1_rollops_proto_rawDescOnce sync.Once
+	file_rollops_v1_rollops_proto_rawDescData []byte
 )
 
-func file_rolloffs_v1_rolloffs_proto_rawDescGZIP() []byte {
-	file_rolloffs_v1_rolloffs_proto_rawDescOnce.Do(func() {
-		file_rolloffs_v1_rolloffs_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rolloffs_v1_rolloffs_proto_rawDesc), len(file_rolloffs_v1_rolloffs_proto_rawDesc)))
+func file_rollops_v1_rollops_proto_rawDescGZIP() []byte {
+	file_rollops_v1_rollops_proto_rawDescOnce.Do(func() {
+		file_rollops_v1_rollops_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rollops_v1_rollops_proto_rawDesc), len(file_rollops_v1_rollops_proto_rawDesc)))
 	})
-	return file_rolloffs_v1_rolloffs_proto_rawDescData
+	return file_rollops_v1_rollops_proto_rawDescData
 }
 
-var file_rolloffs_v1_rolloffs_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_rolloffs_v1_rolloffs_proto_goTypes = []any{
-	(*PlanRequest)(nil),    // 0: rolloffs.v1.PlanRequest
-	(*PlanResponse)(nil),   // 1: rolloffs.v1.PlanResponse
-	(*ApplyRequest)(nil),   // 2: rolloffs.v1.ApplyRequest
-	(*ApplyResponse)(nil),  // 3: rolloffs.v1.ApplyResponse
-	(*StatusRequest)(nil),  // 4: rolloffs.v1.StatusRequest
-	(*StatusResponse)(nil), // 5: rolloffs.v1.StatusResponse
+var file_rollops_v1_rollops_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_rollops_v1_rollops_proto_goTypes = []any{
+	(*PlanRequest)(nil),      // 0: rollops.v1.PlanRequest
+	(*PlanResponse)(nil),     // 1: rollops.v1.PlanResponse
+	(*ApplyRequest)(nil),     // 2: rollops.v1.ApplyRequest
+	(*ApplyResponse)(nil),    // 3: rollops.v1.ApplyResponse
+	(*StatusRequest)(nil),    // 4: rollops.v1.StatusRequest
+	(*StatusResponse)(nil),   // 5: rollops.v1.StatusResponse
+	(*RollbackRequest)(nil),  // 6: rollops.v1.RollbackRequest
+	(*RollbackResponse)(nil), // 7: rollops.v1.RollbackResponse
 }
-var file_rolloffs_v1_rolloffs_proto_depIdxs = []int32{
-	0, // 0: rolloffs.v1.RolloutService.Plan:input_type -> rolloffs.v1.PlanRequest
-	2, // 1: rolloffs.v1.RolloutService.Apply:input_type -> rolloffs.v1.ApplyRequest
-	4, // 2: rolloffs.v1.RolloutService.Status:input_type -> rolloffs.v1.StatusRequest
-	1, // 3: rolloffs.v1.RolloutService.Plan:output_type -> rolloffs.v1.PlanResponse
-	3, // 4: rolloffs.v1.RolloutService.Apply:output_type -> rolloffs.v1.ApplyResponse
-	5, // 5: rolloffs.v1.RolloutService.Status:output_type -> rolloffs.v1.StatusResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+var file_rollops_v1_rollops_proto_depIdxs = []int32{
+	0, // 0: rollops.v1.RolloutService.Plan:input_type -> rollops.v1.PlanRequest
+	2, // 1: rollops.v1.RolloutService.Apply:input_type -> rollops.v1.ApplyRequest
+	4, // 2: rollops.v1.RolloutService.Status:input_type -> rollops.v1.StatusRequest
+	6, // 3: rollops.v1.RolloutService.Rollback:input_type -> rollops.v1.RollbackRequest
+	1, // 4: rollops.v1.RolloutService.Plan:output_type -> rollops.v1.PlanResponse
+	3, // 5: rollops.v1.RolloutService.Apply:output_type -> rollops.v1.ApplyResponse
+	5, // 6: rollops.v1.RolloutService.Status:output_type -> rollops.v1.StatusResponse
+	7, // 7: rollops.v1.RolloutService.Rollback:output_type -> rollops.v1.RollbackResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_rolloffs_v1_rolloffs_proto_init() }
-func file_rolloffs_v1_rolloffs_proto_init() {
-	if File_rolloffs_v1_rolloffs_proto != nil {
+func init() { file_rollops_v1_rollops_proto_init() }
+func file_rollops_v1_rollops_proto_init() {
+	if File_rollops_v1_rollops_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rolloffs_v1_rolloffs_proto_rawDesc), len(file_rolloffs_v1_rolloffs_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rollops_v1_rollops_proto_rawDesc), len(file_rollops_v1_rollops_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_rolloffs_v1_rolloffs_proto_goTypes,
-		DependencyIndexes: file_rolloffs_v1_rolloffs_proto_depIdxs,
-		MessageInfos:      file_rolloffs_v1_rolloffs_proto_msgTypes,
+		GoTypes:           file_rollops_v1_rollops_proto_goTypes,
+		DependencyIndexes: file_rollops_v1_rollops_proto_depIdxs,
+		MessageInfos:      file_rollops_v1_rollops_proto_msgTypes,
 	}.Build()
-	File_rolloffs_v1_rolloffs_proto = out.File
-	file_rolloffs_v1_rolloffs_proto_goTypes = nil
-	file_rolloffs_v1_rolloffs_proto_depIdxs = nil
+	File_rollops_v1_rollops_proto = out.File
+	file_rollops_v1_rollops_proto_goTypes = nil
+	file_rollops_v1_rollops_proto_depIdxs = nil
 }

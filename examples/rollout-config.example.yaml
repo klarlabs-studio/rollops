@@ -1,8 +1,8 @@
-# Rolloffs RolloutConfig — v1 example.
+# Rollops RolloutConfig — v1 example.
 # One file per service/repo. Surface format is YAML; the published JSON Schema
 # is embedded in the binary (config.SchemaJSON) and lives at
-# internal/config/schema/rolloffs.v1.schema.json.
-apiVersion: rolloffs.klarlabs.de/v1
+# internal/config/schema/rollops.v1.schema.json.
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: pet-medical-api
@@ -34,6 +34,10 @@ spec:
   risk:
     threshold: 0.7                  # auto-proceed below this score
     sensitive: 'changeType == "schema"'   # CEL: force approval when true
+    history:                        # optional recent rollback signal
+      lookback: 10                  # inspect the last 10 target history records
+      weight: 0.15                  # add normalized history weight to the score
+      maxFailures: 3                # 3 rollbacks saturate the history signal
 
   rollback:
     auto: true
@@ -43,6 +47,9 @@ spec:
     smokeTest:
       command: ["./smoke.sh"]
       expectExit: 0
+    database:                       # optional hook after auto-rollback
+      command: ["goose", "down"]
+      timeout: 30s
 
   dependsOn:
     - pet-medical/prod/db           # this rollout waits for the db

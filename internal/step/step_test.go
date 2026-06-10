@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // flakyTarget fails the first failFor Apply calls, then succeeds.

@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/target/kubernetes"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/target/kubernetes"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // A tiny always-ready Deployment (pause container — no real workload needed to
@@ -18,7 +18,7 @@ const echoDeployment = `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: echo
-  namespace: rolloffs-it
+  namespace: rollops-it
 spec:
   replicas: 1
   selector:
@@ -51,15 +51,15 @@ func kubeCtx(t *testing.T) string {
 func TestKubernetesTarget_Live(t *testing.T) {
 	ctxName := kubeCtx(t)
 	// Namespace for the test (idempotent).
-	_ = exec.Command("kubectl", "create", "namespace", "rolloffs-it").Run()
-	t.Cleanup(func() { _ = exec.Command("kubectl", "delete", "namespace", "rolloffs-it", "--wait=false").Run() })
+	_ = exec.Command("kubectl", "create", "namespace", "rollops-it").Run()
+	t.Cleanup(func() { _ = exec.Command("kubectl", "delete", "namespace", "rollops-it", "--wait=false").Run() })
 
 	cfg := config.Target{
 		Kind: "kubernetes",
 		Ref:  "int/k8s",
 		Spec: map[string]any{
 			"context":   ctxName,
-			"namespace": "rolloffs-it",
+			"namespace": "rollops-it",
 			"resource":  "deployment/echo",
 		},
 	}
@@ -107,7 +107,7 @@ func TestKubernetesTarget_Live(t *testing.T) {
 	}
 }
 
-const pruneNS = "rolloffs-prune-it"
+const pruneNS = "rollops-prune-it"
 
 func k8sTarget(t *testing.T) pt.Target {
 	t.Helper()

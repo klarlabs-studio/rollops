@@ -12,7 +12,7 @@ import (
 )
 
 // ftpConn is the real FTP implementation of Conn. Credentials are supplied at
-// execution time (SecretProvider); Rolloffs never stores them locally.
+// execution time (SecretProvider); Rollops never stores them locally.
 type ftpConn struct {
 	c *goftp.ServerConn
 }

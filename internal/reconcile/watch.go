@@ -2,14 +2,18 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/git"
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/git"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/store"
 )
+
+var ErrNotLeader = errors.New("watch: not reconcile leader")
 
 // RepoSpec declares one watched repo: where it lives, how to authenticate, the
 // config location within it, and the identity reconciles are attributed to.
@@ -26,10 +30,14 @@ type RepoSpec struct {
 // webhook, periodic via this poll which doubles as the drift heartbeat) and
 // reconciles. Repos are independent and serialized per repo.
 type Watcher struct {
-	rec     *Reconciler
-	baseDir string
-	repos   []watched
-	locks   *repoLocks
+	rec      *Reconciler
+	baseDir  string
+	repos    []watched
+	locks    *repoLocks
+	leases   store.LeaseStore
+	owner    string
+	leaseTTL time.Duration
+	now      func() time.Time
 }
 
 type watched struct {
@@ -37,9 +45,22 @@ type watched struct {
 	src  *git.Source
 }
 
+type WatcherOption func(*Watcher)
+
+func WithLeaderElection(leases store.LeaseStore, owner string, ttl time.Duration) WatcherOption {
+	return func(w *Watcher) {
+		w.leases = leases
+		w.owner = owner
+		w.leaseTTL = ttl
+	}
+}
+
 // NewWatcher clones each repo into baseDir and returns a ready watcher.
-func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec) (*Watcher, error) {
-	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks()}
+func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec, opts ...WatcherOption) (*Watcher, error) {
+	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now}
+	for _, opt := range opts {
+		opt(w)
+	}
 	for _, s := range specs {
 		s.Ref = s.Ref.WithDefaults()
 		dir := filepath.Join(baseDir, s.Name)
@@ -70,6 +91,15 @@ type RepoOutcome struct {
 // Tick pulls and reconciles every watched repo once. Per-repo errors are
 // captured in the result, not fatal to the others.
 func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
+	if w.leases != nil {
+		ok, err := w.leases.AcquireLease(ctx, "reconcile:leader", w.owner, w.leaseTTL, w.now().UTC())
+		if err != nil {
+			return []RepoOutcome{{Err: fmt.Errorf("watch: acquire leader lease: %w", err)}}
+		}
+		if !ok {
+			return []RepoOutcome{{Err: ErrNotLeader}}
+		}
+	}
 	out := make([]RepoOutcome, 0, len(w.repos))
 	for _, r := range w.repos {
 		out = append(out, w.tickOne(ctx, r))

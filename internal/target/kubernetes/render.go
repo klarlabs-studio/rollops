@@ -28,7 +28,7 @@ func execRunner(ctx context.Context, name string, stdin []byte, args ...string) 
 }
 
 // render produces the deployable Kubernetes manifest from the target spec. Like
-// Flux and Argo, Rolloffs renders Helm charts and Kustomize overlays — not just
+// Flux and Argo, Rollops renders Helm charts and Kustomize overlays — not just
 // raw manifests — so existing chart/overlay users can adopt it unchanged.
 //
 // Precedence: helm > kustomize > manifest > (raw spec, used by the direct flow).
@@ -54,7 +54,7 @@ func renderHelm(ctx context.Context, h map[string]any, run cmdRunner) ([]byte, e
 	}
 	release := str(h, "releaseName")
 	if release == "" {
-		release = "rolloffs"
+		release = "rollops"
 	}
 	args := []string{"template", release, chart}
 	if repo := str(h, "repo"); repo != "" {

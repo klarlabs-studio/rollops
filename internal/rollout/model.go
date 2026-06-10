@@ -10,7 +10,7 @@ package rollout
 import (
 	"time"
 
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 // Phase is the statekit lifecycle state of a rollout.
@@ -26,6 +26,7 @@ const (
 	PhaseValidating       Phase = "validating"
 	PhaseAwaitingApproval Phase = "awaiting-approval"
 	PhaseDeploying        Phase = "deploying"
+	PhasePaused           Phase = "paused"
 	PhaseVerifying        Phase = "verifying"
 	PhasePromoted         Phase = "promoted"
 	PhaseRolledBack       Phase = "rolled-back"
@@ -49,6 +50,7 @@ type Rollout struct {
 	Desired   target.Manifest // desired state pulled from Git
 	RiskScore float64         // decision-kit blast-radius score
 	Initiator Identity        // who/what started this (full attribution)
+	Note      string          // optional transition note, persisted only to history
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -56,8 +58,9 @@ type Rollout struct {
 // Identity is the immutable attribution of who initiated an action —
 // a human, a CI run, or a named agent. Captured for every transition.
 type Identity struct {
-	Kind string // "human" | "agent" | "ci"
-	Name string // user id, agent name, or pipeline id
+	Kind   string   // "human" | "agent" | "ci"
+	Name   string   // user id, agent name, or pipeline id
+	Groups []string // external identity groups, when supplied by an IdP
 }
 
 // TargetState is the last observed fingerprint for a target, used for drift.

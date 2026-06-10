@@ -5,7 +5,7 @@
 // override the rollout strategy.
 package promote
 
-import "go.klarlabs.de/rolloffs/internal/config"
+import "go.klarlabs.de/rollops/internal/config"
 
 // Chain returns the ordered names of environments that participate in staged
 // promotion (promote: true), in config order. Independent environments are not

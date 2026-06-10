@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"sort"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Factory constructs a Target bound to one piece of infrastructure from its

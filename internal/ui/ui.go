@@ -1,4 +1,4 @@
-// Package ui is the Rolloffs web console: a Vue 3 single-page app (embedded,
+// Package ui is the Rollops web console: a Vue 3 single-page app (embedded,
 // self-contained — no Node build, no CDN) over a small JSON API. It shows live
 // rollout state, per-target drift, an expandable resource tree, the desired→live
 // diff, and history, and lets an operator approve/reject/rollback/sync — all
@@ -13,9 +13,9 @@ import (
 	"io/fs"
 	"net/http"
 
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 //go:embed assets/*
@@ -66,14 +66,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui", s.index)
 	mux.HandleFunc("GET /ui/", s.index)
 	mux.HandleFunc("GET /ui/app.js", s.asset)
-	mux.HandleFunc("GET /ui/vue.global.prod.js", s.asset)
 	mux.HandleFunc("GET /ui/api/dashboard", s.apiDashboard)
 	mux.HandleFunc("GET /ui/api/target", s.apiTarget)
 	mux.HandleFunc("POST /ui/api/approve", s.apiApprove)
 	mux.HandleFunc("POST /ui/api/reject", s.apiReject)
 	mux.HandleFunc("POST /ui/api/rollback", s.apiRollback)
 	mux.HandleFunc("POST /ui/api/sync", s.apiSync)
-	return mux
+	return securityHeaders(mux)
+}
+
+// securityHeaders sets a tight policy for the console. The bundle is self-hosted
+// (no CDN, no inline <script>), so script-src can stay 'self'; Vue's :style
+// bindings and the <style> block require 'unsafe-inline' for styles only.
+func securityHeaders(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
@@ -146,6 +161,7 @@ type historyJSON struct {
 	Phase   string `json:"phase"`
 	Rollout string `json:"rollout"`
 	By      string `json:"by"`
+	Note    string `json:"note"`
 }
 
 type targetJSON struct {
@@ -161,6 +177,7 @@ type targetJSON struct {
 	Resources []resourceJSON `json:"resources"`
 	History   []historyJSON  `json:"history"`
 	Awaiting  bool           `json:"awaiting"`
+	Drifted   bool           `json:"drifted"`
 	CanSync   bool           `json:"canSync"`
 }
 
@@ -194,6 +211,17 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	out.Rollout.Desired = latest.Desired.Checksum
 	out.Awaiting = latest.Phase == rollout.PhaseAwaitingApproval
 	out.CanSync = s.sync != nil
+	// Sync status is the authoritative drift signal (desired vs observed
+	// checksum), the same source the dashboard uses — never inferred from the
+	// diff text, which may carry a human "no changes" message.
+	if drift, derr := s.be.DriftReport(r.Context()); derr == nil {
+		for _, d := range drift {
+			if d.TargetRef == ref {
+				out.Drifted = d.Drifted
+				break
+			}
+		}
+	}
 
 	if diff, derr := s.be.Diff(r.Context(), latest.ID); derr != nil {
 		if errors.Is(derr, engine.ErrUnsupported) {
@@ -211,7 +239,7 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	if recs, herr := s.be.History(r.Context(), ref); herr == nil {
 		for _, rec := range recs {
-			out.History = append(out.History, historyJSON{At: rec.At.Format("2006-01-02 15:04:05"), Phase: string(rec.Phase), Rollout: rec.RolloutID, By: rec.Initiator.Kind + "/" + rec.Initiator.Name})
+			out.History = append(out.History, historyJSON{At: rec.At.Format("2006-01-02 15:04:05"), Phase: string(rec.Phase), Rollout: rec.RolloutID, By: rec.Initiator.Kind + "/" + rec.Initiator.Name, Note: rec.Note})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

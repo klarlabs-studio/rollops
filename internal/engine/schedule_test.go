@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func TestFireDueSchedules_FiresPastNotFuture(t *testing.T) {

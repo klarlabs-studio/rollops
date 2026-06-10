@@ -1,0 +1,32 @@
+# Changelog
+
+## v0.1.0 - MVP OSS Core
+
+- Implemented Rollops core engine: plan, apply, verify, promote, rollback,
+  observe, schedule, approval gates, target locks, and structured plan/diff.
+- Added infrastructure-agnostic targets for SSH, FTP, Kubernetes, and a hardened
+  target plugin adapter with shared conformance tests.
+- Added SQLite runtime store, Git watch-loop reconciliation, drift detection,
+  progressive delivery, and observability-free rollback.
+- Added trust surface: secrets provider, audit redaction, RBAC, agent guardrails,
+  artifact verification, and authenticated CLI/HTTP/gRPC/MCP/UI interfaces.
+- Added release polish: `doctor`, rollback across all operator surfaces, first-run
+  docs, systemd packaging, example validation, RBAC docs, plugin docs, dashboard
+  attention queue, Argo-like operator UI, `make release-check`, and release
+  archives with checksums.
+- Promoted metric-based rollout analysis to a stable optional Phase 2 feature,
+  with config validation, Prometheus provider support, and UI timeline history
+  notes for analysis pass/fail outcomes.
+- Added optional historical risk scoring from recent target rollback history,
+  including schema validation, CEL variables, and release docs.
+- Added optional database rollback hooks for auto-rollback, with command
+  validation, history notes, CLI status visibility, and UI timeline surfacing.
+- Added SQLite-backed runtime leases for multi-instance coordination, covering
+  shared target locks and reconcile leader election.
+- Added optional OIDC-style bearer authentication and external group-to-RBAC
+  mapping for API and UI deployments.
+- Added image update policy validation and Git YAML writeback helpers for
+  desired-state image automation.
+- Added studio boundary and fleet dashboard contracts, plus optional feature
+  flag and governance integration hooks.
+- Renamed product surface cleanly to Rollops.

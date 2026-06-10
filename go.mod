@@ -1,4 +1,4 @@
-module go.klarlabs.de/rolloffs
+module go.klarlabs.de/rollops
 
 go 1.26.2
 
@@ -6,6 +6,7 @@ require (
 	github.com/felixgeelhaar/decisionkit v0.1.0
 	github.com/google/cel-go v0.28.1
 	github.com/jlaffaye/ftp v0.2.1
+	github.com/klarlabs-studio/auth-go v0.2.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	go.klarlabs.de/axi v1.4.0

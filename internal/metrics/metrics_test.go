@@ -28,11 +28,11 @@ func TestMetrics_RecordsAndExposes(t *testing.T) {
 
 	out := scrape(t, m)
 	for _, want := range []string{
-		"rolloffs_drift_detected_total 2",
-		`rolloffs_rollout_outcomes_total{outcome="promoted"} 1`,
-		`rolloffs_rollout_outcomes_total{outcome="rolled-back"} 1`,
-		`rolloffs_reconcile_total{result="reconciled"} 1`,
-		"rolloffs_reconcile_latency_seconds_count 1",
+		"rollops_drift_detected_total 2",
+		`rollops_rollout_outcomes_total{outcome="promoted"} 1`,
+		`rollops_rollout_outcomes_total{outcome="rolled-back"} 1`,
+		`rollops_reconcile_total{result="reconciled"} 1`,
+		"rollops_reconcile_latency_seconds_count 1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("scrape missing %q\n---\n%s", want, out)

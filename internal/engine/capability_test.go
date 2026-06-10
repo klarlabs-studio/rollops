@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/store/sqlite"
-	itarget "go.klarlabs.de/rolloffs/internal/target"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func TestDiff_FromTarget(t *testing.T) {

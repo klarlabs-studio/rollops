@@ -43,7 +43,7 @@ func (e Event) Message() string {
 	default:
 		emoji, verb = "•", string(e.Kind)
 	}
-	msg := fmt.Sprintf("%s Rolloffs: %s %s", emoji, e.TargetRef, verb)
+	msg := fmt.Sprintf("%s Rollops: %s %s", emoji, e.TargetRef, verb)
 	if e.RolloutID != "" {
 		msg += " (" + e.RolloutID + ")"
 	}

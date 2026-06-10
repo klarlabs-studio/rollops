@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 type fakeBackend struct {
@@ -67,11 +67,38 @@ func TestSPA_ServesIndexAndAssets(t *testing.T) {
 	if rr := do(h, "GET", "/ui", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), `id="app"`) {
 		t.Fatalf("index = %d, body lacks app root", rr.Code)
 	}
-	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "createApp") {
-		t.Errorf("app.js not served (%d)", rr.Code)
+	if rr := do(h, "GET", "/ui", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), ".filter") {
+		t.Fatalf("index = %d, body lacks dashboard filter styling", rr.Code)
 	}
-	if rr := do(h, "GET", "/ui/vue.global.prod.js", ""); rr.Code != 200 {
-		t.Errorf("vue runtime not served (%d)", rr.Code)
+	if rr := do(h, "GET", "/ui", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), `rel="icon"`) {
+		t.Fatalf("index = %d, body lacks embedded favicon", rr.Code)
+	}
+	// app.js is the esbuild bundle (Vue + Zod + app). Identifiers are minified,
+	// so assert on a stable template literal that survives minification.
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Filter targets") {
+		t.Errorf("app.js bundle not served (%d)", rr.Code)
+	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Attention") {
+		t.Errorf("app.js bundle lacks attention queue (%d)", rr.Code)
+	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Operational risk") {
+		t.Errorf("app.js bundle lacks Argo-like application list (%d)", rr.Code)
+	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Desired from Git") {
+		t.Errorf("app.js bundle lacks desired/live/runtime detail split (%d)", rr.Code)
+	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Timeline") {
+		t.Errorf("app.js bundle lacks rollout timeline (%d)", rr.Code)
+	}
+}
+
+func TestSPA_SecurityHeaders(t *testing.T) {
+	rr := do(srv(&fakeBackend{}), "GET", "/ui", "")
+	if csp := rr.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("CSP = %q", csp)
+	}
+	if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("missing nosniff: %q", rr.Header().Get("X-Content-Type-Options"))
 	}
 }
 
@@ -96,12 +123,13 @@ func TestAPI_Dashboard(t *testing.T) {
 func TestAPI_TargetDetail(t *testing.T) {
 	be := &fakeBackend{
 		rollouts: []rollout.Rollout{{ID: "ro-1", TargetRef: "a/prod/api", Phase: rollout.PhasePromoted, Strategy: rollout.StrategyCanary}},
+		drift:    []engine.DriftItem{{TargetRef: "a/prod/api", Drifted: true}},
 		diff:     "- old\n+ new",
 		resources: []pt.Resource{
 			{Kind: "Deployment", Name: "api", Namespace: "prod", Status: "ready 2/2"},
 			{Kind: "Pod", Name: "api-x", Namespace: "prod", Status: "Running", Parent: "api"},
 		},
-		records: []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
+		records: []rollout.RolloutRecord{{RolloutID: "ro-1", Phase: rollout.PhasePromoted, Note: "analysis passed: 2 measurement(s)", Initiator: rollout.Identity{Kind: "ci", Name: "rec"}}},
 	}
 	rr := do(srv(be), "GET", "/ui/api/target?ref=a/prod/api", "")
 	if rr.Code != 200 {
@@ -114,11 +142,17 @@ func TestAPI_TargetDetail(t *testing.T) {
 	if tj.Rollout.Phase != "promoted" || tj.Diff != "- old\n+ new" {
 		t.Errorf("detail = %+v", tj)
 	}
+	if !tj.Drifted {
+		t.Errorf("sync status should reflect drift report, got drifted=%v", tj.Drifted)
+	}
 	if len(tj.Resources) != 2 || tj.Resources[1].Parent != "api" {
 		t.Errorf("resource tree = %+v", tj.Resources)
 	}
 	if len(tj.History) != 1 {
 		t.Errorf("history = %+v", tj.History)
+	}
+	if tj.History[0].Note == "" {
+		t.Errorf("history note was not surfaced: %+v", tj.History[0])
 	}
 }
 

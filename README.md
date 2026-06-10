@@ -1,39 +1,39 @@
-# Rolloffs
+# Rollops
 
-*Rollout operations for the agentic web* · **Umbrella:** Klarlatz · **Status:** pre-MVP scaffold
+*Rollout operations for the agentic web* · **Umbrella:** Klarlatz · **Status:** MVP implementation
 
 A lightweight, infrastructure-agnostic rollout orchestration system — a leaner
 alternative to ArgoCD/Flux built so **agents, not just humans, are first-class
-operators**. Declare what you want deployed and where; Rolloffs handles the
+operators**. Declare what you want deployed and where; Rollops handles the
 rollout, the risk gate, the drift, and the rollback.
 
-> Repo dir is `rollops`; the project/module name is **`rolloffs`**
-> (`github.com/klarlabs/rolloffs`).
+> Repo dir is `rollops`; the project/module name is **`rollops`**
+> (`github.com/klarlabs/rollops`).
 
 ## Why
 
 Kubernetes-grade GitOps is too heavy for a solo builder or small studio shipping
 many products across heterogeneous infrastructure (one on K8s, one behind FTP,
-one on a bare VPS). Rolloffs is the lean, declarative, agnostic control plane —
+one on a bare VPS). Rollops is the lean, declarative, agnostic control plane —
 and it treats an autonomous agent as a native operator via MCP.
 
 ## Architecture (one line)
 
 The **engine is a Go library** at the center; every interface — CLI, daemon,
 MCP, UI — is a thin client over it. One-shot CLI runs the engine in-process
-(no daemon); the daemon wraps the same engine behind gRPC + a REST gateway,
-with the MCP server embedded. See `rolloffs-tdd.md`.
+(no daemon); the daemon wraps the same engine behind authenticated HTTP/JSON
+and gRPC surfaces, with the MCP server embedded. See `rollops-tdd.md`.
 
 ## Layout
 
 ```
-cmd/rolloffs    CLI (one-shot in-process | gRPC client)
-cmd/rolloffsd   daemon (reconciler + gRPC/REST + embedded MCP)
+cmd/rollops    CLI (one-shot in-process | gRPC client)
+cmd/rollopsd   daemon (reconciler + HTTP/JSON + gRPC + embedded MCP)
 internal/
   engine        plan/apply/verify/promote/rollback/observe/schedule
   rollout       core runtime entities + statekit lifecycle
   reconcile     reconcile loop, drift detect/alert/reconcile
-  risk          decision-kit risk gate (5 observability-free signals)
+  risk          decision-kit risk gate (observability-free + optional history)
   target        target registry + first-party targets (k8s/ssh/ftp) + plugin
   store         Store interface + sqlite (default) / postgres / mnemos
   config        YAML + strict schema + CEL
@@ -41,7 +41,7 @@ internal/
   secrets       SecretProvider (vault integration; never local)
   audit         bolt audit log with secret redaction
   mcp           mcp-go server (tools 1:1 to engine ops)
-  api           gRPC + grpc-gateway REST; mTLS/signed-token auth
+  api           HTTP/JSON + gRPC; bearer-token auth by default, TLS/mTLS at deployment
   security      RBAC, agent guardrails, kill-switch, attribution
 pkg/target      public Target plugin contract
 pkg/conformance shared conformance suite (every target must pass)
@@ -62,35 +62,77 @@ pkg/conformance shared conformance suite (every target must pass)
 ## Status
 
 **P0 OSS core implemented** (37/37 planned tasks). Engine, risk gate, dependency
-DAG, SSH/FTP/Kubernetes targets + plugin protocol, progressive delivery,
-auto-rollback, secrets/audit/RBAC/guardrails/artifact-verification, Git webhook
-+ watch-loop, and all four surfaces (CLI, gRPC + REST daemon, MCP, UI) plus
-Prometheus self-observability. ~175 tests; `go test ./...` green. See
+DAG, SSH/FTP/Kubernetes targets + plugin seam, progressive delivery,
+observability-free auto-rollback, secrets/audit/RBAC/guardrails/artifact
+verification, Git watch-loop, and the four product surfaces (CLI, HTTP/JSON +
+gRPC daemon, MCP, UI) are present. Metric-based analysis is a stable optional
+Phase 2 feature and is disabled unless explicitly enabled in engine wiring. See
 `memory/status.md` for the detailed map and remaining follow-ups.
 
 ## Quickstart
 
 ```sh
-make build          # -> bin/rolloffs, bin/rolloffsd
+make build          # -> bin/rollops, bin/rollopsd
+bin/rollops version
 
 # One-shot CLI (engine in-process, no daemon):
-bin/rolloffs plan   examples/rollout-config.example.yaml
-bin/rolloffs apply  examples/rollout-config.example.yaml
-bin/rolloffs status <rollout-id>
+bin/rollops doctor examples/rollout-config.example.yaml
+bin/rollops plan   examples/rollout-config.example.yaml
+bin/rollops apply  examples/rollout-config.example.yaml
+bin/rollops status <rollout-id>
+bin/rollops rollback <target-ref>
 
 # Daemon (HTTP :8080, gRPC :8090, UI behind basic auth):
 make run-daemon
 #   GET  /healthz /readyz /metrics
-#   POST /v1/plan /v1/apply   (Authorization: Bearer <token>)
-#   GET  /ui                  (basic auth: ROLLOFFS_UI_USER/PASSWORD)
+#   POST /v1/plan /v1/apply /v1/rollback   (Authorization: Bearer <token>)
+#   GET  /ui                  (basic auth: ROLLOPS_UI_USER/PASSWORD)
 
-# CLI in daemon mode (same commands, driven over gRPC):
-ROLLOFFS_DAEMON=127.0.0.1:8090 ROLLOFFS_TOKEN=devtoken bin/rolloffs status <id>
+# CLI in daemon mode (same plan/apply/status/rollback commands, driven over gRPC):
+ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops doctor
+ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops status <id>
 ```
 
-Targets are configured per service in a `rolloffs.yaml`
+Targets are configured per service in a `rollops.yaml`
 (see `examples/rollout-config.example.yaml`); the daemon watches repos listed in
-`ROLLOFFS_WATCH` (JSON: `[{"name","url","branch","path"}]`) and reconciles drift.
+`ROLLOPS_WATCH` (JSON: `[{"name","url","branch","path"}]`) and reconciles drift.
+For a guided local setup, see `docs/first-run.md`.
+
+## Development
+
+```sh
+make all            # fmt-check, vet, tests, and Go binaries
+make ui-typecheck   # TypeScript console type check
+make ui-build       # rebuild embedded internal/ui/assets/app.js
+make examples-check # validate all shipped rollout examples
+make package-check  # validate release packaging helpers
+make dist           # build release archives + checksums
+make release-check  # full local release gate, including dist verification
+make integration    # live SSH/FTP tests; K8s/Vault/cosign skip if absent
+```
+
+## VPS / systemd
+
+The lean deployment path is a single `rollopsd` process with SQLite state:
+
+```sh
+make package-check
+sudo scripts/install-systemd.sh
+```
+
+See `docs/deploy-systemd.md` for the unit, env file, and first-start checklist.
+See `docs/security-rbac.md` for the bootstrap roles and permission taxonomy.
+See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.
+See `docs/target-plugins.md` for the target plugin contract.
+See `docs/image-automation.md` for image update policy and Git writeback.
+See `docs/studio-boundary.md` for the OSS/studio product boundary.
+See `docs/optional-integrations.md` for feature flag and governance seams.
+See `docs/multi-instance.md` for Store-backed target leases and reconcile
+leader election.
+See `docs/database-rollback.md` for optional database rollback hooks.
+See `docs/risk-history.md` for the optional historical risk signal.
+See `docs/metric-analysis.md` for the optional Prometheus/CEL post-deploy gate.
+See `docs/release-checklist.md` before tagging an OSS release.
 
 ## License
 

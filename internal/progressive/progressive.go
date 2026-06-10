@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rollops/internal/config"
 )
 
 // Step is one traffic-shifting increment.

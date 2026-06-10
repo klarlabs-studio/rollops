@@ -10,10 +10,12 @@ import (
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	base := []string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}
+	cmd := exec.Command("git", append(base, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "HOME="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
@@ -26,7 +28,7 @@ func makeUpstream(t *testing.T) string {
 	}
 	dir := t.TempDir()
 	gitRun(t, dir, "init", "-b", "main")
-	if err := os.WriteFile(filepath.Join(dir, "rolloffs.yaml"), []byte("v1"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "rollops.yaml"), []byte("v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	gitRun(t, dir, "add", ".")
@@ -46,7 +48,7 @@ func TestClone_HeadAndPull(t *testing.T) {
 	if err != nil || head1 == "" {
 		t.Fatalf("Head: %v (%q)", err, head1)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "rolloffs.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(dest, "rollops.yaml")); err != nil {
 		t.Errorf("config not checked out: %v", err)
 	}
 
@@ -60,7 +62,7 @@ func TestClone_HeadAndPull(t *testing.T) {
 	}
 
 	// New upstream commit → Pull detects the change (drift heartbeat).
-	if err := os.WriteFile(filepath.Join(upstream, "rolloffs.yaml"), []byte("v2"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(upstream, "rollops.yaml"), []byte("v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	gitRun(t, upstream, "commit", "-am", "update")
@@ -71,5 +73,31 @@ func TestClone_HeadAndPull(t *testing.T) {
 	}
 	if !changed || head2 == head1 {
 		t.Errorf("Pull should detect the new commit: changed=%v head2=%q", changed, head2)
+	}
+}
+
+func TestSource_CommitFile(t *testing.T) {
+	upstream := makeUpstream(t)
+	src := Open(upstream, "main", Auth{})
+	before, err := src.Head(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, head, err := src.CommitFile(context.Background(), "rollops.yaml", []byte("v2"), "chore: update image")
+	if err != nil {
+		t.Fatalf("CommitFile: %v", err)
+	}
+	if !changed || head == before {
+		t.Fatalf("changed=%v head=%q before=%q", changed, head, before)
+	}
+	changed, _, err = src.CommitFile(context.Background(), "rollops.yaml", []byte("v2"), "chore: update image")
+	if err != nil {
+		t.Fatalf("CommitFile noop: %v", err)
+	}
+	if changed {
+		t.Fatal("same content should not commit")
+	}
+	if _, _, err := src.CommitFile(context.Background(), "../escape", []byte("x"), "bad"); err == nil {
+		t.Fatal("path escape should fail")
 	}
 }

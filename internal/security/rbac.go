@@ -8,7 +8,7 @@ package security
 import (
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 // Permission is a grantable operation. apply-to-prod is a distinct, scoped
@@ -90,6 +90,12 @@ func (p *Policy) rolesFor(id rollout.Identity) []string {
 	var out []string
 	out = append(out, p.bindings[id.Kind+":"+id.Name]...)
 	out = append(out, p.bindings[id.Kind+":*"]...)
+	for _, g := range id.Groups {
+		out = append(out, p.bindings["group:"+g]...)
+	}
+	if len(id.Groups) > 0 {
+		out = append(out, p.bindings["group:*"]...)
+	}
 	return out
 }
 

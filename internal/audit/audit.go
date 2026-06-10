@@ -11,8 +11,8 @@ import (
 
 	"go.klarlabs.de/bolt"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/secrets"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/secrets"
 )
 
 // Action names the audited operation.

@@ -1,0 +1,103 @@
+// Command rollops is the Rollops CLI. In one-shot mode it links the engine
+// in-process (no daemon required - good for local use, CI, and recovery); a
+// ROLLOPS_DAEMON selects gRPC-client mode against a running daemon. The command
+// surface is identical across both modes (internal/cli).
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/user"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"go.klarlabs.de/rollops/internal/cli"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/grpcapi"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	"go.klarlabs.de/rollops/internal/target"
+)
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "rollops:", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	dbPath := os.Getenv("ROLLOPS_DB")
+	if dbPath == "" {
+		dbPath = "rollops.db"
+	}
+	daemonAddr := os.Getenv("ROLLOPS_DAEMON")
+	token := os.Getenv("ROLLOPS_TOKEN")
+	app := &cli.App{
+		Out:   os.Stdout,
+		Actor: localUser(),
+		Doctor: cli.Doctor{
+			DBPath:     dbPath,
+			DaemonAddr: daemonAddr,
+			Token:      token,
+			Probe:      probeDaemon,
+		},
+	}
+
+	if len(args) > 0 && args[0] == "doctor" {
+		return app.Run(context.Background(), args)
+	}
+
+	// Daemon mode: if ROLLOPS_DAEMON points at a running daemon, drive it over
+	// gRPC. Otherwise run the engine in-process (one-shot). Identical surface.
+	if daemonAddr != "" {
+		client, err := grpcapi.Dial(daemonAddr, token)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		app.Ops = client
+		return app.Run(context.Background(), args)
+	}
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	app.Ops = engine.New(db, target.Builtin())
+	return app.Run(context.Background(), args)
+}
+
+func probeDaemon(ctx context.Context, addr, token string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	client, err := grpcapi.Dial(addr, token)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	_, err = client.Status(ctx, "__rollops_doctor_probe__")
+	switch status.Code(err) {
+	case codes.NotFound:
+		return nil // authenticated and reached the daemon.
+	case codes.Unauthenticated:
+		return fmt.Errorf("unauthorized token")
+	default:
+		return err
+	}
+}
+
+// localUser is the invoking identity; the one-shot CLI inherits the local user
+// and cannot bypass the gate or RBAC.
+func localUser() rollout.Identity {
+	name := "unknown"
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		name = u.Username
+	}
+	return rollout.Identity{Kind: "human", Name: name}
+}

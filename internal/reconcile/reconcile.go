@@ -8,10 +8,10 @@ import (
 	"context"
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/audit"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/audit"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 // Reconciler diffs desired vs observed and reconciles drift through the engine.

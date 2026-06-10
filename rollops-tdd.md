@@ -1,13 +1,13 @@
-# Rolloffs — Technical Design Document
+# Rollops — Technical Design Document
 
 *Rollout operations for the agentic web*
-**Umbrella:** Klarlatz · **Status:** Design / pre-MVP · **Companion to:** `rolloffs-vision.md`
+**Umbrella:** Klarlatz · **Status:** MVP implementation design · **Companion to:** `rollops-vision.md`
 
 ---
 
 ## 1. Scope & Principles
 
-This document specifies the architecture for Rolloffs: a lean, infrastructure-agnostic rollout orchestration system where agents and humans are peer operators. It builds entirely on the existing Klarlatz/OSS stack.
+This document specifies the architecture for Rollops: a lean, infrastructure-agnostic rollout orchestration system where agents and humans are peer operators. It builds entirely on the existing Klarlatz/OSS stack.
 
 Design principles carried from the vision:
 
@@ -21,7 +21,7 @@ Design principles carried from the vision:
 
 ## 2. Stack Mapping
 
-Rolloffs is assembled from existing components rather than built from scratch:
+Rollops is assembled from existing components rather than built from scratch:
 
 | Concern | Component | Role |
 |---|---|---|
@@ -30,7 +30,7 @@ Rolloffs is assembled from existing components rather than built from scratch:
 | Resilience | **fortify** | Retries, circuit breakers, rate limiting, bulkheads around every target operation |
 | Risk scoring | **decision-kit** | Computes the blast-radius risk score that drives the approval gate |
 | Audit / events | **bolt** | Structured, compliance-grade audit and event logging (distinct from `bbolt`, which is intentionally **not** used to avoid the name clash) |
-| Agent interface | **mcp-go** | The MCP server exposing Rolloffs operations to agents |
+| Agent interface | **mcp-go** | The MCP server exposing Rollops operations to agents |
 | Bitemporal history (optional) | **mnemos** | Optional `Store` backend for rollout history — believed-vs-actual deployed state over time |
 
 Language: **Go** throughout. Config: **YAML + strict schema + CEL** for conditional logic.
@@ -43,8 +43,8 @@ The **engine is a Go library** at the center. Every interface — CLI, daemon, M
 
 ```
    Humans / CI ──CLI──▶ (one-shot: engine in-process | daemon mode: gRPC client)
-   Agents ──────MCP (mcp-go)──▶  ROLLOFFS DAEMON
-   Browser ─────REST gateway──▶
+   Agents ──────MCP (mcp-go)──▶  ROLLOPS DAEMON
+   Browser ─────HTTP/JSON──▶
 
    ENGINE (Go library):
      Reconciler ──▶ statekit (rollout lifecycle) ──▶ decision-kit (risk gate)
@@ -80,10 +80,10 @@ The **engine is a Go library** at the center. Every interface — CLI, daemon, M
 A single Go package exposing all operations: plan, apply, verify, promote, rollback, observe, schedule. Transport-agnostic and storage-agnostic. Both the daemon and the one-shot CLI link it directly.
 
 ### 5.2 Daemon
-Wraps the engine behind **gRPC** (typed, ergonomic for CLI and agents). A thin **REST gateway** (grpc-gateway) fronts it for the browser UI, so the UI needs no special client.
+Wraps the engine behind **gRPC** (typed, ergonomic for CLI and agents) and an authenticated **HTTP/JSON** surface for browser and automation clients. Production deployments should terminate TLS/mTLS at the daemon boundary or a trusted reverse proxy; local development uses bearer tokens.
 
 ### 5.3 MCP server (mcp-go)
-**Embedded in the daemon by default** — one process exposes the full agent surface — but **runnable standalone** as its own client of the engine for setups where the agent surface must live separately. MCP tools map 1:1 to engine operations (e.g. `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, `rollouts.status`).
+**Embedded in the daemon by default** — one process exposes the agent surface — but **runnable standalone** as its own client of the engine for setups where the agent surface must live separately. MCP tools expose the safe agent operations: `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, and `rollouts.status`.
 
 ### 5.4 CLI
 Two modes against the same engine: in-process (one-shot) or gRPC client (talking to a running daemon). Identical command surface.
@@ -231,7 +231,7 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 - Secret material is redacted at the logging boundary — values from the `SecretProvider` are never serialized into logs, plans, diffs, or MCP responses. The trail records *that* a secret was used, never its value.
 
 ### 14.4 Artifact integrity
-- Before deploy, Rolloffs verifies provenance and signature (cosign / SLSA-style) where the target supports it. Verification policy is configurable per target, with a secure default. Matters most for agent-driven rollouts.
+- Before deploy, Rollops verifies provenance and signature (cosign / SLSA-style) where the target supports it. Verification policy is configurable per target, with a secure default. Matters most for agent-driven rollouts.
 
 ### 14.5 Webhook verification
 - Inbound GitHub webhooks verify the HMAC signature before triggering reconciliation. The poll path is the trusted fallback.
@@ -263,9 +263,7 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 
 ## 17. Open Items / Revisit as it grows
 
-- **Config schema v1 + versioning** — concrete YAML shape, CEL hook points, schema version field.
-- **Plugin protocol** — exact gRPC contract and versioning for third-party targets.
-- **Metric-based analysis (Phase 2)** — interface by which Obvia (or any metrics provider) feeds verify/rollback decisions.
+- **Production plugin transport** — the protocol seam is versioned; the subprocess/gRPC adapter needs hardening before third-party plugin support is declared stable.
+- **Metric-based analysis (Phase 2)** — implemented as an experimental opt-in seam; keep disabled in v1 defaults so rollback remains observability-free.
 - **Multi-instance coordination** — leader election / locking once the studio layer runs more than one daemon against shared Postgres.
-- **UI scope for v1** — how much acts vs. observes.
-- **RBAC model detail** — concrete role/permission taxonomy and binding to human, CI, and agent identities.
+- **RBAC model evolution** — the first concrete role/permission taxonomy exists; keep refining bindings for human, CI, and agent identities from dogfood evidence.

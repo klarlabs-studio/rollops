@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rolloffs</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f1115">
+<meta name="description" content="Rollops — infrastructure-agnostic rollout orchestration. Agents and humans as peer operators.">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:,">
+<title>Rollops</title>
 <style>
  :root{--bg:#0f1115;--card:#171a21;--ink:#e6e9ef;--muted:#8b93a7;--line:#252a35;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#539bf5}
  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
@@ -11,9 +16,9 @@
  header{padding:16px 28px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--bg);z-index:5}
  h1{font-size:18px;margin:0;letter-spacing:.3px} .sub{color:var(--muted);font-size:12px}
  .spacer{flex:1}
- main{padding:22px 28px;max-width:1120px;margin:0 auto}
+ main{padding:22px 28px;max-width:1320px;margin:0 auto}
  h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:24px 0 10px}
- table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden}
  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)} tr:last-child td{border-bottom:0}
  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
  tbody tr.click{cursor:pointer;transition:background .12s} tbody tr.click:hover{background:rgba(83,155,245,.07)}
@@ -30,8 +35,21 @@
  button.sync{border-color:rgba(83,155,245,.5);color:var(--accent);background:rgba(83,155,245,.1)}
  .chips{display:flex;gap:8px;flex-wrap:wrap} .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12px}
  .chip b{color:var(--ink)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
- .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+	 .filter{display:flex;align-items:center;gap:8px;margin:14px 0 4px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;max-width:460px}
+	 .filter span{color:var(--muted);font-size:15px}.filter input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font:inherit}
+	 .filter input::placeholder{color:var(--muted)}.filter button{padding:1px 8px;border-radius:6px;color:var(--muted);background:transparent}
+	 .attention{display:grid;gap:8px;margin:6px 0 18px}
+	 .attention-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
+	 .attention-item.att-approval{border-color:rgba(210,153,34,.42)}.attention-item.att-drift{border-color:rgba(248,81,73,.36)}
+	 .att-main{display:grid;grid-template-columns:82px minmax(0,1fr) auto auto;align-items:center;gap:10px;text-align:left;background:transparent;border:0;padding:2px;color:var(--ink);min-width:0}
+	 .att-main:hover{border-color:transparent}.att-kind{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}.att-target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	 .att-actions{display:flex;gap:8px;justify-content:flex-end}
+	 .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
  .badge.drift{background:rgba(248,81,73,.16);color:var(--bad)} .badge.sync{background:rgba(63,185,80,.12);color:var(--ok)}
+	 .apps-table td{vertical-align:middle}.app-name{font-weight:700}.app-meta{display:flex;gap:8px;color:var(--muted);font-size:11px;margin-top:2px;min-height:16px}
+	 .health{display:inline-flex;align-items:center;font-weight:700}.risk{display:inline-block;min-width:58px;text-align:center;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+	 .risk-low{background:rgba(63,185,80,.12);color:var(--ok)}.risk-medium{background:rgba(210,153,34,.15);color:var(--warn)}.risk-high{background:rgba(248,81,73,.16);color:var(--bad)}
+	 .activity-table td{padding-top:8px;padding-bottom:8px}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0}
  .kv{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px} .kv .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px} .kv .v{font-size:15px;font-weight:600;margin-top:3px}
  .actions{display:flex;gap:8px;margin:14px 0;align-items:center}
@@ -43,12 +61,48 @@
  .toast.err{border-color:rgba(248,81,73,.5);color:var(--bad)}
  .empty{color:var(--muted);padding:24px;text-align:center}
  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
- .dot.up{background:var(--ok)} .dot.down{background:var(--bad)}
-</style>
+ .dot.up{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.down{background:var(--bad)}
+ /* detail status bar */
+ .statusbar{display:flex;align-items:center;gap:22px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:4px 0 14px}
+ .crumb{font-size:13px} .stat .sl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px} .stat .sv{font-size:14px;font-weight:600;margin-top:2px}
+	 .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}
+	 .summary-card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+	 .summary-card .sl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px}.summary-card .sv{font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.summary-card .hint{color:var(--muted);font-size:11px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .vsplit{width:1px;height:22px;background:var(--line);margin:0 4px}
+ button.active{border-color:var(--accent);color:var(--accent);background:rgba(83,155,245,.1)}
+ /* resource graph canvas */
+ .canvas{position:relative;height:60vh;min-height:380px;background:var(--bg);background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px;border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:grab;user-select:none}
+ .canvas:active{cursor:grabbing}
+ .viewport{position:absolute;top:34px;left:34px;transform-origin:0 0;transition:transform .05s linear}
+ svg.edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+ svg.edges path{fill:none;stroke:var(--line);stroke-width:1.6} svg.edges path.hot{stroke:var(--accent);stroke-width:2.2}
+ .gnode{position:absolute;width:210px;height:56px;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:0 12px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+ .gnode:hover{border-color:#3a4150} .gnode.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(83,155,245,.25)}
+ .gicon{font-size:20px;line-height:1} .gicon.up{color:var(--ok)} .gicon.warn{color:var(--warn)} .gicon.down{color:var(--bad)}
+ .gbody{flex:1;min-width:0} .gkind{font-size:13px;font-weight:600} .gname{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .heart{font-size:13px} .heart.up{color:var(--ok)} .heart.warn{color:var(--warn)} .heart.down{color:var(--bad)}
+ .zoom{position:absolute;top:12px;right:12px;z-index:3;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+ .zoom button{padding:2px 9px;font-size:14px} .zlevel{color:var(--muted);font-size:12px;min-width:38px;text-align:right}
+ .ghint{position:absolute;bottom:10px;left:14px;color:var(--muted);font-size:11px;pointer-events:none}
+ .cols{display:grid;grid-template-columns:1fr 1fr;gap:22px} @media(max-width:760px){.cols{grid-template-columns:1fr}}
+	 .timeline{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+	 .event{display:grid;grid-template-columns:14px minmax(0,1fr);gap:8px;position:relative;padding:8px 0}.event+.event{border-top:1px solid var(--line)}
+	 .event-dot{width:9px;height:9px;border-radius:50%;margin-top:8px}.event-dot.up{background:var(--ok)}.event-dot.warn{background:var(--warn)}.event-dot.down{background:var(--bad)}
+	 .event-body{min-width:0}.event-note{color:var(--ink);font-size:12px;margin-top:4px;word-break:break-word}.event-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:3px}
+ /* progress + activity affordances */
+ .topbar{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(83,155,245,.12);overflow:hidden;z-index:20}
+ .topbar-fill{position:absolute;top:0;height:100%;width:35%;background:var(--accent);border-radius:2px;animation:sweep 1.1s ease-in-out infinite}
+ @keyframes sweep{0%{left:-35%}100%{left:100%}}
+ .spin{display:inline-block} .spin.on{animation:spin .8s linear infinite}
+ @keyframes spin{to{transform:rotate(360deg)}}
+ .livedot{color:var(--accent);font-size:12px;font-weight:600;animation:pulse 1.2s ease-in-out infinite}
+	 .gitsrc{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px;cursor:help;vertical-align:middle}
+	 @media(max-width:980px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-table{font-size:13px}.apps-table th:nth-child(6),.apps-table td:nth-child(6),.apps-table th:nth-child(7),.apps-table td:nth-child(7){display:none}}
+	 @media(max-width:760px){main{padding:18px 14px}header{padding:14px 16px;gap:10px}th,td{padding:8px 9px}.attention-item{grid-template-columns:1fr}.att-main{grid-template-columns:1fr;gap:5px}.att-actions{justify-content:flex-start;flex-wrap:wrap}.statusbar{align-items:flex-start;flex-wrap:wrap}.summary-grid{grid-template-columns:1fr}.apps-table th:nth-child(4),.apps-table td:nth-child(4),.apps-table th:nth-child(5),.apps-table td:nth-child(5),.apps-table th:nth-child(8),.apps-table td:nth-child(8){display:none}.activity-table th:nth-child(2),.activity-table td:nth-child(2),.activity-table th:nth-child(4),.activity-table td:nth-child(4),.activity-table th:nth-child(5),.activity-table td:nth-child(5){display:none}}
+	</style>
 </head>
 <body>
 <div id="app"></div>
-<script src="/ui/vue.global.prod.js"></script>
 <script src="/ui/app.js"></script>
 </body>
 </html>

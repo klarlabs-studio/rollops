@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/store"
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/store"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 func openTemp(t *testing.T) *Store {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "rolloffs.db"))
+	db, err := Open(filepath.Join(t.TempDir(), "rollops.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	if got.Strategy != in.Strategy || got.RiskScore != in.RiskScore {
 		t.Errorf("strategy/score mismatch: %+v", got)
 	}
-	if got.Initiator != in.Initiator {
+	if got.Initiator.Kind != in.Initiator.Kind || got.Initiator.Name != in.Initiator.Name {
 		t.Errorf("initiator = %+v want %+v", got.Initiator, in.Initiator)
 	}
 	if got.Desired.Kind != "ssh" || string(got.Desired.Spec) != `{"host":"x"}` || got.Desired.Checksum != "sha:abc" {
@@ -98,7 +98,9 @@ func TestSaveRollout_UpsertsAndRecordsHistory(t *testing.T) {
 	if err := db.SaveRollout(ctx, sampleRollout("r1", rollout.PhaseValidating)); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SaveRollout(ctx, sampleRollout("r1", rollout.PhaseDeploying)); err != nil {
+	next := sampleRollout("r1", rollout.PhaseDeploying)
+	next.Note = "analysis passed"
+	if err := db.SaveRollout(ctx, next); err != nil {
 		t.Fatal(err)
 	}
 	got, err := db.LoadRollout(ctx, "r1")
@@ -117,6 +119,58 @@ func TestSaveRollout_UpsertsAndRecordsHistory(t *testing.T) {
 	}
 	if hist[0].Phase != rollout.PhaseDeploying { // newest first
 		t.Errorf("history[0].phase = %q want deploying (newest first)", hist[0].Phase)
+	}
+	if hist[0].Note != "analysis passed" {
+		t.Errorf("history[0].note = %q", hist[0].Note)
+	}
+}
+
+func TestLease_AcquireRenewReleaseAndExpire(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "lease.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+
+	ok, err := db.AcquireLease(ctx, "target:api", "a", time.Minute, now)
+	if err != nil || !ok {
+		t.Fatalf("first acquire ok=%v err=%v", ok, err)
+	}
+	ok, err = db.AcquireLease(ctx, "target:api", "b", time.Minute, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("different owner must not acquire unexpired lease")
+	}
+	ok, err = db.AcquireLease(ctx, "target:api", "a", time.Minute, now.Add(2*time.Second))
+	if err != nil || !ok {
+		t.Fatalf("same owner renew ok=%v err=%v", ok, err)
+	}
+	if err := db.ReleaseLease(ctx, "target:api", "b"); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ = db.AcquireLease(ctx, "target:api", "b", time.Minute, now.Add(3*time.Second))
+	if ok {
+		t.Fatal("non-owner release must not free lease")
+	}
+	if err := db.ReleaseLease(ctx, "target:api", "a"); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ = db.AcquireLease(ctx, "target:api", "b", time.Minute, now.Add(4*time.Second))
+	if !ok {
+		t.Fatal("owner release should free lease")
+	}
+
+	ok, _ = db.AcquireLease(ctx, "target:db", "a", time.Second, now)
+	if !ok {
+		t.Fatal("lease target:db")
+	}
+	ok, _ = db.AcquireLease(ctx, "target:db", "b", time.Minute, now.Add(2*time.Second))
+	if !ok {
+		t.Fatal("expired lease should be acquirable by another owner")
 	}
 }
 

@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/target/ftp"
-	"go.klarlabs.de/rolloffs/internal/target/ssh"
-	"go.klarlabs.de/rolloffs/pkg/conformance"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/target/ftp"
+	"go.klarlabs.de/rollops/internal/target/ssh"
+	"go.klarlabs.de/rollops/pkg/conformance"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func env(t *testing.T, key string) string {

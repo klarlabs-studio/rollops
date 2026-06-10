@@ -1,13 +1,13 @@
-# Rolloffs — Project Identity
+# Rollops — Project Identity
 
 *Rollout operations for the agentic web.* Lean, infrastructure-agnostic rollout
 orchestration where **agents and humans are peer operators**. Leaner alternative
 to ArgoCD/Flux; no Kubernetes dependency; runs on a bare Hetzner VPS.
 
-- **Module:** `github.com/klarlabs/rolloffs` (repo dir is `rollops`)
+- **Module:** `github.com/klarlabs/rollops` (repo dir is `rollops`)
 - **Language:** Go 1.26
 - **Umbrella:** Klarlatz · **Brand DNA:** Smart, Präzise, Wertig, Verlässlich
-- **Canonical docs:** `rolloffs-vision.md`, `rolloffs-tdd.md`
+- **Canonical docs:** `rollops-vision.md`, `rollops-tdd.md`
 
 ## Working Style
 

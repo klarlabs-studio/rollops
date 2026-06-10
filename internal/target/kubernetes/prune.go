@@ -9,10 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// PruneLabel marks every resource Rolloffs manages for a target, so a pruning
+// PruneLabel marks every resource Rollops manages for a target, so a pruning
 // apply (kubectl apply --prune -l) can garbage-collect resources removed from
 // desired — the GitOps "delete what's no longer declared" behavior (Flux-style).
-const PruneLabel = "rolloffs.klarlabs.de/target"
+const PruneLabel = "rollops.klarlabs.de/target"
 
 var nonLabel = regexp.MustCompile(`[^a-z0-9._-]+`)
 
@@ -24,7 +24,7 @@ func labelValue(ref string) string {
 		v = v[:63]
 	}
 	if v == "" {
-		v = "rolloffs"
+		v = "rollops"
 	}
 	return v
 }

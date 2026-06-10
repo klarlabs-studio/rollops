@@ -16,7 +16,7 @@ import (
 	"go.klarlabs.de/fortify/circuitbreaker"
 	"go.klarlabs.de/fortify/retry"
 
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Policy tunes the resilience envelope around a target.

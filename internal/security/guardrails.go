@@ -8,7 +8,7 @@ import (
 
 	"go.klarlabs.de/fortify/ratelimit"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 // Guardrails are the hard limits beneath the risk gate. Unlike the gate's

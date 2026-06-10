@@ -1,4 +1,4 @@
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: dogfood
@@ -9,14 +9,14 @@ spec:
     criticality: medium
     spec:
       context: minikube
-      namespace: rolloffs-dogfood
+      namespace: rollops-dogfood
       resource: deployment/web
       manifest: |
         apiVersion: apps/v1
         kind: Deployment
         metadata:
           name: web
-          namespace: rolloffs-dogfood
+          namespace: rollops-dogfood
         spec:
           replicas: 1
           selector:

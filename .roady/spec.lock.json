@@ -1,7 +1,7 @@
 {
-  "id": "rolloffs",
-  "title": "Rolloffs — Rollout operations for the agentic web",
-  "description": "Lean, infrastructure-agnostic rollout orchestration where agents and humans are peer operators. The engine is a Go library at the center; CLI, daemon, MCP, and UI are thin clients over it. Built on the Klarlatz stack (statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos). No Kubernetes dependency in core; runs on a bare VPS. v1 risk and rollback are observability-free. Source of desired state is Git; the Store holds runtime state only. This spec covers the P0 OSS core.",
+  "id": "rollops",
+  "title": "Rollops — Rollout operations for the agentic web",
+  "description": "Lean, infrastructure-agnostic rollout orchestration where agents and humans are peer operators. The engine is a Go library at the center; CLI, daemon, MCP, and UI are thin clients over it. Built on the Klarlatz stack (statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos). No Kubernetes dependency in core; runs on a bare VPS. v1 risk and rollback are observability-free. Source of desired state is Git; the Store holds runtime state only. This spec covers the P0 OSS core and the P2 ecosystem/scale layer.",
   "features": [
     {
       "id": "config-model",
@@ -746,6 +746,223 @@
           "id": "prometheus-metrics-for-reconcile-latency-drift",
           "title": "Prometheus metrics for reconcile latency, drift count",
           "description": "Prometheus metrics for reconcile latency, drift count, rollout outcomes.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-metric-analysis",
+      "title": "Stable metric-based rollout analysis",
+      "description": "Promote the Phase 2 metric-analysis seam from experimental to a stable optional feature, while keeping v1 rollback observability-free by default unless analysis is explicitly enabled.",
+      "requirements": [
+        {
+          "id": "p2-analysis-stable-config-contract",
+          "title": "Stable analysis config contract and docs",
+          "description": "Document provider, metrics, CEL condition, interval, count, and failureLimit as a supported optional contract.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-analysis-result-surfaced",
+          "title": "Analysis results surfaced in operator workflows",
+          "description": "Surface pass/fail reasons clearly in verify/rollback results, logs, and UI-ready state.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-prometheus-provider-supported",
+          "title": "Prometheus provider supported and tested",
+          "description": "Prometheus instant-query provider is supported with unit and live integration coverage.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-historical-risk",
+      "title": "Historical-failure risk signal",
+      "description": "Feed rollout history into the risk gate so targets or change classes with recent failures require stronger human attention.",
+      "requirements": [
+        {
+          "id": "p2-risk-history-signal",
+          "title": "Historical failure signal in risk score",
+          "description": "Recent rolled-back or failed rollout history contributes to the risk score.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-risk-history-config",
+          "title": "Configurable historical risk lookback",
+          "description": "Operators can tune lookback window and weighting without changing code.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-db-rollback",
+      "title": "Database rollback workflows",
+      "description": "Model schema/data rollback hooks as explicit, auditable rollout steps without storing secrets or desired state in the Store.",
+      "requirements": [
+        {
+          "id": "p2-db-rollback-contract",
+          "title": "Database rollback hook contract",
+          "description": "Define migrate, verify, and rollback hooks with clear ordering and audit boundaries.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-db-rollback-cli-ui",
+          "title": "Database rollback visible in CLI and UI",
+          "description": "Plans and history show database rollback hooks before execution.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-coordination",
+      "title": "Multi-instance coordination",
+      "description": "Allow more than one daemon instance to operate safely against shared runtime state for studio and managed deployments.",
+      "requirements": [
+        {
+          "id": "p2-leader-election",
+          "title": "Leader election for reconcile workers",
+          "description": "Only one daemon instance reconciles a repo/target at a time.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-shared-locking",
+          "title": "Shared target locks across instances",
+          "description": "Runtime locks work across processes, not only in memory.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-sso",
+      "title": "SSO and enterprise auth integration",
+      "description": "Add optional enterprise identity integration at the UI/API boundary while preserving token and local single-binary defaults.",
+      "requirements": [
+        {
+          "id": "p2-oidc-login",
+          "title": "OIDC login for UI/API",
+          "description": "UI/API can authenticate users through OIDC.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-identity-to-rbac",
+          "title": "External identity mapped to RBAC",
+          "description": "OIDC claims map to Rollops identities, roles, and target scopes.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-image-automation",
+      "title": "Image automation workflows",
+      "description": "Optional Git-backed image update automation similar to Argo/Flux, implemented without making Git cease to be desired-state truth.",
+      "requirements": [
+        {
+          "id": "p2-image-policy",
+          "title": "Image update policy",
+          "description": "Operators can define semver, regex, or digest policies per target.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-image-git-writeback",
+          "title": "Image updates written back to Git",
+          "description": "Automation proposes or commits desired-state image updates to Git, never directly to Store.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-studio-layer",
+      "title": "Managed multi-customer studio layer",
+      "description": "Commercial/studio layer for many customer environments while preserving the OSS core boundary.",
+      "requirements": [
+        {
+          "id": "p2-studio-boundary",
+          "title": "Studio boundary documented and enforced",
+          "description": "OSS core remains self-hosted; managed multi-customer orchestration stays an optional layer.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-fleet-dashboard-contract",
+          "title": "Fleet dashboard contract",
+          "description": "Define the data contract needed for one pane of glass across many Rollops instances.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "p2-optional-integrations",
+      "title": "Optional ecosystem integrations",
+      "description": "Optional integrations for observability, feature flags, and deeper governance without coupling the core to any single vendor or Klarlabs product.",
+      "requirements": [
+        {
+          "id": "p2-feature-flag-hooks",
+          "title": "Feature flag rollout hooks",
+          "description": "Optional hooks can coordinate rollout steps with a feature flag provider.",
+          "priority": "",
+          "estimate": "",
+          "depends_on": null,
+          "source": {}
+        },
+        {
+          "id": "p2-governance-hooks",
+          "title": "Deeper governance hooks",
+          "description": "Optional governance hooks can attach external approval or policy systems without replacing Rollops RBAC and guardrails.",
           "priority": "",
           "estimate": "",
           "depends_on": null,

@@ -14,7 +14,7 @@ import (
 // sshTransport is the real SSH implementation of Transport. File moves use the
 // shell (cat > path / cat path) to avoid a hard SFTP dependency — lean by
 // default. Credentials come from a private key referenced in the target spec;
-// secrets are never stored locally by Rolloffs (the SecretProvider supplies the
+// secrets are never stored locally by Rollops (the SecretProvider supplies the
 // key material at execution time).
 type sshTransport struct {
 	client *ssh.Client

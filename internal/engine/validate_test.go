@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 func TestValidate_ProducesPlanAndOrder(t *testing.T) {

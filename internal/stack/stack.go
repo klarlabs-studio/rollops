@@ -1,4 +1,4 @@
-// Package stack pins the Klarlatz/OSS components Rolloffs is assembled from
+// Package stack pins the Klarlatz/OSS components Rollops is assembled from
 // (TDD §2 Stack Mapping). The blank imports keep these modules as direct
 // dependencies and prove the whole stack resolves and compiles together
 // before any package wires them in. As each build phase consumes a component

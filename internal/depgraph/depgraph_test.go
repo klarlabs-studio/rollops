@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 func dep(from, to string) rollout.Dependency { return rollout.Dependency{From: from, To: to} }

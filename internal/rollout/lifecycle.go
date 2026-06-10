@@ -37,8 +37,11 @@ const (
 	EventReject   = "REJECT"    // awaiting-approval -> rolled-back
 	EventDeployed = "DEPLOYED"  // deploying -> verifying
 	EventVerifyOK = "VERIFY_OK" // verifying -> promoted
-	EventRollback = "ROLLBACK"  // deploying|verifying|awaiting-approval -> rolled-back
+	EventRollback = "ROLLBACK"  // deploying|verifying|awaiting-approval|paused -> rolled-back
 	EventError    = "ERROR"     // validating|deploying -> rolled-back
+	EventPause    = "PAUSE"     // deploying -> paused (hold an in-flight canary)
+	EventResume   = "RESUME"    // paused -> deploying (continue stepping)
+	EventPromote  = "PROMOTE"   // deploying|paused -> verifying (skip remaining steps)
 )
 
 const (
@@ -71,7 +74,15 @@ func buildMachine(initial Phase) (*statekit.Interpreter[LifeContext], error) {
 		On(EventRollback).Target(statekit.StateID(PhaseRolledBack)).Done().
 		State(statekit.StateID(PhaseDeploying)).
 		On(EventDeployed).Target(statekit.StateID(PhaseVerifying)).
+		On(EventPause).Target(statekit.StateID(PhasePaused)).
+		On(EventPromote).Target(statekit.StateID(PhaseVerifying)).
 		On(EventError).Target(statekit.StateID(PhaseRolledBack)).
+		On(EventRollback).Target(statekit.StateID(PhaseRolledBack)).Done().
+		// paused: an operator-held canary. Resume to keep stepping, promote to
+		// skip to verification, or roll back.
+		State(statekit.StateID(PhasePaused)).
+		On(EventResume).Target(statekit.StateID(PhaseDeploying)).
+		On(EventPromote).Target(statekit.StateID(PhaseVerifying)).
 		On(EventRollback).Target(statekit.StateID(PhaseRolledBack)).Done().
 		State(statekit.StateID(PhaseVerifying)).
 		On(EventVerifyOK).Target(statekit.StateID(PhasePromoted)).

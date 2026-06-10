@@ -27,6 +27,22 @@ func TestScore_BlastRadiusSaturates(t *testing.T) {
 	}
 }
 
+func TestScore_HistoricalFailuresAreOptIn(t *testing.T) {
+	base := Signals{Criticality: "low", Environment: "dev", ChangeType: "config", BlastRadius: 0, Strategy: "canary"}
+	if got := Score(Signals{RecentFailures: 3}, DefaultWeights()); got != 0 {
+		t.Fatalf("default historical weight should be inert, got score %v", got)
+	}
+
+	w := DefaultWeights()
+	w.History = 0.25
+	w.MaxRecentFailures = 2
+	none := Score(base, w)
+	withFailures := Score(Signals{RecentFailures: 3}, w)
+	if withFailures <= none {
+		t.Fatalf("historical failures should increase risk: none=%v withFailures=%v", none, withFailures)
+	}
+}
+
 func TestGate_AutoProceedBelowThreshold(t *testing.T) {
 	g := Gate{Threshold: 0.7}
 	d, err := g.Evaluate(Signals{Criticality: "low", Environment: "dev", ChangeType: "config", Strategy: "canary"})

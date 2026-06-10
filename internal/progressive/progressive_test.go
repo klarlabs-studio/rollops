@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rollops/internal/config"
 )
 
 func TestPlanFor_Canary_DefaultsAndEndsAt100(t *testing.T) {

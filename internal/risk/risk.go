@@ -1,8 +1,8 @@
 // Package risk is the blast-radius risk gate. It scores a proposed rollout from
-// five observability-free signals — target criticality, environment, change
-// type, blast radius, and rollout strategy — into a normalized [0,1] score, and
-// decides whether the change may auto-proceed or requires a single human
-// approval.
+// observability-free signals — target criticality, environment, change type,
+// blast radius, rollout strategy, and optional recent rollback history — into a
+// normalized [0,1] score, and decides whether the change may auto-proceed or
+// requires a single human approval.
 //
 // Note: decisionkit's risk engine scores commitment/deadline risk, a different
 // shape; the blast-radius model here is dedicated to rollouts. The gate's
@@ -13,16 +13,17 @@ package risk
 import (
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/condition"
+	"go.klarlabs.de/rollops/internal/condition"
 )
 
-// Signals are the five observability-free inputs to the score.
+// Signals are the observability-free inputs to the score.
 type Signals struct {
-	Criticality string // low | medium | high | critical
-	Environment string // dev | staging | prod
-	ChangeType  string // config | code | schema
-	BlastRadius int    // count of downstream dependents
-	Strategy    string // rolling | canary | blue-green
+	Criticality    string // low | medium | high | critical
+	Environment    string // dev | staging | prod
+	ChangeType     string // config | code | schema
+	BlastRadius    int    // count of downstream dependents
+	Strategy       string // rolling | canary | blue-green
+	RecentFailures int    // rolled-back records inside the configured lookback
 }
 
 // Weights tunes each signal's contribution; they need not sum to 1 (the score
@@ -33,19 +34,25 @@ type Weights struct {
 	ChangeType  float64
 	BlastRadius float64
 	Strategy    float64
+	History     float64
 	// MaxBlastRadius is the dependent count treated as maximum risk (saturates).
 	MaxBlastRadius int
+	// MaxRecentFailures is the rollback count treated as maximum history risk.
+	MaxRecentFailures int
 }
 
 // DefaultWeights are sensible safe defaults — criticality and environment lead.
+// History is opt-in so existing thresholds keep their semantics until
+// risk.history is configured.
 func DefaultWeights() Weights {
 	return Weights{
-		Criticality:    0.25,
-		Environment:    0.20,
-		ChangeType:     0.20,
-		BlastRadius:    0.20,
-		Strategy:       0.15,
-		MaxBlastRadius: 10,
+		Criticality:       0.25,
+		Environment:       0.20,
+		ChangeType:        0.20,
+		BlastRadius:       0.20,
+		Strategy:          0.15,
+		MaxBlastRadius:    10,
+		MaxRecentFailures: 3,
 	}
 }
 
@@ -113,8 +120,9 @@ func Score(s Signals, w Weights) float64 {
 		maxBlast = 10
 	}
 	blast := clamp01(float64(s.BlastRadius) / float64(maxBlast))
+	history := HistoryScore(s.RecentFailures, w.MaxRecentFailures)
 
-	total := w.Criticality + w.Environment + w.ChangeType + w.BlastRadius + w.Strategy
+	total := w.Criticality + w.Environment + w.ChangeType + w.BlastRadius + w.Strategy + w.History
 	if total == 0 {
 		return 0
 	}
@@ -122,8 +130,17 @@ func Score(s Signals, w Weights) float64 {
 		w.Environment*environmentScore(s.Environment) +
 		w.ChangeType*changeTypeScore(s.ChangeType) +
 		w.BlastRadius*blast +
-		w.Strategy*strategyScore(s.Strategy)
+		w.Strategy*strategyScore(s.Strategy) +
+		w.History*history
 	return clamp01(weighted / total)
+}
+
+// HistoryScore normalizes recent rollback count into [0,1].
+func HistoryScore(recentFailures, maxRecentFailures int) float64 {
+	if maxRecentFailures <= 0 {
+		maxRecentFailures = 3
+	}
+	return clamp01(float64(recentFailures) / float64(maxRecentFailures))
 }
 
 // Decision is the gate's verdict.
@@ -155,12 +172,14 @@ func (g Gate) Evaluate(s Signals) (Decision, error) {
 
 	if g.SensitiveExpr != "" {
 		sensitive, err := condition.Eval(g.SensitiveExpr, condition.Input{
-			Criticality: s.Criticality,
-			Environment: s.Environment,
-			ChangeType:  s.ChangeType,
-			BlastRadius: s.BlastRadius,
-			Strategy:    s.Strategy,
-			Score:       score,
+			Criticality:    s.Criticality,
+			Environment:    s.Environment,
+			ChangeType:     s.ChangeType,
+			BlastRadius:    s.BlastRadius,
+			Strategy:       s.Strategy,
+			Score:          score,
+			RecentFailures: s.RecentFailures,
+			HistoryRisk:    HistoryScore(s.RecentFailures, w.MaxRecentFailures),
 		})
 		if err != nil {
 			return Decision{}, fmt.Errorf("risk: sensitive expression: %w", err)

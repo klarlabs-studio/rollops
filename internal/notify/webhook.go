@@ -40,7 +40,7 @@ func (h Webhook) Notify(ctx context.Context, e Event) error {
 	if h.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(h.Secret))
 		mac.Write(body)
-		req.Header.Set("X-Rolloffs-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		req.Header.Set("X-Rollops-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
 
 	resp, err := h.client().Do(req)

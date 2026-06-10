@@ -1,5 +1,5 @@
 // Package condition compiles and evaluates the CEL expressions embedded in
-// Rolloffs config — risk-gate conditions (risk.sensitive), rollback triggers
+// Rollops config — risk-gate conditions (risk.sensitive), rollback triggers
 // (rollback.trigger), and promotion criteria. CEL is the one conditional-logic
 // surface; there is no bespoke DSL, and relicta's governance DSL stays separate.
 //
@@ -18,22 +18,26 @@ import (
 // Input is the typed activation a condition is evaluated against — the
 // observability-free signals available when gating or rolling back a change.
 type Input struct {
-	Criticality string  // low | medium | high | critical
-	Environment string  // dev | staging | prod | <custom>
-	ChangeType  string  // config | code | schema
-	BlastRadius int     // count of downstream dependents
-	Strategy    string  // rolling | canary | blue-green
-	Score       float64 // computed risk score, 0..1
+	Criticality    string  // low | medium | high | critical
+	Environment    string  // dev | staging | prod | <custom>
+	ChangeType     string  // config | code | schema
+	BlastRadius    int     // count of downstream dependents
+	Strategy       string  // rolling | canary | blue-green
+	Score          float64 // computed risk score, 0..1
+	RecentFailures int     // rollback count inside the configured lookback
+	HistoryRisk    float64 // normalized recent failure risk, 0..1
 }
 
 func (in Input) activation() map[string]any {
 	return map[string]any{
-		"criticality": in.Criticality,
-		"environment": in.Environment,
-		"changeType":  in.ChangeType,
-		"blastRadius": int64(in.BlastRadius),
-		"strategy":    in.Strategy,
-		"score":       in.Score,
+		"criticality":    in.Criticality,
+		"environment":    in.Environment,
+		"changeType":     in.ChangeType,
+		"blastRadius":    int64(in.BlastRadius),
+		"strategy":       in.Strategy,
+		"score":          in.Score,
+		"recentFailures": int64(in.RecentFailures),
+		"historyRisk":    in.HistoryRisk,
 	}
 }
 
@@ -49,6 +53,8 @@ func mustEnv() *cel.Env {
 		cel.Variable("blastRadius", cel.IntType),
 		cel.Variable("strategy", cel.StringType),
 		cel.Variable("score", cel.DoubleType),
+		cel.Variable("recentFailures", cel.IntType),
+		cel.Variable("historyRisk", cel.DoubleType),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("condition: build CEL env: %v", err))

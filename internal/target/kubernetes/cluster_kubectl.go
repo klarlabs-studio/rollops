@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // kubectlCluster drives a cluster through the external kubectl binary. No
-// client-go is compiled into the Rolloffs core.
+// client-go is compiled into the Rollops core.
 type kubectlCluster struct {
 	context   string
 	namespace string
@@ -103,8 +103,10 @@ func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
 // error here, it is the result.
 func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, error) {
 	out, _ := k.run(ctx, manifest, "diff", "-f", "-")
+	// Empty diff = in sync; return "" so the caller/UI owns the "no changes"
+	// copy rather than treating a human message as diff content.
 	if strings.TrimSpace(out) == "" {
-		return "no changes — live state matches desired", nil
+		return "", nil
 	}
 	return out, nil
 }

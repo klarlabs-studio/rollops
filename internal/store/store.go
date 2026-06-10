@@ -11,8 +11,8 @@ import (
 	"errors"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 // ErrNotFound is returned by lookups when the requested record does not exist.
@@ -53,4 +53,13 @@ type Store interface {
 
 	// History returns the audit/history records for a target, newest first.
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)
+}
+
+// LeaseStore is an optional runtime coordination extension for stores that can
+// provide cross-process leases. It is deliberately separate from Store so simple
+// backends can remain lean while SQLite/Postgres deployments can coordinate
+// multiple rollopsd instances.
+type LeaseStore interface {
+	AcquireLease(ctx context.Context, key, owner string, ttl time.Duration, now time.Time) (bool, error)
+	ReleaseLease(ctx context.Context, key, owner string) error
 }

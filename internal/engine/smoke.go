@@ -28,3 +28,12 @@ func (execSmoke) Run(ctx context.Context, command []string) (int, error) {
 	}
 	return -1, err
 }
+
+type execDBRollback struct{}
+
+func (execDBRollback) Run(ctx context.Context, command []string) error {
+	if len(command) == 0 {
+		return nil
+	}
+	return exec.CommandContext(ctx, command[0], command[1:]...).Run()
+}

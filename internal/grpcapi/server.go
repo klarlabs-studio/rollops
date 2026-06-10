@@ -1,8 +1,9 @@
 // Package grpcapi is the daemon's typed gRPC surface over the engine — the
 // transport the CLI (daemon mode) and agents use, peer to the REST surface in
 // internal/api. RPCs map 1:1 to engine operations; every call is authenticated
-// (bearer token in "authorization" metadata) via a unary interceptor and
-// authorized through the same RBAC policy as every other interface.
+// (bearer token in "authorization" metadata by default) via a unary interceptor
+// and authorized through the same RBAC policy as every other interface. TLS or
+// mTLS can be supplied with grpc.ServerOption at construction/deployment time.
 package grpcapi
 
 import (
@@ -14,17 +15,17 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"go.klarlabs.de/rolloffs/internal/api"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/grpcapi/rolloffsv1"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/security"
+	"go.klarlabs.de/rollops/internal/api"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/grpcapi/rollopsv1"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
 )
 
 // Server implements the generated RolloutServiceServer.
 type Server struct {
-	rolloffsv1.UnimplementedRolloutServiceServer
+	rollopsv1.UnimplementedRolloutServiceServer
 	eng    *engine.Engine
 	auth   api.Authenticator
 	policy *security.Policy
@@ -38,7 +39,7 @@ func New(eng *engine.Engine, auth api.Authenticator, policy *security.Policy) *S
 // Register attaches the service and the auth interceptor is added at server
 // construction (see NewGRPCServer).
 func (s *Server) Register(gs grpc.ServiceRegistrar) {
-	rolloffsv1.RegisterRolloutServiceServer(gs, s)
+	rollopsv1.RegisterRolloutServiceServer(gs, s)
 }
 
 // NewGRPCServer builds a *grpc.Server with the auth interceptor installed and
@@ -85,7 +86,7 @@ func bearerFromMD(ctx context.Context) string {
 }
 
 // Plan implements the Plan RPC.
-func (s *Server) Plan(ctx context.Context, req *rolloffsv1.PlanRequest) (*rolloffsv1.PlanResponse, error) {
+func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollopsv1.PlanResponse, error) {
 	id := identityFrom(ctx)
 	c, err := config.Load([]byte(req.GetConfig()))
 	if err != nil {
@@ -98,11 +99,11 @@ func (s *Server) Plan(ctx context.Context, req *rolloffsv1.PlanRequest) (*rollof
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &rolloffsv1.PlanResponse{Action: string(p.Action), Changed: p.Changed, Summary: p.Summary}, nil
+	return &rollopsv1.PlanResponse{Action: string(p.Action), Changed: p.Changed, Summary: p.Summary}, nil
 }
 
 // Apply implements the Apply RPC.
-func (s *Server) Apply(ctx context.Context, req *rolloffsv1.ApplyRequest) (*rolloffsv1.ApplyResponse, error) {
+func (s *Server) Apply(ctx context.Context, req *rollopsv1.ApplyRequest) (*rollopsv1.ApplyResponse, error) {
 	id := identityFrom(ctx)
 	c, err := config.Load([]byte(req.GetConfig()))
 	if err != nil {
@@ -121,11 +122,11 @@ func (s *Server) Apply(ctx context.Context, req *rolloffsv1.ApplyRequest) (*roll
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &rolloffsv1.ApplyResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef}, nil
+	return &rollopsv1.ApplyResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef}, nil
 }
 
 // Status implements the Status RPC.
-func (s *Server) Status(ctx context.Context, req *rolloffsv1.StatusRequest) (*rolloffsv1.StatusResponse, error) {
+func (s *Server) Status(ctx context.Context, req *rollopsv1.StatusRequest) (*rollopsv1.StatusResponse, error) {
 	id := identityFrom(ctx)
 	if err := s.policy.Authorize(id, security.PermStatus, security.Scope{}); err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -134,7 +135,24 @@ func (s *Server) Status(ctx context.Context, req *rolloffsv1.StatusRequest) (*ro
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &rolloffsv1.StatusResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy)}, nil
+	return &rollopsv1.StatusResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy)}, nil
+}
+
+// Rollback implements the Rollback RPC.
+func (s *Server) Rollback(ctx context.Context, req *rollopsv1.RollbackRequest) (*rollopsv1.RollbackResponse, error) {
+	id := identityFrom(ctx)
+	target := req.GetTarget()
+	if target == "" {
+		return nil, status.Error(codes.InvalidArgument, "target required")
+	}
+	if err := s.policy.Authorize(id, security.PermRollback, security.Scope{TargetRef: target}); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	rl, err := s.eng.RollbackLast(ctx, target)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &rollopsv1.RollbackResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef}, nil
 }
 
 func scopeOf(c *config.Config) security.Scope {

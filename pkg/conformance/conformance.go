@@ -1,4 +1,4 @@
-// Package conformance is the shared contract test every Rolloffs target must
+// Package conformance is the shared contract test every Rollops target must
 // pass — first-party (Kubernetes, SSH/VM, FTP) and community gRPC plugins
 // alike. It is what keeps "infrastructure-agnostic" from meaning
 // "inconsistent": a target is only correct if it is idempotent, reports a
@@ -11,7 +11,7 @@
 //	}
 //
 // The individual Check* functions return errors so they can also be composed
-// outside the testing harness (e.g. a CLI `rolloffs target verify`).
+// outside the testing harness (e.g. a CLI `rollops target verify`).
 package conformance
 
 import (
@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/pkg/target"
 )
 
 // Factory returns a fresh, bound target instance.

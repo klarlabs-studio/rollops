@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"sync"
+
+	"go.klarlabs.de/rollops/internal/store"
 )
 
 // ErrTargetBusy is returned when a rollout is attempted against a target that
@@ -39,4 +42,32 @@ func (k *keyedLocks) TryAcquire(key string) (release func(), ok bool) {
 			k.mu.Unlock()
 		})
 	}, true
+}
+
+func (e *Engine) acquireTarget(ctx context.Context, targetRef string) (func(), bool, error) {
+	localRelease, ok := e.locks.TryAcquire(targetRef)
+	if !ok {
+		return nil, false, nil
+	}
+	leases, ok := e.store.(store.LeaseStore)
+	if !ok {
+		return localRelease, true, nil
+	}
+	key := "target:" + targetRef
+	acquired, err := leases.AcquireLease(ctx, key, e.owner, e.leaseTTL, e.now())
+	if err != nil {
+		localRelease()
+		return nil, false, err
+	}
+	if !acquired {
+		localRelease()
+		return nil, false, nil
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			_ = leases.ReleaseLease(context.Background(), key, e.owner)
+			localRelease()
+		})
+	}, true, nil
 }

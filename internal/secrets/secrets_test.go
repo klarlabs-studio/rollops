@@ -23,8 +23,8 @@ func TestSecret_Redacts(t *testing.T) {
 }
 
 func TestEnvProvider_Resolve(t *testing.T) {
-	t.Setenv("ROLLOFFS_PETMED_PROD_DB_PASSWORD", "s3cr3t")
-	p := EnvProvider{Prefix: "ROLLOFFS_"}
+	t.Setenv("ROLLOPS_PETMED_PROD_DB_PASSWORD", "s3cr3t")
+	p := EnvProvider{Prefix: "ROLLOPS_"}
 	s, err := p.Resolve(context.Background(), "petmed/prod/db.password")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)

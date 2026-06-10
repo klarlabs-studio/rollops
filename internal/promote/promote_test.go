@@ -3,11 +3,11 @@ package promote
 import (
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/config"
+	"go.klarlabs.de/rollops/internal/config"
 )
 
 const stagedYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: demo

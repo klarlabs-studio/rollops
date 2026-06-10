@@ -2,14 +2,16 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 const autoRollbackYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: demo
@@ -34,6 +36,16 @@ spec:
 type fakeSmoke struct{ code int }
 
 func (f fakeSmoke) Run(context.Context, []string) (int, error) { return f.code, nil }
+
+type fakeDBRollback struct {
+	command []string
+	err     error
+}
+
+func (f *fakeDBRollback) Run(_ context.Context, command []string) error {
+	f.command = append([]string(nil), command...)
+	return f.err
+}
 
 func loadAutoRollback(t *testing.T) *config.Config {
 	t.Helper()
@@ -96,5 +108,50 @@ func TestVerifyOrRollback_SmokeFailureRollsBack(t *testing.T) {
 	}
 	if !out.RolledBack {
 		t.Error("failing smoke test should auto-roll-back")
+	}
+}
+
+func TestVerifyOrRollback_DatabaseRollbackHookRunsAfterAutoRollback(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 1}), WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Rollback.Database = &config.DatabaseRollback{Command: []string{"goose", "down"}}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	out, err := e.VerifyOrRollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err != nil {
+		t.Fatalf("VerifyOrRollback: %v", err)
+	}
+	if !out.RolledBack {
+		t.Fatal("failing smoke test should auto-roll-back")
+	}
+	if strings.Join(db.command, " ") != "goose down" {
+		t.Fatalf("database rollback command = %v", db.command)
+	}
+	hist, err := e.History(context.Background(), c.Spec.Target.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) == 0 || !strings.Contains(hist[0].Note, "database rollback: succeeded") {
+		t.Fatalf("history note = %+v, want database rollback success", hist)
+	}
+}
+
+func TestVerifyOrRollback_DatabaseRollbackHookFailureIsLoud(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{err: errors.New("migration refused")}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 1}), WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Rollback.Database = &config.DatabaseRollback{Command: []string{"goose", "down"}}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	_, err := e.VerifyOrRollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err == nil || !strings.Contains(err.Error(), "database rollback") {
+		t.Fatalf("err = %v, want database rollback failure", err)
+	}
+	hist, _ := e.History(context.Background(), c.Spec.Target.Ref)
+	if len(hist) == 0 || !strings.Contains(hist[0].Note, "database rollback: failed") {
+		t.Fatalf("history note = %+v, want database rollback failure", hist)
 	}
 }

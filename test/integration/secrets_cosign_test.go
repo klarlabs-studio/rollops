@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/secrets"
-	"go.klarlabs.de/rolloffs/internal/security"
+	"go.klarlabs.de/rollops/internal/secrets"
+	"go.klarlabs.de/rollops/internal/security"
 )
 
 // TestVaultProvider_Live resolves a secret from a real Vault dev server

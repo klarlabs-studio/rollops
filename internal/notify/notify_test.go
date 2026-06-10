@@ -74,8 +74,8 @@ func TestWebhook_SignsAndPosts(t *testing.T) {
 	mac := hmac.New(sha256.New, []byte("shh"))
 	mac.Write([]byte(c.body))
 	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	if c.req.Header.Get("X-Rolloffs-Signature") != want {
-		t.Errorf("signature = %q, want %q", c.req.Header.Get("X-Rolloffs-Signature"), want)
+	if c.req.Header.Get("X-Rollops-Signature") != want {
+		t.Errorf("signature = %q, want %q", c.req.Header.Get("X-Rollops-Signature"), want)
 	}
 }
 

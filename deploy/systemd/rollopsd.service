@@ -1,0 +1,36 @@
+[Unit]
+Description=Rollops rollout orchestration daemon
+Documentation=https://github.com/klarlabs/rollops
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rollops
+Group=rollops
+WorkingDirectory=/var/lib/rollops
+EnvironmentFile=/etc/rollops/rollopsd.env
+ExecStart=/usr/local/bin/rollopsd
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# Persistent writable state is limited to the Rollops state directory.
+StateDirectory=rollops
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/rollops
+
+# Baseline hardening. Keep enough filesystem/network access for native targets
+# such as kubectl, SSH, and FTP to work from the daemon process.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ import (
 // Default config location within a watched repo.
 const (
 	DefaultBranch = "main"
-	DefaultPath   = "rolloffs.yaml"
+	DefaultPath   = "rollops.yaml"
 )
 
 // RepoRef addresses one watched repo's config: the repo, the branch to track,
@@ -18,7 +18,7 @@ const (
 type RepoRef struct {
 	URL    string // git remote URL (or local path)
 	Branch string // branch to track; defaults to main
-	Path   string // config path within the repo; defaults to rolloffs.yaml
+	Path   string // config path within the repo; defaults to rollops.yaml
 }
 
 // WithDefaults fills branch and path when unset.

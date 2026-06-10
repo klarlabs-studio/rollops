@@ -11,10 +11,10 @@ import (
 
 	mcpserver "go.klarlabs.de/mcp"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/security"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
 )
 
 // Tools holds the engine surface plus the authenticated agent identity and the
@@ -63,6 +63,18 @@ type StatusInput struct {
 
 // StatusOutput is the result of rollouts.status.
 type StatusOutput struct {
+	RolloutID string `json:"rollout_id"`
+	Phase     string `json:"phase"`
+	Target    string `json:"target"`
+}
+
+// RollbackInput is the input to rollouts.rollback.
+type RollbackInput struct {
+	TargetRef string `json:"target_ref" jsonschema:"the target to roll back to its previous desired state"`
+}
+
+// RollbackOutput is the result of rollouts.rollback.
+type RollbackOutput struct {
 	RolloutID string `json:"rollout_id"`
 	Phase     string `json:"phase"`
 	Target    string `json:"target"`
@@ -118,6 +130,18 @@ func (t *Tools) Status(ctx context.Context, in StatusInput) (StatusOutput, error
 	return StatusOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef}, nil
 }
 
+// Rollback implements rollouts.rollback.
+func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput, error) {
+	if err := t.policy.Authorize(t.identity, security.PermRollback, security.Scope{TargetRef: in.TargetRef}); err != nil {
+		return RollbackOutput{}, err
+	}
+	r, err := t.eng.RollbackLast(ctx, in.TargetRef)
+	if err != nil {
+		return RollbackOutput{}, err
+	}
+	return RollbackOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef}, nil
+}
+
 func (t *Tools) authz(perm security.Permission, c *config.Config) error {
 	return t.policy.Authorize(t.identity, perm, security.Scope{TargetRef: c.Spec.Target.Ref})
 }
@@ -126,7 +150,7 @@ func (t *Tools) authz(perm security.Permission, c *config.Config) error {
 // mcp.ServeStdio / ServeHTTP (embedded in the daemon or standalone).
 func NewServer(t *Tools) *mcpserver.Server {
 	srv := mcpserver.NewServer(mcpserver.ServerInfo{
-		Name:         "rolloffs",
+		Name:         "rollops",
 		Version:      "0.1.0",
 		Capabilities: mcpserver.Capabilities{Tools: true},
 	})
@@ -138,5 +162,6 @@ func NewServer(t *Tools) *mcpserver.Server {
 func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.plan").Description("Show what an apply would change for a rollout config").Handler(t.Plan)
 	srv.Tool("rollouts.apply").Description("Deploy desired state from a rollout config").Handler(t.Apply)
+	srv.Tool("rollouts.rollback").Description("Roll back a target to its previous desired state").Handler(t.Rollback)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)
 }

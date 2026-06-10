@@ -13,8 +13,8 @@ import (
 	"errors"
 	"fmt"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Transport executes commands and moves files on a host. Implementations:
@@ -53,11 +53,11 @@ func New(cfg config.Target) (pt.Target, error) {
 func newWith(tr Transport, s spec) *Target {
 	deployPath := s.str("deployPath")
 	if deployPath == "" {
-		deployPath = "/srv/rolloffs/payload"
+		deployPath = "/srv/rollops/payload"
 	}
 	stampPath := s.str("stampPath")
 	if stampPath == "" {
-		stampPath = deployPath + ".rolloffs-stamp"
+		stampPath = deployPath + ".rollops-stamp"
 	}
 	return &Target{
 		tr:         tr,

@@ -1,8 +1,7 @@
-// Package api is the daemon's network surface. It wraps the engine behind an
-// authenticated HTTP/JSON API — the same surface a grpc-gateway REST front
-// exposes for the browser UI. Every call is authenticated (bearer token here;
-// mTLS at the transport) and authorized through RBAC: no anonymous calls, and
-// apply-to-prod is a distinct grant from status.
+// Package api is the daemon's HTTP/JSON network surface. Every mutating or
+// sensitive call is authenticated (bearer token by default; TLS/mTLS belongs at
+// the daemon or reverse-proxy transport boundary) and authorized through RBAC:
+// no anonymous calls, and apply-to-prod is a distinct grant from status.
 package api
 
 import (
@@ -13,10 +12,10 @@ import (
 	"net/http"
 	"strings"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/security"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
 )
 
 // Authenticator resolves a bearer token to an identity.
@@ -24,8 +23,8 @@ type Authenticator interface {
 	Identify(token string) (rollout.Identity, bool)
 }
 
-// TokenAuth is a static token→identity map (mTLS or an external IdP replaces it
-// in production).
+// TokenAuth is a static token→identity map. Production deployments can replace
+// it with mTLS-derived identity or an external IdP.
 type TokenAuth map[string]rollout.Identity
 
 // Identify implements Authenticator.
@@ -51,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/plan", s.handlePlan)
 	mux.HandleFunc("POST /v1/apply", s.handleApply)
+	mux.HandleFunc("POST /v1/rollback", s.handleRollback)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return s.authMiddleware(mux)
@@ -142,6 +142,27 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy})
+}
+
+func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
+	id := identityFrom(r)
+	var body struct {
+		Target string `json:"target"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.Target == "" {
+		writeErr(w, http.StatusBadRequest, "target required")
+		return
+	}
+	if err := s.policy.Authorize(id, security.PermRollback, security.Scope{TargetRef: body.Target}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	rl, err := s.eng.RollbackLast(r.Context(), body.Target)
+	if err != nil {
+		writeErr(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef})
 }
 
 // --- helpers ---

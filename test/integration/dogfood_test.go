@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/audit"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/reconcile"
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/secrets"
-	"go.klarlabs.de/rolloffs/internal/security"
-	"go.klarlabs.de/rolloffs/internal/store/sqlite"
-	"go.klarlabs.de/rolloffs/internal/target"
+	"go.klarlabs.de/rollops/internal/audit"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/reconcile"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/secrets"
+	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	"go.klarlabs.de/rollops/internal/target"
 )
 
-const dogfoodConfig = `apiVersion: rolloffs.klarlabs.de/v1
+const dogfoodConfig = `apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: dogfood
@@ -32,14 +32,14 @@ spec:
     criticality: medium
     spec:
       context: minikube
-      namespace: rolloffs-dogfood-it
+      namespace: rollops-dogfood-it
       resource: deployment/web
       manifest: |
         apiVersion: apps/v1
         kind: Deployment
         metadata:
           name: web
-          namespace: rolloffs-dogfood-it
+          namespace: rollops-dogfood-it
         spec:
           replicas: 1
           selector:
@@ -71,7 +71,7 @@ func gitInit(t *testing.T, dir, content string) {
 		}
 	}
 	run("init", "-b", "main")
-	write(filepath.Join(dir, "rolloffs.yaml"), content)
+	write(filepath.Join(dir, "rollops.yaml"), content)
 	run("add", ".")
 	run("commit", "-m", "dogfood")
 }
@@ -82,7 +82,7 @@ func kubectlGet(args ...string) (string, error) {
 }
 
 // TestDogfood_GitToClusterReconcile is the Phase-0 MVP flow end to end:
-// a git repo with rolloffs.yaml -> the reconcile watcher (daemon brain) over the
+// a git repo with rollops.yaml -> the reconcile watcher (daemon brain) over the
 // FULL enforced engine (audit + guardrails + secrets) -> a real deploy to
 // minikube -> drift (delete) -> reconciled back -> promoted.
 func TestDogfood_GitToClusterReconcile(t *testing.T) {
@@ -90,9 +90,9 @@ func TestDogfood_GitToClusterReconcile(t *testing.T) {
 	_ = ctxName
 	ctx := context.Background()
 
-	_ = exec.Command("kubectl", "create", "namespace", "rolloffs-dogfood-it").Run()
+	_ = exec.Command("kubectl", "create", "namespace", "rollops-dogfood-it").Run()
 	t.Cleanup(func() {
-		_ = exec.Command("kubectl", "delete", "namespace", "rolloffs-dogfood-it", "--wait=false").Run()
+		_ = exec.Command("kubectl", "delete", "namespace", "rollops-dogfood-it", "--wait=false").Run()
 	})
 
 	// Upstream git repo carrying the declarative config.
@@ -108,13 +108,13 @@ func TestDogfood_GitToClusterReconcile(t *testing.T) {
 	eng := engine.New(db, target.Builtin(),
 		engine.WithAudit(audit.New(os.Stderr)),
 		engine.WithGuardrails(&security.Guardrails{Floor: security.DefaultPolicyFloor(), Freeze: security.NewFreeze()}),
-		engine.WithSecrets(secrets.EnvProvider{Prefix: "ROLLOFFS_SECRET_"}),
+		engine.WithSecrets(secrets.EnvProvider{Prefix: "ROLLOPS_SECRET_"}),
 	)
 	rec := reconcile.New(eng, audit.New(os.Stderr))
 	watcher, err := reconcile.NewWatcher(ctx, rec, t.TempDir(), []reconcile.RepoSpec{{
 		Name:      "dogfood",
 		URL:       "file://" + upstream,
-		Ref:       config.RepoRef{Branch: "main", Path: "rolloffs.yaml"},
+		Ref:       config.RepoRef{Branch: "main", Path: "rollops.yaml"},
 		Initiator: rollout.Identity{Kind: "ci", Name: "reconciler"},
 	}})
 	if err != nil {
@@ -130,12 +130,12 @@ func TestDogfood_GitToClusterReconcile(t *testing.T) {
 			t.Fatalf("first tick should deploy: %+v", o.Outcome)
 		}
 	}
-	if out, err := kubectlGet("get", "deployment", "web", "-n", "rolloffs-dogfood-it", "-o", "name"); err != nil || out == "" {
+	if out, err := kubectlGet("get", "deployment", "web", "-n", "rollops-dogfood-it", "-o", "name"); err != nil || out == "" {
 		t.Fatalf("deployment not created on cluster: %v (%q)", err, out)
 	}
 
 	// Drift: delete the live deployment.
-	if err := exec.Command("kubectl", "delete", "deployment", "web", "-n", "rolloffs-dogfood-it", "--wait=true").Run(); err != nil {
+	if err := exec.Command("kubectl", "delete", "deployment", "web", "-n", "rollops-dogfood-it", "--wait=true").Run(); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -154,8 +154,8 @@ func TestDogfood_GitToClusterReconcile(t *testing.T) {
 	// Settle, then confirm the deployment is back with the checksum annotation.
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		if out, _ := kubectlGet("get", "deployment", "web", "-n", "rolloffs-dogfood-it",
-			"-o", "jsonpath={.metadata.annotations.rolloffs\\.klarlabs\\.de/checksum}"); out != "" {
+		if out, _ := kubectlGet("get", "deployment", "web", "-n", "rollops-dogfood-it",
+			"-o", "jsonpath={.metadata.annotations.rollops\\.klarlabs\\.de/checksum}"); out != "" {
 			return // reconciled back with a checksum — done
 		}
 		time.Sleep(time.Second)

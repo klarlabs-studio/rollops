@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/analysis"
+	"go.klarlabs.de/rollops/internal/analysis"
 )
 
 // TestPrometheusAnalysis_Live drives the metric-analysis seam against a real

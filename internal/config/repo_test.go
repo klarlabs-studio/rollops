@@ -11,8 +11,8 @@ func TestRepoRef_Defaults(t *testing.T) {
 	if r.Branch != DefaultBranch || r.Path != DefaultPath {
 		t.Errorf("defaults not applied: %+v", r)
 	}
-	custom := RepoRef{Branch: "release", Path: "deploy/rolloffs.yaml"}.WithDefaults()
-	if custom.Branch != "release" || custom.Path != "deploy/rolloffs.yaml" {
+	custom := RepoRef{Branch: "release", Path: "deploy/rollops.yaml"}.WithDefaults()
+	if custom.Branch != "release" || custom.Path != "deploy/rollops.yaml" {
 		t.Errorf("explicit values overwritten: %+v", custom)
 	}
 }
@@ -23,10 +23,10 @@ func TestLoadFromDir_ResolvesPathAndValidates(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "rolloffs.yaml"), []byte(validYAML), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sub, "rollops.yaml"), []byte(validYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := LoadFromDir(dir, RepoRef{Path: "deploy/rolloffs.yaml"})
+	c, err := LoadFromDir(dir, RepoRef{Path: "deploy/rollops.yaml"})
 	if err != nil {
 		t.Fatalf("LoadFromDir: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestLoadFromDir_MissingFile(t *testing.T) {
 
 func TestLoadFromDir_RejectsInvalidConfig(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "rolloffs.yaml"), []byte("apiVersion: rolloffs.klarlabs.de/v1\nkind: RolloutConfig\nmetadata: {}\nspec: {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "rollops.yaml"), []byte("apiVersion: rollops.klarlabs.de/v1\nkind: RolloutConfig\nmetadata: {}\nspec: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadFromDir(dir, RepoRef{}); err == nil {

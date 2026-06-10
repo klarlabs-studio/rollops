@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 func mustIdentity(kind, name string) rollout.Identity {
@@ -14,7 +14,7 @@ func mustIdentity(kind, name string) rollout.Identity {
 }
 
 const riskyYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: payments
@@ -43,7 +43,7 @@ func loadRisky(t *testing.T) *config.Config {
 
 func TestEvaluateRisk_HighRiskNeedsApproval(t *testing.T) {
 	e, _ := newEngine(t, &fakeTarget{})
-	d, err := e.EvaluateRisk(loadRisky(t), RiskInputs{ChangeType: "code", Environment: "prod", BlastRadius: 8})
+	d, err := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "code", Environment: "prod", BlastRadius: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,9 +54,45 @@ func TestEvaluateRisk_HighRiskNeedsApproval(t *testing.T) {
 
 func TestEvaluateRisk_SensitiveSchema(t *testing.T) {
 	e, _ := newEngine(t, &fakeTarget{})
-	d, _ := e.EvaluateRisk(loadRisky(t), RiskInputs{ChangeType: "schema", Environment: "dev", BlastRadius: 0})
+	d, _ := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "schema", Environment: "dev", BlastRadius: 0})
 	if !d.Sensitive || !d.NeedsApproval {
 		t.Errorf("schema change is sensitive; d=%+v", d)
+	}
+}
+
+func TestEvaluateRisk_HistoricalRollbackRaisesScore(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	c := loadRisky(t)
+	c.Spec.Target.Criticality = "low"
+	c.Spec.Strategy.Type = "canary"
+	c.Spec.Risk.Threshold = 0.12
+	c.Spec.Risk.Sensitive = ""
+	c.Spec.Risk.History = config.RiskHistory{Lookback: 5, Weight: 0.2, MaxFailures: 1}
+
+	before, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.NeedsApproval {
+		t.Fatalf("no history should auto-proceed: %+v", before)
+	}
+
+	if err := db.SaveRollout(ctx, rollout.Rollout{
+		ID:        "prior-failure",
+		TargetRef: c.Spec.Target.Ref,
+		Phase:     rollout.PhaseRolledBack,
+	}); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+
+	after, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.NeedsApproval || after.Score <= before.Score {
+		t.Fatalf("rollback history should raise risk above threshold: before=%+v after=%+v", before, after)
 	}
 }
 
@@ -65,7 +101,7 @@ func TestEvaluateRisk_FeedsApply(t *testing.T) {
 	fake := &fakeTarget{}
 	e, _ := newEngine(t, fake)
 	c := loadRisky(t)
-	d, _ := e.EvaluateRisk(c, RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9})
+	d, _ := e.EvaluateRisk(context.Background(), c, RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9})
 
 	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, NeedsApproval: d.NeedsApproval})
 	if err != nil {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
-	"go.klarlabs.de/rolloffs/internal/secrets"
+	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/secrets"
 )
 
 func decode(t *testing.T, b []byte) map[string]any {

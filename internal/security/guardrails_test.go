@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"go.klarlabs.de/rolloffs/internal/rollout"
+	"go.klarlabs.de/rollops/internal/rollout"
 )
 
 func TestPolicyFloor_AlwaysApproveConditions(t *testing.T) {

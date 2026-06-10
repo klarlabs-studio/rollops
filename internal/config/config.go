@@ -1,6 +1,6 @@
-// Package config is the YAML surface of Rolloffs: the declarative format
+// Package config is the YAML surface of Rollops: the declarative format
 // fluently written by both humans and agents, backed by a strict published
-// schema (schema/rolloffs.v1.schema.json, embedded as SchemaJSON) and a schema
+// schema (schema/rollops.v1.schema.json, embedded as SchemaJSON) and a schema
 // version field so configs migrate cleanly as the format evolves.
 //
 // This package owns structural parsing and version gating. Deep semantic
@@ -21,7 +21,7 @@ import (
 // SchemaVersion is the only apiVersion this build accepts. The version lives in
 // the config surface (apiVersion) so a future v2 can be detected and migrated
 // rather than silently mis-parsed.
-const SchemaVersion = "rolloffs.klarlabs.de/v1"
+const SchemaVersion = "rollops.klarlabs.de/v1"
 
 // Kind is the single document kind in v1.
 const Kind = "RolloutConfig"
@@ -29,7 +29,7 @@ const Kind = "RolloutConfig"
 // SchemaJSON is the published JSON Schema for the config surface, embedded so
 // it ships with the binary and the validation layer can enforce it offline.
 //
-//go:embed schema/rolloffs.v1.schema.json
+//go:embed schema/rollops.v1.schema.json
 var SchemaJSON []byte
 
 // Config is a parsed rollout configuration — one per service/repo.
@@ -58,7 +58,7 @@ type Spec struct {
 	Schedule     string        `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
 }
 
-// Analysis is the optional metric-based rollout analysis (Phase 2 seam). When
+// Analysis is the optional metric-based rollout analysis feature. When
 // set, a metrics provider is queried during the post-deploy gate and a CEL
 // condition over the named metrics decides pass/fail. Provider-agnostic.
 type Analysis struct {
@@ -107,17 +107,36 @@ type StrategyStep struct {
 // Risk configures the decision-kit gate. Sensitive is a CEL expression that,
 // when true, forces human approval regardless of the computed score.
 type Risk struct {
-	Threshold float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`
-	Sensitive string  `yaml:"sensitive,omitempty" json:"sensitive,omitempty"` // CEL bool
+	Threshold float64     `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	Sensitive string      `yaml:"sensitive,omitempty" json:"sensitive,omitempty"` // CEL bool
+	History   RiskHistory `yaml:"history,omitempty" json:"history,omitempty"`
+}
+
+// RiskHistory optionally adds recent rollback history to the risk gate. Lookback
+// is a number of recent target history records, not a wall-clock window, so the
+// signal remains store-local and observability-free.
+type RiskHistory struct {
+	Lookback    int     `yaml:"lookback,omitempty" json:"lookback,omitempty"`
+	Weight      float64 `yaml:"weight,omitempty" json:"weight,omitempty"`
+	MaxFailures int     `yaml:"maxFailures,omitempty" json:"maxFailures,omitempty"`
 }
 
 // Rollback configures auto-rollback. Trigger is an optional CEL expression;
 // the built-in observability-free signals are HealthCheck and SmokeTest.
 type Rollback struct {
-	Auto        bool         `yaml:"auto,omitempty" json:"auto,omitempty"`
-	HealthCheck *HealthCheck `yaml:"healthCheck,omitempty" json:"healthCheck,omitempty"`
-	SmokeTest   *SmokeTest   `yaml:"smokeTest,omitempty" json:"smokeTest,omitempty"`
-	Trigger     string       `yaml:"trigger,omitempty" json:"trigger,omitempty"` // CEL bool
+	Auto        bool              `yaml:"auto,omitempty" json:"auto,omitempty"`
+	HealthCheck *HealthCheck      `yaml:"healthCheck,omitempty" json:"healthCheck,omitempty"`
+	SmokeTest   *SmokeTest        `yaml:"smokeTest,omitempty" json:"smokeTest,omitempty"`
+	Database    *DatabaseRollback `yaml:"database,omitempty" json:"database,omitempty"`
+	Trigger     string            `yaml:"trigger,omitempty" json:"trigger,omitempty"` // CEL bool
+}
+
+// DatabaseRollback is an optional command hook run after manifest auto-rollback.
+// It lets operators delegate reversible schema/data steps to their migration
+// tool of choice without making Rollops database-vendor aware.
+type DatabaseRollback struct {
+	Command []string `yaml:"command" json:"command"`
+	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // HealthCheck is an observability-free liveness probe (exactly one of HTTP/TCP/Command).

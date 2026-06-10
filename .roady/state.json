@@ -1,9 +1,9 @@
 {
-  "project_id": "rolloffs",
-  "version": 81,
+  "project_id": "rollops",
+  "version": 360,
   "task_states": {
     "t-artifact": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -14,7 +14,7 @@
       "elapsed_minutes": 1
     },
     "t-audit": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -25,18 +25,18 @@
       "elapsed_minutes": 1
     },
     "t-cli": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
-        "internal/cli + cmd/rolloffs wiring, 4 tests"
+        "internal/cli + cmd/rollops wiring, 4 tests"
       ],
       "started_at": "2026-06-08T21:18:25.27735+02:00",
       "completed_at": "2026-06-08T21:20:09.111702+02:00",
       "elapsed_minutes": 1
     },
     "t-config-cel": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -47,7 +47,7 @@
       "elapsed_minutes": 2
     },
     "t-config-perrepo": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -58,18 +58,18 @@
       "elapsed_minutes": 0
     },
     "t-config-schema": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
-        "1d55d34 — internal/config types + schema/rolloffs.v1.schema.json embedded, 6 tests pass"
+        "1d55d34 — internal/config types + schema/rollops.v1.schema.json embedded, 6 tests pass"
       ],
       "started_at": "2026-06-08T20:06:14.388575+02:00",
       "completed_at": "2026-06-08T20:09:30.34823+02:00",
       "elapsed_minutes": 3
     },
     "t-config-validate": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -80,7 +80,7 @@
       "elapsed_minutes": 1
     },
     "t-conformance": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -91,18 +91,18 @@
       "elapsed_minutes": 1
     },
     "t-daemon-api": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
-        "internal/api auth+RBAC + cmd/rolloffsd, 4 tests; gRPC transport documented as follow-up"
+        "internal/api auth+RBAC + cmd/rollopsd, 4 tests; gRPC transport documented as follow-up"
       ],
       "started_at": "2026-06-08T21:20:11.058337+02:00",
       "completed_at": "2026-06-08T21:23:00.236482+02:00",
       "elapsed_minutes": 2
     },
     "t-dep-dag": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -113,7 +113,7 @@
       "elapsed_minutes": 0
     },
     "t-engine-api": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -124,7 +124,7 @@
       "elapsed_minutes": 2
     },
     "t-engine-locks": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -135,7 +135,7 @@
       "elapsed_minutes": 1
     },
     "t-engine-plandiff": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -146,7 +146,7 @@
       "elapsed_minutes": 0
     },
     "t-env-promo": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -157,7 +157,7 @@
       "elapsed_minutes": 0
     },
     "t-git": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -168,7 +168,7 @@
       "elapsed_minutes": 1
     },
     "t-guardrails": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -179,7 +179,7 @@
       "elapsed_minutes": 1
     },
     "t-lifecycle": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -190,7 +190,7 @@
       "elapsed_minutes": 4
     },
     "t-lifecycle-validate": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -201,7 +201,7 @@
       "elapsed_minutes": 0
     },
     "t-mcp": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -212,7 +212,7 @@
       "elapsed_minutes": 4
     },
     "t-plugin-grpc": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -223,7 +223,7 @@
       "elapsed_minutes": 1
     },
     "t-progressive": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -234,7 +234,7 @@
       "elapsed_minutes": 1
     },
     "t-reconcile": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -245,7 +245,7 @@
       "elapsed_minutes": 1
     },
     "t-risk-approval": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -256,7 +256,7 @@
       "elapsed_minutes": 0
     },
     "t-risk-gate": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -267,7 +267,7 @@
       "elapsed_minutes": 3
     },
     "t-rollback": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -278,7 +278,7 @@
       "elapsed_minutes": 2
     },
     "t-schedule": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -289,7 +289,7 @@
       "elapsed_minutes": 1
     },
     "t-secrets": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -300,7 +300,7 @@
       "elapsed_minutes": 1
     },
     "t-security-rbac": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -311,7 +311,7 @@
       "elapsed_minutes": 1
     },
     "t-selfobs": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -322,7 +322,7 @@
       "elapsed_minutes": 1
     },
     "t-step-exec": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -333,7 +333,7 @@
       "elapsed_minutes": 3
     },
     "t-store-iface": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -344,7 +344,7 @@
       "elapsed_minutes": 0
     },
     "t-store-sqlite": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -355,7 +355,7 @@
       "elapsed_minutes": 3
     },
     "t-target-contract": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -366,7 +366,7 @@
       "elapsed_minutes": 0
     },
     "t-target-ftp": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -377,7 +377,7 @@
       "elapsed_minutes": 1
     },
     "t-target-k8s": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -388,7 +388,7 @@
       "elapsed_minutes": 2
     },
     "t-target-ssh": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -399,7 +399,7 @@
       "elapsed_minutes": 2
     },
     "t-ui": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "ai-agent",
       "evidence": [
@@ -408,7 +408,887 @@
       "started_at": "2026-06-08T21:29:10.939132+02:00",
       "completed_at": "2026-06-08T21:32:23.526317+02:00",
       "elapsed_minutes": 3
+    },
+    "task-agent-driven-apply-requires-the-plan": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.979297+02:00",
+      "completed_at": "2026-06-09T21:13:34.985869+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-artifact-signature-provenance-verification-cosign-slsa": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.932062+02:00",
+      "completed_at": "2026-06-09T21:13:35.939283+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-authenticated-and-rbac-scoped-like-every": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.88421+02:00",
+      "completed_at": "2026-06-09T21:13:35.891424+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-auto-rollback-on-health-failure-smoke": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.305872+02:00",
+      "completed_at": "2026-06-09T21:13:35.313132+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-bolt-backed-structured-audit-log-for": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.622862+02:00",
+      "completed_at": "2026-06-09T21:13:35.629929+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-cel-configurable-threshold-and-gate-conditions": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.020781+02:00",
+      "completed_at": "2026-06-09T21:13:35.026972+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-command-tree-plan-apply-verify-promote": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.695176+02:00",
+      "completed_at": "2026-06-09T21:13:35.703244+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-compute-the-five-signal-weighted-score": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.000298+02:00",
+      "completed_at": "2026-06-09T21:13:35.00647+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-configurable-traffic-shifting-steps-per-strategy": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.126544+02:00",
+      "completed_at": "2026-06-09T21:13:35.133202+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-configurable-verification-depth-shallow-marker-vs": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.259227+02:00",
+      "completed_at": "2026-06-09T21:13:35.266507+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-conformance-suite-proving-idempotency-fingerprint-stability": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.782231+02:00",
+      "completed_at": "2026-06-09T21:13:34.788629+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-crash-safe-persist-statekit-state-per": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.859834+02:00",
+      "completed_at": "2026-06-09T21:13:34.866223+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-define-config-schema-v1-with-a": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.685494+02:00",
+      "completed_at": "2026-06-09T21:13:34.691858+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-drift-detection-via-fingerprint-diff-alert": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.235888+02:00",
+      "completed_at": "2026-06-09T21:13:35.243719+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-due-schedule-firing-on-reconcile-tick": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.439383+02:00",
+      "completed_at": "2026-06-09T21:13:35.447047+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-embed-cel-evaluation-for-risk-promotion": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.724935+02:00",
+      "completed_at": "2026-06-09T21:13:34.731008+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-embedded-in-daemon-and-standalone-modes": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.860429+02:00",
+      "completed_at": "2026-06-09T21:13:35.867718+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-engine-api-surface-covering-all-seven": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.879284+02:00",
+      "completed_at": "2026-06-09T21:13:34.885736+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-execute-steps-through-axi-go-with": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.082365+02:00",
+      "completed_at": "2026-06-09T21:13:35.088768+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-finalize-the-target-interface-and-supporting": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.762768+02:00",
+      "completed_at": "2026-06-09T21:13:34.768731+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-ftp-target-with-stamped-manifest-drift": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.190863+02:00",
+      "completed_at": "2026-06-09T21:13:35.19795+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-github-webhook-hmac-verified-for-immediate": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.350524+02:00",
+      "completed_at": "2026-06-09T21:13:35.356887+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-go-validation-rejects-malformed-config-loudly": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.704999+02:00",
+      "completed_at": "2026-06-09T21:13:34.711838+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-grpc-gateway-rest-front-for-the": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.789175+02:00",
+      "completed_at": "2026-06-09T21:13:35.796406+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-grpc-plugin-protocol-go-plugin-style": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.801903+02:00",
+      "completed_at": "2026-06-09T21:13:34.808322+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-grpc-service-mirroring-engine-operations": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.766066+02:00",
+      "completed_at": "2026-06-09T21:13:35.77311+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-hashicorp-vault-cloud-secret-manager-integration": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.576305+02:00",
+      "completed_at": "2026-06-09T21:13:35.583496+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-health-endpoints-liveness-readiness": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:36.02931+02:00",
+      "completed_at": "2026-06-09T21:13:36.037119+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-immutable-identity-attribution-for-every-action": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.670952+02:00",
+      "completed_at": "2026-06-09T21:13:35.67865+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-implement-rolling-canary-and-blue-green": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.104858+02:00",
+      "completed_at": "2026-06-09T21:13:35.111582+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-in-process-mode-no-daemon-and": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.719295+02:00",
+      "completed_at": "2026-06-09T21:13:35.726683+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-independent-per-environment-config-support": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.530809+02:00",
+      "completed_at": "2026-06-09T21:13:35.537526+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-kubernetes-target-with-native-observe-against": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.147502+02:00",
+      "completed_at": "2026-06-09T21:13:35.153642+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-live-rollout-state-and-history-views": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.979678+02:00",
+      "completed_at": "2026-06-09T21:13:35.98719+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-manual-and-agent-driven-rollback-paths": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.282923+02:00",
+      "completed_at": "2026-06-09T21:13:35.289962+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-mcp-tools-mapping-1-1-to": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.83685+02:00",
+      "completed_at": "2026-06-09T21:13:35.844726+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-model-dependencies-as-a-dag-with": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.462277+02:00",
+      "completed_at": "2026-06-09T21:13:35.469204+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-model-the-statechart-in-statekit-with": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.938712+02:00",
+      "completed_at": "2026-06-09T21:13:34.944889+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-mtls-or-signed-token-authentication-on": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.813149+02:00",
+      "completed_at": "2026-06-09T21:13:35.820851+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-non-bypassable-policy-floor-emergency-freeze": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.956397+02:00",
+      "completed_at": "2026-06-09T21:13:35.963869+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-one-shot-inherits-invoking-user-s": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.742468+02:00",
+      "completed_at": "2026-06-09T21:13:35.750362+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-p2-analysis-result-surfaced": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Stable optional metric analysis implemented and verified by make release-check on 2026-06-09."
+      ],
+      "started_at": "2026-06-09T21:32:29.385153+02:00",
+      "completed_at": "2026-06-09T21:36:37.050786+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-analysis-stable-config-contract": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Stable optional metric analysis implemented and verified by make release-check on 2026-06-09."
+      ],
+      "started_at": "2026-06-09T21:32:29.375514+02:00",
+      "completed_at": "2026-06-09T21:36:37.031939+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-db-rollback-cli-ui": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Surfaced database rollback success/failure through rollout history notes, UI timeline, and CLI status when history is available."
+      ],
+      "started_at": "2026-06-10T20:43:26.69589+02:00",
+      "completed_at": "2026-06-10T20:47:43.850008+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-db-rollback-contract": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added rollback.database command hook contract, schema/config validation, docs, and engine runner injection."
+      ],
+      "started_at": "2026-06-10T20:43:26.683234+02:00",
+      "completed_at": "2026-06-10T20:47:43.832291+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-feature-flag-hooks": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added provider-agnostic feature flag hook contract with validation and docs."
+      ],
+      "started_at": "2026-06-10T21:00:22.431925+02:00",
+      "completed_at": "2026-06-10T21:02:11.200964+02:00",
+      "elapsed_minutes": 1
+    },
+    "task-p2-fleet-dashboard-contract": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added FleetDashboard/FleetApp JSON contract for managed multi-workspace dashboards without moving tenancy into core."
+      ],
+      "started_at": "2026-06-10T21:00:22.42314+02:00",
+      "completed_at": "2026-06-10T21:02:11.183879+02:00",
+      "elapsed_minutes": 1
+    },
+    "task-p2-governance-hooks": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added provider-agnostic governance hook contract with validation, denial reasons, evidence map, and docs."
+      ],
+      "started_at": "2026-06-10T21:02:18.241831+02:00",
+      "completed_at": "2026-06-10T21:03:24.128017+02:00",
+      "elapsed_minutes": 1
+    },
+    "task-p2-identity-to-rbac": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added external group claims on rollout.Identity and group:\u003cname\u003e RBAC bindings, wired OIDC groups to admin/agent roles."
+      ],
+      "started_at": "2026-06-10T20:52:44.385151+02:00",
+      "completed_at": "2026-06-10T20:57:41.564003+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-image-git-writeback": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added Rollops YAML image patching and git.Source CommitFile writeback helper with no-op and path-escape handling."
+      ],
+      "started_at": "2026-06-10T20:57:49.316199+02:00",
+      "completed_at": "2026-06-10T21:00:13.388814+02:00",
+      "elapsed_minutes": 2
+    },
+    "task-p2-image-policy": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added imageupdate.Policy for allowed registries, mutable tag rejection, and tag regex validation."
+      ],
+      "started_at": "2026-06-10T20:57:49.307395+02:00",
+      "completed_at": "2026-06-10T21:00:13.371089+02:00",
+      "elapsed_minutes": 2
+    },
+    "task-p2-leader-election": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added Store-backed reconcile leader lease, SQLite lease implementation, daemon wiring, and tests for non-leader skip and expiry takeover."
+      ],
+      "started_at": "2026-06-10T20:47:48.877969+02:00",
+      "completed_at": "2026-06-10T20:52:39.879255+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-oidc-login": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added optional OIDC-style bearer JWT authentication for API and UI auth middleware, with daemon env wiring and tests."
+      ],
+      "started_at": "2026-06-10T20:52:44.3768+02:00",
+      "completed_at": "2026-06-10T20:57:41.545822+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-prometheus-provider-supported": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Stable optional metric analysis implemented and verified by make release-check on 2026-06-09."
+      ],
+      "started_at": "2026-06-09T21:32:29.393232+02:00",
+      "completed_at": "2026-06-09T21:36:37.066453+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-risk-history-config": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added risk.history config/schema/docs/example validation with lookback, weight, and maxFailures bounds."
+      ],
+      "started_at": "2026-06-09T21:36:46.691384+02:00",
+      "completed_at": "2026-06-10T20:42:49.33321+02:00",
+      "elapsed_minutes": 1386
+    },
+    "task-p2-risk-history-signal": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added opt-in recent rollback history as a sixth observability-free risk signal, with score weighting, CEL variables, and engine Store lookback."
+      ],
+      "started_at": "2026-06-09T21:36:46.683164+02:00",
+      "completed_at": "2026-06-10T20:43:22.915035+02:00",
+      "elapsed_minutes": 1386
+    },
+    "task-p2-shared-locking": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added Store-backed target leases layered under existing in-process locks, with SQLite lease semantics and daemon instance ownership."
+      ],
+      "started_at": "2026-06-10T20:47:48.886762+02:00",
+      "completed_at": "2026-06-10T20:52:39.896549+02:00",
+      "elapsed_minutes": 4
+    },
+    "task-p2-studio-boundary": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Added enforced OSS/studio boundary package and docs; non-OSS workspaces require studio layer."
+      ],
+      "started_at": "2026-06-10T21:00:22.41436+02:00",
+      "completed_at": "2026-06-10T21:02:11.166451+02:00",
+      "elapsed_minutes": 1
+    },
+    "task-pending-approval-actions-and-drift-status": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:36.004455+02:00",
+      "completed_at": "2026-06-09T21:13:36.01193+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-per-repo-auth-github-app-deploy": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.39428+02:00",
+      "completed_at": "2026-06-09T21:13:35.401327+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-per-repo-config-at-a-configurable": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.743574+02:00",
+      "completed_at": "2026-06-09T21:13:34.749712+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-per-target-advisory-locks-per-repo": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.919096+02:00",
+      "completed_at": "2026-06-09T21:13:34.925258+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-periodic-poll-as-safety-net-and": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.372041+02:00",
+      "completed_at": "2026-06-09T21:13:35.378775+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-plan-diff-computed-and-surfaced-before": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.899567+02:00",
+      "completed_at": "2026-06-09T21:13:34.905861+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-prometheus-metrics-for-reconcile-latency-drift": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:36.054485+02:00",
+      "completed_at": "2026-06-09T21:13:36.06218+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-rbac-role-permission-taxonomy-bound-to": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.90796+02:00",
+      "completed_at": "2026-06-09T21:13:35.915513+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-reconcile-loop-on-poll-tick-and": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.213136+02:00",
+      "completed_at": "2026-06-09T21:13:35.219585+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-roll-back-by-re-applying-the": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.328347+02:00",
+      "completed_at": "2026-06-09T21:13:35.335015+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-scheduledrollout-queue-in-the-store": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.417608+02:00",
+      "completed_at": "2026-06-09T21:13:35.42411+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-secret-redaction-at-the-logging-boundary": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.647534+02:00",
+      "completed_at": "2026-06-09T21:13:35.655164+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-secretprovider-interface": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.553913+02:00",
+      "completed_at": "2026-06-09T21:13:35.560923+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-serialize-dependent-chains-parallelize-independents": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.484588+02:00",
+      "completed_at": "2026-06-09T21:13:35.491324+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-single-approval-gate-approve-reject-block": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.041621+02:00",
+      "completed_at": "2026-06-09T21:13:35.048212+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-sqlite-backend-implementing-the-full-interface": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.841267+02:00",
+      "completed_at": "2026-06-09T21:13:34.847324+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-ssh-vm-target-with-stamped-manifest": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.169039+02:00",
+      "completed_at": "2026-06-09T21:13:35.175916+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-staged-promotion-path-with-configurable-gates": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.507472+02:00",
+      "completed_at": "2026-06-09T21:13:35.51499+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-store-interface-done-in-scaffold": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.821356+02:00",
+      "completed_at": "2026-06-09T21:13:34.827538+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-validating-runs-schema-cel-validation-dependency": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:34.958419+02:00",
+      "completed_at": "2026-06-09T21:13:34.96531+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-workload-identity-auth-where-available-vault": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.599736+02:00",
+      "completed_at": "2026-06-09T21:13:35.606555+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-wrap-target-apply-observe-health-in": {
+      "status": "verified",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "evidence": [
+        "Covered by verified curated implementation task and make release-check on 2026-06-09; see memory/status.md and memory/session-2026-06-09-productization.md."
+      ],
+      "started_at": "2026-06-09T21:13:35.061529+02:00",
+      "completed_at": "2026-06-09T21:13:35.067983+02:00",
+      "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-08T21:32:23.526318+02:00"
+  "updated_at": "2026-06-10T21:03:24.139529+02:00"
 }

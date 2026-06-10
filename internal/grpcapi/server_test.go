@@ -3,6 +3,7 @@ package grpcapi
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,18 +14,18 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"go.klarlabs.de/rolloffs/internal/api"
-	"go.klarlabs.de/rolloffs/internal/config"
-	"go.klarlabs.de/rolloffs/internal/engine"
-	"go.klarlabs.de/rolloffs/internal/grpcapi/rolloffsv1"
-	"go.klarlabs.de/rolloffs/internal/security"
-	"go.klarlabs.de/rolloffs/internal/store/sqlite"
-	itarget "go.klarlabs.de/rolloffs/internal/target"
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	"go.klarlabs.de/rollops/internal/api"
+	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/grpcapi/rollopsv1"
+	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 const cfgYAML = `
-apiVersion: rolloffs.klarlabs.de/v1
+apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
   name: demo
@@ -49,7 +50,12 @@ func (fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
 	return pt.HealthStatus{State: pt.HealthHealthy}, nil
 }
 
-func dialBuf(t *testing.T) rolloffsv1.RolloutServiceClient {
+func dialBuf(t *testing.T) rollopsv1.RolloutServiceClient {
+	t.Helper()
+	return dialBufWithID(t, func() string { return "ro-grpc" })
+}
+
+func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceClient {
 	t.Helper()
 	db, err := sqlite.Open(t.TempDir() + "/g.db")
 	if err != nil {
@@ -58,11 +64,15 @@ func dialBuf(t *testing.T) rolloffsv1.RolloutServiceClient {
 	t.Cleanup(func() { db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil })
-	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return time.Unix(0, 0) }), engine.WithIDGen(func() string { return "ro-grpc" }))
+	tick := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time {
+		tick++
+		return time.Unix(int64(tick), 0)
+	}), engine.WithIDGen(idgen))
 
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "op", Grants: []security.Grant{
-		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus},
+		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus}, {Perm: security.PermRollback},
 	}})
 	pol.DefineRole(security.Role{Name: "viewer", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("human:felix", "op")
@@ -81,7 +91,7 @@ func dialBuf(t *testing.T) rolloffsv1.RolloutServiceClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	return rolloffsv1.NewRolloutServiceClient(conn)
+	return rollopsv1.NewRolloutServiceClient(conn)
 }
 
 func withToken(token string) context.Context {
@@ -90,7 +100,7 @@ func withToken(token string) context.Context {
 
 func TestGRPC_Unauthenticated(t *testing.T) {
 	c := dialBuf(t)
-	_, err := c.Plan(context.Background(), &rolloffsv1.PlanRequest{Config: cfgYAML})
+	_, err := c.Plan(context.Background(), &rollopsv1.PlanRequest{Config: cfgYAML})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("anonymous plan code = %v, want Unauthenticated", status.Code(err))
 	}
@@ -100,21 +110,21 @@ func TestGRPC_PlanApplyStatus(t *testing.T) {
 	c := dialBuf(t)
 	ctx := withToken("t-felix")
 
-	p, err := c.Plan(ctx, &rolloffsv1.PlanRequest{Config: cfgYAML})
+	p, err := c.Plan(ctx, &rollopsv1.PlanRequest{Config: cfgYAML})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
 	if p.GetSummary() == "" {
 		t.Error("empty plan summary")
 	}
-	a, err := c.Apply(ctx, &rolloffsv1.ApplyRequest{Config: cfgYAML})
+	a, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfgYAML})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 	if a.GetId() != "ro-grpc" || a.GetPhase() != "verifying" {
 		t.Errorf("apply = %+v", a)
 	}
-	s, err := c.Status(ctx, &rolloffsv1.StatusRequest{Id: "ro-grpc"})
+	s, err := c.Status(ctx, &rollopsv1.StatusRequest{Id: "ro-grpc"})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -123,10 +133,42 @@ func TestGRPC_PlanApplyStatus(t *testing.T) {
 	}
 }
 
+func TestGRPC_RollbackLast(t *testing.T) {
+	n := 0
+	c := dialBufWithID(t, func() string {
+		n++
+		return "ro-grpc-" + string(rune('0'+n))
+	})
+	ctx := withToken("t-felix")
+
+	if _, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfgYAML}); err != nil {
+		t.Fatalf("Apply first: %v", err)
+	}
+	cfg2 := strings.Replace(cfgYAML, "x: 1", "x: 2", 1)
+	if _, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfg2}); err != nil {
+		t.Fatalf("Apply second: %v", err)
+	}
+	rb, err := c.Rollback(ctx, &rollopsv1.RollbackRequest{Target: "demo/prod/app"})
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if rb.GetPhase() != "rolled-back" || rb.GetTarget() != "demo/prod/app" {
+		t.Errorf("rollback = %+v", rb)
+	}
+}
+
 func TestGRPC_RBACDeniesViewerApply(t *testing.T) {
 	c := dialBuf(t)
-	_, err := c.Apply(withToken("t-bot"), &rolloffsv1.ApplyRequest{Config: cfgYAML})
+	_, err := c.Apply(withToken("t-bot"), &rollopsv1.ApplyRequest{Config: cfgYAML})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("viewer apply code = %v, want PermissionDenied", status.Code(err))
+	}
+}
+
+func TestGRPC_RBACDeniesViewerRollback(t *testing.T) {
+	c := dialBuf(t)
+	_, err := c.Rollback(withToken("t-bot"), &rollopsv1.RollbackRequest{Target: "demo/prod/app"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("viewer rollback code = %v, want PermissionDenied", status.Code(err))
 	}
 }

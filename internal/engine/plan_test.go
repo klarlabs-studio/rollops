@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	pt "go.klarlabs.de/rolloffs/pkg/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func TestPlan_ActionCreate(t *testing.T) {
