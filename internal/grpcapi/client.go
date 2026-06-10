@@ -73,7 +73,10 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	return rollout.Rollout{ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Strategy: rollout.Strategy(r.GetStrategy())}, nil
+	return rollout.Rollout{
+		ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Strategy: rollout.Strategy(r.GetStrategy()),
+		StepIndex: int(r.GetStepIndex()), StepTotal: int(r.GetStepTotal()), StepWeight: int(r.GetStepWeight()),
+	}, nil
 }
 
 // Promote is not yet exposed over gRPC; use the daemon UI or a local engine.

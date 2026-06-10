@@ -275,11 +275,17 @@ func (x *StatusRequest) GetId() string {
 }
 
 type StatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
-	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
-	Strategy      string                 `protobuf:"bytes,4,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Phase    string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Target   string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Strategy string                 `protobuf:"bytes,4,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	// Progressive step progress: the last step that passed its health gate
+	// (1-based), the plan's total, and the current traffic weight. All zero
+	// when the strategy has not started stepping.
+	StepIndex     int32 `protobuf:"varint,5,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
+	StepTotal     int32 `protobuf:"varint,6,opt,name=step_total,json=stepTotal,proto3" json:"step_total,omitempty"`
+	StepWeight    int32 `protobuf:"varint,7,opt,name=step_weight,json=stepWeight,proto3" json:"step_weight,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -340,6 +346,27 @@ func (x *StatusResponse) GetStrategy() string {
 		return x.Strategy
 	}
 	return ""
+}
+
+func (x *StatusResponse) GetStepIndex() int32 {
+	if x != nil {
+		return x.StepIndex
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetStepTotal() int32 {
+	if x != nil {
+		return x.StepTotal
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetStepWeight() int32 {
+	if x != nil {
+		return x.StepWeight
+	}
+	return 0
 }
 
 type RollbackRequest struct {
@@ -465,12 +492,18 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\"\x1f\n" +
 	"\rStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"j\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xc9\x01\n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\x12\x1a\n" +
-	"\bstrategy\x18\x04 \x01(\tR\bstrategy\")\n" +
+	"\bstrategy\x18\x04 \x01(\tR\bstrategy\x12\x1d\n" +
+	"\n" +
+	"step_index\x18\x05 \x01(\x05R\tstepIndex\x12\x1d\n" +
+	"\n" +
+	"step_total\x18\x06 \x01(\x05R\tstepTotal\x12\x1f\n" +
+	"\vstep_weight\x18\a \x01(\x05R\n" +
+	"stepWeight\")\n" +
 	"\x0fRollbackRequest\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\"P\n" +
 	"\x10RollbackResponse\x12\x0e\n" +

@@ -122,6 +122,9 @@ func (a *App) status(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintf(a.Out, "%s\t%s\t%s\t%s\n", r.ID, r.Phase, r.TargetRef, r.Strategy)
+	if r.StepTotal > 0 {
+		fmt.Fprintf(a.Out, "steps\t%d/%d (%d%%)\n", r.StepIndex, r.StepTotal, r.StepWeight)
+	}
 	if h, ok := a.Ops.(historyOperations); ok {
 		if hist, herr := h.History(ctx, r.TargetRef); herr == nil {
 			for _, rec := range hist {

@@ -45,6 +45,9 @@ func TestClient_RoundTripThroughGRPC(t *testing.T) {
 	if string(s.Phase) != "verifying" {
 		t.Errorf("status over gRPC = %+v", s)
 	}
+	if s.StepIndex != 4 || s.StepTotal != 4 || s.StepWeight != 100 {
+		t.Errorf("step progress over gRPC = %d/%d (%d%%), want 4/4 (100%%)", s.StepIndex, s.StepTotal, s.StepWeight)
+	}
 }
 
 func TestClient_RollbackThroughGRPC(t *testing.T) {

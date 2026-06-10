@@ -135,7 +135,10 @@ func (s *Server) Status(ctx context.Context, req *rollopsv1.StatusRequest) (*rol
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &rollopsv1.StatusResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy)}, nil
+	return &rollopsv1.StatusResponse{
+		Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy),
+		StepIndex: int32(rl.StepIndex), StepTotal: int32(rl.StepTotal), StepWeight: int32(rl.StepWeight),
+	}, nil
 }
 
 // Rollback implements the Rollback RPC.

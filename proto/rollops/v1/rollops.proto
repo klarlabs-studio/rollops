@@ -50,6 +50,12 @@ message StatusResponse {
   string phase = 2;
   string target = 3;
   string strategy = 4;
+  // Progressive step progress: the last step that passed its health gate
+  // (1-based), the plan's total, and the current traffic weight. All zero
+  // when the strategy has not started stepping.
+  int32 step_index = 5;
+  int32 step_total = 6;
+  int32 step_weight = 7;
 }
 
 message RollbackRequest {

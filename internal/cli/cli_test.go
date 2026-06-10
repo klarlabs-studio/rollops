@@ -108,6 +108,9 @@ func TestCLI_ApplyThenStatus(t *testing.T) {
 	if !strings.Contains(buf.String(), "verifying") {
 		t.Errorf("status output = %q", buf.String())
 	}
+	if !strings.Contains(buf.String(), "steps\t4/4 (100%)") {
+		t.Errorf("status should show step progress, got %q", buf.String())
+	}
 }
 
 func TestCLI_StatusShowsLatestHistoryNote(t *testing.T) {

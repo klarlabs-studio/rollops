@@ -131,6 +131,9 @@ func TestGRPC_PlanApplyStatus(t *testing.T) {
 	if s.GetPhase() != "verifying" {
 		t.Errorf("status = %+v", s)
 	}
+	if s.GetStepIndex() != 4 || s.GetStepTotal() != 4 || s.GetStepWeight() != 100 {
+		t.Errorf("step progress = %d/%d (%d%%), want 4/4 (100%%)", s.GetStepIndex(), s.GetStepTotal(), s.GetStepWeight())
+	}
 }
 
 func TestGRPC_RollbackLast(t *testing.T) {
