@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Live progressive step progress: the engine persists each health-gated
+  step (index/total/weight, sqlite migration 0002) with a timeline note;
+  the console shows a step bar on the target detail and a mini step
+  indicator in the applications table while a rollout deploys.
+
 ## v0.3.0 - Console: Risk + Agent Attribution
 
 - Console: real decisionkit risk scores in the apps table and detail view,

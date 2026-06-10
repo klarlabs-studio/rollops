@@ -16,8 +16,12 @@ clickable status facets, diff colouring, rollback modal (replaces native
 confirm), "/" + Escape keyboard, tab-title attention count, hidden-tab
 polling pause, stale banner, aria roles. Verified live with fixture
 backend + Playwright: zero console errors, zero aria violations.
-Deferred (needs engine persistence): progressive step/canary-weight
-visualization à la Argo Rollouts — P3 candidate.
+Progressive step visualization: DONE post-v0.3.0 (commit c1e8ebf,
+unreleased). Engine persists per-step progress (OnStep hook + sqlite
+migration 0002 step_index/total/weight), timeline note per step, console
+step bar + apps-table mini indicator. Last headline Argo Rollouts gap
+closed. Note: gRPC/CLI status does not yet carry step fields (proto
+change) — minor follow-up if CLI parity wanted.
 
 ## 🏷️ v0.2.0 TAGGED — email notifications
 
