@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Console: real decisionkit risk scores in the apps table and detail view,
+  agent/human/CI actor attribution icons, relative timestamps, clickable
+  status facets, diff colouring, in-app rollback confirmation, keyboard
+  shortcuts ("/" filter, Escape), attention count in the tab title, hidden-tab
+  polling pause, and a stale-data banner.
+
 ## v0.2.0 - Email Notifications
 
 - **Breaking:** replaced the Telegram notifier with email. Mail goes out

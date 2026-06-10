@@ -2,6 +2,19 @@
 
 *Updated: 2026-06-10*
 
+## UI competitive round 3 (2026-06-10, post-v0.2.0, unreleased)
+
+Review vs ArgoCD/Argo Rollouts closed remaining gaps and shipped two
+differentiators no competitor has: real decisionkit risk scores surfaced
+per app/rollout, and agent/human/CI actor attribution icons everywhere
+(agent-first USP, visualised). Plus table stakes: relative timestamps,
+clickable status facets, diff colouring, rollback modal (replaces native
+confirm), "/" + Escape keyboard, tab-title attention count, hidden-tab
+polling pause, stale banner, aria roles. Verified live with fixture
+backend + Playwright: zero console errors, zero aria violations.
+Deferred (needs engine persistence): progressive step/canary-weight
+visualization à la Argo Rollouts — P3 candidate.
+
 ## 🏷️ v0.2.0 TAGGED — email notifications
 
 Operator decision: email instead of Telegram. v0.2.0 ships notify channels
