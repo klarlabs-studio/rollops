@@ -249,14 +249,14 @@ func TestCLI_DoctorNotify(t *testing.T) {
 	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
 	fn := &fakeNotifier{}
 	app.Doctor.Notifier = fn
-	app.Doctor.NotifyChannels = []string{"telegram"}
+	app.Doctor.NotifyChannels = []string{"email"}
 	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
 		t.Fatalf("doctor: %v", err)
 	}
 	if fn.got == nil || fn.got.Kind != notify.Test {
 		t.Fatalf("test event not sent, got %+v", fn.got)
 	}
-	if !strings.Contains(buf.String(), "notify: ok (telegram)") {
+	if !strings.Contains(buf.String(), "notify: ok (email)") {
 		t.Errorf("doctor output = %q", buf.String())
 	}
 }
@@ -264,8 +264,8 @@ func TestCLI_DoctorNotify(t *testing.T) {
 func TestCLI_DoctorNotifyFails(t *testing.T) {
 	app, buf, cfg := newApp(t)
 	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
-	app.Doctor.Notifier = &fakeNotifier{err: errors.New("telegram status 403")}
-	app.Doctor.NotifyChannels = []string{"telegram"}
+	app.Doctor.Notifier = &fakeNotifier{err: errors.New("smtp connection refused")}
+	app.Doctor.NotifyChannels = []string{"email"}
 	if err := app.Run(context.Background(), []string{"doctor", cfg}); err == nil {
 		t.Fatal("doctor must fail when a notify channel fails")
 	}

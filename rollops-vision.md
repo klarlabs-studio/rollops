@@ -107,7 +107,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 
 - Historical failure-rate signal feeding the risk score (once enough run data exists).
 - Database rollback support (schema/data) following best practices.
-- Notification integrations for approvals and failures (e.g. Telegram).
+- Notification integrations for approvals and failures (email via briefkasten or SMTP, webhook).
 - Richer UI dashboards for rollout history and state.
 
 ### Future Considerations (P2)

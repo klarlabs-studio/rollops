@@ -19,25 +19,50 @@ a bad token, chat id, or webhook URL.
 Each event carries the target ref, the rollout id, and an optional detail
 string (for example the failure reason).
 
-## Telegram
+## Briefkasten (preferred for mail)
 
-Set both variables in the daemon environment:
+[Briefkasten](https://github.com/klarlabs-studio/briefkasten) is a mailbox
+as an MCP server with a durable outbox: `email.send` queues the message,
+retries failed sends, and exposes delivery status. That makes it a better
+mail channel than direct SMTP here — the engine drops notifier errors by
+design, so with briefkasten a transient SMTP failure delays the mail
+instead of losing it.
 
 ```sh
-ROLLOPS_TELEGRAM_TOKEN=<bot token from @BotFather>
-ROLLOPS_TELEGRAM_CHAT=<chat id>
+ROLLOPS_BRIEFKASTEN_URL=http://127.0.0.1:8090
+ROLLOPS_BRIEFKASTEN_TO=ops@example.com,oncall@example.com
+ROLLOPS_BRIEFKASTEN_TOKEN=<optional bearer token>
 ```
 
-The daemon sends a one-line message per event via the Telegram Bot API
-(`sendMessage`), for example:
+Rollops calls the `email.send` MCP tool per event; briefkasten's outbox
+handles SMTP delivery and retries (`email.send_status` / `email.retry` on
+the briefkasten side).
+
+## Email (direct SMTP)
+
+No extra service required. Set the server, sender, and recipients in the
+daemon environment:
+
+```sh
+ROLLOPS_SMTP_ADDR=smtp.example.com:587
+ROLLOPS_SMTP_FROM=rollops@example.com
+ROLLOPS_SMTP_TO=ops@example.com,oncall@example.com
+ROLLOPS_SMTP_USER=<optional auth user>
+ROLLOPS_SMTP_PASS=<optional auth password>
+```
+
+The daemon sends one plain-text mail per event. The subject is an
+ASCII-safe summary, the body the full message line:
 
 ```
-⏳ Rollops: prod/web needs approval (ro-01J...)
+Subject: Rollops: prod/web failed
+
 ❌ Rollops: prod/web failed (ro-01J...) — health gate: 2/3 checks failing
 ```
 
-To find the chat id, add the bot to the chat and call
-`https://api.telegram.org/bot<token>/getUpdates`.
+`ROLLOPS_SMTP_TO` takes a comma-separated recipient list. When
+`ROLLOPS_SMTP_USER` is set, PLAIN auth is used; delivery upgrades to
+STARTTLS when the server supports it.
 
 ## Generic webhook
 
@@ -65,14 +90,14 @@ rollops doctor
 ```
 
 Doctor sends a `test` event to every configured channel and reports
-`notify: ok (telegram, webhook)` or the delivery error. Expect one test
-message in the chat / one POST to the webhook per run.
+`notify: ok (email, webhook)` or the delivery error. Expect one test mail
+/ one POST to the webhook per run.
 
 ## Multiple channels
 
-Telegram and the webhook can be enabled together; every event fans out to
-all configured channels. With neither configured, notifications are off
-(no-op) and doctor reports `notify: skipped`.
+Briefkasten, direct SMTP, and the webhook can be enabled together; every
+event fans out to all configured channels. With none configured,
+notifications are off (no-op) and doctor reports `notify: skipped`.
 
 Systemd deployments: both variable pairs are listed in
 `deploy/systemd/rollopsd.env.example`.

@@ -2,11 +2,16 @@
 
 ## Unreleased
 
+- **Breaking:** replaced the Telegram notifier with email. Mail goes out
+  either through a [briefkasten](https://github.com/klarlabs-studio/briefkasten)
+  outbox (`ROLLOPS_BRIEFKASTEN_URL/TO/TOKEN` — durable, queued, retried via
+  the `email.send` MCP tool) or direct SMTP (`ROLLOPS_SMTP_ADDR/FROM/TO` with
+  optional `USER/PASS` PLAIN auth and STARTTLS). `ROLLOPS_TELEGRAM_*` is gone.
 - Added `notify: ok|fail|skipped` check to `rollops doctor`: sends a test
-  event to every configured notification channel so a bad Telegram token or
+  event to every configured notification channel so a bad SMTP server or
   webhook URL fails loudly at setup instead of being dropped at runtime.
-- Added `docs/notifications.md` covering Telegram and HMAC-signed webhook
-  setup, event kinds, and best-effort delivery semantics.
+- Added `docs/notifications.md` covering briefkasten, direct SMTP, and
+  HMAC-signed webhook setup, event kinds, and best-effort delivery semantics.
 
 ## v0.1.0 - MVP OSS Core
 

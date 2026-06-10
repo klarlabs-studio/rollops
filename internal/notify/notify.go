@@ -1,6 +1,6 @@
 // Package notify delivers rollout notifications — approvals needed, failures,
-// rollbacks, promotions — to operators over Telegram or a generic webhook. It
-// is a P1 nice-to-have: the engine emits events best-effort, so a flaky
+// rollbacks, promotions — to operators over email (SMTP) or a generic webhook.
+// It is a P1 nice-to-have: the engine emits events best-effort, so a flaky
 // notifier never blocks or fails a rollout.
 package notify
 
@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/smtp"
+	"strings"
 )
 
 // Kind classifies a notification.
@@ -29,21 +31,25 @@ type Event struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
-// Message renders a human-readable line for chat notifiers.
-func (e Event) Message() string {
-	var emoji, verb string
+// verb returns the emoji and human verb for the event kind.
+func (e Event) verb() (emoji, verb string) {
 	switch e.Kind {
 	case ApprovalNeeded:
-		emoji, verb = "⏳", "needs approval"
+		return "⏳", "needs approval"
 	case Failed:
-		emoji, verb = "❌", "failed"
+		return "❌", "failed"
 	case RolledBack:
-		emoji, verb = "↩️", "rolled back"
+		return "↩️", "rolled back"
 	case Promoted:
-		emoji, verb = "✅", "promoted"
+		return "✅", "promoted"
 	default:
-		emoji, verb = "•", string(e.Kind)
+		return "•", string(e.Kind)
 	}
+}
+
+// Message renders a human-readable line for chat notifiers.
+func (e Event) Message() string {
+	emoji, verb := e.verb()
 	msg := fmt.Sprintf("%s Rollops: %s %s", emoji, e.TargetRef, verb)
 	if e.RolloutID != "" {
 		msg += " (" + e.RolloutID + ")"
@@ -52,6 +58,12 @@ func (e Event) Message() string {
 		msg += " — " + e.Detail
 	}
 	return msg
+}
+
+// Subject renders an ASCII-safe one-line summary for email subjects.
+func (e Event) Subject() string {
+	_, verb := e.verb()
+	return fmt.Sprintf("Rollops: %s %s", e.TargetRef, verb)
 }
 
 // Notifier delivers an event.
@@ -85,16 +97,33 @@ type Noop struct{}
 // Notify does nothing.
 func (Noop) Notify(context.Context, Event) error { return nil }
 
-// FromEnv wires notifiers from environment variables (ROLLOPS_TELEGRAM_TOKEN/
-// ROLLOPS_TELEGRAM_CHAT, ROLLOPS_WEBHOOK_URL/ROLLOPS_WEBHOOK_SECRET) and
-// returns the configured channel names for display. Both return values are nil
-// when nothing is configured. getenv is injectable for tests (pass os.Getenv).
+// FromEnv wires notifiers from environment variables (ROLLOPS_SMTP_ADDR/
+// FROM/TO and optional USER/PASS for email; ROLLOPS_WEBHOOK_URL and optional
+// SECRET for the webhook) and returns the configured channel names for
+// display. Both return values are nil when nothing is configured. getenv is
+// injectable for tests (pass os.Getenv).
 func FromEnv(getenv func(string) string) (Notifier, []string) {
 	var ns Multi
 	var names []string
-	if tok := getenv("ROLLOPS_TELEGRAM_TOKEN"); tok != "" {
-		ns = append(ns, Telegram{Token: tok, ChatID: getenv("ROLLOPS_TELEGRAM_CHAT")})
-		names = append(names, "telegram")
+	if url := getenv("ROLLOPS_BRIEFKASTEN_URL"); url != "" {
+		ns = append(ns, Briefkasten{
+			URL:   url,
+			Token: getenv("ROLLOPS_BRIEFKASTEN_TOKEN"),
+			To:    splitRecipients(getenv("ROLLOPS_BRIEFKASTEN_TO")),
+		})
+		names = append(names, "briefkasten")
+	}
+	if addr := getenv("ROLLOPS_SMTP_ADDR"); addr != "" {
+		em := Email{Addr: addr, From: getenv("ROLLOPS_SMTP_FROM"), To: splitRecipients(getenv("ROLLOPS_SMTP_TO"))}
+		if user := getenv("ROLLOPS_SMTP_USER"); user != "" {
+			host := addr
+			if i := strings.LastIndex(addr, ":"); i >= 0 {
+				host = addr[:i]
+			}
+			em.Auth = smtp.PlainAuth("", user, getenv("ROLLOPS_SMTP_PASS"), host)
+		}
+		ns = append(ns, em)
+		names = append(names, "email")
 	}
 	if url := getenv("ROLLOPS_WEBHOOK_URL"); url != "" {
 		ns = append(ns, Webhook{URL: url, Secret: getenv("ROLLOPS_WEBHOOK_SECRET")})
@@ -104,4 +133,15 @@ func FromEnv(getenv func(string) string) (Notifier, []string) {
 		return nil, nil
 	}
 	return ns, names
+}
+
+// splitRecipients parses a comma-separated recipient list, trimming blanks.
+func splitRecipients(s string) []string {
+	var to []string
+	for r := range strings.SplitSeq(s, ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			to = append(to, r)
+		}
+	}
+	return to
 }

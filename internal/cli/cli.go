@@ -51,7 +51,7 @@ type Doctor struct {
 	Token          string
 	Probe          DaemonProbe
 	Notifier       notify.Notifier // when set, doctor sends a test event
-	NotifyChannels []string        // channel names for display (telegram, webhook)
+	NotifyChannels []string        // channel names for display (email, webhook)
 }
 
 // Run dispatches a command. Returns a non-nil error on failure; the caller maps
@@ -205,7 +205,7 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.Out, "notify: ok (%s)\n", strings.Join(a.Doctor.NotifyChannels, ", "))
 		}
 	} else {
-		fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_TELEGRAM_TOKEN or ROLLOPS_WEBHOOK_URL)")
+		fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_BRIEFKASTEN_URL, ROLLOPS_SMTP_ADDR, or ROLLOPS_WEBHOOK_URL)")
 	}
 
 	if len(failed) > 0 {
