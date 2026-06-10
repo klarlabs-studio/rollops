@@ -2,6 +2,16 @@
 
 *Updated: 2026-06-10*
 
+## 🏷️ v0.1.0 TAGGED — first release cut
+
+The rename/productization worktree was committed as `8bb6094`
+(`feat!: rename rolloffs to rollops and ship P2 productization`, 166 files)
+and tagged **v0.1.0** (annotated tag, local repo — no remote configured yet).
+`make release-check` and `make dist-check` green post-commit; archives
+`dist/rollops_v0.1.0_{darwin_arm64,linux_amd64,linux_arm64}.tar.gz` verify
+against `checksums.txt`; `bin/rollops version` reports `v0.1.0 (8bb6094)`.
+Next: add a git remote + push, or start P3/studio scope.
+
 ## Roadmap COMPLETE — near roadmap + P2 verified
 
 Roady is fully closed: **117/117 tasks verified**, no pending/in-progress/done
