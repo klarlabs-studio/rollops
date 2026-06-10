@@ -1,8 +1,9 @@
 # Open threads — Rollops
 
 ## Blocking next work
-- None blocking. P0/Roady and near-roadmap UI/release polish are complete; next
-  work is a first release cut or P2 selection.
+- None blocking. v0.1.0 is cut, published to github.com/klarlabs-studio/rollops
+  with a GitHub release, and importable as go.klarlabs.de/rollops. Next work is
+  P3/studio scope or the notification channel decision.
 
 ## Resolved
 - **Stack module paths** (2026-06-08): all 7 published + pinned in go.mod, full build resolves.

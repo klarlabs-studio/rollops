@@ -6,11 +6,20 @@
 
 The rename/productization worktree was committed as `8bb6094`
 (`feat!: rename rolloffs to rollops and ship P2 productization`, 166 files)
-and tagged **v0.1.0** (annotated tag, local repo — no remote configured yet).
-`make release-check` and `make dist-check` green post-commit; archives
+and tagged **v0.1.0** (annotated tag). `make release-check` and
+`make dist-check` green post-commit; archives
 `dist/rollops_v0.1.0_{darwin_arm64,linux_amd64,linux_arm64}.tar.gz` verify
 against `checksums.txt`; `bin/rollops version` reports `v0.1.0 (8bb6094)`.
-Next: add a git remote + push, or start P3/studio scope.
+
+**Published 2026-06-10**: public repo `github.com/klarlabs-studio/rollops`
+(main + tag pushed), GitHub release v0.1.0 with the three archives +
+checksums, and vanity import `go.klarlabs.de/rollops` (go-vanity commit
+`fe6447b`, deployed to edge cluster via configmap update + rollout restart).
+Verified end-to-end: `GOPROXY=direct go list -m go.klarlabs.de/rollops@v0.1.0`
+resolves. Note: go-vanity deploy emits a pre-existing PodSecurity
+"restricted" warning for the nginx container (allowPrivilegeEscalation /
+capabilities / seccompProfile unset in k8s/manifests.yaml).
+Next: P3/studio scope or notification channel (Telegram, P1).
 
 ## Roadmap COMPLETE — near roadmap + P2 verified
 
