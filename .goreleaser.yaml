@@ -1,0 +1,67 @@
+# GoReleaser builds the cross-platform archives, checksums, GitHub release, and
+# Homebrew formula on a tag push. The UI bundle is committed (go:embed), so no
+# Node step is needed here. Mirrors `make dist` (linux amd64/arm64, darwin
+# arm64; both binaries; docs/examples/systemd bundled).
+version: 2
+
+project_name: rollops
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: rollops
+    main: ./cmd/rollops
+    binary: rollops
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    ldflags: &ldflags
+      - -s -w
+      - -X go.klarlabs.de/rollops/internal/version.Version={{ .Tag }}
+      - -X go.klarlabs.de/rollops/internal/version.Commit={{ .ShortCommit }}
+      - -X go.klarlabs.de/rollops/internal/version.Date={{ .Date }}
+  - id: rollopsd
+    main: ./cmd/rollopsd
+    binary: rollopsd
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    ldflags: *ldflags
+
+archives:
+  - id: default
+    ids: [rollops, rollopsd]
+    name_template: "rollops_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+      - src: docs/*.md
+        dst: docs
+      - deploy/systemd/rollopsd.service
+      - deploy/systemd/rollopsd.env.example
+      - scripts/install-systemd.sh
+      - src: examples/*.yaml
+        dst: examples
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Homebrew is deferred: `go install ./cmd/rollops@latest` covers the CLI, and
+# the formula-vs-cask + unsigned-binary quarantine story needs its own pass.
+
+release:
+  github:
+    owner: klarlabs-studio
+    name: rollops
+  draft: false
+  prerelease: auto

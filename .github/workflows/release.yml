@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags for the changelog/version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # The embedded UI bundle is committed; fail the release if it is stale so
+      # we never ship a binary whose console doesn't match source.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: verify UI bundle is current
+        run: |
+          (cd internal/ui/web && npm ci && npm run build)
+          if ! git diff --quiet -- internal/ui/assets; then
+            echo "internal/ui/assets is stale — run 'make ui-build' and commit"; exit 1
+          fi
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
