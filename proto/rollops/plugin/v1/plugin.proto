@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package rollops.plugin.v1;
+
+option go_package = "go.klarlabs.de/rollops/pkg/plugin/rollopspluginv1;rollopspluginv1";
+
+// TargetPlugin is the wire a third-party target plugin serves. The host
+// (rollops) launches the plugin binary, reads the handshake line from stdout,
+// dials this service on the advertised unix socket, and adapts it into the
+// pkg/target.Target contract. Semantics (idempotent apply, stable fingerprint,
+// concrete health, no secret leakage) are defined in docs/target-plugins.md and
+// enforced by pkg/conformance.
+service TargetPlugin {
+  rpc Apply(ApplyRequest) returns (ApplyResponse);
+  rpc Observe(ObserveRequest) returns (ObserveResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message ApplyRequest {
+  string kind = 1;
+  bytes spec = 2;
+  string checksum = 3;
+}
+
+message ApplyResponse {
+  bool changed = 1;
+  string detail = 2;
+}
+
+message ObserveRequest {}
+
+message ObserveResponse {
+  string value = 1;
+  map<string, string> meta = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  // 1 = healthy, 2 = degraded, 3 = unhealthy (pkg/target.HealthState).
+  int32 state = 1;
+  string reason = 2;
+}

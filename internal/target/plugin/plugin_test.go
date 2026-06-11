@@ -25,14 +25,17 @@ func (f *fakeRPC) Health(context.Context) (int, string, error) {
 }
 
 func TestVerifyHandshake(t *testing.T) {
-	if err := VerifyHandshake(Handshake{ProtocolVersion: ProtocolVersion, Cookie: Cookie}); err != nil {
+	if err := VerifyHandshake(Handshake{ProtocolVersion: ProtocolVersion, Cookie: Cookie, Addr: "/tmp/p.sock"}); err != nil {
 		t.Errorf("valid handshake rejected: %v", err)
 	}
-	if err := VerifyHandshake(Handshake{ProtocolVersion: 999, Cookie: Cookie}); err == nil {
+	if err := VerifyHandshake(Handshake{ProtocolVersion: 999, Cookie: Cookie, Addr: "/tmp/p.sock"}); err == nil {
 		t.Error("version mismatch must be rejected")
 	}
-	if err := VerifyHandshake(Handshake{ProtocolVersion: ProtocolVersion, Cookie: "nope"}); err == nil {
+	if err := VerifyHandshake(Handshake{ProtocolVersion: ProtocolVersion, Cookie: "nope", Addr: "/tmp/p.sock"}); err == nil {
 		t.Error("bad cookie must be rejected")
+	}
+	if err := VerifyHandshake(Handshake{ProtocolVersion: ProtocolVersion, Cookie: Cookie}); err == nil {
+		t.Error("missing addr must be rejected")
 	}
 }
 

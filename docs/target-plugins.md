@@ -74,3 +74,62 @@ func TestTargetConformance(t *testing.T) {
 
 Run it before publishing the plugin and again whenever Rollops bumps the plugin
 protocol version.
+
+## Authoring a Plugin
+
+A plugin is a standalone Go binary: implement `pkg/target.Target` and hand it
+to `pkg/plugin.Serve`:
+
+```go
+package main
+
+import (
+	"go.klarlabs.de/rollops/pkg/plugin"
+	pt "go.klarlabs.de/rollops/pkg/target"
+)
+
+func main() {
+	var t pt.Target = newMyTarget() // your implementation
+	if err := plugin.Serve(t); err != nil {
+		panic(err)
+	}
+}
+```
+
+`Serve` listens on a private unix socket, prints one handshake line on stdout
+(`ROLLOPS_PLUGIN|<version>|<cookie>|<socket>`), and serves gRPC until stdin
+closes — the host's shutdown signal. Log to stderr; stdout belongs to the
+handshake.
+
+## Using a Plugin
+
+Declare the target with the `plugin` kind. The binary's sha256 pin is
+required — Rollops refuses to execute an unpinned or tampered binary:
+
+```yaml
+target:
+  kind: plugin
+  ref: acme/prod/exotic
+  spec:
+    binary: /usr/local/lib/rollops/plugins/exotic
+    sha256: 4f5a…              # shasum -a 256 <binary>
+    # everything else is your plugin's own configuration; it arrives
+    # verbatim in the Apply manifest spec
+    region: eu-central
+```
+
+Per engine operation the host verifies the pin, launches the binary, completes
+the handshake, drives Apply/Observe/Health over gRPC on the unix socket, and
+tears the process down afterwards. A version or cookie mismatch, a missing
+handshake, or a hash mismatch fails the operation before anything runs.
+
+## Packaging
+
+Ship a plugin as a plain binary plus its sha256. Recommended layout:
+
+- install to `/usr/local/lib/rollops/plugins/<name>`
+- publish `checksums.txt` next to your release artifacts
+- operators copy the digest into the target spec's `sha256` field
+
+Rebuilding the plugin changes the hash; update the pin in Git alongside the
+binary rollout so the change is reviewed like any other desired-state change.

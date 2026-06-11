@@ -14,7 +14,7 @@
           "description": "Define config schema v1 with a version field and publish it.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -23,7 +23,7 @@
           "description": "Go validation rejects malformed config loudly (no silent typos).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -32,7 +32,7 @@
           "description": "Embed CEL evaluation for risk/promotion/rollback hook points.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -41,7 +41,7 @@
           "description": "Per-repo config at a configurable branch + path.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -58,7 +58,7 @@
           "description": "Finalize the Target interface and supporting types (done in scaffold).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -67,7 +67,7 @@
           "description": "Conformance suite proving idempotency, fingerprint stability, health semantics.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -76,7 +76,7 @@
           "description": "gRPC plugin protocol (go-plugin style) with versioning.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -93,7 +93,7 @@
           "description": "Store interface (done in scaffold).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -102,7 +102,7 @@
           "description": "SQLite backend implementing the full interface with migrations.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -111,7 +111,7 @@
           "description": "Crash-safe: persist statekit state per transition.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -128,7 +128,7 @@
           "description": "Engine API surface covering all seven operations.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -137,7 +137,7 @@
           "description": "plan/diff computed and surfaced before any apply.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -146,7 +146,7 @@
           "description": "Per-target advisory locks; per-repo reconcile serialization.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -163,7 +163,7 @@
           "description": "Model the statechart in statekit with all phases and transitions.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -172,7 +172,7 @@
           "description": "validating runs schema+CEL validation, dependency resolution, plan/diff.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -181,7 +181,7 @@
           "description": "Agent-driven apply requires the plan to have been produced first.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -198,7 +198,7 @@
           "description": "Compute the five-signal weighted score via decision-kit.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -207,7 +207,7 @@
           "description": "CEL-configurable threshold and gate conditions.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -216,7 +216,7 @@
           "description": "Single approval gate (approve / reject / block); no multi-stage chains.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -233,7 +233,7 @@
           "description": "Wrap Target.Apply/Observe/Health in fortify policies.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -242,7 +242,7 @@
           "description": "Execute steps through axi-go with per-step audit.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -259,7 +259,7 @@
           "description": "Implement rolling, canary, and blue-green strategies.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -268,7 +268,7 @@
           "description": "Configurable traffic-shifting steps per strategy.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -285,7 +285,7 @@
           "description": "Kubernetes target with native Observe against live state.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -294,7 +294,7 @@
           "description": "SSH/VM target with stamped-manifest drift verification.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -303,7 +303,7 @@
           "description": "FTP target with stamped-manifest drift verification.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -320,7 +320,7 @@
           "description": "Reconcile loop on poll tick and webhook event.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -329,7 +329,7 @@
           "description": "Drift detection via fingerprint diff; alert and reconcile.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -338,7 +338,7 @@
           "description": "Configurable verification depth (shallow marker vs full checksum).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -355,7 +355,7 @@
           "description": "Manual and agent-driven rollback paths.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -364,7 +364,7 @@
           "description": "Auto-rollback on Health failure, smoke-test failure, or step error/timeout.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -373,7 +373,7 @@
           "description": "Roll back by re-applying the prior manifest.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -390,7 +390,7 @@
           "description": "GitHub webhook (HMAC-verified) for immediate reconciliation.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -399,7 +399,7 @@
           "description": "Periodic poll as safety net and drift heartbeat.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -408,7 +408,7 @@
           "description": "Per-repo auth (GitHub App / deploy key) and config path/branch.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -425,7 +425,7 @@
           "description": "ScheduledRollout queue in the Store.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -434,7 +434,7 @@
           "description": "Due-schedule firing on reconcile tick (human or agent initiated).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -451,7 +451,7 @@
           "description": "Model dependencies as a DAG with cycle detection.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -460,7 +460,7 @@
           "description": "Serialize dependent chains; parallelize independents.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -477,7 +477,7 @@
           "description": "Staged promotion path with configurable gates.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -486,7 +486,7 @@
           "description": "Independent per-environment config support.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -503,7 +503,7 @@
           "description": "SecretProvider interface.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -512,7 +512,7 @@
           "description": "HashiCorp Vault / cloud secret-manager integration.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -521,7 +521,7 @@
           "description": "Workload-identity auth where available; vault-managed bootstrap fallback.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -538,7 +538,7 @@
           "description": "bolt-backed structured audit log for all engine actions.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -547,7 +547,7 @@
           "description": "Secret redaction at the logging boundary (logs/plans/diffs/MCP).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -556,7 +556,7 @@
           "description": "Immutable identity attribution for every action.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -573,7 +573,7 @@
           "description": "Command tree plan/apply/verify/promote/rollback/status/schedule.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -582,7 +582,7 @@
           "description": "In-process mode (no daemon) and gRPC-client mode.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -591,7 +591,7 @@
           "description": "One-shot inherits invoking user's creds; cannot bypass gate or RBAC.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -608,7 +608,7 @@
           "description": "gRPC service mirroring engine operations.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -617,7 +617,7 @@
           "description": "grpc-gateway REST front for the UI.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -626,7 +626,7 @@
           "description": "mTLS or signed-token authentication on every call.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -643,7 +643,7 @@
           "description": "MCP tools mapping 1:1 to engine operations.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -652,7 +652,7 @@
           "description": "Embedded-in-daemon and standalone modes.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -661,7 +661,7 @@
           "description": "Authenticated and RBAC-scoped like every other interface.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -678,7 +678,7 @@
           "description": "RBAC role/permission taxonomy bound to human/CI/agent identities.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -687,7 +687,7 @@
           "description": "Artifact signature/provenance verification (cosign/SLSA) per target, configurable.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -696,7 +696,7 @@
           "description": "Non-bypassable policy floor, emergency freeze kill-switch, fortify agent rate-limit.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -713,7 +713,7 @@
           "description": "Live rollout state and history views.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -722,7 +722,7 @@
           "description": "Pending-approval actions and drift status.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -739,7 +739,7 @@
           "description": "Health endpoints (liveness/readiness).",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -748,7 +748,7 @@
           "description": "Prometheus metrics for reconcile latency, drift count, rollout outcomes.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -765,7 +765,7 @@
           "description": "Document provider, metrics, CEL condition, interval, count, and failureLimit as a supported optional contract.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -774,7 +774,7 @@
           "description": "Surface pass/fail reasons clearly in verify/rollback results, logs, and UI-ready state.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -783,7 +783,7 @@
           "description": "Prometheus instant-query provider is supported with unit and live integration coverage.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -800,7 +800,7 @@
           "description": "Recent rolled-back or failed rollout history contributes to the risk score.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -809,7 +809,7 @@
           "description": "Operators can tune lookback window and weighting without changing code.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -826,7 +826,7 @@
           "description": "Define migrate, verify, and rollback hooks with clear ordering and audit boundaries.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -835,7 +835,7 @@
           "description": "Plans and history show database rollback hooks before execution.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -852,7 +852,7 @@
           "description": "Only one daemon instance reconciles a repo/target at a time.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -861,7 +861,7 @@
           "description": "Runtime locks work across processes, not only in memory.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -878,7 +878,7 @@
           "description": "UI/API can authenticate users through OIDC.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -887,7 +887,7 @@
           "description": "OIDC claims map to Rollops identities, roles, and target scopes.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -904,7 +904,7 @@
           "description": "Operators can define semver, regex, or digest policies per target.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -913,7 +913,7 @@
           "description": "Automation proposes or commits desired-state image updates to Git, never directly to Store.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -930,7 +930,7 @@
           "description": "OSS core remains self-hosted; managed multi-customer orchestration stays an optional layer.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -939,7 +939,7 @@
           "description": "Define the data contract needed for one pane of glass across many Rollops instances.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
@@ -956,7 +956,7 @@
           "description": "Optional hooks can coordinate rollout steps with a feature flag provider.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         },
         {
@@ -965,10 +965,17 @@
           "description": "Optional governance hooks can attach external approval or policy systems without replacing Rollops RBAC and guardrails.",
           "priority": "",
           "estimate": "",
-          "depends_on": null,
+          "depends_on": [],
           "source": {}
         }
       ],
+      "source": {}
+    },
+    {
+      "id": "target-plugin-process-lifecycle-+-distribution",
+      "title": "Target plugin process lifecycle + distribution",
+      "description": "Run third-party target plugins as real subprocesses: launch the plugin binary, verify the handshake (protocol version + cookie) over a simple stdout line, dial its gRPC server on a unix socket, adapt it into pkg/target.Target, and tear the process down cleanly after the operation. Verify plugin binary integrity (sha256 pin in the target spec) before exec. Wire a \"plugin\" target kind into the registry/config schema so a plugin-backed target is declared in rollops.yaml like any other target. Document authoring + packaging.",
+      "requirements": [],
       "source": {}
     }
   ],

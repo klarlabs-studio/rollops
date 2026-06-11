@@ -89,3 +89,24 @@ func TestApply_CircuitOpensAfterRepeatedFailure(t *testing.T) {
 		t.Errorf("breaker should short-circuit: calls went %d -> %d", callsBefore, f.calls)
 	}
 }
+
+type closableTarget struct {
+	flakyTarget
+	closed bool
+}
+
+func (c *closableTarget) Close() error { c.closed = true; return nil }
+
+func TestClose_ForwardsToCloserInner(t *testing.T) {
+	ct := &closableTarget{}
+	g := Wrap(ct, DefaultPolicy())
+	if err := g.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !ct.closed {
+		t.Error("Close must forward to the inner target")
+	}
+	if err := Wrap(&flakyTarget{}, DefaultPolicy()).Close(); err != nil {
+		t.Errorf("Close on non-closer inner must be a no-op, got %v", err)
+	}
+}

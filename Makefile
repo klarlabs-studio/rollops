@@ -90,7 +90,7 @@ proto:
 	protoc --proto_path=proto \
 		--go_out=. --go_opt=module=$(MODULE) \
 		--go-grpc_out=. --go-grpc_opt=module=$(MODULE) \
-		proto/rollops/v1/rollops.proto
+		proto/rollops/v1/rollops.proto proto/rollops/plugin/v1/plugin.proto
 
 # Run the daemon locally (HTTP :8080, gRPC :8090, UI behind basic auth).
 run-daemon: build

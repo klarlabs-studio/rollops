@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -131,6 +132,14 @@ func (e *Engine) notifyEvent(ctx context.Context, ev notify.Event) {
 	}
 }
 
+// closeTarget releases a target's runtime resources (a plugin subprocess);
+// no-op for plain targets. Engine operations defer this after every build.
+func closeTarget(t pt.Target) {
+	if c, ok := t.(io.Closer); ok {
+		_ = c.Close()
+	}
+}
+
 // build resolves a target by kind and wraps it in the fortify resilience
 // envelope so every engine-driven target operation is retried/circuit-broken.
 func (e *Engine) build(t config.Target) (pt.Target, error) {
@@ -182,6 +191,7 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer closeTarget(tgt)
 	cur, err := tgt.Observe(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("engine: plan: observe: %w", err)
@@ -465,6 +475,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	if err != nil {
 		return nil, err
 	}
+	defer closeTarget(tgt)
 
 	// 4. Artifact provenance: independently verify what is about to ship.
 	if e.artifact != nil {
@@ -617,6 +628,7 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
 		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
 		if err == nil {
+			defer closeTarget(tgt)
 			if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
 				reason := "health check failed"
 				if hs.Reason != "" {
@@ -707,6 +719,7 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 	if err != nil {
 		return r, err
 	}
+	defer closeTarget(tgt)
 	if _, err := tgt.Apply(ctx, r.Desired); err != nil {
 		_, _ = lc.Send(rollout.EventError)
 		r.Phase = lc.Phase()
@@ -760,6 +773,7 @@ func (e *Engine) Observe(ctx context.Context, t config.Target) (pt.Fingerprint, 
 	if err != nil {
 		return pt.Fingerprint{}, err
 	}
+	defer closeTarget(tgt)
 	fp, err := tgt.Observe(ctx)
 	if err != nil {
 		return pt.Fingerprint{}, fmt.Errorf("engine: observe: %w", err)
@@ -786,6 +800,7 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 	if err != nil {
 		return r, err
 	}
+	defer closeTarget(tgt)
 	hs, err := tgt.Health(ctx)
 	if err != nil {
 		return r, fmt.Errorf("engine: verify: health: %w", err)
@@ -857,6 +872,7 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 	if err != nil {
 		return r, err
 	}
+	defer closeTarget(tgt)
 	if _, err := tgt.Apply(ctx, prior); err != nil {
 		return r, fmt.Errorf("engine: rollback: re-apply: %w", err)
 	}
@@ -1050,6 +1066,7 @@ func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout)
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
+	defer closeTarget(tgt)
 	now := e.now()
 	r := rollout.Rollout{
 		ID:        e.newID(),

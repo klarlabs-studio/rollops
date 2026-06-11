@@ -11,6 +11,7 @@ package step
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"go.klarlabs.de/fortify/circuitbreaker"
@@ -84,4 +85,13 @@ func (g *Guarded) Health(ctx context.Context) (pt.HealthStatus, error) {
 	return g.healthRetry.Execute(ctx, func(ctx context.Context) (pt.HealthStatus, error) {
 		return g.inner.Health(ctx)
 	})
+}
+
+// Close releases the inner target's runtime resources when it holds any
+// (a plugin subprocess); no-op for plain targets.
+func (g *Guarded) Close() error {
+	if c, ok := g.inner.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
 }

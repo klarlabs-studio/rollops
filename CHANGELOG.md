@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Target plugin process lifecycle: the new `plugin` target kind launches a
+  sha256-pinned third-party plugin binary as a subprocess per engine
+  operation — handshake on stdout, gRPC over a private unix socket, teardown
+  via stdin close — and `pkg/plugin.Serve` is the public authoring toolkit
+  (implement `pkg/target.Target`, call `Serve`). Unpinned or tampered
+  binaries refuse to launch. The engine now releases targets holding runtime
+  resources after every operation.
+
 ## v0.4.0 - Live Progressive Step Progress
 
 - Live progressive step progress: the engine persists each health-gated

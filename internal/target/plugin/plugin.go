@@ -16,36 +16,28 @@ import (
 	"errors"
 	"fmt"
 
+	pubplugin "go.klarlabs.de/rollops/pkg/plugin"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
-// ProtocolVersion is bumped on any breaking change to the RPC below.
-const ProtocolVersion = 1
+// ProtocolVersion is bumped on any breaking change to the RPC below. The
+// public authoring toolkit (pkg/plugin) owns the handshake; these aliases keep
+// the host-side identifiers in one import.
+const ProtocolVersion = pubplugin.ProtocolVersion
 
 // Cookie is the magic handshake value; a mismatch means the subprocess is not a
 // Rollops target plugin.
-const Cookie = "ROLLOPS_TARGET_PLUGIN_V1"
+const Cookie = pubplugin.Cookie
 
 // ErrNoRPC means the target was constructed without an established plugin RPC.
 var ErrNoRPC = errors.New("plugin: rpc is nil")
 
 // Handshake is exchanged when a plugin starts.
-type Handshake struct {
-	ProtocolVersion int
-	Cookie          string
-}
+type Handshake = pubplugin.Handshake
 
 // VerifyHandshake rejects a plugin built against a different protocol version or
 // without the correct cookie.
-func VerifyHandshake(h Handshake) error {
-	if h.Cookie != Cookie {
-		return fmt.Errorf("plugin: bad handshake cookie (not a target plugin)")
-	}
-	if h.ProtocolVersion != ProtocolVersion {
-		return fmt.Errorf("plugin: protocol version mismatch: host %d, plugin %d", ProtocolVersion, h.ProtocolVersion)
-	}
-	return nil
-}
+func VerifyHandshake(h Handshake) error { return h.Verify() }
 
 // RPC is the wire a target plugin implements. Marshaling/transport (gRPC) lives
 // in the production adapter; this interface keeps the semantics testable.
