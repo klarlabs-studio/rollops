@@ -138,6 +138,7 @@ See `docs/release-checklist.md` before tagging an OSS release.
 
 ## License
 
-Open-core. OSS core is single-tenant, self-hosted (engine, CLI, MCP, targets,
-progressive delivery, drift, rollback, YAML/CEL, Git multi-tenancy, risk
-scoring). Managed multi-customer orchestration is the studio/commercial layer.
+The OSS core is [MIT](LICENSE)-licensed — single-tenant, self-hosted (engine,
+CLI, MCP, targets, progressive delivery, drift, rollback, YAML/CEL, Git
+multi-tenancy, risk scoring). Managed multi-customer orchestration is the
+studio/commercial layer (open-core).
