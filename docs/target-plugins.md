@@ -20,27 +20,30 @@ Every implementation must pass `pkg/conformance.Run`.
 
 ## Protocol
 
-The current plugin protocol is `internal/target/plugin.ProtocolVersion == 1`.
-Plugins must complete the handshake with:
+Rollops plugins speak one generic gRPC service (`rollops.plugin.v1.Plugin`),
+modeled on nox-hq's architecture. A plugin declares a **manifest** —
+capabilities grouping named **tools**, plus the **safety scopes** it needs —
+and the host invokes tools generically. New plugin kinds are new capabilities,
+not new services.
 
-- `ProtocolVersion: 1`
-- `Cookie: ROLLOPS_TARGET_PLUGIN_V1`
+Lifecycle:
 
-A version or cookie mismatch is rejected before rollout operations can run.
+1. The host launches the plugin binary (sha256-pinned).
+2. The plugin prints one handshake line on stdout and serves gRPC on a private
+   unix socket. A protocol-version or cookie mismatch is rejected.
+3. The host calls `GetManifest` and validates the declared safety requirements
+   against its policy — a plugin that demands more than the policy allows is
+   refused before any tool runs.
+4. The host calls `InvokeTool(capability, tool, json)` per operation.
 
-The RPC wire carries:
+A **target plugin** declares the `target` capability with three tools:
 
-- `Apply(kind, spec, checksum) -> changed, detail`
-- `Observe() -> fingerprint value, metadata`
-- `Health() -> state, reason`
+- `apply(kind, spec, checksum) -> changed, detail`
+- `observe() -> value, meta`
+- `health() -> state, reason`
 
-`state` must map to one of the concrete health states:
-
-- `HealthHealthy`
-- `HealthDegraded`
-- `HealthUnhealthy`
-
-`HealthUnknown` and unknown integer values are rejected by the adapter.
+`state` must map to a concrete health state (`HealthHealthy`, `HealthDegraded`,
+`HealthUnhealthy`); `HealthUnknown` and unknown values are rejected.
 
 ## Required Semantics
 
@@ -77,8 +80,9 @@ protocol version.
 
 ## Authoring a Plugin
 
-A plugin is a standalone Go binary: implement `pkg/target.Target` and hand it
-to `pkg/plugin.Serve`:
+A target plugin is a standalone Go binary: implement `pkg/target.Target` and
+hand it to `pkg/plugin.ServeTarget`, which builds the `target`-capability
+manifest and wires the three tools for you:
 
 ```go
 package main
@@ -90,16 +94,26 @@ import (
 
 func main() {
 	var t pt.Target = newMyTarget() // your implementation
-	if err := plugin.Serve(t); err != nil {
+	safety := plugin.Safety{
+		NetworkHosts: []string{"api.acme.com:443"}, // declare what you reach
+		RiskClass:    plugin.RiskActive,
+	}
+	if err := plugin.ServeTarget("acme/exotic", "1.0.0", t, safety); err != nil {
 		panic(err)
 	}
 }
 ```
 
-`Serve` listens on a private unix socket, prints one handshake line on stdout
-(`ROLLOPS_PLUGIN|<version>|<cookie>|<socket>`), and serves gRPC until stdin
-closes — the host's shutdown signal. Log to stderr; stdout belongs to the
-handshake.
+`ServeTarget` listens on a private unix socket, prints one handshake line on
+stdout (`ROLLOPS_PLUGIN|<version>|<cookie>|<socket>`), and serves the generic
+Plugin service until stdin closes — the host's shutdown signal. Log to stderr;
+stdout belongs to the handshake.
+
+Declare the **safety** scopes your plugin actually needs (network hosts, file
+paths, env vars, risk class). The host validates them against its policy before
+invoking any tool — by default network egress must be allow-listed and only up
+to `active` risk is admitted. For a custom capability, drop to `NewManifest` /
+`NewServer` / `Serve` directly.
 
 ## Using a Plugin
 

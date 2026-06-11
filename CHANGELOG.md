@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Manifest-capability plugin architecture** (nox-style). The typed
+  `TargetPlugin` gRPC service is replaced by one generic `Plugin` service
+  (`GetManifest` + `InvokeTool`). A plugin declares capabilities (named tool
+  groups) and safety requirements (network hosts, file paths, env vars, risk
+  class) in a manifest the host validates against a safety policy before
+  invoking — capability-scoped trust instead of full daemon trust. New plugin
+  kinds are new capabilities, not new services. **Breaking** vs the v0.5.0
+  plugin protocol (pre-1.0, no external plugins yet).
+  - `pkg/plugin` SDK: `NewManifest`/`NewServer`/`Serve`, plus typed wrappers
+    `ServeTarget` (target capability) and `ServeFlagProvider` (featureflag
+    capability). The host runtime moved to `internal/pluginhost`.
+- **Feature-flag plugins** — the first new capability. A `featureFlags` spec
+  block couples a rollout to a feature-flag provider plugin: the flag's rollout
+  percentage tracks the canary traffic weight per step and/or settles at 100%
+  on promote (`when: step | promote | both`). Best-effort; provider failures are
+  audited, never abort the deploy. See `docs/feature-flags.md`.
+
 ## v0.5.1 - Dogfood Fixes + Hardening
 
 - Drift is now asserted after a rollback too: the rolled-back-to manifest is

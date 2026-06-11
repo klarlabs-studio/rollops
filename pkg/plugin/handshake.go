@@ -1,9 +1,15 @@
-// Package plugin is the public toolkit for authoring Rollops target plugins: a
-// plugin is a standalone binary that implements pkg/target.Target and calls
-// Serve. The host launches the binary, reads one handshake line from stdout,
-// dials the advertised unix socket over gRPC, and drives the target through it.
-// Every plugin must pass pkg/conformance.Run; semantics are documented in
-// docs/target-plugins.md.
+// Package plugin is the public toolkit for authoring Rollops plugins. A plugin
+// is a standalone binary that declares a manifest — capabilities grouping named
+// tools, plus the safety scopes it needs — and serves the generic Plugin gRPC
+// service. The host launches the binary, reads one handshake line from stdout,
+// dials the advertised unix socket, fetches and safety-validates the manifest,
+// then invokes tools by capability + name.
+//
+// Most authors use a typed wrapper instead of building a manifest by hand:
+// ServeTarget runs a pkg/target.Target as a "target" plugin, and
+// ServeFlagProvider runs a FlagProvider as a "featureflag" plugin. The lower-
+// level NewManifest/NewServer/Serve are there for custom capabilities. Target
+// plugins must pass pkg/conformance.Run; semantics are in docs/target-plugins.md.
 package plugin
 
 import (

@@ -894,6 +894,180 @@
       "source": {}
     },
     {
+      "id": "task-manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins",
+      "title": "Implement Manifest-capability plugin architecture (nox-style) + feature-flag plugins",
+      "description": "Implement the feature: Manifest-capability plugin architecture (nox-style) + feature-flag plugins. Replace the typed TargetPlugin gRPC service with a single generic Plugin service (GetManifest + InvokeTool), modeled on nox-hq's plugin architecture. Plugins declare capabilities (named groups of tools) and safety requirements (network hosts, file paths, env vars, risk class, needs-confirmation) via a manifest the host validates against a safety policy before invoking — capability-scoped trust instead of full daemon trust. Provide an ergonomic pkg/plugin SDK (manifest builder + HandleTool + Serve; typed convenience wrappers ServeTarget and ServeFlagProvider). Migrate the existing target-plugin path onto a 'target' capability (apply/observe/health as tools). Add feature-flag providers as the first new capability: a flag plugin declares 'featureflag' with an apply_flag tool; wire featureflags.Hook into the engine to fire per progressive step (percentage tracks traffic weight) and/or on promote, configurable via a featureFlags spec block. sha256-pin distribution as today; cosign signing is a later follow-up. Breaking vs v0.5.0 plugin protocol (pre-1.0, no external plugins yet). Document authoring, capabilities, safety policy, and the flag integration.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "t-engine-locks",
+      "title": "Advisory locks + reconcile serialization",
+      "description": "Per-target advisory locks; per-repo reconcile serialization with configurable parallelism.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "engine-library",
+      "source": {}
+    },
+    {
+      "id": "t-store-iface",
+      "title": "Store interface + entity model (scaffolded)",
+      "description": "store.Store interface + rollout entity model. Done in scaffold.",
+      "priority": "high",
+      "estimate": "1d",
+      "depends_on": [],
+      "feature_id": "store-backend",
+      "source": {
+        "doc": "rollops-tdd.md"
+      }
+    },
+    {
+      "id": "t-progressive",
+      "title": "Progressive delivery strategies",
+      "description": "Rolling, canary, blue-green with configurable traffic shifting.",
+      "priority": "high",
+      "estimate": "4d",
+      "depends_on": [
+        "t-step-exec",
+        "t-lifecycle"
+      ],
+      "feature_id": "progressive-delivery",
+      "source": {}
+    },
+    {
+      "id": "t-step-exec",
+      "title": "Step execution (axi + fortify)",
+      "description": "Execute Target ops through axi (sandboxed, audited), wrapped in fortify (retry/CB/rate-limit/bulkhead).",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-target-contract"
+      ],
+      "feature_id": "step-execution",
+      "source": {}
+    },
+    {
+      "id": "t-target-ssh",
+      "title": "SSH/VM target (dumb)",
+      "description": "First-party SSH/VM target with stamped-manifest/checksum drift verification. Leanest end-to-end proof.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-conformance",
+        "t-step-exec"
+      ],
+      "feature_id": "first-party-targets",
+      "source": {}
+    },
+    {
+      "id": "t-engine-plandiff",
+      "title": "plan/diff before apply",
+      "description": "Compute and surface a plan/diff to humans and agents before anything is applied.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "engine-library",
+      "source": {}
+    },
+    {
+      "id": "t-ui",
+      "title": "UI dashboard (read-and-act)",
+      "description": "Live rollout state, history, pending approvals, drift status over the REST gateway.",
+      "priority": "medium",
+      "estimate": "5d",
+      "depends_on": [
+        "t-daemon-api"
+      ],
+      "feature_id": "ui-dashboard",
+      "source": {}
+    },
+    {
+      "id": "t-risk-gate",
+      "title": "decisionkit 5-signal risk score",
+      "description": "Compute blast-radius score: target criticality, environment, change type, blast radius, rollout strategy.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-lifecycle",
+        "t-config-cel"
+      ],
+      "feature_id": "risk-gate",
+      "source": {}
+    },
+    {
+      "id": "t-guardrails",
+      "title": "Agent guardrails",
+      "description": "Non-bypassable policy floor + emergency freeze kill-switch + fortify agent rate-limit. Hard limits, not advisory.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-risk-approval",
+        "t-security-rbac"
+      ],
+      "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-risk-approval",
+      "title": "Single approval gate",
+      "description": "CEL-configurable threshold; below auto-proceeds, above/sensitive needs one approval (approve/reject/block).",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-risk-gate"
+      ],
+      "feature_id": "risk-gate",
+      "source": {}
+    },
+    {
+      "id": "t-config-perrepo",
+      "title": "Per-repo config at branch + path",
+      "description": "Resolve each repo's config at a configurable branch and path (Git multi-tenancy).",
+      "priority": "medium",
+      "estimate": "1d",
+      "depends_on": [
+        "t-config-schema"
+      ],
+      "feature_id": "config-model",
+      "source": {}
+    },
+    {
+      "id": "t-security-rbac",
+      "title": "RBAC taxonomy + auth",
+      "description": "Scoped roles bound to human/CI/agent identities; rollouts.apply-to-prod distinct from rollouts.status.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-audit"
+      ],
+      "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-target-k8s",
+      "title": "Kubernetes target (rich)",
+      "description": "First-party Kubernetes target with native Observe against live state. No core K8s dependency leaks.",
+      "priority": "medium",
+      "estimate": "4d",
+      "depends_on": [
+        "t-conformance",
+        "t-step-exec"
+      ],
+      "feature_id": "first-party-targets",
+      "source": {}
+    },
+    {
       "id": "t-artifact",
       "title": "Artifact provenance verify",
       "description": "cosign/SLSA signature + provenance verification per target, configurable, secure default. Critical for agent rollouts.",
@@ -904,6 +1078,237 @@
         "t-security-rbac"
       ],
       "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-conformance",
+      "title": "Target conformance suite",
+      "description": "Shared suite proving idempotency, fingerprint stability, health semantics — every target must pass.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-target-contract"
+      ],
+      "feature_id": "target-contract",
+      "source": {}
+    },
+    {
+      "id": "t-mcp",
+      "title": "MCP server (mcp-go)",
+      "description": "Tools 1:1 to engine ops; embedded-in-daemon + standalone; authenticated + RBAC-scoped like every interface.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-security-rbac"
+      ],
+      "feature_id": "mcp-server",
+      "source": {}
+    },
+    {
+      "id": "t-target-contract",
+      "title": "Target interface + types (scaffolded)",
+      "description": "Public Target contract (Apply/Observe/Health) + Manifest/Result/Fingerprint/HealthStatus. Done in scaffold.",
+      "priority": "high",
+      "estimate": "1d",
+      "depends_on": [],
+      "feature_id": "target-contract",
+      "source": {
+        "doc": "rollops-tdd.md"
+      }
+    },
+    {
+      "id": "t-audit",
+      "title": "bolt audit + secret redaction",
+      "description": "Structured bolt audit for all actions; redact secret material at the logging boundary; immutable attribution.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api",
+        "t-secrets"
+      ],
+      "feature_id": "audit",
+      "source": {}
+    },
+    {
+      "id": "t-cli",
+      "title": "CLI (one-shot + daemon client)",
+      "description": "Identical command surface; in-process engine or gRPC client. Cannot bypass gate or RBAC.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-security-rbac"
+      ],
+      "feature_id": "cli",
+      "source": {}
+    },
+    {
+      "id": "t-rollback",
+      "title": "Rollback (manual/agent/auto)",
+      "description": "Auto signals: Health fail, smoke-test fail, step error/timeout. Roll back by re-applying prior manifest.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-lifecycle",
+        "t-step-exec",
+        "t-target-ssh"
+      ],
+      "feature_id": "rollback",
+      "source": {}
+    },
+    {
+      "id": "t-lifecycle",
+      "title": "Rollout statechart (statekit)",
+      "description": "Model the rollout lifecycle as a statekit statechart with all phases and transitions, persisted per transition.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-store-sqlite"
+      ],
+      "feature_id": "rollout-lifecycle",
+      "source": {}
+    },
+    {
+      "id": "t-schedule",
+      "title": "Scheduled deployments",
+      "description": "ScheduledRollout queue in the Store; due-schedule firing on reconcile tick (human or agent).",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-store-sqlite",
+        "t-engine-api"
+      ],
+      "feature_id": "scheduling",
+      "source": {}
+    },
+    {
+      "id": "t-reconcile",
+      "title": "Reconcile loop + drift",
+      "description": "Read desired from Git, Observe targets, fingerprint diff; detect/alert/reconcile; configurable verification depth.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-git",
+        "t-target-ssh"
+      ],
+      "feature_id": "reconcile-drift",
+      "source": {}
+    },
+    {
+      "id": "t-secrets",
+      "title": "SecretProvider + vault",
+      "description": "Never store secrets locally; vault integration; workload-identity auth with vault-managed bootstrap fallback.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "secrets",
+      "source": {}
+    },
+    {
+      "id": "t-lifecycle-validate",
+      "title": "Validating phase + plan-before-apply",
+      "description": "validating runs schema+CEL validation, dependency resolution, plan/diff; agent-driven apply requires the plan first.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-lifecycle",
+        "t-config-cel",
+        "t-engine-plandiff"
+      ],
+      "feature_id": "rollout-lifecycle",
+      "source": {}
+    },
+    {
+      "id": "t-engine-api",
+      "title": "Engine API surface",
+      "description": "Central engine library: plan/apply/verify/promote/rollback/observe/schedule. Transport- and storage-agnostic.",
+      "priority": "high",
+      "estimate": "4d",
+      "depends_on": [
+        "t-config-validate",
+        "t-store-sqlite",
+        "t-target-contract"
+      ],
+      "feature_id": "engine-library",
+      "source": {}
+    },
+    {
+      "id": "t-selfobs",
+      "title": "Self-observability",
+      "description": "Daemon health endpoints + Prometheus metrics: reconcile latency, drift count, rollout outcomes.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-daemon-api"
+      ],
+      "feature_id": "self-observability",
+      "source": {}
+    },
+    {
+      "id": "t-store-sqlite",
+      "title": "SQLite Store backend + migrations",
+      "description": "Implement store.Store on SQLite with migrations; crash-safe per-transition persist.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-store-iface"
+      ],
+      "feature_id": "store-backend",
+      "source": {}
+    },
+    {
+      "id": "t-dep-dag",
+      "title": "Dependency DAG",
+      "description": "Model deps as a DAG with cycle detection; serialize chains, parallelize independents; same graph feeds blast radius.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "dependency-ordering",
+      "source": {}
+    },
+    {
+      "id": "t-plugin-grpc",
+      "title": "gRPC plugin protocol",
+      "description": "go-plugin-style gRPC contract + versioning for third-party targets.",
+      "priority": "medium",
+      "estimate": "3d",
+      "depends_on": [
+        "t-conformance"
+      ],
+      "feature_id": "target-contract",
+      "source": {}
+    },
+    {
+      "id": "t-config-schema",
+      "title": "Config schema v1 + version field",
+      "description": "Define and publish the strict YAML JSON-schema with a version field for clean migration.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [],
+      "feature_id": "config-model",
+      "source": {
+        "doc": "rollops-tdd.md"
+      }
+    },
+    {
+      "id": "t-daemon-api",
+      "title": "Daemon gRPC + REST gateway",
+      "description": "gRPC mirroring engine ops + grpc-gateway REST for UI; mTLS/signed-token auth on every call.",
+      "priority": "high",
+      "estimate": "4d",
+      "depends_on": [
+        "t-engine-api",
+        "t-security-rbac",
+        "t-audit"
+      ],
+      "feature_id": "daemon-api",
       "source": {}
     },
     {
@@ -944,172 +1349,6 @@
       "source": {}
     },
     {
-      "id": "t-engine-api",
-      "title": "Engine API surface",
-      "description": "Central engine library: plan/apply/verify/promote/rollback/observe/schedule. Transport- and storage-agnostic.",
-      "priority": "high",
-      "estimate": "4d",
-      "depends_on": [
-        "t-config-validate",
-        "t-store-sqlite",
-        "t-target-contract"
-      ],
-      "feature_id": "engine-library",
-      "source": {}
-    },
-    {
-      "id": "t-ui",
-      "title": "UI dashboard (read-and-act)",
-      "description": "Live rollout state, history, pending approvals, drift status over the REST gateway.",
-      "priority": "medium",
-      "estimate": "5d",
-      "depends_on": [
-        "t-daemon-api"
-      ],
-      "feature_id": "ui-dashboard",
-      "source": {}
-    },
-    {
-      "id": "t-rollback",
-      "title": "Rollback (manual/agent/auto)",
-      "description": "Auto signals: Health fail, smoke-test fail, step error/timeout. Roll back by re-applying prior manifest.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-lifecycle",
-        "t-step-exec",
-        "t-target-ssh"
-      ],
-      "feature_id": "rollback",
-      "source": {}
-    },
-    {
-      "id": "t-progressive",
-      "title": "Progressive delivery strategies",
-      "description": "Rolling, canary, blue-green with configurable traffic shifting.",
-      "priority": "high",
-      "estimate": "4d",
-      "depends_on": [
-        "t-step-exec",
-        "t-lifecycle"
-      ],
-      "feature_id": "progressive-delivery",
-      "source": {}
-    },
-    {
-      "id": "t-config-schema",
-      "title": "Config schema v1 + version field",
-      "description": "Define and publish the strict YAML JSON-schema with a version field for clean migration.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [],
-      "feature_id": "config-model",
-      "source": {
-        "doc": "rollops-tdd.md"
-      }
-    },
-    {
-      "id": "t-store-sqlite",
-      "title": "SQLite Store backend + migrations",
-      "description": "Implement store.Store on SQLite with migrations; crash-safe per-transition persist.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-store-iface"
-      ],
-      "feature_id": "store-backend",
-      "source": {}
-    },
-    {
-      "id": "t-lifecycle-validate",
-      "title": "Validating phase + plan-before-apply",
-      "description": "validating runs schema+CEL validation, dependency resolution, plan/diff; agent-driven apply requires the plan first.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-lifecycle",
-        "t-config-cel",
-        "t-engine-plandiff"
-      ],
-      "feature_id": "rollout-lifecycle",
-      "source": {}
-    },
-    {
-      "id": "t-store-iface",
-      "title": "Store interface + entity model (scaffolded)",
-      "description": "store.Store interface + rollout entity model. Done in scaffold.",
-      "priority": "high",
-      "estimate": "1d",
-      "depends_on": [],
-      "feature_id": "store-backend",
-      "source": {
-        "doc": "rollops-tdd.md"
-      }
-    },
-    {
-      "id": "t-config-perrepo",
-      "title": "Per-repo config at branch + path",
-      "description": "Resolve each repo's config at a configurable branch and path (Git multi-tenancy).",
-      "priority": "medium",
-      "estimate": "1d",
-      "depends_on": [
-        "t-config-schema"
-      ],
-      "feature_id": "config-model",
-      "source": {}
-    },
-    {
-      "id": "t-conformance",
-      "title": "Target conformance suite",
-      "description": "Shared suite proving idempotency, fingerprint stability, health semantics — every target must pass.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-target-contract"
-      ],
-      "feature_id": "target-contract",
-      "source": {}
-    },
-    {
-      "id": "t-mcp",
-      "title": "MCP server (mcp-go)",
-      "description": "Tools 1:1 to engine ops; embedded-in-daemon + standalone; authenticated + RBAC-scoped like every interface.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-security-rbac"
-      ],
-      "feature_id": "mcp-server",
-      "source": {}
-    },
-    {
-      "id": "t-risk-gate",
-      "title": "decisionkit 5-signal risk score",
-      "description": "Compute blast-radius score: target criticality, environment, change type, blast radius, rollout strategy.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-lifecycle",
-        "t-config-cel"
-      ],
-      "feature_id": "risk-gate",
-      "source": {}
-    },
-    {
-      "id": "t-guardrails",
-      "title": "Agent guardrails",
-      "description": "Non-bypassable policy floor + emergency freeze kill-switch + fortify agent rate-limit. Hard limits, not advisory.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-risk-approval",
-        "t-security-rbac"
-      ],
-      "feature_id": "security-trust",
-      "source": {}
-    },
-    {
       "id": "t-env-promo",
       "title": "Environment promotion",
       "description": "Staged dev→staging→prod path + independent per-env configs; everything configurable.",
@@ -1123,197 +1362,6 @@
       "source": {}
     },
     {
-      "id": "t-target-ssh",
-      "title": "SSH/VM target (dumb)",
-      "description": "First-party SSH/VM target with stamped-manifest/checksum drift verification. Leanest end-to-end proof.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-conformance",
-        "t-step-exec"
-      ],
-      "feature_id": "first-party-targets",
-      "source": {}
-    },
-    {
-      "id": "t-security-rbac",
-      "title": "RBAC taxonomy + auth",
-      "description": "Scoped roles bound to human/CI/agent identities; rollouts.apply-to-prod distinct from rollouts.status.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-audit"
-      ],
-      "feature_id": "security-trust",
-      "source": {}
-    },
-    {
-      "id": "t-target-k8s",
-      "title": "Kubernetes target (rich)",
-      "description": "First-party Kubernetes target with native Observe against live state. No core K8s dependency leaks.",
-      "priority": "medium",
-      "estimate": "4d",
-      "depends_on": [
-        "t-conformance",
-        "t-step-exec"
-      ],
-      "feature_id": "first-party-targets",
-      "source": {}
-    },
-    {
-      "id": "t-daemon-api",
-      "title": "Daemon gRPC + REST gateway",
-      "description": "gRPC mirroring engine ops + grpc-gateway REST for UI; mTLS/signed-token auth on every call.",
-      "priority": "high",
-      "estimate": "4d",
-      "depends_on": [
-        "t-engine-api",
-        "t-security-rbac",
-        "t-audit"
-      ],
-      "feature_id": "daemon-api",
-      "source": {}
-    },
-    {
-      "id": "t-reconcile",
-      "title": "Reconcile loop + drift",
-      "description": "Read desired from Git, Observe targets, fingerprint diff; detect/alert/reconcile; configurable verification depth.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-git",
-        "t-target-ssh"
-      ],
-      "feature_id": "reconcile-drift",
-      "source": {}
-    },
-    {
-      "id": "t-schedule",
-      "title": "Scheduled deployments",
-      "description": "ScheduledRollout queue in the Store; due-schedule firing on reconcile tick (human or agent).",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-store-sqlite",
-        "t-engine-api"
-      ],
-      "feature_id": "scheduling",
-      "source": {}
-    },
-    {
-      "id": "t-risk-approval",
-      "title": "Single approval gate",
-      "description": "CEL-configurable threshold; below auto-proceeds, above/sensitive needs one approval (approve/reject/block).",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-risk-gate"
-      ],
-      "feature_id": "risk-gate",
-      "source": {}
-    },
-    {
-      "id": "t-lifecycle",
-      "title": "Rollout statechart (statekit)",
-      "description": "Model the rollout lifecycle as a statekit statechart with all phases and transitions, persisted per transition.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-store-sqlite"
-      ],
-      "feature_id": "rollout-lifecycle",
-      "source": {}
-    },
-    {
-      "id": "t-audit",
-      "title": "bolt audit + secret redaction",
-      "description": "Structured bolt audit for all actions; redact secret material at the logging boundary; immutable attribution.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api",
-        "t-secrets"
-      ],
-      "feature_id": "audit",
-      "source": {}
-    },
-    {
-      "id": "t-selfobs",
-      "title": "Self-observability",
-      "description": "Daemon health endpoints + Prometheus metrics: reconcile latency, drift count, rollout outcomes.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-daemon-api"
-      ],
-      "feature_id": "self-observability",
-      "source": {}
-    },
-    {
-      "id": "t-step-exec",
-      "title": "Step execution (axi + fortify)",
-      "description": "Execute Target ops through axi (sandboxed, audited), wrapped in fortify (retry/CB/rate-limit/bulkhead).",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-target-contract"
-      ],
-      "feature_id": "step-execution",
-      "source": {}
-    },
-    {
-      "id": "t-dep-dag",
-      "title": "Dependency DAG",
-      "description": "Model deps as a DAG with cycle detection; serialize chains, parallelize independents; same graph feeds blast radius.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "dependency-ordering",
-      "source": {}
-    },
-    {
-      "id": "t-secrets",
-      "title": "SecretProvider + vault",
-      "description": "Never store secrets locally; vault integration; workload-identity auth with vault-managed bootstrap fallback.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "secrets",
-      "source": {}
-    },
-    {
-      "id": "t-target-contract",
-      "title": "Target interface + types (scaffolded)",
-      "description": "Public Target contract (Apply/Observe/Health) + Manifest/Result/Fingerprint/HealthStatus. Done in scaffold.",
-      "priority": "high",
-      "estimate": "1d",
-      "depends_on": [],
-      "feature_id": "target-contract",
-      "source": {
-        "doc": "rollops-tdd.md"
-      }
-    },
-    {
-      "id": "t-plugin-grpc",
-      "title": "gRPC plugin protocol",
-      "description": "go-plugin-style gRPC contract + versioning for third-party targets.",
-      "priority": "medium",
-      "estimate": "3d",
-      "depends_on": [
-        "t-conformance"
-      ],
-      "feature_id": "target-contract",
-      "source": {}
-    },
-    {
       "id": "t-git",
       "title": "Git integration (webhook + poll)",
       "description": "HMAC-verified GitHub webhook + periodic poll (drift heartbeat); per-repo GitHub App/deploy-key auth.",
@@ -1324,46 +1372,9 @@
       ],
       "feature_id": "git-integration",
       "source": {}
-    },
-    {
-      "id": "t-engine-locks",
-      "title": "Advisory locks + reconcile serialization",
-      "description": "Per-target advisory locks; per-repo reconcile serialization with configurable parallelism.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "engine-library",
-      "source": {}
-    },
-    {
-      "id": "t-cli",
-      "title": "CLI (one-shot + daemon client)",
-      "description": "Identical command surface; in-process engine or gRPC client. Cannot bypass gate or RBAC.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-security-rbac"
-      ],
-      "feature_id": "cli",
-      "source": {}
-    },
-    {
-      "id": "t-engine-plandiff",
-      "title": "plan/diff before apply",
-      "description": "Compute and surface a plan/diff to humans and agents before anything is applied.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "engine-library",
-      "source": {}
     }
   ],
   "approval_status": "approved",
   "created_at": "2026-06-08T16:36:09.998175+02:00",
-  "updated_at": "2026-06-11T07:19:27.571392+02:00"
+  "updated_at": "2026-06-11T12:50:53.757205+02:00"
 }

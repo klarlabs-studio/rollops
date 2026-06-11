@@ -54,6 +54,7 @@ type Spec struct {
 	Risk         Risk          `yaml:"risk,omitempty" json:"risk,omitempty"`
 	Rollback     Rollback      `yaml:"rollback,omitempty" json:"rollback,omitempty"`
 	Analysis     *Analysis     `yaml:"analysis,omitempty" json:"analysis,omitempty"`
+	FeatureFlags *FeatureFlags `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
 	DependsOn    []string      `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule     string        `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
 }
@@ -75,6 +76,18 @@ type Analysis struct {
 type AnalysisMetric struct {
 	Name  string `yaml:"name" json:"name"`
 	Query string `yaml:"query" json:"query"`
+}
+
+// FeatureFlags couples a rollout to a feature-flag provider plugin: as the
+// rollout progresses, the named flag's rollout percentage is driven to match.
+// The provider is a gRPC plugin declaring the "featureflag" capability,
+// launched like a target plugin (sha256-pinned binary).
+type FeatureFlags struct {
+	Plugin      string `yaml:"plugin" json:"plugin"`                 // path to the flag plugin binary
+	SHA256      string `yaml:"sha256" json:"sha256"`                 // required pin
+	Flag        string `yaml:"flag" json:"flag"`                     // flag key to drive
+	Environment string `yaml:"environment" json:"environment"`       // provider environment
+	When        string `yaml:"when,omitempty" json:"when,omitempty"` // step | promote | both (default both)
 }
 
 // Target selects the deployment target plugin and its criticality weight.

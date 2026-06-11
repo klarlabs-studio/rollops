@@ -1,0 +1,46 @@
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: checkout-canary
+spec:
+  target:
+    kind: kubernetes
+    ref: shop/prod/checkout
+    criticality: high
+    spec:
+      context: prod
+      namespace: shop
+      resource: deployment/checkout
+      manifest: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: checkout
+          namespace: shop
+        spec:
+          replicas: 4
+          selector:
+            matchLabels: {app: checkout}
+          template:
+            metadata:
+              labels: {app: checkout}
+            spec:
+              containers:
+                - name: app
+                  image: registry.example.com/checkout:2.0.0
+  strategy:
+    type: canary
+    steps:
+      - weight: 25
+        pause: 2m
+      - weight: 50
+        pause: 2m
+      - weight: 100
+  # Drive a feature flag in lockstep with the canary. The provider is a
+  # sha256-pinned gRPC plugin; see docs/feature-flags.md.
+  featureFlags:
+    plugin: /usr/local/lib/rollops/plugins/flagsmith
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    flag: checkout-redesign
+    environment: prod
+    when: both

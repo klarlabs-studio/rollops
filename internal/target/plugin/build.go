@@ -1,17 +1,23 @@
+// Package plugin builds a pkg/target.Target backed by a third-party plugin
+// subprocess that declares the "target" capability. It is a thin adapter over
+// internal/pluginhost (launch, manifest, safety) plus the target tool wire.
 package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/pluginhost"
+	pub "go.klarlabs.de/rollops/pkg/plugin"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // Build constructs a plugin-backed target from a config target. The spec names
-// the plugin binary and pins its sha256; everything else in the spec is the
-// plugin's own configuration, delivered untouched through Apply's manifest:
+// the plugin binary and pins its sha256; the host launches it, validates the
+// manifest against the safety policy, and requires a "target" capability:
 //
 //	target:
 //	  kind: plugin
@@ -20,41 +26,86 @@ import (
 //	    binary: /usr/local/lib/rollops/plugins/exotic
 //	    sha256: <hex of the binary>
 //	    ... plugin-specific keys ...
-//
-// The binary is verified against the pin before exec, then launched as a
-// subprocess for the duration of the engine operation; the engine closes the
-// returned target, which tears the process down.
 func Build(cfg config.Target) (pt.Target, error) {
 	binary, _ := cfg.Spec["binary"].(string)
 	if binary == "" {
 		return nil, fmt.Errorf("plugin: target %q: spec.binary is required", cfg.Ref)
 	}
-	// Resolve symlinks once and verify+exec the canonical path, so a swap of a
-	// symlink component between the hash check and exec can't redirect to a
-	// different binary. A same-inode swap is still a residual TOCTOU race — the
-	// plugin directory must be on a trusted, non-attacker-writable mount (see
-	// docs/target-plugins.md packaging).
 	real, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		return nil, fmt.Errorf("plugin: target %q: resolve binary: %w", cfg.Ref, err)
 	}
 	pin, _ := cfg.Spec["sha256"].(string)
-	if err := VerifyBinary(real, pin); err != nil {
+	if err := pluginhost.VerifyBinary(real, pin); err != nil {
 		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
 	}
-	proc, err := Launch(context.Background(), real)
+	proc, err := pluginhost.Launch(context.Background(), real)
 	if err != nil {
 		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
 	}
-	return &launched{Target: proc.Target, proc: proc}, nil
+	m, err := proc.Client.Manifest(context.Background())
+	if err != nil {
+		_ = proc.Close()
+		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
+	}
+	if err := pluginhost.DefaultPolicy().Validate(m); err != nil {
+		_ = proc.Close()
+		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
+	}
+	if !pluginhost.HasCapability(m, pub.CapabilityTarget) {
+		_ = proc.Close()
+		return nil, fmt.Errorf("plugin: target %q: plugin %q does not declare the %q capability", cfg.Ref, m.Name, pub.CapabilityTarget)
+	}
+	return &adapter{proc: proc}, nil
 }
 
-// launched couples the adapted target with its subprocess so the engine's
-// closeTarget releases the process.
-type launched struct {
-	*Target
-	proc *Process
+// adapter turns target-capability tool invocations into a pt.Target.
+type adapter struct {
+	proc *pluginhost.Process
+}
+
+func (a *adapter) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
+	in, _ := json.Marshal(pub.ApplyInput{Kind: m.Kind, Spec: m.Spec, Checksum: m.Checksum})
+	out, err := a.proc.Client.Invoke(ctx, pub.CapabilityTarget, pub.ToolApply, in)
+	if err != nil {
+		return pt.Result{}, err
+	}
+	var res pub.ApplyOutput
+	if err := json.Unmarshal(out, &res); err != nil {
+		return pt.Result{}, fmt.Errorf("plugin: apply: %w", err)
+	}
+	return pt.Result{Changed: res.Changed, Detail: res.Detail}, nil
+}
+
+func (a *adapter) Observe(ctx context.Context) (pt.Fingerprint, error) {
+	out, err := a.proc.Client.Invoke(ctx, pub.CapabilityTarget, pub.ToolObserve, []byte("{}"))
+	if err != nil {
+		return pt.Fingerprint{}, err
+	}
+	var res pub.ObserveOutput
+	if err := json.Unmarshal(out, &res); err != nil {
+		return pt.Fingerprint{}, fmt.Errorf("plugin: observe: %w", err)
+	}
+	return pt.Fingerprint{Value: res.Value, Meta: res.Meta}, nil
+}
+
+func (a *adapter) Health(ctx context.Context) (pt.HealthStatus, error) {
+	out, err := a.proc.Client.Invoke(ctx, pub.CapabilityTarget, pub.ToolHealth, []byte("{}"))
+	if err != nil {
+		return pt.HealthStatus{}, err
+	}
+	var res pub.HealthOutput
+	if err := json.Unmarshal(out, &res); err != nil {
+		return pt.HealthStatus{}, fmt.Errorf("plugin: health: %w", err)
+	}
+	state := pt.HealthState(res.State)
+	switch state {
+	case pt.HealthHealthy, pt.HealthDegraded, pt.HealthUnhealthy:
+		return pt.HealthStatus{State: state, Reason: res.Reason}, nil
+	default:
+		return pt.HealthStatus{}, fmt.Errorf("plugin: invalid health state %d", res.State)
+	}
 }
 
 // Close tears the plugin subprocess down.
-func (l *launched) Close() error { return l.proc.Close() }
+func (a *adapter) Close() error { return a.proc.Close() }

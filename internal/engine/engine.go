@@ -27,6 +27,7 @@ import (
 	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/depgraph"
+	"go.klarlabs.de/rollops/internal/featureflags"
 	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/progressive"
 	"go.klarlabs.de/rollops/internal/risk"
@@ -62,6 +63,7 @@ type Engine struct {
 	metrics    analysis.MetricsProvider // optional override; else built from config
 	analysis   bool
 	dbRollback DatabaseRollbackRunner
+	flagBuild  func(*config.FeatureFlags) (featureflags.Provider, error) // flag plugin builder (test seam)
 }
 
 // Option configures an Engine.
@@ -125,6 +127,46 @@ func WithMetricsProvider(p analysis.MetricsProvider) Option {
 // rollback path remains observability-free.
 func WithMetricAnalysis() Option { return func(e *Engine) { e.analysis = true } }
 
+// WithFlagProviderBuilder overrides how a feature-flag provider is built from
+// config (test seam; default launches the configured flag plugin).
+func WithFlagProviderBuilder(f func(*config.FeatureFlags) (featureflags.Provider, error)) Option {
+	return func(e *Engine) { e.flagBuild = f }
+}
+
+// flagsEnabled reports whether feature-flag coupling fires for the given phase
+// ("step" or "promote"), per the config's `when` (default both).
+func flagsEnabled(ff *config.FeatureFlags, phase string) bool {
+	if ff == nil {
+		return false
+	}
+	switch ff.When {
+	case "", "both":
+		return true
+	default:
+		return ff.When == phase
+	}
+}
+
+// driveFlag sets the configured flag's rollout percentage through a freshly
+// launched flag provider, then closes it. Best-effort: a flag failure is
+// logged via audit and never aborts the rollout.
+func (e *Engine) driveFlag(ctx context.Context, ref string, ff *config.FeatureFlags, percentage int) {
+	prov, err := e.flagBuild(ff)
+	if err != nil {
+		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "featureflag build failed: " + err.Error()})
+		return
+	}
+	if c, ok := prov.(interface{ Close() error }); ok {
+		defer c.Close()
+	}
+	hook := featureflags.Hook{Provider: prov}
+	if err := hook.Apply(ctx, featureflags.Change{Flag: ff.Flag, Environment: ff.Environment, Percentage: percentage}); err != nil {
+		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "featureflag apply failed: " + err.Error()})
+		return
+	}
+	e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: fmt.Sprintf("featureflag %q → %d%%", ff.Flag, percentage)})
+}
+
 // notifyEvent delivers an event best-effort.
 func (e *Engine) notifyEvent(ctx context.Context, ev notify.Event) {
 	if e.notifier != nil {
@@ -162,6 +204,7 @@ func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 		dbRollback: execDBRollback{},
 		owner:      defaultOwner(),
 		leaseTTL:   2 * time.Minute,
+		flagBuild:  func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
 		now:        func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
@@ -563,6 +606,11 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.UpdatedAt = e.now()
 			_ = e.store.SaveRollout(ctx, r)
 			r.Note = ""
+			// Drive the coupled feature flag to match the traffic weight, so
+			// the flag rollout tracks the canary in lockstep.
+			if flagsEnabled(cfg.Spec.FeatureFlags, "step") {
+				e.driveFlag(ctx, ref, cfg.Spec.FeatureFlags, s.Weight)
+			}
 		},
 	}
 	if err := exec.Run(ctx, plan); err != nil {
@@ -621,6 +669,10 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	promoted, err := e.promoteWithNote(ctx, rolloutID, successNote)
 	if err != nil {
 		return VerifyOutcome{}, err
+	}
+	// Promotion completes the rollout: drive the coupled flag to 100%.
+	if flagsEnabled(c.Spec.FeatureFlags, "promote") {
+		e.driveFlag(ctx, promoted.TargetRef, c.Spec.FeatureFlags, 100)
 	}
 	e.notifyEvent(ctx, notify.Event{Kind: notify.Promoted, TargetRef: promoted.TargetRef, RolloutID: promoted.ID})
 	return VerifyOutcome{Rollout: promoted}, nil

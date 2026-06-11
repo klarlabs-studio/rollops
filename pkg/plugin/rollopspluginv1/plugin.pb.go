@@ -21,29 +21,27 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type ApplyRequest struct {
+type GetManifestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	Spec          []byte                 `protobuf:"bytes,2,opt,name=spec,proto3" json:"spec,omitempty"`
-	Checksum      string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"` // host protocol version, for negotiation
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ApplyRequest) Reset() {
-	*x = ApplyRequest{}
+func (x *GetManifestRequest) Reset() {
+	*x = GetManifestRequest{}
 	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ApplyRequest) String() string {
+func (x *GetManifestRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ApplyRequest) ProtoMessage() {}
+func (*GetManifestRequest) ProtoMessage() {}
 
-func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
+func (x *GetManifestRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -55,55 +53,120 @@ func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ApplyRequest.ProtoReflect.Descriptor instead.
-func (*ApplyRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetManifestRequest.ProtoReflect.Descriptor instead.
+func (*GetManifestRequest) Descriptor() ([]byte, []int) {
 	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ApplyRequest) GetKind() string {
+func (x *GetManifestRequest) GetApiVersion() string {
 	if x != nil {
-		return x.Kind
+		return x.ApiVersion
 	}
 	return ""
 }
 
-func (x *ApplyRequest) GetSpec() []byte {
+type GetManifestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	ApiVersion    string                 `protobuf:"bytes,3,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Capabilities  []*Capability          `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Safety        *SafetyRequirements    `protobuf:"bytes,5,opt,name=safety,proto3" json:"safety,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetManifestResponse) Reset() {
+	*x = GetManifestResponse{}
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetManifestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManifestResponse) ProtoMessage() {}
+
+func (x *GetManifestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[1]
 	if x != nil {
-		return x.Spec
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManifestResponse.ProtoReflect.Descriptor instead.
+func (*GetManifestResponse) Descriptor() ([]byte, []int) {
+	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetManifestResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetManifestResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetManifestResponse) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *GetManifestResponse) GetCapabilities() []*Capability {
+	if x != nil {
+		return x.Capabilities
 	}
 	return nil
 }
 
-func (x *ApplyRequest) GetChecksum() string {
+func (x *GetManifestResponse) GetSafety() *SafetyRequirements {
 	if x != nil {
-		return x.Checksum
+		return x.Safety
 	}
-	return ""
+	return nil
 }
 
-type ApplyResponse struct {
+// Capability groups related tools under a named feature (e.g. "target",
+// "featureflag"). The host routes by capability + tool.
+type Capability struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Changed       bool                   `protobuf:"varint,1,opt,name=changed,proto3" json:"changed,omitempty"`
-	Detail        string                 `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Tools         []*ToolDef             `protobuf:"bytes,3,rep,name=tools,proto3" json:"tools,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ApplyResponse) Reset() {
-	*x = ApplyResponse{}
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[1]
+func (x *Capability) Reset() {
+	*x = Capability{}
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ApplyResponse) String() string {
+func (x *Capability) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ApplyResponse) ProtoMessage() {}
+func (*Capability) ProtoMessage() {}
 
-func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[1]
+func (x *Capability) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -114,46 +177,121 @@ func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ApplyResponse.ProtoReflect.Descriptor instead.
-func (*ApplyResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use Capability.ProtoReflect.Descriptor instead.
+func (*Capability) Descriptor() ([]byte, []int) {
+	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ApplyResponse) GetChanged() bool {
+func (x *Capability) GetName() string {
 	if x != nil {
-		return x.Changed
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Capability) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Capability) GetTools() []*ToolDef {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+// ToolDef describes one invocable tool.
+type ToolDef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Mutating      bool                   `protobuf:"varint,3,opt,name=mutating,proto3" json:"mutating,omitempty"` // changes external state (vs a read-only probe)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolDef) Reset() {
+	*x = ToolDef{}
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolDef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolDef) ProtoMessage() {}
+
+func (x *ToolDef) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolDef.ProtoReflect.Descriptor instead.
+func (*ToolDef) Descriptor() ([]byte, []int) {
+	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ToolDef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ToolDef) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ToolDef) GetMutating() bool {
+	if x != nil {
+		return x.Mutating
 	}
 	return false
 }
 
-func (x *ApplyResponse) GetDetail() string {
-	if x != nil {
-		return x.Detail
-	}
-	return ""
+// SafetyRequirements declares the scopes a plugin needs. The host rejects a
+// plugin whose requirements exceed the active policy.
+type SafetyRequirements struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	NetworkHosts      []string               `protobuf:"bytes,1,rep,name=network_hosts,json=networkHosts,proto3" json:"network_hosts,omitempty"`                 // host:port or host the plugin dials
+	FilePaths         []string               `protobuf:"bytes,2,rep,name=file_paths,json=filePaths,proto3" json:"file_paths,omitempty"`                          // filesystem paths the plugin reads/writes
+	EnvVars           []string               `protobuf:"bytes,3,rep,name=env_vars,json=envVars,proto3" json:"env_vars,omitempty"`                                // environment variables the plugin reads
+	RiskClass         string                 `protobuf:"bytes,4,opt,name=risk_class,json=riskClass,proto3" json:"risk_class,omitempty"`                          // passive | active | invasive
+	NeedsConfirmation bool                   `protobuf:"varint,5,opt,name=needs_confirmation,json=needsConfirmation,proto3" json:"needs_confirmation,omitempty"` // operator must confirm before invoke
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
-type ObserveRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ObserveRequest) Reset() {
-	*x = ObserveRequest{}
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[2]
+func (x *SafetyRequirements) Reset() {
+	*x = SafetyRequirements{}
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ObserveRequest) String() string {
+func (x *SafetyRequirements) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ObserveRequest) ProtoMessage() {}
+func (*SafetyRequirements) ProtoMessage() {}
 
-func (x *ObserveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[2]
+func (x *SafetyRequirements) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -164,122 +302,69 @@ func (x *ObserveRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ObserveRequest.ProtoReflect.Descriptor instead.
-func (*ObserveRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use SafetyRequirements.ProtoReflect.Descriptor instead.
+func (*SafetyRequirements) Descriptor() ([]byte, []int) {
+	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
 }
 
-type ObserveResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
-	Meta          map[string]string      `protobuf:"bytes,2,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ObserveResponse) Reset() {
-	*x = ObserveResponse{}
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ObserveResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ObserveResponse) ProtoMessage() {}
-
-func (x *ObserveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[3]
+func (x *SafetyRequirements) GetNetworkHosts() []string {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ObserveResponse.ProtoReflect.Descriptor instead.
-func (*ObserveResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ObserveResponse) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-func (x *ObserveResponse) GetMeta() map[string]string {
-	if x != nil {
-		return x.Meta
+		return x.NetworkHosts
 	}
 	return nil
 }
 
-type HealthRequest struct {
+func (x *SafetyRequirements) GetFilePaths() []string {
+	if x != nil {
+		return x.FilePaths
+	}
+	return nil
+}
+
+func (x *SafetyRequirements) GetEnvVars() []string {
+	if x != nil {
+		return x.EnvVars
+	}
+	return nil
+}
+
+func (x *SafetyRequirements) GetRiskClass() string {
+	if x != nil {
+		return x.RiskClass
+	}
+	return ""
+}
+
+func (x *SafetyRequirements) GetNeedsConfirmation() bool {
+	if x != nil {
+		return x.NeedsConfirmation
+	}
+	return false
+}
+
+type InvokeToolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Capability    string                 `protobuf:"bytes,1,opt,name=capability,proto3" json:"capability,omitempty"`
+	Tool          string                 `protobuf:"bytes,2,opt,name=tool,proto3" json:"tool,omitempty"`
+	Input         []byte                 `protobuf:"bytes,3,opt,name=input,proto3" json:"input,omitempty"` // JSON
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HealthRequest) Reset() {
-	*x = HealthRequest{}
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HealthRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HealthRequest) ProtoMessage() {}
-
-func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
-func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
-}
-
-type HealthResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// 1 = healthy, 2 = degraded, 3 = unhealthy (pkg/target.HealthState).
-	State         int32  `protobuf:"varint,1,opt,name=state,proto3" json:"state,omitempty"`
-	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HealthResponse) Reset() {
-	*x = HealthResponse{}
+func (x *InvokeToolRequest) Reset() {
+	*x = InvokeToolRequest{}
 	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HealthResponse) String() string {
+func (x *InvokeToolRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HealthResponse) ProtoMessage() {}
+func (*InvokeToolRequest) ProtoMessage() {}
 
-func (x *HealthResponse) ProtoReflect() protoreflect.Message {
+func (x *InvokeToolRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -291,52 +376,120 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
-func (*HealthResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use InvokeToolRequest.ProtoReflect.Descriptor instead.
+func (*InvokeToolRequest) Descriptor() ([]byte, []int) {
 	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *HealthResponse) GetState() int32 {
+func (x *InvokeToolRequest) GetCapability() string {
 	if x != nil {
-		return x.State
-	}
-	return 0
-}
-
-func (x *HealthResponse) GetReason() string {
-	if x != nil {
-		return x.Reason
+		return x.Capability
 	}
 	return ""
+}
+
+func (x *InvokeToolRequest) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *InvokeToolRequest) GetInput() []byte {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+type InvokeToolResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Output        []byte                 `protobuf:"bytes,1,opt,name=output,proto3" json:"output,omitempty"` // JSON
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvokeToolResponse) Reset() {
+	*x = InvokeToolResponse{}
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeToolResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeToolResponse) ProtoMessage() {}
+
+func (x *InvokeToolResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_plugin_v1_plugin_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeToolResponse.ProtoReflect.Descriptor instead.
+func (*InvokeToolResponse) Descriptor() ([]byte, []int) {
+	return file_rollops_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *InvokeToolResponse) GetOutput() []byte {
+	if x != nil {
+		return x.Output
+	}
+	return nil
 }
 
 var File_rollops_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_rollops_plugin_v1_plugin_proto_rawDesc = "" +
 	"\n" +
-	"\x1erollops/plugin/v1/plugin.proto\x12\x11rollops.plugin.v1\"R\n" +
-	"\fApplyRequest\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04spec\x18\x02 \x01(\fR\x04spec\x12\x1a\n" +
-	"\bchecksum\x18\x03 \x01(\tR\bchecksum\"A\n" +
-	"\rApplyResponse\x12\x18\n" +
-	"\achanged\x18\x01 \x01(\bR\achanged\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\x10\n" +
-	"\x0eObserveRequest\"\xa2\x01\n" +
-	"\x0fObserveResponse\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05value\x12@\n" +
-	"\x04meta\x18\x02 \x03(\v2,.rollops.plugin.v1.ObserveResponse.MetaEntryR\x04meta\x1a7\n" +
-	"\tMetaEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x0f\n" +
-	"\rHealthRequest\">\n" +
-	"\x0eHealthResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\x05R\x05state\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason2\xfb\x01\n" +
-	"\fTargetPlugin\x12J\n" +
-	"\x05Apply\x12\x1f.rollops.plugin.v1.ApplyRequest\x1a .rollops.plugin.v1.ApplyResponse\x12P\n" +
-	"\aObserve\x12!.rollops.plugin.v1.ObserveRequest\x1a\".rollops.plugin.v1.ObserveResponse\x12M\n" +
-	"\x06Health\x12 .rollops.plugin.v1.HealthRequest\x1a!.rollops.plugin.v1.HealthResponseBCZAgo.klarlabs.de/rollops/pkg/plugin/rollopspluginv1;rollopspluginv1b\x06proto3"
+	"\x1erollops/plugin/v1/plugin.proto\x12\x11rollops.plugin.v1\"5\n" +
+	"\x12GetManifestRequest\x12\x1f\n" +
+	"\vapi_version\x18\x01 \x01(\tR\n" +
+	"apiVersion\"\xe6\x01\n" +
+	"\x13GetManifestResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1f\n" +
+	"\vapi_version\x18\x03 \x01(\tR\n" +
+	"apiVersion\x12A\n" +
+	"\fcapabilities\x18\x04 \x03(\v2\x1d.rollops.plugin.v1.CapabilityR\fcapabilities\x12=\n" +
+	"\x06safety\x18\x05 \x01(\v2%.rollops.plugin.v1.SafetyRequirementsR\x06safety\"t\n" +
+	"\n" +
+	"Capability\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x120\n" +
+	"\x05tools\x18\x03 \x03(\v2\x1a.rollops.plugin.v1.ToolDefR\x05tools\"[\n" +
+	"\aToolDef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
+	"\bmutating\x18\x03 \x01(\bR\bmutating\"\xc1\x01\n" +
+	"\x12SafetyRequirements\x12#\n" +
+	"\rnetwork_hosts\x18\x01 \x03(\tR\fnetworkHosts\x12\x1d\n" +
+	"\n" +
+	"file_paths\x18\x02 \x03(\tR\tfilePaths\x12\x19\n" +
+	"\benv_vars\x18\x03 \x03(\tR\aenvVars\x12\x1d\n" +
+	"\n" +
+	"risk_class\x18\x04 \x01(\tR\triskClass\x12-\n" +
+	"\x12needs_confirmation\x18\x05 \x01(\bR\x11needsConfirmation\"]\n" +
+	"\x11InvokeToolRequest\x12\x1e\n" +
+	"\n" +
+	"capability\x18\x01 \x01(\tR\n" +
+	"capability\x12\x12\n" +
+	"\x04tool\x18\x02 \x01(\tR\x04tool\x12\x14\n" +
+	"\x05input\x18\x03 \x01(\fR\x05input\",\n" +
+	"\x12InvokeToolResponse\x12\x16\n" +
+	"\x06output\x18\x01 \x01(\fR\x06output2\xc1\x01\n" +
+	"\x06Plugin\x12\\\n" +
+	"\vGetManifest\x12%.rollops.plugin.v1.GetManifestRequest\x1a&.rollops.plugin.v1.GetManifestResponse\x12Y\n" +
+	"\n" +
+	"InvokeTool\x12$.rollops.plugin.v1.InvokeToolRequest\x1a%.rollops.plugin.v1.InvokeToolResponseBCZAgo.klarlabs.de/rollops/pkg/plugin/rollopspluginv1;rollopspluginv1b\x06proto3"
 
 var (
 	file_rollops_plugin_v1_plugin_proto_rawDescOnce sync.Once
@@ -352,27 +505,27 @@ func file_rollops_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 
 var file_rollops_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_rollops_plugin_v1_plugin_proto_goTypes = []any{
-	(*ApplyRequest)(nil),    // 0: rollops.plugin.v1.ApplyRequest
-	(*ApplyResponse)(nil),   // 1: rollops.plugin.v1.ApplyResponse
-	(*ObserveRequest)(nil),  // 2: rollops.plugin.v1.ObserveRequest
-	(*ObserveResponse)(nil), // 3: rollops.plugin.v1.ObserveResponse
-	(*HealthRequest)(nil),   // 4: rollops.plugin.v1.HealthRequest
-	(*HealthResponse)(nil),  // 5: rollops.plugin.v1.HealthResponse
-	nil,                     // 6: rollops.plugin.v1.ObserveResponse.MetaEntry
+	(*GetManifestRequest)(nil),  // 0: rollops.plugin.v1.GetManifestRequest
+	(*GetManifestResponse)(nil), // 1: rollops.plugin.v1.GetManifestResponse
+	(*Capability)(nil),          // 2: rollops.plugin.v1.Capability
+	(*ToolDef)(nil),             // 3: rollops.plugin.v1.ToolDef
+	(*SafetyRequirements)(nil),  // 4: rollops.plugin.v1.SafetyRequirements
+	(*InvokeToolRequest)(nil),   // 5: rollops.plugin.v1.InvokeToolRequest
+	(*InvokeToolResponse)(nil),  // 6: rollops.plugin.v1.InvokeToolResponse
 }
 var file_rollops_plugin_v1_plugin_proto_depIdxs = []int32{
-	6, // 0: rollops.plugin.v1.ObserveResponse.meta:type_name -> rollops.plugin.v1.ObserveResponse.MetaEntry
-	0, // 1: rollops.plugin.v1.TargetPlugin.Apply:input_type -> rollops.plugin.v1.ApplyRequest
-	2, // 2: rollops.plugin.v1.TargetPlugin.Observe:input_type -> rollops.plugin.v1.ObserveRequest
-	4, // 3: rollops.plugin.v1.TargetPlugin.Health:input_type -> rollops.plugin.v1.HealthRequest
-	1, // 4: rollops.plugin.v1.TargetPlugin.Apply:output_type -> rollops.plugin.v1.ApplyResponse
-	3, // 5: rollops.plugin.v1.TargetPlugin.Observe:output_type -> rollops.plugin.v1.ObserveResponse
-	5, // 6: rollops.plugin.v1.TargetPlugin.Health:output_type -> rollops.plugin.v1.HealthResponse
-	4, // [4:7] is the sub-list for method output_type
-	1, // [1:4] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: rollops.plugin.v1.GetManifestResponse.capabilities:type_name -> rollops.plugin.v1.Capability
+	4, // 1: rollops.plugin.v1.GetManifestResponse.safety:type_name -> rollops.plugin.v1.SafetyRequirements
+	3, // 2: rollops.plugin.v1.Capability.tools:type_name -> rollops.plugin.v1.ToolDef
+	0, // 3: rollops.plugin.v1.Plugin.GetManifest:input_type -> rollops.plugin.v1.GetManifestRequest
+	5, // 4: rollops.plugin.v1.Plugin.InvokeTool:input_type -> rollops.plugin.v1.InvokeToolRequest
+	1, // 5: rollops.plugin.v1.Plugin.GetManifest:output_type -> rollops.plugin.v1.GetManifestResponse
+	6, // 6: rollops.plugin.v1.Plugin.InvokeTool:output_type -> rollops.plugin.v1.InvokeToolResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_rollops_plugin_v1_plugin_proto_init() }

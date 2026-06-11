@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 364,
+  "version": 366,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -783,6 +783,13 @@
       "completed_at": "2026-06-09T21:13:35.98719+02:00",
       "elapsed_minutes": 0
     },
+    "task-manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins": {
+      "status": "in_progress",
+      "path": "",
+      "owner": "felixgeelhaar",
+      "started_at": "2026-06-11T12:51:21.418341+02:00",
+      "elapsed_minutes": 0
+    },
     "task-manual-and-agent-driven-rollback-paths": {
       "status": "verified",
       "path": "",
@@ -1298,5 +1305,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-11T07:32:35.593189+02:00"
+  "updated_at": "2026-06-11T12:51:21.418341+02:00"
 }

@@ -111,6 +111,28 @@ func validateSemantics(c *Config) []error {
 	if c.Spec.Analysis != nil {
 		errs = append(errs, validateAnalysis(c.Spec.Analysis)...)
 	}
+	if c.Spec.FeatureFlags != nil {
+		errs = append(errs, validateFeatureFlags(c.Spec.FeatureFlags)...)
+	}
+	return errs
+}
+
+func validateFeatureFlags(f *FeatureFlags) []error {
+	var errs []error
+	if f.Plugin == "" {
+		errs = append(errs, fmt.Errorf("config: featureFlags.plugin (binary path) is required"))
+	}
+	if f.SHA256 == "" {
+		errs = append(errs, fmt.Errorf("config: featureFlags.sha256 pin is required"))
+	}
+	if f.Flag == "" {
+		errs = append(errs, fmt.Errorf("config: featureFlags.flag is required"))
+	}
+	switch f.When {
+	case "", "step", "promote", "both":
+	default:
+		errs = append(errs, fmt.Errorf("config: featureFlags.when %q must be step | promote | both", f.When))
+	}
 	return errs
 }
 

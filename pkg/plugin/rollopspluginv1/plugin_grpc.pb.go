@@ -19,191 +19,159 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TargetPlugin_Apply_FullMethodName   = "/rollops.plugin.v1.TargetPlugin/Apply"
-	TargetPlugin_Observe_FullMethodName = "/rollops.plugin.v1.TargetPlugin/Observe"
-	TargetPlugin_Health_FullMethodName  = "/rollops.plugin.v1.TargetPlugin/Health"
+	Plugin_GetManifest_FullMethodName = "/rollops.plugin.v1.Plugin/GetManifest"
+	Plugin_InvokeTool_FullMethodName  = "/rollops.plugin.v1.Plugin/InvokeTool"
 )
 
-// TargetPluginClient is the client API for TargetPlugin service.
+// PluginClient is the client API for Plugin service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// TargetPlugin is the wire a third-party target plugin serves. The host
-// (rollops) launches the plugin binary, reads the handshake line from stdout,
-// dials this service on the advertised unix socket, and adapts it into the
-// pkg/target.Target contract. Semantics (idempotent apply, stable fingerprint,
-// concrete health, no secret leakage) are defined in docs/target-plugins.md and
-// enforced by pkg/conformance.
-type TargetPluginClient interface {
-	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
-	Observe(ctx context.Context, in *ObserveRequest, opts ...grpc.CallOption) (*ObserveResponse, error)
-	Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
+// Plugin is the single, capability-typed wire every Rollops plugin serves
+// (modeled on nox-hq's plugin architecture). A plugin declares what it does via
+// a manifest — capabilities grouping named tools, plus the safety scopes it
+// needs — and the host invokes tools generically. New plugin kinds (target,
+// feature-flag, …) are new capabilities, not new services.
+type PluginClient interface {
+	// GetManifest returns the plugin's capabilities and safety requirements. The
+	// host validates the manifest against its safety policy before any invoke.
+	GetManifest(ctx context.Context, in *GetManifestRequest, opts ...grpc.CallOption) (*GetManifestResponse, error)
+	// InvokeTool executes a named tool. Input and output are JSON bytes whose
+	// shape is defined by the capability the tool belongs to.
+	InvokeTool(ctx context.Context, in *InvokeToolRequest, opts ...grpc.CallOption) (*InvokeToolResponse, error)
 }
 
-type targetPluginClient struct {
+type pluginClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewTargetPluginClient(cc grpc.ClientConnInterface) TargetPluginClient {
-	return &targetPluginClient{cc}
+func NewPluginClient(cc grpc.ClientConnInterface) PluginClient {
+	return &pluginClient{cc}
 }
 
-func (c *targetPluginClient) Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error) {
+func (c *pluginClient) GetManifest(ctx context.Context, in *GetManifestRequest, opts ...grpc.CallOption) (*GetManifestResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ApplyResponse)
-	err := c.cc.Invoke(ctx, TargetPlugin_Apply_FullMethodName, in, out, cOpts...)
+	out := new(GetManifestResponse)
+	err := c.cc.Invoke(ctx, Plugin_GetManifest_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *targetPluginClient) Observe(ctx context.Context, in *ObserveRequest, opts ...grpc.CallOption) (*ObserveResponse, error) {
+func (c *pluginClient) InvokeTool(ctx context.Context, in *InvokeToolRequest, opts ...grpc.CallOption) (*InvokeToolResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ObserveResponse)
-	err := c.cc.Invoke(ctx, TargetPlugin_Observe_FullMethodName, in, out, cOpts...)
+	out := new(InvokeToolResponse)
+	err := c.cc.Invoke(ctx, Plugin_InvokeTool_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *targetPluginClient) Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HealthResponse)
-	err := c.cc.Invoke(ctx, TargetPlugin_Health_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// TargetPluginServer is the server API for TargetPlugin service.
-// All implementations must embed UnimplementedTargetPluginServer
+// PluginServer is the server API for Plugin service.
+// All implementations must embed UnimplementedPluginServer
 // for forward compatibility.
 //
-// TargetPlugin is the wire a third-party target plugin serves. The host
-// (rollops) launches the plugin binary, reads the handshake line from stdout,
-// dials this service on the advertised unix socket, and adapts it into the
-// pkg/target.Target contract. Semantics (idempotent apply, stable fingerprint,
-// concrete health, no secret leakage) are defined in docs/target-plugins.md and
-// enforced by pkg/conformance.
-type TargetPluginServer interface {
-	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
-	Observe(context.Context, *ObserveRequest) (*ObserveResponse, error)
-	Health(context.Context, *HealthRequest) (*HealthResponse, error)
-	mustEmbedUnimplementedTargetPluginServer()
+// Plugin is the single, capability-typed wire every Rollops plugin serves
+// (modeled on nox-hq's plugin architecture). A plugin declares what it does via
+// a manifest — capabilities grouping named tools, plus the safety scopes it
+// needs — and the host invokes tools generically. New plugin kinds (target,
+// feature-flag, …) are new capabilities, not new services.
+type PluginServer interface {
+	// GetManifest returns the plugin's capabilities and safety requirements. The
+	// host validates the manifest against its safety policy before any invoke.
+	GetManifest(context.Context, *GetManifestRequest) (*GetManifestResponse, error)
+	// InvokeTool executes a named tool. Input and output are JSON bytes whose
+	// shape is defined by the capability the tool belongs to.
+	InvokeTool(context.Context, *InvokeToolRequest) (*InvokeToolResponse, error)
+	mustEmbedUnimplementedPluginServer()
 }
 
-// UnimplementedTargetPluginServer must be embedded to have
+// UnimplementedPluginServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedTargetPluginServer struct{}
+type UnimplementedPluginServer struct{}
 
-func (UnimplementedTargetPluginServer) Apply(context.Context, *ApplyRequest) (*ApplyResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Apply not implemented")
+func (UnimplementedPluginServer) GetManifest(context.Context, *GetManifestRequest) (*GetManifestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetManifest not implemented")
 }
-func (UnimplementedTargetPluginServer) Observe(context.Context, *ObserveRequest) (*ObserveResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Observe not implemented")
+func (UnimplementedPluginServer) InvokeTool(context.Context, *InvokeToolRequest) (*InvokeToolResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvokeTool not implemented")
 }
-func (UnimplementedTargetPluginServer) Health(context.Context, *HealthRequest) (*HealthResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Health not implemented")
-}
-func (UnimplementedTargetPluginServer) mustEmbedUnimplementedTargetPluginServer() {}
-func (UnimplementedTargetPluginServer) testEmbeddedByValue()                      {}
+func (UnimplementedPluginServer) mustEmbedUnimplementedPluginServer() {}
+func (UnimplementedPluginServer) testEmbeddedByValue()                {}
 
-// UnsafeTargetPluginServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to TargetPluginServer will
+// UnsafePluginServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PluginServer will
 // result in compilation errors.
-type UnsafeTargetPluginServer interface {
-	mustEmbedUnimplementedTargetPluginServer()
+type UnsafePluginServer interface {
+	mustEmbedUnimplementedPluginServer()
 }
 
-func RegisterTargetPluginServer(s grpc.ServiceRegistrar, srv TargetPluginServer) {
-	// If the following call panics, it indicates UnimplementedTargetPluginServer was
+func RegisterPluginServer(s grpc.ServiceRegistrar, srv PluginServer) {
+	// If the following call panics, it indicates UnimplementedPluginServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&TargetPlugin_ServiceDesc, srv)
+	s.RegisterService(&Plugin_ServiceDesc, srv)
 }
 
-func _TargetPlugin_Apply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApplyRequest)
+func _Plugin_GetManifest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetManifestRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TargetPluginServer).Apply(ctx, in)
+		return srv.(PluginServer).GetManifest(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: TargetPlugin_Apply_FullMethodName,
+		FullMethod: Plugin_GetManifest_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TargetPluginServer).Apply(ctx, req.(*ApplyRequest))
+		return srv.(PluginServer).GetManifest(ctx, req.(*GetManifestRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _TargetPlugin_Observe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ObserveRequest)
+func _Plugin_InvokeTool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvokeToolRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TargetPluginServer).Observe(ctx, in)
+		return srv.(PluginServer).InvokeTool(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: TargetPlugin_Observe_FullMethodName,
+		FullMethod: Plugin_InvokeTool_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TargetPluginServer).Observe(ctx, req.(*ObserveRequest))
+		return srv.(PluginServer).InvokeTool(ctx, req.(*InvokeToolRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _TargetPlugin_Health_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HealthRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(TargetPluginServer).Health(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: TargetPlugin_Health_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TargetPluginServer).Health(ctx, req.(*HealthRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// TargetPlugin_ServiceDesc is the grpc.ServiceDesc for TargetPlugin service.
+// Plugin_ServiceDesc is the grpc.ServiceDesc for Plugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var TargetPlugin_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "rollops.plugin.v1.TargetPlugin",
-	HandlerType: (*TargetPluginServer)(nil),
+var Plugin_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "rollops.plugin.v1.Plugin",
+	HandlerType: (*PluginServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Apply",
-			Handler:    _TargetPlugin_Apply_Handler,
+			MethodName: "GetManifest",
+			Handler:    _Plugin_GetManifest_Handler,
 		},
 		{
-			MethodName: "Observe",
-			Handler:    _TargetPlugin_Observe_Handler,
-		},
-		{
-			MethodName: "Health",
-			Handler:    _TargetPlugin_Health_Handler,
+			MethodName: "InvokeTool",
+			Handler:    _Plugin_InvokeTool_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

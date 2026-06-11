@@ -51,7 +51,7 @@ func main() {
 	}
 	fmt.Fprintln(os.Stderr, "testplugin starting") // log noise the host must skip
 	fmt.Println("not a handshake line")
-	if err := plugin.Serve(&memTarget{}); err != nil {
+	if err := plugin.ServeTarget("rollops/testplugin", "1.0.0", &memTarget{}, plugin.Safety{RiskClass: plugin.RiskActive}); err != nil {
 		fmt.Fprintln(os.Stderr, "testplugin:", err)
 		os.Exit(1)
 	}

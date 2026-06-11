@@ -12,8 +12,9 @@ change before calling it:
 - rollout percentage must be `0..100`
 - nil provider is inert
 
-This supports progressive rollout workflows that coordinate deploys with a
-feature flag provider while keeping Rollops provider-agnostic.
+This is now a shipped feature, not just a seam: a feature-flag provider is a
+gRPC plugin and the rollout drives it per progressive step and/or on promote.
+See `docs/feature-flags.md`.
 
 ## Governance
 
