@@ -2,6 +2,26 @@
 
 *Updated: 2026-06-10*
 
+## 🧩 Plugin architecture v2 + feature flags (2026-06-11, commit ab30c93, unreleased)
+
+Phase-2 ecosystem work. Operator chose nox-hq's plugin model. Replaced the
+typed TargetPlugin gRPC service with ONE generic Plugin service (GetManifest +
+InvokeTool). Plugins declare capabilities (named tool groups) + safety
+requirements (network/file/env/risk-class) in a manifest; host validates
+against a safety Policy before invoking — capability-scoped trust. New kinds =
+new capabilities, not new services. Structure: pkg/plugin SDK
+(NewManifest/NewServer/Serve + ServeTarget + ServeFlagProvider, wire.go
+payloads); internal/pluginhost (shared launch/handshake/manifest/policy/invoke/
+teardown, extracted from old target launcher); internal/target/plugin thin
+target-capability adapter. Feature-flag plugins = first new capability:
+featureFlags spec block (plugin+sha256+flag+environment+when), engine drives
+flag % per progressive step (OnStep) and/or 100% on promote (when:
+step|promote|both), best-effort/audited. BREAKING vs v0.5.0 plugin protocol
+(pre-1.0, no external plugins). E2E-tested with real subprocess plugins for
+both capabilities. docs/feature-flags.md + example added. Roady 119/119, no
+drift. Next: v0.6.0 cut. Remaining Phase-2 OSS seams: Obvia observability,
+Relicta governance (both contract-only). Studio = separate commercial repo.
+
 ## 🔍 Expert multi-agent review (2026-06-11, commit f75eb33)
 
 7-angle code review (line/removed/cross-file/reuse/simplify/efficiency/
