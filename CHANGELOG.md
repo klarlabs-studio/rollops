@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 - Manifest-Capability Plugins + Feature Flags
 
 - **Manifest-capability plugin architecture** (nox-style). The typed
   `TargetPlugin` gRPC service is replaced by one generic `Plugin` service
