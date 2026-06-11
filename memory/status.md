@@ -2,7 +2,11 @@
 
 *Updated: 2026-06-10*
 
-## Plugin process lifecycle (2026-06-11, post-v0.4.0, unreleased)
+## 🏷️ v0.5.0 TAGGED — target plugin runtime
+
+Plugin lifecycle released as v0.5.0 (GitHub release with archives).
+
+## Plugin process lifecycle (2026-06-11, post-v0.4.0)
 
 TDD §17 plugin future-work closed: `plugin` target kind launches sha256-
 pinned plugin binaries as subprocesses (stdout handshake → unix-socket

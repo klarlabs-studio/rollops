@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 - Target Plugin Runtime
 
 - Target plugin process lifecycle: the new `plugin` target kind launches a
   sha256-pinned third-party plugin binary as a subprocess per engine
