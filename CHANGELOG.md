@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 - Dogfood Fixes + Hardening
 
 - Drift is now asserted after a rollback too: the rolled-back-to manifest is
   the live baseline, so out-of-band changes after a rollback are flagged
