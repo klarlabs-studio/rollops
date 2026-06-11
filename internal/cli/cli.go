@@ -35,10 +35,12 @@ type historyOperations interface {
 
 // App is a configured CLI.
 type App struct {
-	Ops    Operations
-	Out    io.Writer
-	Actor  rollout.Identity // the invoking identity (one-shot inherits the local user)
-	Doctor Doctor
+	Ops           Operations
+	Out           io.Writer
+	Actor         rollout.Identity // the invoking identity (one-shot inherits the local user)
+	Doctor        Doctor
+	PluginFetcher PluginFetcher                                                          // overrides plugin source retrieval (tests)
+	CosignRun     func(ctx context.Context, name string, args ...string) (string, error) // overrides the cosign runner (tests)
 }
 
 // DaemonProbe checks whether a daemon can be reached and authenticated.
@@ -74,12 +76,14 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.rollback(ctx, rest)
 	case "doctor":
 		return a.doctor(ctx, rest)
+	case "plugin":
+		return a.plugin(ctx, rest)
 	case "version", "--version":
 		return a.version()
 	case "help", "-h", "--help":
 		return a.usage()
 	default:
-		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, rollback, doctor, version)", cmd)
+		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, rollback, doctor, plugin, version)", cmd)
 	}
 }
 
@@ -218,7 +222,7 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  version                  print build version")
+	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin install <src>     fetch, verify, and install a plugin binary\n  version                  print build version")
 	return nil
 }
 

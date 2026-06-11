@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Release automation: a tag push (`v*`) now builds the cross-platform archives,
+  checksums, and GitHub release via GoReleaser, replacing the manual flow. The
+  release job rebuilds the embedded UI bundle and fails if it is stale.
+- `rollops plugin install <path|https-url>`: fetches a plugin binary, optionally
+  cosign-verifies it (`--cosign-key` or keyless `--cosign-identity/-issuer` with
+  `--signature/--certificate/--bundle`), installs it into the plugin directory,
+  and prints the sha256 to pin. Signature verified at install; sha256 pin
+  enforced at launch.
+
 ## v0.6.0 - Manifest-Capability Plugins + Feature Flags
 
 - **Manifest-capability plugin architecture** (nox-style). The typed

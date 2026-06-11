@@ -49,7 +49,8 @@ func run(args []string) error {
 	}
 	app.Doctor.Notifier, app.Doctor.NotifyChannels = notify.FromEnv(os.Getenv)
 
-	if len(args) > 0 && args[0] == "doctor" {
+	// doctor and plugin need no engine/daemon — dispatch them directly.
+	if len(args) > 0 && (args[0] == "doctor" || args[0] == "plugin") {
 		return app.Run(context.Background(), args)
 	}
 

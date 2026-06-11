@@ -115,6 +115,29 @@ invoking any tool — by default network egress must be allow-listed and only up
 to `active` risk is admitted. For a custom capability, drop to `NewManifest` /
 `NewServer` / `Serve` directly.
 
+## Installing a Plugin
+
+`rollops plugin install` fetches a plugin binary (a local path or `https://`
+URL), optionally verifies its cosign signature, installs it into the plugin
+directory, and prints the sha256 to pin:
+
+```sh
+# from a release URL, verifying a keyless cosign signature
+rollops plugin install https://example.com/rollops-plugin-flagsmith \
+  --signature flagsmith.sig --certificate flagsmith.pem \
+  --cosign-identity 'https://github.com/acme/.github/...' \
+  --cosign-issuer 'https://token.actions.githubusercontent.com'
+
+# or key-based, or just install + hash a local binary
+rollops plugin install ./rollops-plugin-flagsmith --cosign-key cosign.pub
+rollops plugin install ./rollops-plugin-flagsmith
+```
+
+Default install dir is `~/.rollops/plugins` (override with `--dir` or
+`ROLLOPS_PLUGIN_DIR`). The trust chain: the signature is verified once at
+install; the printed sha256 is then pinned in the spec and enforced on every
+launch, so the bytes that ran through cosign are the bytes that execute.
+
 ## Using a Plugin
 
 Declare the target with the `plugin` kind. The binary's sha256 pin is
