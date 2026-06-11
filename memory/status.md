@@ -2,6 +2,18 @@
 
 *Updated: 2026-06-10*
 
+## Plugin process lifecycle (2026-06-11, post-v0.4.0, unreleased)
+
+TDD §17 plugin future-work closed: `plugin` target kind launches sha256-
+pinned plugin binaries as subprocesses (stdout handshake → unix-socket
+gRPC → stdin-close teardown). Public authoring toolkit `pkg/plugin`
+(Serve + handshake) with public proto stubs `pkg/plugin/rollopspluginv1`
+(rollops.plugin.v1.TargetPlugin). Engine releases Closer targets after
+every operation; step.Guarded forwards Close. E2E tested against real
+compiled subprocess. Roady feature added + task completed, 118/118, no
+drift. Studio decision: stays out of OSS repo (open-core boundary);
+operator chose plugin lifecycle over starting studio repo.
+
 ## 🏷️ v0.4.0 TAGGED — live progressive step progress
 
 Engine persists per-step progress (migration 0002), console step bar +
