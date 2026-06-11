@@ -2,6 +2,23 @@
 
 *Updated: 2026-06-10*
 
+## 🔍 Expert multi-agent review (2026-06-11, commit f75eb33)
+
+7-angle code review (line/removed/cross-file/reuse/simplify/efficiency/
+altitude) + security pass on plugin runtime over v0.5.0..HEAD. Fixed:
+UI authFailed stuck-flag (transient error after 401 mislabelled);
+`paused` phase invisible in UI predicates (held canary → Unknown/no
+progress/not in attention) — consolidated 4 duplicated phase regexes into
+isActive/isDegraded helpers; plugin binary symlink-resolve before sha256
+verify; docs/target-plugins.md Security model section.
+Refuted (verified, no change): reconcile-loop from drift widening
+(reconcile keys on Plan-vs-Git, not DriftReport); secret leak to plugins
+(Apply uses unresolved manifest; plugin.Build never forwards resolved
+tcfg.Spec); socket-redirect (plugin already host-user code).
+Deferred low-pri hardening: settled() as rollout.Phase method; DriftReport
+N+1 ObservedState; plugin Setpgid group-kill + bounded/tagged stderr +
+explicit bufio.Scanner buffer bound.
+
 ## ✅ Hetzner k3s dogfood (2026-06-11, v0.5.0 binaries)
 
 Full lifecycle verified LIVE on the klarlabs edge cluster (k3s v1.35.4,
