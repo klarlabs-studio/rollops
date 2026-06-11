@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Drift is now asserted after a rollback too: the rolled-back-to manifest is
+  the live baseline, so out-of-band changes after a rollback are flagged
+  (previously only promoted targets were checked).
+- Console banners distinguish failure modes: unauthorized (401/403, flagged
+  immediately), live updates lost with last known state shown, and nothing
+  loaded yet. The UI is served with `Cache-Control: no-cache` so an upgraded
+  daemon never drives a stale cached bundle.
+
 ## v0.5.0 - Target Plugin Runtime
 
 - Target plugin process lifecycle: the new `plugin` target kind launches a

@@ -88,6 +88,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
+		// The bundle is embedded in the binary and changes with every release;
+		// no-cache forces revalidation so an upgraded daemon never serves a UI
+		// driven by a stale cached bundle.
+		h.Set("Cache-Control", "no-cache")
 		next.ServeHTTP(w, r)
 	})
 }

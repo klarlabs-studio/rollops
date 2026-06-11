@@ -115,6 +115,8 @@ interface State {
   busy: boolean;
   confirmTarget: string; // rollback confirmation modal ('' = closed)
   failures: number; // consecutive refresh failures → stale banner
+  authFailed: boolean; // last refresh got 401/403 → unauthorized banner
+  loadedOnce: boolean; // any successful load yet — picks the stale message
   now: number; // ticking clock for relative timestamps
 }
 
@@ -143,6 +145,8 @@ const App = defineComponent({
       busy: false,
       confirmTarget: '',
       failures: 0,
+      authFailed: false,
+      loadedOnce: false,
       now: Date.now(),
     };
   },
@@ -182,7 +186,11 @@ const App = defineComponent({
   methods: {
     async fetchJSON(u: string): Promise<unknown> {
       const r = await fetch(u);
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) {
+        const e = new Error(await r.text()) as Error & { status?: number };
+        e.status = r.status;
+        throw e;
+      }
       return r.json();
     },
     async refresh(): Promise<void> {
@@ -195,10 +203,15 @@ const App = defineComponent({
           );
         }
         this.failures = 0;
-      } catch {
+        this.authFailed = false;
+        this.loadedOnce = true;
+      } catch (e) {
         // transient or validation miss; keep last good state, count for the
         // stale banner so the operator knows the view stopped updating.
+        // 401/403 won't self-heal — flag it immediately and by name.
         this.failures++;
+        const status = (e as { status?: number }).status;
+        if (status === 401 || status === 403) this.authFailed = true;
       }
       const n = this.attention.length;
       document.title = n ? `(${n}) Rollops` : 'Rollops';

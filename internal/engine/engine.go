@@ -216,8 +216,11 @@ type DriftItem struct {
 }
 
 // DriftReport compares the last observed fingerprint of each target against its
-// most recent rollout's desired checksum. A promoted target whose observed
-// state no longer matches desired has drifted.
+// most recent rollout's desired checksum. Drift is asserted for the two
+// settled phases whose desired state is authoritative: promoted, and
+// rolled-back (rollback persists the restored manifest as Desired, so the
+// rolled-back-to state is the baseline). In-flight or rejected rollouts make
+// no claim about live state.
 func (e *Engine) DriftReport(ctx context.Context) ([]DriftItem, error) {
 	rs, err := e.store.ListRollouts(ctx, 0)
 	if err != nil {
@@ -239,10 +242,15 @@ func (e *Engine) DriftReport(ctx context.Context) ([]DriftItem, error) {
 			Phase:     r.Phase,
 			Desired:   r.Desired.Checksum,
 			Observed:  observed,
-			Drifted:   r.Phase == rollout.PhasePromoted && observed != r.Desired.Checksum,
+			Drifted:   settled(r.Phase) && observed != r.Desired.Checksum,
 		})
 	}
 	return out, nil
+}
+
+// settled reports whether a phase asserts its Desired as the live baseline.
+func settled(p rollout.Phase) bool {
+	return p == rollout.PhasePromoted || p == rollout.PhaseRolledBack
 }
 
 // PlanAction is the high-level effect an apply would have.

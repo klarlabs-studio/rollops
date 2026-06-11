@@ -316,6 +316,46 @@ func TestRollback_ReappliesPrior(t *testing.T) {
 	}
 }
 
+func TestDriftReport_AssertsRolledBackBaseline(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	ctx := context.Background()
+	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+
+	prior := pt.Manifest{Kind: "fake", Spec: []byte(`{"x":0}`), Checksum: "prior"}
+	if _, err := e.Rollback(ctx, r.ID, prior); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	// Live state matches the restored manifest → no drift.
+	fake.fp = pt.Fingerprint{Value: "prior"}
+	c := loadConfig(t)
+	if _, err := e.Observe(ctx, c.Spec.Target); err != nil {
+		t.Fatal(err)
+	}
+	items, err := e.DriftReport(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Drifted {
+		t.Fatalf("matching rolled-back baseline must not drift: %+v", items)
+	}
+
+	// Out-of-band change after a rollback → the rolled-back-to manifest is
+	// the baseline, so this must be flagged.
+	fake.fp = pt.Fingerprint{Value: "tampered"}
+	if _, err := e.Observe(ctx, c.Spec.Target); err != nil {
+		t.Fatal(err)
+	}
+	items, err = e.DriftReport(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || !items[0].Drifted {
+		t.Fatalf("out-of-band change after rollback must drift: %+v", items)
+	}
+}
+
 func TestSchedule_AssignsIDAndFires(t *testing.T) {
 	fake := &fakeTarget{}
 	e, db := newEngine(t, fake)

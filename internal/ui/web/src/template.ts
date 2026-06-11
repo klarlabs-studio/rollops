@@ -229,7 +229,9 @@ export const template = `
   </template>
 
   <div v-if="toast" class="toast" :class="{err:toastErr}" role="status" aria-live="polite">{{ toast }}</div>
-  <div v-if="failures>2" class="stale" role="alert">⚠ live updates unavailable — showing last known state</div>
+  <div v-if="authFailed" class="stale" role="alert">⚠ unauthorized — sign in again (reload the page) to resume live updates</div>
+  <div v-else-if="failures>2 && loadedOnce" class="stale" role="alert">⚠ live updates unavailable — showing last known state</div>
+  <div v-else-if="failures>2" class="stale" role="alert">⚠ can't reach the server — nothing loaded yet</div>
 
   <div v-if="confirmTarget" class="modal-back" @click.self="confirmTarget=''">
     <div class="modal" role="dialog" aria-modal="true" aria-label="Confirm rollback">
