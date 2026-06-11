@@ -6,6 +6,12 @@ provider is a **plugin** — the same gRPC subprocess architecture as target
 plugins — so Rollops stays vendor-neutral and the lean core carries no
 LaunchDarkly/Flagsmith/Unleash SDK.
 
+A ready-to-use provider exists for Flagsmith:
+[`klarlabs-studio/rollops-plugin-flagsmith`](https://github.com/klarlabs-studio/rollops-plugin-flagsmith).
+Install it (`go install github.com/klarlabs-studio/rollops-plugin-flagsmith/cmd/rollops-plugin-flagsmith@latest`
+or download a release binary), pin its sha256, and point `featureFlags.plugin`
+at it. To target another flag service, author your own provider as below.
+
 ## Authoring a flag plugin
 
 Implement `plugin.FlagProvider` and call `ServeFlagProvider`:

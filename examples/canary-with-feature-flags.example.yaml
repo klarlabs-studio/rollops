@@ -39,7 +39,7 @@ spec:
   # Drive a feature flag in lockstep with the canary. The provider is a
   # sha256-pinned gRPC plugin; see docs/feature-flags.md.
   featureFlags:
-    plugin: /usr/local/lib/rollops/plugins/flagsmith
+    plugin: /usr/local/lib/rollops/plugins/rollops-plugin-flagsmith
     sha256: 0000000000000000000000000000000000000000000000000000000000000000
     flag: checkout-redesign
     environment: prod
