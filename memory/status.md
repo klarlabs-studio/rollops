@@ -2,6 +2,26 @@
 
 *Updated: 2026-06-10*
 
+## ✅ Hetzner k3s dogfood (2026-06-11, v0.5.0 binaries)
+
+Full lifecycle verified LIVE on the klarlabs edge cluster (k3s v1.35.4,
+edge-1 + edge-light, via Tailscale, context `felixgeelhaar`, isolated
+namespace rollops-e2e, temp db): doctor → plan (create) → canary apply
+with live step health gates (`steps 2/2 (100%)` + per-step timeline
+notes) → promote → update (2→3 replicas) → rollback (verified live) →
+out-of-band kubectl delete → drift flagged on promoted target → re-apply
+healed. Daemon API served real k3s resource tree (Deployment→Pods across
+both nodes). Namespace + temp files cleaned up.
+
+Findings for next round:
+1. **Drift baseline after rollback**: DriftReport only asserts
+   desired==observed for `promoted` (engine.go DriftReport). After a
+   rollback, out-of-band deletion goes unflagged — the baseline should
+   arguably be the rolled-back-to manifest, not suppressed entirely.
+2. **UI stale banner on 401**: auth failure shows generic "live updates
+   unavailable" — could distinguish unauthorized. (Surfaced via Playwright,
+   which doesn't attach URL basic-auth to fetch; real browsers do.)
+
 ## 🏷️ v0.5.0 TAGGED — target plugin runtime
 
 Plugin lifecycle released as v0.5.0 (GitHub release with archives).
