@@ -13,14 +13,15 @@ out-of-band kubectl delete → drift flagged on promoted target → re-apply
 healed. Daemon API served real k3s resource tree (Deployment→Pods across
 both nodes). Namespace + temp files cleaned up.
 
-Findings for next round:
-1. **Drift baseline after rollback**: DriftReport only asserts
-   desired==observed for `promoted` (engine.go DriftReport). After a
-   rollback, out-of-band deletion goes unflagged — the baseline should
-   arguably be the rolled-back-to manifest, not suppressed entirely.
-2. **UI stale banner on 401**: auth failure shows generic "live updates
-   unavailable" — could distinguish unauthorized. (Surfaced via Playwright,
-   which doesn't attach URL basic-auth to fetch; real browsers do.)
+Findings — RESOLVED 2026-06-11 (commit 49f40d7, unreleased):
+1. ~~Drift baseline after rollback~~: DriftReport now asserts for both
+   settled phases (promoted + rolled-back; rollback persists the restored
+   manifest as Desired). Engine test covers match + tamper cases.
+2. ~~UI banner honesty~~: three banners — unauthorized (401/403,
+   immediate), stale-with-last-known-state, and nothing-loaded-yet (the
+   "last known state is blank" case Felix spotted). Plus
+   `Cache-Control: no-cache` on /ui so daemon upgrades never serve a
+   stale cached bundle (third finding, discovered while fixing #2).
 
 ## 🏷️ v0.5.0 TAGGED — target plugin runtime
 
