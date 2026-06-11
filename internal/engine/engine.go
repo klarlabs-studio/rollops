@@ -226,6 +226,10 @@ func (e *Engine) DriftReport(ctx context.Context) ([]DriftItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	fps, err := e.store.ObservedFingerprints(ctx)
+	if err != nil {
+		return nil, err
+	}
 	seen := make(map[string]bool)
 	var out []DriftItem
 	for _, r := range rs { // newest first
@@ -233,24 +237,16 @@ func (e *Engine) DriftReport(ctx context.Context) ([]DriftItem, error) {
 			continue
 		}
 		seen[r.TargetRef] = true
-		observed := ""
-		if fp, err := e.store.ObservedState(ctx, r.TargetRef); err == nil {
-			observed = fp.Value
-		}
+		observed := fps[r.TargetRef]
 		out = append(out, DriftItem{
 			TargetRef: r.TargetRef,
 			Phase:     r.Phase,
 			Desired:   r.Desired.Checksum,
 			Observed:  observed,
-			Drifted:   settled(r.Phase) && observed != r.Desired.Checksum,
+			Drifted:   r.Phase.Settled() && observed != r.Desired.Checksum,
 		})
 	}
 	return out, nil
-}
-
-// settled reports whether a phase asserts its Desired as the live baseline.
-func settled(p rollout.Phase) bool {
-	return p == rollout.PhasePromoted || p == rollout.PhaseRolledBack
 }
 
 // PlanAction is the high-level effect an apply would have.

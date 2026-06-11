@@ -228,6 +228,25 @@ func (s *Store) ObservedState(ctx context.Context, targetRef string) (target.Fin
 	return fp, nil
 }
 
+// ObservedFingerprints returns the last observed fingerprint value for every
+// target in a single query.
+func (s *Store) ObservedFingerprints(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT target_ref, fingerprint FROM target_state`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: observed fingerprints: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var ref, fp string
+		if err := rows.Scan(&ref, &fp); err != nil {
+			return nil, fmt.Errorf("sqlite: scan observed fingerprint: %w", err)
+		}
+		out[ref] = fp
+	}
+	return out, rows.Err()
+}
+
 // Schedule queues a rollout for a future time.
 func (s *Store) Schedule(ctx context.Context, sc rollout.ScheduledRollout) error {
 	manifest, err := json.Marshal(sc.Desired)

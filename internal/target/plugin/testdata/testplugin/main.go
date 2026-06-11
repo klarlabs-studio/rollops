@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"sync"
 
 	"go.klarlabs.de/rollops/pkg/plugin"
@@ -39,6 +41,14 @@ func (m *memTarget) Health(context.Context) (pt.HealthStatus, error) {
 }
 
 func main() {
+	// When ROLLOPS_TEST_CHILD_PIDFILE is set, fork a long-lived sleep child and
+	// record its pid — the launcher's group-kill test checks the child dies too.
+	if pf := os.Getenv("ROLLOPS_TEST_CHILD_PIDFILE"); pf != "" {
+		child := exec.Command("sleep", "300")
+		if err := child.Start(); err == nil {
+			_ = os.WriteFile(pf, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+		}
+	}
 	fmt.Fprintln(os.Stderr, "testplugin starting") // log noise the host must skip
 	fmt.Println("not a handshake line")
 	if err := plugin.Serve(&memTarget{}); err != nil {

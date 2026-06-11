@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +22,53 @@ import (
 
 // handshakeTimeout bounds how long a plugin may take to print its handshake.
 const handshakeTimeout = 10 * time.Second
+
+// maxHandshakeLine bounds a single stdout line so a plugin can't exhaust memory
+// before emitting (or while withholding) its handshake.
+const maxHandshakeLine = 64 * 1024
+
+// maxStderrBytes caps how much plugin stderr is relayed to the daemon log.
+const maxStderrBytes = 1 << 20 // 1 MiB
+
+// cappedWriter relays at most `remaining` bytes, prefixing each line, then
+// drops the rest. Not safe for concurrent writers; cmd.Stderr is single-writer.
+type cappedWriter struct {
+	w         io.Writer
+	prefix    []byte
+	midLine   bool // last byte written was not a newline
+	remaining int
+	truncated bool
+}
+
+func (c *cappedWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	for len(p) > 0 {
+		if c.remaining <= 0 {
+			if !c.truncated {
+				c.truncated = true
+				_, _ = c.w.Write([]byte("[plugin] … stderr truncated\n"))
+			}
+			return n, nil
+		}
+		if !c.midLine {
+			_, _ = c.w.Write(c.prefix)
+		}
+		var chunk []byte
+		if i := bytes.IndexByte(p, '\n'); i < 0 {
+			chunk, p = p, nil
+			c.midLine = true
+		} else {
+			chunk, p = p[:i+1], p[i+1:]
+			c.midLine = false
+		}
+		if len(chunk) > c.remaining {
+			chunk = chunk[:c.remaining]
+		}
+		c.remaining -= len(chunk)
+		_, _ = c.w.Write(chunk)
+	}
+	return n, nil
+}
 
 // VerifyBinary compares the file's sha256 against the pinned hex digest. The
 // pin is required: an unpinned plugin binary is a supply-chain hole.
@@ -63,13 +111,19 @@ func (p *Process) Close() error {
 		_ = p.stdin.Close()
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
+		pid := p.cmd.Process.Pid
 		done := make(chan struct{})
 		go func() { _, _ = p.cmd.Process.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
+			// Plugin ignored the stdin-EOF shutdown signal — force it.
 			_ = p.cmd.Process.Kill()
+			<-done
 		}
+		// Whether it exited gracefully or was killed, sweep the whole process
+		// group so any children it forked leave no orphans.
+		killProcessGroup(pid)
 	}
 	return nil
 }
@@ -78,6 +132,7 @@ func (p *Process) Close() error {
 // server, and returns the running process with an adapted Target.
 func Launch(ctx context.Context, path string) (*Process, error) {
 	cmd := exec.CommandContext(ctx, path)
+	isolateProcess(cmd) // own process group → group kill on teardown
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("plugin: launch: %w", err)
@@ -86,7 +141,10 @@ func Launch(ctx context.Context, path string) (*Process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plugin: launch: %w", err)
 	}
-	cmd.Stderr = os.Stderr
+	// Plugin stderr is untrusted third-party output: tag each line and cap the
+	// total so a noisy or malicious plugin can't flood or inject into the
+	// daemon's log stream.
+	cmd.Stderr = &cappedWriter{w: os.Stderr, prefix: []byte("[plugin] "), remaining: maxStderrBytes}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("plugin: launch %s: %w", path, err)
 	}
@@ -125,11 +183,16 @@ func awaitHandshake(r io.Reader) (pubplugin.Handshake, error) {
 	ch := make(chan result, 1)
 	go func() {
 		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 0, 4096), maxHandshakeLine)
 		for sc.Scan() {
 			if hs, ok := pubplugin.ParseHandshake(sc.Text()); ok {
 				ch <- result{hs: hs}
 				return
 			}
+		}
+		if err := sc.Err(); err != nil {
+			ch <- result{err: fmt.Errorf("plugin: reading handshake: %w", err)}
+			return
 		}
 		ch <- result{err: fmt.Errorf("plugin: exited before handshake")}
 	}()

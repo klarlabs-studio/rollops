@@ -32,6 +32,30 @@ const (
 	PhaseRolledBack       Phase = "rolled-back"
 )
 
+// Settled reports whether the phase asserts its Desired as the live baseline —
+// the two terminal states (promoted and rolled-back; rollback persists the
+// restored manifest as Desired). Drift detection only fires for settled phases.
+func (p Phase) Settled() bool {
+	return p == PhasePromoted || p == PhaseRolledBack
+}
+
+// Active reports whether a rollout is in flight — moving through the lifecycle
+// or held mid-rollout (a paused canary). Drives in-flight UI and attention.
+func (p Phase) Active() bool {
+	switch p {
+	case PhasePending, PhaseValidating, PhaseDeploying, PhasePaused, PhaseVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Degraded reports whether a rollout ended in a bad state. Rolled-back is the
+// only such terminal phase today (a rejected approval also lands here).
+func (p Phase) Degraded() bool {
+	return p == PhaseRolledBack
+}
+
 // Strategy is the progressive-delivery shape of a rollout.
 type Strategy string
 

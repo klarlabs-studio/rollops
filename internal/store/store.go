@@ -41,6 +41,12 @@ type Store interface {
 	// Returns ErrNotFound if the target has never been observed.
 	ObservedState(ctx context.Context, targetRef string) (target.Fingerprint, error)
 
+	// ObservedFingerprints returns the last observed fingerprint value for
+	// every target in one query, keyed by target ref. Targets never observed
+	// are absent from the map. It backs whole-fleet drift reporting without a
+	// per-target round trip.
+	ObservedFingerprints(ctx context.Context) (map[string]string, error)
+
 	// Schedule queues a rollout for a future time.
 	Schedule(ctx context.Context, s rollout.ScheduledRollout) error
 

@@ -9,6 +9,13 @@
   immediately), live updates lost with last known state shown, and nothing
   loaded yet. The UI is served with `Cache-Control: no-cache` so an upgraded
   daemon never drives a stale cached bundle.
+- Phase classification is centralized on `rollout.Phase` (`Settled`/`Active`/
+  `Degraded` methods); drift reporting reads every target's observed
+  fingerprint in one query instead of one per target.
+- Plugin teardown hardening: plugins run in their own process group and are
+  swept on close so forked children leave no orphans; plugin stderr is
+  line-tagged and size-capped before reaching the daemon log; the handshake
+  scanner has a bounded buffer.
 
 ## v0.5.0 - Target Plugin Runtime
 

@@ -212,6 +212,28 @@ func TestObservedState_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestObservedFingerprints_BulkRead(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for ref, val := range map[string]string{"a/prod/x": "fpa", "b/prod/y": "fpb"} {
+		if err := db.SaveObservedState(ctx, rollout.TargetState{TargetRef: ref, Observed: target.Fingerprint{Value: val}, ObservedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := db.ObservedFingerprints(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["a/prod/x"] != "fpa" || got["b/prod/y"] != "fpb" {
+		t.Errorf("bulk fingerprints = %v", got)
+	}
+	// A never-observed target is simply absent.
+	if _, ok := got["c/prod/z"]; ok {
+		t.Error("unobserved target must not appear")
+	}
+}
+
 func TestSchedules_DueFiltering(t *testing.T) {
 	db := openTemp(t)
 	ctx := context.Background()
