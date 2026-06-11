@@ -15,9 +15,16 @@ Refuted (verified, no change): reconcile-loop from drift widening
 (reconcile keys on Plan-vs-Git, not DriftReport); secret leak to plugins
 (Apply uses unresolved manifest; plugin.Build never forwards resolved
 tcfg.Spec); socket-redirect (plugin already host-user code).
-Deferred low-pri hardening: settled() as rollout.Phase method; DriftReport
-N+1 ObservedState; plugin Setpgid group-kill + bounded/tagged stderr +
-explicit bufio.Scanner buffer bound.
+Deferred hardening: ALL RESOLVED 2026-06-11 (commit f28e690). Phase.Settled/
+Active/Degraded methods (engine uses Phase.Settled, free helper removed);
+Store.ObservedFingerprints bulk read replaces per-target N calls in
+DriftReport; plugin Setpgid process group + group-sweep on Close (graceful
+AND timeout — orphan-free, verified by forked-child test) + line-tagged
+1MiB-capped stderr writer + bounded handshake scanner. Unix-guarded with
+no-op fallback. Note: reconcile-after-rollback semantics (Git wants forward
+A, rollout.Desired=B after rollback → reconcile re-applies A every tick if
+A stays unhealthy) is pre-existing and matches Argo/Flux retry behavior —
+not a bug, left as-is.
 
 ## ✅ Hetzner k3s dogfood (2026-06-11, v0.5.0 binaries)
 
