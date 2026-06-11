@@ -2,6 +2,24 @@
 
 *Updated: 2026-06-10*
 
+## 🛠️ Distribution maturity (2026-06-11, unreleased, → v0.7.0)
+
+Release automation (commit 0f2af2d): .goreleaser.yaml + .github/workflows/
+release.yml — tag push v* builds archives/checksums/GitHub release, rebuilds
++ staleness-checks the UI bundle. Replaces manual make dist/gh release.
+Homebrew DEFERRED (brews deprecated → cask/quarantine needs own pass; go
+install covers CLI). NOTE: HOMEBREW_TAP_GITHUB_TOKEN secret not needed (brew
+dropped).
+`rollops plugin install` + cosign signing (commit 4a773e7): fetch (path/https)
+→ optional cosign verify-blob (key or keyless) → install to ~/.rollops/plugins
+→ print sha256 pin. security.CosignBlobVerifier added. Trust chain: verify sig
+at install, enforce sha256 pin at launch. Both items sitting unreleased.
+
+CONVERSATION PENDING: operator wants to talk before picking Obvia vs Relicta
+(the two remaining contract-only Phase-2 OSS seams). Other forward options:
+Studio commercial repo, live-Flagsmith verification, plugin marketplace/registry,
+path to 1.0.
+
 ## 🧩 Plugin architecture v2 + feature flags (2026-06-11, commit ab30c93, unreleased)
 
 Phase-2 ecosystem work. Operator chose nox-hq's plugin model. Replaced the
