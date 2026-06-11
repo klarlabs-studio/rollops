@@ -133,3 +133,24 @@ Ship a plugin as a plain binary plus its sha256. Recommended layout:
 
 Rebuilding the plugin changes the hash; update the pin in Git alongside the
 binary rollout so the change is reviewed like any other desired-state change.
+
+## Security model
+
+A plugin is a subprocess that the daemon launches; treat it as you would any
+binary you run as the daemon's user.
+
+- **Binary integrity.** The `sha256` pin is verified before exec, and the
+  path is symlink-resolved so the verified file is the executed file. One
+  residual race remains: an attacker who can overwrite the binary's inode
+  between the hash check and exec defeats the pin. Install plugins in a
+  directory writable only by root (or the daemon's deploy user) — e.g.
+  `/usr/local/lib/rollops/plugins/` on a trusted mount — never a
+  world-writable or operator-writable location.
+- **Secrets.** Plugins do **not** receive resolved secrets. `secret:<ref>`
+  values in a plugin target's spec reach the plugin as the literal reference
+  string, not the plaintext (secret resolution is reserved for first-party
+  targets). A plugin that needs a credential should read it from its own
+  environment or a path the operator controls, not from the target spec.
+- **Trust.** A plugin runs with the daemon's privileges and can do anything
+  that user can. Only run plugins you have reviewed or trust the publisher of,
+  exactly as for the daemon binary itself.

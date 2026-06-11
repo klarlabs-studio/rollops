@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"go.klarlabs.de/rollops/internal/config"
 	pt "go.klarlabs.de/rollops/pkg/target"
@@ -28,11 +29,20 @@ func Build(cfg config.Target) (pt.Target, error) {
 	if binary == "" {
 		return nil, fmt.Errorf("plugin: target %q: spec.binary is required", cfg.Ref)
 	}
+	// Resolve symlinks once and verify+exec the canonical path, so a swap of a
+	// symlink component between the hash check and exec can't redirect to a
+	// different binary. A same-inode swap is still a residual TOCTOU race — the
+	// plugin directory must be on a trusted, non-attacker-writable mount (see
+	// docs/target-plugins.md packaging).
+	real, err := filepath.EvalSymlinks(binary)
+	if err != nil {
+		return nil, fmt.Errorf("plugin: target %q: resolve binary: %w", cfg.Ref, err)
+	}
 	pin, _ := cfg.Spec["sha256"].(string)
-	if err := VerifyBinary(binary, pin); err != nil {
+	if err := VerifyBinary(real, pin); err != nil {
 		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
 	}
-	proc, err := Launch(context.Background(), binary)
+	proc, err := Launch(context.Background(), real)
 	if err != nil {
 		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
 	}

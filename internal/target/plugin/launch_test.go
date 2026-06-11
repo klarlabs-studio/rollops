@@ -136,6 +136,26 @@ func TestBuild_FromConfigSpec(t *testing.T) {
 	}
 }
 
+func TestBuild_ResolvesSymlinkBeforeVerify(t *testing.T) {
+	bin := testPluginBinary(t)
+	link := filepath.Join(t.TempDir(), "plugin-link")
+	if err := os.Symlink(bin, link); err != nil {
+		t.Fatal(err)
+	}
+	// The pin is the real binary's hash; Build must resolve the symlink and
+	// verify+launch the canonical target, not reject it.
+	tgt, err := Build(config.Target{Kind: "plugin", Ref: "x", Spec: map[string]any{
+		"binary": link,
+		"sha256": sha256Of(t, bin),
+	}})
+	if err != nil {
+		t.Fatalf("Build via symlink: %v", err)
+	}
+	if c, ok := tgt.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
+}
+
 func TestBuild_RejectsBadPin(t *testing.T) {
 	bin := testPluginBinary(t)
 	_, err := Build(config.Target{Kind: "plugin", Ref: "x", Spec: map[string]any{

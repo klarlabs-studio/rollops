@@ -86,6 +86,15 @@ function actorIcon(kind: string): string {
   if (kind === 'human') return '👤';
   return '·';
 }
+// Phase classification, shared so every surface (apps row, attention queue,
+// progress bar, facets) agrees. `paused` is in-flight: a held canary must stay
+// visible as Progressing and in the attention queue, never fall through to
+// Unknown. Keep these aligned with the engine's rollout.Phase values.
+const ACTIVE_PHASES = /^(pending|validating|deploying|paused|verifying)$/;
+const DEGRADED_PHASES = /^(rolled-back|failed|rejected)$/;
+const isActive = (p: string): boolean => ACTIVE_PHASES.test(p);
+const isDegraded = (p: string): boolean => DEGRADED_PHASES.test(p);
+
 // render is generated from template.ts at build time (see build.mjs) so the
 // runtime needs no template compiler and no eval — strict CSP compatible.
 // @ts-ignore generated at build time by build.mjs
@@ -123,7 +132,7 @@ interface State {
 function hueOf(s: string): Hue {
   const x = (s || '').toLowerCase();
   if (/(ready|running|promoted|healthy|synced|ok)/.test(x)) return 'up';
-  if (/(progress|deploy|verify|pending|validating|awaiting)/.test(x)) return 'warn';
+  if (/(progress|deploy|verify|pending|validating|awaiting|paused)/.test(x)) return 'warn';
   return 'down';
 }
 
@@ -210,8 +219,10 @@ const App = defineComponent({
         // stale banner so the operator knows the view stopped updating.
         // 401/403 won't self-heal — flag it immediately and by name.
         this.failures++;
+        // Assign every catch (not just set-true) so a later transient error
+        // after an auth failure stops mislabelling itself as unauthorized.
         const status = (e as { status?: number }).status;
-        if (status === 401 || status === 403) this.authFailed = true;
+        this.authFailed = status === 401 || status === 403;
       }
       const n = this.attention.length;
       document.title = n ? `(${n}) Rollops` : 'Rollops';
@@ -400,17 +411,15 @@ const App = defineComponent({
         ...this.dash.drift.map((d) => d.target),
         ...this.dash.rollouts.map((r) => r.target),
       ]);
-      const active = (p: string) => /^(pending|validating|deploying|verifying)$/.test(p);
-      const degraded = (p: string) => /^(rolled-back|failed|rejected)$/.test(p);
       return [...targets].sort().map((target) => {
         const d = this.dash.drift.find((x) => x.target === target);
         const r = byTarget.get(target);
         const phase = r?.phase || d?.phase || 'unknown';
-        const isActive = active(phase);
+        const active = isActive(phase);
         const isAwaiting = phase === 'awaiting-approval';
-        const health: ApplicationRow['health'] = degraded(phase)
+        const health: ApplicationRow['health'] = isDegraded(phase)
           ? 'Degraded'
-          : isActive || isAwaiting
+          : active || isAwaiting
             ? 'Progressing'
             : phase === 'promoted'
               ? 'Healthy'
@@ -421,9 +430,9 @@ const App = defineComponent({
         const risk: ApplicationRow['risk'] =
           score > 0
             ? this.riskOf(score)
-            : d?.drifted || degraded(phase)
+            : d?.drifted || isDegraded(phase)
               ? 'High'
-              : isActive || isAwaiting
+              : active || isAwaiting
                 ? 'Medium'
                 : 'Low';
         return {
@@ -444,7 +453,7 @@ const App = defineComponent({
           stepTotal: r?.stepTotal ?? 0,
           stepWeight: r?.stepWeight ?? 0,
           changed: r?.id || '',
-          active: isActive,
+          active,
           awaiting: isAwaiting,
         };
       });
@@ -452,11 +461,10 @@ const App = defineComponent({
     facetApps(): ApplicationRow[] {
       const f = this.facet;
       if (!f) return this.apps;
-      const degraded = (p: string) => /^(rolled-back|failed|rejected)$/.test(p);
       return this.apps.filter((a) => {
         if (f === 'promoted') return a.phase === 'promoted';
         if (f === 'awaiting') return a.awaiting;
-        if (f === 'degraded') return degraded(a.phase);
+        if (f === 'degraded') return isDegraded(a.phase);
         if (f === 'active') return a.active;
         if (f === 'drift') return a.sync === 'OutOfSync';
         return true;
@@ -507,8 +515,6 @@ const App = defineComponent({
     attention(): AttentionItem[] {
       const items: AttentionItem[] = [];
       const seen = new Set<string>();
-      const active = (p: string) => /^(pending|validating|deploying|verifying)$/.test(p);
-
       for (const r of this.dash.rollouts) {
         if (r.phase !== 'awaiting-approval') continue;
         items.push({
@@ -529,7 +535,7 @@ const App = defineComponent({
         seen.add(key);
       }
       for (const r of this.dash.rollouts) {
-        if (!active(r.phase)) continue;
+        if (!isActive(r.phase)) continue;
         const key = 'active:' + r.id;
         if (seen.has(key)) continue;
         items.push({
@@ -561,9 +567,8 @@ const App = defineComponent({
     },
     // A rollout mid-flight anywhere relevant → drive the progress bar.
     inflight(): boolean {
-      const prog = (p: string) => /^(pending|validating|deploying|verifying)$/.test(p);
-      if (this.view === 'detail' && this.detail) return prog(this.detail.rollout.phase);
-      return this.dash.rollouts.some((r) => prog(r.phase));
+      if (this.view === 'detail' && this.detail) return isActive(this.detail.rollout.phase);
+      return this.dash.rollouts.some((r) => isActive(r.phase));
     },
     graph(): { nodes: GraphNode[]; edges: GraphEdge[]; w: number; h: number } {
       if (!this.detail) return { nodes: [], edges: [], w: 0, h: 0 };
