@@ -110,3 +110,34 @@ func ServeTrafficRouter(name, version string, r TrafficRouter, safety Safety) er
 		})
 	return Serve(srv)
 }
+
+// MetricProvider answers a provider-specific query with one scalar value. A
+// metric-provider plugin implements it and passes it to ServeMetricProvider.
+type MetricProvider interface {
+	Query(ctx context.Context, query string) (float64, error)
+}
+
+// ServeMetricProvider runs a MetricProvider as a Rollops metric-provider plugin,
+// exposing the "metricprovider" capability with the query_metric tool.
+func ServeMetricProvider(name, version string, p MetricProvider, safety Safety) error {
+	m := NewManifest(name, version).
+		Capability(CapabilityMetricProvider, "Rollout-analysis metric provider").
+		Tool(ToolQueryMetric, "Resolve a query to a scalar metric value", false).
+		Done().
+		Safety(safety).
+		Build()
+
+	srv := NewServer(m).
+		HandleTool(CapabilityMetricProvider, ToolQueryMetric, func(ctx context.Context, in []byte) ([]byte, error) {
+			var q MetricQuery
+			if err := json.Unmarshal(in, &q); err != nil {
+				return nil, err
+			}
+			v, err := p.Query(ctx, q.Query)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(MetricResult{Value: v})
+		})
+	return Serve(srv)
+}

@@ -6,9 +6,10 @@ package plugin
 
 // Capability names.
 const (
-	CapabilityTarget        = "target"
-	CapabilityFeatureFlag   = "featureflag"
-	CapabilityTrafficRouter = "trafficrouter"
+	CapabilityTarget         = "target"
+	CapabilityFeatureFlag    = "featureflag"
+	CapabilityTrafficRouter  = "trafficrouter"
+	CapabilityMetricProvider = "metricprovider"
 )
 
 // target capability tools.
@@ -23,6 +24,9 @@ const ToolApplyFlag = "apply_flag"
 
 // trafficrouter capability tool.
 const ToolSetWeight = "set_weight"
+
+// metricprovider capability tool.
+const ToolQueryMetric = "query_metric"
 
 // ApplyInput is the target.apply payload.
 type ApplyInput struct {
@@ -66,4 +70,15 @@ type TrafficChange struct {
 	StableService string `json:"stableService"` // backend receiving (100-weight)%
 	CanaryService string `json:"canaryService"` // backend receiving weight%
 	Weight        int    `json:"weight"`        // canary traffic percentage 0..100
+}
+
+// MetricQuery is the metricprovider.query_metric payload: a single provider-
+// specific query string resolving to one scalar value.
+type MetricQuery struct {
+	Query string `json:"query"`
+}
+
+// MetricResult is the metricprovider.query_metric result.
+type MetricResult struct {
+	Value float64 `json:"value"`
 }

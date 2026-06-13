@@ -62,3 +62,40 @@ type MetricsProvider interface {
 
 Prometheus is the first supported provider. Other observability providers should
 implement that interface rather than coupling the engine to a vendor SDK.
+
+## Pluggable providers (metricprovider plugins)
+
+Prometheus is built in. Any other backend — Datadog, CloudWatch, a custom
+metrics service — ships as a **metricprovider plugin**: a gRPC plugin declaring
+the `metricprovider` capability with a `query_metric` tool that resolves a
+provider-specific query string to one scalar. Point the analysis block at the
+plugin binary instead of a built-in provider:
+
+```yaml
+analysis:
+  provider: datadog            # informational; the plugin is the backend
+  plugin: /usr/local/lib/rollops/plugins/datadog
+  sha256: 4f5a…               # required pin
+  metrics:
+    - name: errorRate
+      query: "avg:trace.http.request.errors{service:checkout}.as_rate()"
+  condition: "errorRate < 0.05"
+  count: 3
+  interval: 30s
+```
+
+The plugin is launched per analysis run, sha256-verified, and validated against
+the plugin safety policy, exactly like target / feature-flag / traffic-router
+plugins. Install one from the marketplace (`rollops plugin install datadog`).
+
+Authoring is one method:
+
+```go
+func main() {
+	plugin.ServeMetricProvider("klarlabs/datadog", version, Provider{}, plugin.Safety{
+		NetworkHosts: []string{"api.datadoghq.com:443"},
+		EnvVars:      []string{"DD_API_KEY", "DD_APP_KEY"},
+		RiskClass:    plugin.RiskPassive, // reads only
+	})
+}
+```

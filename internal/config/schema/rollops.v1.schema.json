@@ -246,8 +246,10 @@
       "required": ["provider", "metrics", "condition"],
       "description": "Metric-based rollout analysis. Provider-agnostic.",
       "properties": {
-        "provider": { "type": "string", "minLength": 1, "description": "e.g. prometheus" },
+        "provider": { "type": "string", "minLength": 1, "description": "prometheus (built-in) or a metricprovider plugin name." },
         "address": { "type": "string" },
+        "plugin": { "type": "string", "description": "Path to a metricprovider plugin binary (alternative to a built-in provider)." },
+        "sha256": { "type": "string", "description": "Required sha256 pin when plugin is set." },
         "condition": { "type": "string", "minLength": 1, "description": "CEL boolean over metric names; true == healthy." },
         "interval": { "type": "string", "description": "Go duration between measurements." },
         "count": { "type": "integer", "minimum": 1 },

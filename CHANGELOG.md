@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased - Pluggable Metric Providers
+
+- **Metric-provider plugin capability** (`metricprovider`). Rollout analysis is
+  no longer Prometheus-only: any metrics backend (Datadog, CloudWatch, a custom
+  service) can drive the analysis gate as a sha256-pinned plugin declaring the
+  `metricprovider` capability with a `query_metric` tool.
+  - `pkg/plugin.ServeMetricProvider` + `MetricProvider` interface (`Query`).
+  - `analysis.plugin` + `analysis.sha256` spec fields (schema + validation):
+    when set, the engine launches the plugin per analysis run instead of the
+    built-in Prometheus provider. `internal/metricplugin` host adapter;
+    `WithMetricsProviderBuilder` seam.
+  - Built-in Prometheus is unchanged. See `docs/metric-analysis.md`.
+
 ## v0.11.0 - Real Canary Traffic Routing
 
 - **Traffic-router plugin capability** (`trafficrouter`). A weighted canary now

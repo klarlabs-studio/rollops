@@ -64,10 +64,12 @@ type Spec struct {
 // set, a metrics provider is queried during the post-deploy gate and a CEL
 // condition over the named metrics decides pass/fail. Provider-agnostic.
 type Analysis struct {
-	Provider     string           `yaml:"provider" json:"provider"`   // e.g. prometheus
-	Address      string           `yaml:"address" json:"address"`     // provider endpoint
-	Metrics      []AnalysisMetric `yaml:"metrics" json:"metrics"`     // named queries
-	Condition    string           `yaml:"condition" json:"condition"` // CEL bool over metric names; true == healthy
+	Provider     string           `yaml:"provider" json:"provider"`                 // prometheus (built-in) or a metricprovider plugin name
+	Address      string           `yaml:"address" json:"address"`                   // provider endpoint (built-in providers)
+	Plugin       string           `yaml:"plugin,omitempty" json:"plugin,omitempty"` // path to a metricprovider plugin binary
+	SHA256       string           `yaml:"sha256,omitempty" json:"sha256,omitempty"` // required pin when plugin is set
+	Metrics      []AnalysisMetric `yaml:"metrics" json:"metrics"`                   // named queries
+	Condition    string           `yaml:"condition" json:"condition"`               // CEL bool over metric names; true == healthy
 	Interval     string           `yaml:"interval,omitempty" json:"interval,omitempty"`
 	Count        int              `yaml:"count,omitempty" json:"count,omitempty"`
 	FailureLimit int              `yaml:"failureLimit,omitempty" json:"failureLimit,omitempty"`

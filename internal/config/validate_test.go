@@ -20,6 +20,34 @@ func TestValidate_Valid(t *testing.T) {
 	}
 }
 
+func TestValidate_AnalysisPluginRequiresPin(t *testing.T) {
+	a := &Analysis{
+		Provider:  "datadog",
+		Plugin:    "/path/to/datadog",
+		Metrics:   []AnalysisMetric{{Name: "errorRate", Query: "q"}},
+		Condition: "errorRate < 0.05",
+	}
+	errs := validateAnalysis(a)
+	if len(errs) == 0 {
+		t.Fatal("analysis.plugin without sha256 must be rejected")
+	}
+	a.SHA256 = "deadbeef"
+	if errs := validateAnalysis(a); len(errs) != 0 {
+		t.Fatalf("pinned plugin analysis should validate, got %v", errs)
+	}
+}
+
+func TestValidate_TrafficRoutingRequiredFields(t *testing.T) {
+	errs := validateTrafficRouting(&TrafficRouting{})
+	if len(errs) < 5 {
+		t.Fatalf("empty trafficRouting should report missing plugin/sha256/route/services, got %v", errs)
+	}
+	ok := &TrafficRouting{Plugin: "p", SHA256: "s", Route: "r", StableService: "st", CanaryService: "ca"}
+	if errs := validateTrafficRouting(ok); len(errs) != 0 {
+		t.Fatalf("complete trafficRouting should validate, got %v", errs)
+	}
+}
+
 func TestValidate_MissingName(t *testing.T) {
 	c := mustParse(t, validYAML)
 	c.Metadata.Name = ""

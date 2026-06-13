@@ -28,6 +28,7 @@ import (
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/depgraph"
 	"go.klarlabs.de/rollops/internal/featureflags"
+	"go.klarlabs.de/rollops/internal/metricplugin"
 	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/progressive"
 	"go.klarlabs.de/rollops/internal/risk"
@@ -56,16 +57,17 @@ type Engine struct {
 	// Optional trust/delivery collaborators. When set, Apply enforces them in
 	// order; nil means that stage is skipped (keeps the bare engine simple for
 	// tests, while a daemon wires the full pipeline).
-	audit       *audit.Logger
-	guardrails  *security.Guardrails
-	artifact    *security.ArtifactGate
-	secrets     secrets.Provider
-	notifier    notify.Notifier
-	metrics     analysis.MetricsProvider // optional override; else built from config
-	analysis    bool
-	dbRollback  DatabaseRollbackRunner
-	flagBuild   func(*config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
-	routerBuild func(*config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
+	audit        *audit.Logger
+	guardrails   *security.Guardrails
+	artifact     *security.ArtifactGate
+	secrets      secrets.Provider
+	notifier     notify.Notifier
+	metrics      analysis.MetricsProvider // optional override; else built from config
+	analysis     bool
+	dbRollback   DatabaseRollbackRunner
+	flagBuild    func(*config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
+	routerBuild  func(*config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
+	metricsBuild func(*config.Analysis) (analysis.MetricsProvider, error)    // metric-provider plugin builder (test seam)
 }
 
 // Option configures an Engine.
@@ -139,6 +141,12 @@ func WithFlagProviderBuilder(f func(*config.FeatureFlags) (featureflags.Provider
 // (test seam; default launches the configured trafficrouter plugin).
 func WithTrafficRouterBuilder(f func(*config.TrafficRouting) (trafficrouting.Router, error)) Option {
 	return func(e *Engine) { e.routerBuild = f }
+}
+
+// WithMetricsProviderBuilder overrides how a metricprovider plugin is built from
+// an analysis config (test seam; default launches the configured plugin).
+func WithMetricsProviderBuilder(f func(*config.Analysis) (analysis.MetricsProvider, error)) Option {
+	return func(e *Engine) { e.metricsBuild = f }
 }
 
 // driveTraffic shifts the configured percentage of traffic to the canary backend
@@ -228,17 +236,18 @@ func (e *Engine) build(t config.Target) (pt.Target, error) {
 // time.Now; both are injectable for tests.
 func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
-		store:       st,
-		reg:         reg,
-		locks:       newKeyedLocks(),
-		policy:      step.DefaultPolicy(),
-		smoke:       execSmoke{},
-		dbRollback:  execDBRollback{},
-		owner:       defaultOwner(),
-		leaseTTL:    2 * time.Minute,
-		flagBuild:   func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
-		routerBuild: func(c *config.TrafficRouting) (trafficrouting.Router, error) { return trafficrouting.BuildRouter(c) },
-		now:         func() time.Time { return time.Now().UTC() },
+		store:        st,
+		reg:          reg,
+		locks:        newKeyedLocks(),
+		policy:       step.DefaultPolicy(),
+		smoke:        execSmoke{},
+		dbRollback:   execDBRollback{},
+		owner:        defaultOwner(),
+		leaseTTL:     2 * time.Minute,
+		flagBuild:    func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
+		routerBuild:  func(c *config.TrafficRouting) (trafficrouting.Router, error) { return trafficrouting.BuildRouter(c) },
+		metricsBuild: func(c *config.Analysis) (analysis.MetricsProvider, error) { return metricplugin.Build(c) },
+		now:          func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
 	for _, o := range opts {
@@ -759,10 +768,23 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, string) {
 	provider := e.metrics
 	if provider == nil {
-		if a.Provider != "prometheus" {
+		switch {
+		case a.Plugin != "":
+			// A metricprovider plugin supplies the backend (Datadog, CloudWatch,
+			// a custom metrics service). Launched per analysis run, then closed.
+			p, err := e.metricsBuild(a)
+			if err != nil {
+				return false, "analysis: " + err.Error()
+			}
+			if c, ok := p.(interface{ Close() error }); ok {
+				defer c.Close()
+			}
+			provider = p
+		case a.Provider == "prometheus":
+			provider = analysis.Prometheus{Addr: a.Address}
+		default:
 			return false, fmt.Sprintf("analysis: no metrics provider for %q", a.Provider)
 		}
-		provider = analysis.Prometheus{Addr: a.Address}
 	}
 	metrics := make([]analysis.Metric, 0, len(a.Metrics))
 	for _, m := range a.Metrics {

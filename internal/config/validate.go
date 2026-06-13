@@ -188,11 +188,19 @@ func validateRiskHistory(h RiskHistory) []error {
 
 func validateAnalysis(a *Analysis) []error {
 	var errs []error
-	if a.Provider != "prometheus" {
-		errs = append(errs, fmt.Errorf("config: analysis.provider %q is unsupported (supported: prometheus)", a.Provider))
-	}
-	if a.Provider == "prometheus" && strings.TrimSpace(a.Address) == "" {
-		errs = append(errs, fmt.Errorf("config: analysis.address is required for prometheus"))
+	if a.Plugin != "" {
+		// A metricprovider plugin supplies the backend; the provider name is the
+		// plugin's own and the binary must be pinned.
+		if a.SHA256 == "" {
+			errs = append(errs, fmt.Errorf("config: analysis.sha256 pin is required when analysis.plugin is set"))
+		}
+	} else {
+		if a.Provider != "prometheus" {
+			errs = append(errs, fmt.Errorf("config: analysis.provider %q is unsupported without a plugin (built-in: prometheus; else set analysis.plugin)", a.Provider))
+		}
+		if a.Provider == "prometheus" && strings.TrimSpace(a.Address) == "" {
+			errs = append(errs, fmt.Errorf("config: analysis.address is required for prometheus"))
+		}
 	}
 	if a.Interval != "" {
 		if _, err := time.ParseDuration(a.Interval); err != nil {
