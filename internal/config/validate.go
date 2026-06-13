@@ -124,9 +124,9 @@ func validateSemantics(c *Config) []error {
 	}
 	if c.Spec.ImagePolicy != nil {
 		switch c.Spec.ImagePolicy.Mode {
-		case "major", "minor", "patch", "any":
+		case "major", "minor", "patch", "any", "digest":
 		default:
-			errs = append(errs, fmt.Errorf("config: imagePolicy.mode %q must be major | minor | patch | any", c.Spec.ImagePolicy.Mode))
+			errs = append(errs, fmt.Errorf("config: imagePolicy.mode %q must be major | minor | patch | any | digest", c.Spec.ImagePolicy.Mode))
 		}
 		if img, _ := c.Spec.Target.Spec["image"].(string); img == "" {
 			errs = append(errs, fmt.Errorf("config: imagePolicy requires spec.target.spec.image (the tracked image)"))

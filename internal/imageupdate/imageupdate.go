@@ -67,6 +67,15 @@ func PatchRolloutImage(data []byte, image, tag string) ([]byte, bool, error) {
 	if image == "" || tag == "" {
 		return nil, false, fmt.Errorf("imageupdate: image and tag are required")
 	}
+	return PatchRolloutImageRef(data, image+":"+tag)
+}
+
+// PatchRolloutImageRef sets spec.target.spec.image to an arbitrary reference
+// (e.g. a digest-pinned `repo:tag@sha256:…`), returning whether it changed.
+func PatchRolloutImageRef(data []byte, ref string) ([]byte, bool, error) {
+	if ref == "" {
+		return nil, false, fmt.Errorf("imageupdate: ref is required")
+	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, false, fmt.Errorf("imageupdate: parse yaml: %w", err)
@@ -75,11 +84,10 @@ func PatchRolloutImage(data []byte, image, tag string) ([]byte, bool, error) {
 	if node == nil {
 		return nil, false, fmt.Errorf("imageupdate: spec.target.spec.image not found")
 	}
-	next := image + ":" + tag
-	if node.Value == next {
+	if node.Value == ref {
 		return data, false, nil
 	}
-	node.Value = next
+	node.Value = ref
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
 	enc.SetIndent(2)

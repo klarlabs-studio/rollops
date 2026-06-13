@@ -97,14 +97,27 @@ func (s Scanner) get(ctx context.Context, url, repo string) ([]byte, error) {
 type regResp struct {
 	status       int
 	authenticate string
+	digest       string
 	body         []byte
 }
 
 func (s Scanner) do(ctx context.Context, url, bearer string) (regResp, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	return s.doMethod(ctx, http.MethodGet, url, bearer)
+}
+
+func (s Scanner) doMethod(ctx context.Context, method, url, bearer string) (regResp, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return regResp{}, err
 	}
+	// Accept both OCI and Docker manifest media types so a digest resolves for
+	// single-arch and multi-arch (index) images alike.
+	req.Header.Set("Accept", strings.Join([]string{
+		"application/vnd.oci.image.index.v1+json",
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+		"application/vnd.docker.distribution.manifest.v2+json",
+	}, ", "))
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
@@ -122,7 +135,49 @@ func (s Scanner) do(ctx context.Context, url, bearer string) (regResp, error) {
 			break
 		}
 	}
-	return regResp{status: resp.StatusCode, authenticate: resp.Header.Get("WWW-Authenticate"), body: body}, nil
+	return regResp{
+		status:       resp.StatusCode,
+		authenticate: resp.Header.Get("WWW-Authenticate"),
+		digest:       resp.Header.Get("Docker-Content-Digest"),
+		body:         body,
+	}, nil
+}
+
+// Digest resolves the manifest digest (sha256:…) of an image reference's tag,
+// the immutable identity a mutable tag (latest) currently points at. It lets
+// image automation pin a moving tag and redeploy when its digest changes — the
+// keel "force" model, GitOps-native.
+func (s Scanner) Digest(ctx context.Context, image string) (string, error) {
+	host, repo := ParseRef(image)
+	tag := "latest"
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		tag = image[i+1:]
+	}
+	base := "https://" + host
+	if host == "docker.io" {
+		base = "https://registry-1.docker.io"
+	}
+	url := fmt.Sprintf("%s/v2/%s/manifests/%s", base, repo, tag)
+	resp, err := s.doMethod(ctx, http.MethodHead, url, "")
+	if err != nil {
+		return "", err
+	}
+	if resp.status == http.StatusUnauthorized {
+		token, terr := s.token(ctx, resp.authenticate, repo)
+		if terr != nil {
+			return "", terr
+		}
+		if resp, err = s.doMethod(ctx, http.MethodHead, url, token); err != nil {
+			return "", err
+		}
+	}
+	if resp.status != http.StatusOK {
+		return "", fmt.Errorf("imageupdate: manifest %s: status %d", url, resp.status)
+	}
+	if resp.digest == "" {
+		return "", fmt.Errorf("imageupdate: no Docker-Content-Digest for %s", image)
+	}
+	return resp.digest, nil
 }
 
 type tokenResponse struct {

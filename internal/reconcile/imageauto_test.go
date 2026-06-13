@@ -15,6 +15,12 @@ import (
 type fakeTags []string
 
 func (f fakeTags) Tags(context.Context, string) ([]string, error) { return f, nil }
+func (f fakeTags) Digest(context.Context, string) (string, error) { return "sha256:deadbeef", nil }
+
+type fakeDigest string
+
+func (d fakeDigest) Tags(context.Context, string) ([]string, error) { return nil, nil }
+func (d fakeDigest) Digest(context.Context, string) (string, error) { return string(d), nil }
 
 const imgConfigYAML = `apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
@@ -104,6 +110,37 @@ func TestImageAuto_NoPolicyNoop(t *testing.T) {
 	_, ref, err := ImageAuto{Scanner: fakeTags{"v9.9.9"}}.Process(context.Background(), nil, config.NamedConfig{Path: "x", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("no policy must be a no-op, got ref=%q err=%v", ref, err)
+	}
+}
+
+func TestImageAuto_DigestModePinsMutableTag(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:abc123")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "ghcr.io/acme/web:latest@sha256:abc123" {
+		t.Errorf("ref = %q, want digest-pinned latest", ref)
+	}
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:latest@sha256:abc123" {
+		t.Errorf("bumped image = %q", got)
+	}
+}
+
+func TestImageAuto_DigestModeUnchanged(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:same", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil || ref != "" {
+		t.Fatalf("same digest must be a no-op, got ref=%q err=%v", ref, err)
 	}
 }
 
