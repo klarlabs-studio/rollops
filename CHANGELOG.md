@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Plugin Marketplace
+## v0.8.0 - Plugin Marketplace
 
 - **Plugin marketplace.** A curated, version-controlled registry
   (`registry/plugins.json`) maps a plugin name to its published releases —
