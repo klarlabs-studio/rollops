@@ -48,15 +48,16 @@ type Metadata struct {
 
 // Spec is the desired rollout behaviour for the target.
 type Spec struct {
-	Target       Target        `yaml:"target" json:"target"`
-	Environments []Environment `yaml:"environments,omitempty" json:"environments,omitempty"`
-	Strategy     Strategy      `yaml:"strategy" json:"strategy"`
-	Risk         Risk          `yaml:"risk,omitempty" json:"risk,omitempty"`
-	Rollback     Rollback      `yaml:"rollback,omitempty" json:"rollback,omitempty"`
-	Analysis     *Analysis     `yaml:"analysis,omitempty" json:"analysis,omitempty"`
-	FeatureFlags *FeatureFlags `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
-	DependsOn    []string      `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
-	Schedule     string        `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
+	Target         Target          `yaml:"target" json:"target"`
+	Environments   []Environment   `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Strategy       Strategy        `yaml:"strategy" json:"strategy"`
+	Risk           Risk            `yaml:"risk,omitempty" json:"risk,omitempty"`
+	Rollback       Rollback        `yaml:"rollback,omitempty" json:"rollback,omitempty"`
+	Analysis       *Analysis       `yaml:"analysis,omitempty" json:"analysis,omitempty"`
+	FeatureFlags   *FeatureFlags   `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
+	TrafficRouting *TrafficRouting `yaml:"trafficRouting,omitempty" json:"trafficRouting,omitempty"`
+	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
 }
 
 // Analysis is the optional metric-based rollout analysis feature. When
@@ -88,6 +89,21 @@ type FeatureFlags struct {
 	Flag        string `yaml:"flag" json:"flag"`                     // flag key to drive
 	Environment string `yaml:"environment" json:"environment"`       // provider environment
 	When        string `yaml:"when,omitempty" json:"when,omitempty"` // step | promote | both (default both)
+}
+
+// TrafficRouting couples a rollout to a traffic-router provider plugin: as the
+// canary advances through its weight steps, the router shifts that percentage of
+// live traffic to the canary backend (the rest to the stable backend). The
+// provider is a gRPC plugin declaring the "trafficrouter" capability, launched
+// like a target plugin (sha256-pinned binary). This turns weighted steps into
+// real network-level traffic shifting (Gateway API, Istio, NGINX, …).
+type TrafficRouting struct {
+	Plugin        string `yaml:"plugin" json:"plugin"`               // path to the traffic-router plugin binary
+	SHA256        string `yaml:"sha256" json:"sha256"`               // required pin
+	Route         string `yaml:"route" json:"route"`                 // router object name (e.g. HTTPRoute)
+	Namespace     string `yaml:"namespace" json:"namespace"`         // router object namespace
+	StableService string `yaml:"stableService" json:"stableService"` // backend for (100-weight)%
+	CanaryService string `yaml:"canaryService" json:"canaryService"` // backend for weight%
 }
 
 // Target selects the deployment target plugin and its criticality weight.

@@ -114,6 +114,29 @@ func validateSemantics(c *Config) []error {
 	if c.Spec.FeatureFlags != nil {
 		errs = append(errs, validateFeatureFlags(c.Spec.FeatureFlags)...)
 	}
+	if c.Spec.TrafficRouting != nil {
+		errs = append(errs, validateTrafficRouting(c.Spec.TrafficRouting)...)
+	}
+	return errs
+}
+
+func validateTrafficRouting(t *TrafficRouting) []error {
+	var errs []error
+	if t.Plugin == "" {
+		errs = append(errs, fmt.Errorf("config: trafficRouting.plugin (binary path) is required"))
+	}
+	if t.SHA256 == "" {
+		errs = append(errs, fmt.Errorf("config: trafficRouting.sha256 pin is required"))
+	}
+	if t.Route == "" {
+		errs = append(errs, fmt.Errorf("config: trafficRouting.route is required"))
+	}
+	if t.StableService == "" {
+		errs = append(errs, fmt.Errorf("config: trafficRouting.stableService is required"))
+	}
+	if t.CanaryService == "" {
+		errs = append(errs, fmt.Errorf("config: trafficRouting.canaryService is required"))
+	}
 	return errs
 }
 

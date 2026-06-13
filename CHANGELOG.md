@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased - Real Canary Traffic Routing
+
+- **Traffic-router plugin capability** (`trafficrouter`). A weighted canary now
+  shifts real network traffic, not just bakes: as the canary advances through
+  its weight steps, Rollops drives a traffic-router plugin's `set_weight` tool
+  to send that percentage of live traffic to the canary backend (the rest to
+  stable) — the Argo Rollouts model, via the same sha256-pinned, safety-validated
+  plugin mechanism as targets and feature flags.
+  - `pkg/plugin.ServeTrafficRouter` + `TrafficRouter` interface (`SetWeight`).
+  - New `trafficRouting` spec block (plugin/sha256/route/namespace/stableService/
+    canaryService), schema + validation. Engine drives the router per canary step
+    alongside feature flags; best-effort (audited, never aborts the deploy).
+  - Composable with `featureFlags`: traffic routing shifts network traffic;
+    feature flags shift application exposure. See `docs/traffic-routing.md`.
+
 ## Unreleased - Commercial Flag Providers
 
 - Two more feature-flag provider plugins, covering the major commercial

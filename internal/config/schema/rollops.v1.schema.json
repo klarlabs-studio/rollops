@@ -43,6 +43,7 @@
         "rollback": { "$ref": "#/$defs/rollback" },
         "analysis": { "$ref": "#/$defs/analysis" },
         "featureFlags": { "$ref": "#/$defs/featureFlags" },
+        "trafficRouting": { "$ref": "#/$defs/trafficRouting" },
         "dependsOn": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -223,6 +224,20 @@
         "flag": { "type": "string", "minLength": 1, "description": "Flag key to drive." },
         "environment": { "type": "string", "description": "Provider environment." },
         "when": { "type": "string", "enum": ["step", "promote", "both"], "description": "When to drive the flag (default both)." }
+      }
+    },
+    "trafficRouting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugin", "sha256", "route", "stableService", "canaryService"],
+      "description": "Couple the rollout to a traffic-router plugin; each canary step shifts that weight of live traffic to the canary backend.",
+      "properties": {
+        "plugin": { "type": "string", "minLength": 1, "description": "Path to the traffic-router plugin binary." },
+        "sha256": { "type": "string", "minLength": 1, "description": "Required sha256 pin of the plugin binary." },
+        "route": { "type": "string", "minLength": 1, "description": "Router object name (e.g. Gateway API HTTPRoute)." },
+        "namespace": { "type": "string", "description": "Router object namespace." },
+        "stableService": { "type": "string", "minLength": 1, "description": "Backend receiving (100-weight)% of traffic." },
+        "canaryService": { "type": "string", "minLength": 1, "description": "Backend receiving weight% of traffic." }
       }
     },
     "analysis": {

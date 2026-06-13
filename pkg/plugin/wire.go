@@ -6,8 +6,9 @@ package plugin
 
 // Capability names.
 const (
-	CapabilityTarget      = "target"
-	CapabilityFeatureFlag = "featureflag"
+	CapabilityTarget        = "target"
+	CapabilityFeatureFlag   = "featureflag"
+	CapabilityTrafficRouter = "trafficrouter"
 )
 
 // target capability tools.
@@ -19,6 +20,9 @@ const (
 
 // featureflag capability tool.
 const ToolApplyFlag = "apply_flag"
+
+// trafficrouter capability tool.
+const ToolSetWeight = "set_weight"
 
 // ApplyInput is the target.apply payload.
 type ApplyInput struct {
@@ -51,4 +55,15 @@ type FlagChange struct {
 	Environment string `json:"environment"`
 	Percentage  int    `json:"percentage"`
 	Disabled    bool   `json:"disabled"`
+}
+
+// TrafficChange is the trafficrouter.set_weight payload: shift Weight percent of
+// traffic to the canary backend, the remainder to the stable backend, on the
+// named route.
+type TrafficChange struct {
+	Route         string `json:"route"`         // router object name (e.g. Gateway API HTTPRoute)
+	Namespace     string `json:"namespace"`     // router object namespace
+	StableService string `json:"stableService"` // backend receiving (100-weight)%
+	CanaryService string `json:"canaryService"` // backend receiving weight%
+	Weight        int    `json:"weight"`        // canary traffic percentage 0..100
 }

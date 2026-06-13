@@ -80,3 +80,33 @@ func ServeFlagProvider(name, version string, p FlagProvider, safety Safety) erro
 		})
 	return Serve(srv)
 }
+
+// TrafficRouter shifts traffic between a stable and canary backend. A traffic
+// router plugin implements it and passes it to ServeTrafficRouter.
+type TrafficRouter interface {
+	SetWeight(ctx context.Context, c TrafficChange) error
+}
+
+// ServeTrafficRouter runs a TrafficRouter as a Rollops traffic-router plugin,
+// exposing the "trafficrouter" capability with the set_weight tool.
+func ServeTrafficRouter(name, version string, r TrafficRouter, safety Safety) error {
+	m := NewManifest(name, version).
+		Capability(CapabilityTrafficRouter, "Progressive-delivery traffic router").
+		Tool(ToolSetWeight, "Shift traffic weight to the canary backend", true).
+		Done().
+		Safety(safety).
+		Build()
+
+	srv := NewServer(m).
+		HandleTool(CapabilityTrafficRouter, ToolSetWeight, func(ctx context.Context, in []byte) ([]byte, error) {
+			var c TrafficChange
+			if err := json.Unmarshal(in, &c); err != nil {
+				return nil, err
+			}
+			if err := r.SetWeight(ctx, c); err != nil {
+				return nil, err
+			}
+			return []byte("{}"), nil
+		})
+	return Serve(srv)
+}

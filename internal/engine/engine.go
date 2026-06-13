@@ -37,6 +37,7 @@ import (
 	"go.klarlabs.de/rollops/internal/step"
 	"go.klarlabs.de/rollops/internal/store"
 	itarget "go.klarlabs.de/rollops/internal/target"
+	"go.klarlabs.de/rollops/internal/trafficrouting"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -55,15 +56,16 @@ type Engine struct {
 	// Optional trust/delivery collaborators. When set, Apply enforces them in
 	// order; nil means that stage is skipped (keeps the bare engine simple for
 	// tests, while a daemon wires the full pipeline).
-	audit      *audit.Logger
-	guardrails *security.Guardrails
-	artifact   *security.ArtifactGate
-	secrets    secrets.Provider
-	notifier   notify.Notifier
-	metrics    analysis.MetricsProvider // optional override; else built from config
-	analysis   bool
-	dbRollback DatabaseRollbackRunner
-	flagBuild  func(*config.FeatureFlags) (featureflags.Provider, error) // flag plugin builder (test seam)
+	audit       *audit.Logger
+	guardrails  *security.Guardrails
+	artifact    *security.ArtifactGate
+	secrets     secrets.Provider
+	notifier    notify.Notifier
+	metrics     analysis.MetricsProvider // optional override; else built from config
+	analysis    bool
+	dbRollback  DatabaseRollbackRunner
+	flagBuild   func(*config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
+	routerBuild func(*config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
 }
 
 // Option configures an Engine.
@@ -133,6 +135,36 @@ func WithFlagProviderBuilder(f func(*config.FeatureFlags) (featureflags.Provider
 	return func(e *Engine) { e.flagBuild = f }
 }
 
+// WithTrafficRouterBuilder overrides how a traffic router is built from config
+// (test seam; default launches the configured trafficrouter plugin).
+func WithTrafficRouterBuilder(f func(*config.TrafficRouting) (trafficrouting.Router, error)) Option {
+	return func(e *Engine) { e.routerBuild = f }
+}
+
+// driveTraffic shifts the configured percentage of traffic to the canary backend
+// through a freshly launched traffic-router plugin, then closes it. Best-effort:
+// a routing failure is audited and never aborts the rollout (the health gate
+// remains the source of truth), mirroring feature-flag delivery.
+func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.TrafficRouting, weight int) {
+	router, err := e.routerBuild(tr)
+	if err != nil {
+		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "trafficrouter build failed: " + err.Error()})
+		return
+	}
+	if c, ok := router.(interface{ Close() error }); ok {
+		defer c.Close()
+	}
+	hook := trafficrouting.Hook{Router: router}
+	if err := hook.Apply(ctx, trafficrouting.Change{
+		Route: tr.Route, Namespace: tr.Namespace,
+		StableService: tr.StableService, CanaryService: tr.CanaryService, Weight: weight,
+	}); err != nil {
+		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "trafficrouter apply failed: " + err.Error()})
+		return
+	}
+	e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: fmt.Sprintf("trafficrouter %q → canary %d%%", tr.Route, weight)})
+}
+
 // flagsEnabled reports whether feature-flag coupling fires for the given phase
 // ("step" or "promote"), per the config's `when` (default both).
 func flagsEnabled(ff *config.FeatureFlags, phase string) bool {
@@ -196,16 +228,17 @@ func (e *Engine) build(t config.Target) (pt.Target, error) {
 // time.Now; both are injectable for tests.
 func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
-		store:      st,
-		reg:        reg,
-		locks:      newKeyedLocks(),
-		policy:     step.DefaultPolicy(),
-		smoke:      execSmoke{},
-		dbRollback: execDBRollback{},
-		owner:      defaultOwner(),
-		leaseTTL:   2 * time.Minute,
-		flagBuild:  func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
-		now:        func() time.Time { return time.Now().UTC() },
+		store:       st,
+		reg:         reg,
+		locks:       newKeyedLocks(),
+		policy:      step.DefaultPolicy(),
+		smoke:       execSmoke{},
+		dbRollback:  execDBRollback{},
+		owner:       defaultOwner(),
+		leaseTTL:    2 * time.Minute,
+		flagBuild:   func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
+		routerBuild: func(c *config.TrafficRouting) (trafficrouting.Router, error) { return trafficrouting.BuildRouter(c) },
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
 	for _, o := range opts {
@@ -606,6 +639,12 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.UpdatedAt = e.now()
 			_ = e.store.SaveRollout(ctx, r)
 			r.Note = ""
+			// Shift real network traffic to the canary backend at this step's
+			// weight, so a weighted canary means actual traffic routing (Gateway
+			// API, Istio, …), not just a health-gated bake.
+			if cfg.Spec.TrafficRouting != nil {
+				e.driveTraffic(ctx, ref, cfg.Spec.TrafficRouting, s.Weight)
+			}
 			// Drive the coupled feature flag to match the traffic weight, so
 			// the flag rollout tracks the canary in lockstep.
 			if flagsEnabled(cfg.Spec.FeatureFlags, "step") {
