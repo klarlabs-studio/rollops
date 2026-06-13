@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,6 +42,9 @@ func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, er
 	if o, ok := spec["oci"].(map[string]any); ok {
 		return renderOCI(ctx, o, run)
 	}
+	if b, ok := spec["bucket"].(map[string]any); ok {
+		return renderBucket(ctx, b, run)
+	}
 	if h, ok := spec["helm"].(map[string]any); ok {
 		return renderHelm(ctx, h, run)
 	}
@@ -50,7 +54,42 @@ func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, er
 	if s, ok := spec["manifest"].(string); ok && s != "" {
 		return []byte(s), nil
 	}
-	return nil, fmt.Errorf("kubernetes: spec must set one of oci / helm / kustomize / manifest")
+	return nil, fmt.Errorf("kubernetes: spec must set one of oci / bucket / helm / kustomize / manifest")
+}
+
+// renderBucket syncs a desired-state tree from an object-storage bucket (the
+// Flux Bucket source) to a temp dir, then renders it like the oci source. The
+// bucket URL scheme selects the CLI: s3:// uses `aws s3 sync`, gs:// uses
+// `gsutil -m rsync -r`. Credentials are the CLI's ambient resolution.
+func renderBucket(ctx context.Context, b map[string]any, run cmdRunner) ([]byte, error) {
+	urlStr := str(b, "url")
+	if urlStr == "" {
+		return nil, fmt.Errorf("kubernetes: bucket.url is required")
+	}
+	dir, err := os.MkdirTemp("", "rollops-bucket-")
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: bucket temp dir: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	switch {
+	case strings.HasPrefix(urlStr, "s3://"):
+		if _, err := run(ctx, "aws", nil, "s3", "sync", urlStr, dir); err != nil {
+			return nil, fmt.Errorf("kubernetes: aws s3 sync %q: %w", urlStr, err)
+		}
+	case strings.HasPrefix(urlStr, "gs://"):
+		if _, err := run(ctx, "gsutil", nil, "-m", "rsync", "-r", urlStr, dir); err != nil {
+			return nil, fmt.Errorf("kubernetes: gsutil rsync %q: %w", urlStr, err)
+		}
+	default:
+		return nil, fmt.Errorf("kubernetes: bucket.url must be an s3:// or gs:// URL: %q", urlStr)
+	}
+
+	root := dir
+	if sub := str(b, "path"); sub != "" {
+		root = filepath.Join(dir, sub)
+	}
+	return renderTree(ctx, root, str(b, "render"), str(b, "file"), "bucket", run)
 }
 
 // renderOCI pulls a non-Helm OCI artifact (a bundle of Kubernetes manifests or a
@@ -76,25 +115,28 @@ func renderOCI(ctx context.Context, o map[string]any, run cmdRunner) ([]byte, er
 	if sub := str(o, "path"); sub != "" {
 		root = filepath.Join(dir, sub)
 	}
+	return renderTree(ctx, root, str(o, "render"), str(o, "file"), "oci", run)
+}
 
-	switch str(o, "render") {
-	case "manifest":
-		file := str(o, "file")
+// renderTree renders a fetched desired-state directory: a single manifest file
+// (mode "manifest") or a kustomize build of the tree (default). Shared by the
+// oci and bucket sources.
+func renderTree(ctx context.Context, root, mode, file, src string, run cmdRunner) ([]byte, error) {
+	if mode == "manifest" {
 		if file == "" {
-			return nil, fmt.Errorf("kubernetes: oci.file is required when render is manifest")
+			return nil, fmt.Errorf("kubernetes: %s.file is required when render is manifest", src)
 		}
 		data, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
-			return nil, fmt.Errorf("kubernetes: oci read manifest: %w", err)
+			return nil, fmt.Errorf("kubernetes: %s read manifest: %w", src, err)
 		}
 		return data, nil
-	default: // kustomize (the default rendering for an artifact tree)
-		out, err := run(ctx, "kubectl", nil, "kustomize", root)
-		if err != nil {
-			return nil, fmt.Errorf("kubernetes: oci kustomize build: %w", err)
-		}
-		return []byte(out), nil
 	}
+	out, err := run(ctx, "kubectl", nil, "kustomize", root)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: %s kustomize build: %w", src, err)
+	}
+	return []byte(out), nil
 }
 
 // renderHelm runs `helm template`, passing inline values over stdin. A remote

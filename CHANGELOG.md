@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased - Bucket Sources + CloudWatch
+
+- **Object-storage bucket source for the Kubernetes target** (`bucket` spec
+  block) — the Flux `Bucket` source. Sync desired state from `s3://`
+  (`aws s3 sync`) or `gs://` (`gsutil rsync`) to a temp dir, then render via
+  `kubectl kustomize` (default) or a single `file`. Shares the render path with
+  the `oci` source. See `docs/kubernetes-sources.md`.
+- **CloudWatch metric provider** — `rollops-plugin-cloudwatch`, the second
+  `metricprovider` plugin. Resolves a JSON CloudWatch metric query to a scalar
+  via the `aws` CLI (`get-metric-statistics`); gates a canary on CloudWatch
+  metrics. The marketplace now spans ten plugins across three capabilities.
+
 ## v0.13.0 - OCI Sources, CRD Health, Multi-Cluster
 
 - **OCI artifact source for the Kubernetes target** (`oci` spec block) — the Flux

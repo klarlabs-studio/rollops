@@ -69,6 +69,25 @@ lets desired state live in an OCI registry instead of a Git checkout:
 Requires `oras` and `kubectl` on the daemon host. The artifact is pulled to a
 temp directory and removed after rendering.
 
+## bucket
+
+Sync desired state from an object-storage bucket (the Flux `Bucket` source),
+then render it like `oci`. The URL scheme selects the CLI: `s3://` uses
+`aws s3 sync`, `gs://` uses `gsutil -m rsync -r`. Credentials are the CLI's
+ambient resolution.
+
+```yaml
+    bucket:
+      url: s3://acme-config/prod      # or gs://acme-config/prod
+      path: overlays/prod             # optional subdir
+      render: kustomize               # kustomize (default) | manifest
+      # file: deploy.yaml             # required when render: manifest
+```
+
+Requires `aws` (for `s3://`) or `gsutil` (for `gs://`) plus `kubectl` on the
+daemon host. The bucket is synced to a temp directory and removed after
+rendering.
+
 ## manifest
 
 Inline YAML, applied verbatim:

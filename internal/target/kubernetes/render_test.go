@@ -153,6 +153,73 @@ func TestRender_OCI_RequiresRef(t *testing.T) {
 	}
 }
 
+// bucketRunner simulates `aws s3 sync` / `gsutil rsync` (last arg is the dest
+// dir) by writing files there, then handles the kustomize call.
+func bucketRunner(t *testing.T, syncCmd string, files map[string]string, kustomizeOut string) (cmdRunner, *capturedRun) {
+	t.Helper()
+	c := &capturedRun{}
+	run := func(_ context.Context, name string, _ []byte, args ...string) (string, error) {
+		if name == syncCmd {
+			dir := args[len(args)-1]
+			for rel, content := range files {
+				p := filepath.Join(dir, rel)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					return "", err
+				}
+				if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+					return "", err
+				}
+			}
+			return "", nil
+		}
+		c.name, c.args = name, args
+		return kustomizeOut, nil
+	}
+	return run, c
+}
+
+func TestRender_Bucket_S3Kustomize(t *testing.T) {
+	run, c := bucketRunner(t, "aws", map[string]string{"kustomization.yaml": "resources: [app.yaml]\n"}, "kind: Service\n")
+	spec := map[string]any{"bucket": map[string]any{"url": "s3://acme-cfg/prod"}}
+	out, err := render(context.Background(), spec, run)
+	if err != nil {
+		t.Fatalf("render bucket s3: %v", err)
+	}
+	if c.name != "kubectl" || c.args[0] != "kustomize" {
+		t.Errorf("expected kubectl kustomize, got %s %v", c.name, c.args)
+	}
+	if !strings.Contains(string(out), "Service") {
+		t.Errorf("out = %q", out)
+	}
+}
+
+func TestRender_Bucket_GCSManifest(t *testing.T) {
+	run, _ := bucketRunner(t, "gsutil", map[string]string{"deploy/app.yaml": "kind: Deployment\n"}, "")
+	spec := map[string]any{"bucket": map[string]any{
+		"url": "gs://acme-cfg/prod", "path": "deploy", "render": "manifest", "file": "app.yaml",
+	}}
+	out, err := render(context.Background(), spec, run)
+	if err != nil {
+		t.Fatalf("render bucket gcs: %v", err)
+	}
+	if !strings.Contains(string(out), "Deployment") {
+		t.Errorf("out = %q", out)
+	}
+}
+
+func TestRender_Bucket_RequiresURL(t *testing.T) {
+	if _, err := render(context.Background(), map[string]any{"bucket": map[string]any{}}, fakeRunner(&capturedRun{})); err == nil {
+		t.Error("bucket without url must error")
+	}
+}
+
+func TestRender_Bucket_UnsupportedScheme(t *testing.T) {
+	spec := map[string]any{"bucket": map[string]any{"url": "ftp://nope/x"}}
+	if _, err := render(context.Background(), spec, fakeRunner(&capturedRun{})); err == nil {
+		t.Error("non-s3/gs bucket url must error")
+	}
+}
+
 func TestManifestFromSpec_RawFallback(t *testing.T) {
 	// Direct flow: m.Spec is raw YAML, not a JSON object.
 	raw := []byte("apiVersion: apps/v1\nkind: Deployment\n")
