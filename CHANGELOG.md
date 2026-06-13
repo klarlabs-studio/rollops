@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased - More Marketplace Plugins
+
+- Four new feature-flag provider plugins published to the marketplace registry,
+  each in its own public repo, each sha256-pinned: **unleash** (flexibleRollout
+  percentage), **posthog** (flag rollout percentage), **growthbook** (rollout
+  rule coverage), and **openfeature** (flagd fractional targeting). Install any
+  with `rollops plugin install <name>`.
+
 ## Unreleased - Plugin Update
 
 - `rollops plugin update` — compares installed plugins against the marketplace

@@ -2,9 +2,11 @@
   "plugins": [
     {
       "name": "flagsmith",
-      "description": "Feature-flag provider backed by Flagsmith — drives a flag's rollout percentage in lockstep with a canary.",
+      "description": "Feature-flag provider backed by Flagsmith \u2014 drives a flag's rollout percentage in lockstep with a canary.",
       "homepage": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith",
-      "capabilities": ["featureflag"],
+      "capabilities": [
+        "featureflag"
+      ],
       "latest": "v0.1.0",
       "versions": {
         "v0.1.0": {
@@ -26,6 +28,138 @@
               "arch": "arm64",
               "url": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith/releases/download/v0.1.0/rollops-plugin-flagsmith_v0.1.0_linux_arm64",
               "sha256": "a1ff044d8fda6e78f307006f4a876d06a5b13f7134ef226177443783307659ff"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "growthbook",
+      "description": "Feature-flag provider backed by GrowthBook \u2014 drives a rollout rule's coverage in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-growthbook",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-growthbook/releases/download/v0.1.0/rollops-plugin-growthbook_v0.1.0_darwin_arm64",
+              "sha256": "bbebae481e7bf981bd55f22128f8f8fa5ba9104a8cb7adcde71041bfd380f965"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-growthbook/releases/download/v0.1.0/rollops-plugin-growthbook_v0.1.0_linux_amd64",
+              "sha256": "d4e5f43267d2d60dc520c70430f9633566a22374eb07c8f944d30c9015ce869a"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-growthbook/releases/download/v0.1.0/rollops-plugin-growthbook_v0.1.0_linux_arm64",
+              "sha256": "2b9252bc67d8149039e33265aab3475d68c23665dcedd187ceb4b8aad1d1cf0a"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "openfeature",
+      "description": "Feature-flag provider for the OpenFeature ecosystem (flagd) \u2014 drives flagd fractional targeting in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-openfeature",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-openfeature/releases/download/v0.1.0/rollops-plugin-openfeature_v0.1.0_darwin_arm64",
+              "sha256": "254828418f3859114f883144c491508a623864e89afbbbc46cd15fc6eac00625"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-openfeature/releases/download/v0.1.0/rollops-plugin-openfeature_v0.1.0_linux_amd64",
+              "sha256": "bff42f6f3e6037702a9a1f10b6ac30a7f41b12365faf4e0bcf16f5677880a6f5"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-openfeature/releases/download/v0.1.0/rollops-plugin-openfeature_v0.1.0_linux_arm64",
+              "sha256": "370b66786c9967389c37a571f382c8aa2bc9e45101eb18b7c759e6af86087ac4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "posthog",
+      "description": "Feature-flag provider backed by PostHog \u2014 drives a flag's rollout percentage in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-posthog",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-posthog/releases/download/v0.1.0/rollops-plugin-posthog_v0.1.0_darwin_arm64",
+              "sha256": "5b4f26479aab1284da8f2304e5b1fdfbd6e29c75ed6a1e900c70049c339911b4"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-posthog/releases/download/v0.1.0/rollops-plugin-posthog_v0.1.0_linux_amd64",
+              "sha256": "e0aa5ab388a76e3486e468cafbb0523bbce5dc0be707e4f6adf139cb8776b3f2"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-posthog/releases/download/v0.1.0/rollops-plugin-posthog_v0.1.0_linux_arm64",
+              "sha256": "5f3f0afe2a3724ffc4afd0c26890fb2a5c88f42702c0768b71cfc550dfb59c4e"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "unleash",
+      "description": "Feature-flag provider backed by Unleash \u2014 drives a feature toggle's flexibleRollout percentage in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-unleash",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-unleash/releases/download/v0.1.0/rollops-plugin-unleash_v0.1.0_darwin_arm64",
+              "sha256": "99397bf6bfb3cfe37969f7f1c5f7b183cf2d583e8ba81464a402cb11d70e6379"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-unleash/releases/download/v0.1.0/rollops-plugin-unleash_v0.1.0_linux_amd64",
+              "sha256": "8449c4f771c8f130f25f1581ef3dde37f07500250d65a4dea046de38fd4d5993"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-unleash/releases/download/v0.1.0/rollops-plugin-unleash_v0.1.0_linux_arm64",
+              "sha256": "7475eff4acd628a56f5e8154dab61b2a9788ccad0ebdd90306fe487d9191a20f"
             }
           ]
         }
