@@ -1,0 +1,40 @@
+# Demo rollout config reconciled by an in-cluster rollopsd (dogfood).
+# rollopsd watches this path in the repo and applies the rollout on its
+# reconcile interval — Rollops operating a workload from Git, on the cluster.
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: web
+spec:
+  target:
+    kind: kubernetes
+    ref: demo/prod/web
+    criticality: low
+    spec:
+      namespace: rollops-demo
+      resource: deployment/web
+      manifest: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: web
+          namespace: rollops-demo
+        spec:
+          replicas: 2
+          selector: { matchLabels: { app: web } }
+          template:
+            metadata: { labels: { app: web } }
+            spec:
+              containers:
+                - name: web
+                  image: nginx:1.27-alpine
+                  ports: [{ containerPort: 80 }]
+                  resources:
+                    requests: { cpu: 10m, memory: 16Mi }
+                    limits: { cpu: 50m, memory: 32Mi }
+  strategy:
+    type: canary
+    steps:
+      - weight: 50
+      - weight: 100
+  verification: full

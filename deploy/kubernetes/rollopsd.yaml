@@ -1,0 +1,145 @@
+# In-cluster rollopsd: the long-lived daemon that reconciles watched Git repos,
+# serves the UI/REST API, and drives rollouts on the cluster through its
+# ServiceAccount. Secrets (admin token, UI password, image pull) are created out
+# of band — see docs/deploy-kubernetes.md.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rollops-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rollopsd
+  namespace: rollops-system
+imagePullSecrets:
+  - name: ghcr
+---
+# rollopsd applies/observes workloads and patches routers across the namespaces
+# its rollouts target. Cluster-scoped for simplicity; narrow to a Role per
+# target namespace in stricter setups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rollopsd
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, services, pods, configmaps]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, update, patch]
+  # Read CRDs and their instances for status.conditions health assessment.
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rollopsd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rollopsd
+subjects:
+  - kind: ServiceAccount
+    name: rollopsd
+    namespace: rollops-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollopsd-watch
+  namespace: rollops-system
+data:
+  # Repos rollopsd reconciles. Here: this repo's demo/ path (public, no auth).
+  watch.json: |
+    [
+      {
+        "name": "demo",
+        "url": "https://github.com/klarlabs-studio/rollops",
+        "branch": "main",
+        "path": "demo"
+      }
+    ]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rollopsd-data
+  namespace: rollops-system
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rollopsd
+  namespace: rollops-system
+  labels: { app: rollopsd }
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # single writer to the sqlite PVC
+  selector: { matchLabels: { app: rollopsd } }
+  template:
+    metadata: { labels: { app: rollopsd } }
+    spec:
+      serviceAccountName: rollopsd
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: rollopsd
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.15.0
+          args: []
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: ROLLOPS_DB, value: /var/lib/rollops/rollops.db }
+            - { name: ROLLOPS_ADDR, value: ":8080" }
+            - { name: ROLLOPS_WATCH, value: /etc/rollops/watch.json }
+            - { name: ROLLOPS_RECONCILE_INTERVAL, value: "60s" }
+            - name: ROLLOPS_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: rollopsd-secrets, key: admin-token } }
+            - name: ROLLOPS_UI_PASSWORD
+              valueFrom: { secretKeyRef: { name: rollopsd-secrets, key: ui-password } }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/rollops }
+            - { name: watch, mountPath: /etc/rollops, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: rollopsd-data }
+        - name: watch
+          configMap: { name: rollopsd-watch }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rollopsd
+  namespace: rollops-system
+spec:
+  selector: { app: rollopsd }
+  ports:
+    - { name: http, port: 80, targetPort: http }
