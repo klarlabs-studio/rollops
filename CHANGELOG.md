@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 - Plugin Install + Release Automation
 
 - Release automation: a tag push (`v*`) now builds the cross-platform archives,
   checksums, and GitHub release via GoReleaser, replacing the manual flow. The
