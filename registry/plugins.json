@@ -1,6 +1,39 @@
 {
   "plugins": [
     {
+      "name": "datadog",
+      "description": "Metric provider backed by Datadog \u2014 resolves a Datadog metrics query to a scalar for rollout analysis.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-datadog",
+      "capabilities": [
+        "metricprovider"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-datadog/releases/download/v0.1.0/rollops-plugin-datadog_v0.1.0_darwin_arm64",
+              "sha256": "55bd1c7977728b8bd6c766b31a3a412e2b685fc2ecca3095f981ae1d0bf9280e"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-datadog/releases/download/v0.1.0/rollops-plugin-datadog_v0.1.0_linux_amd64",
+              "sha256": "1d320e2338add02f7a59454a84730de3d9584e306ebc76d28ddd55a14fef7cb0"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-datadog/releases/download/v0.1.0/rollops-plugin-datadog_v0.1.0_linux_arm64",
+              "sha256": "4e84deaeb1ea62634ff152281d744413b38157f5e2b0537f63797a293b1c7b7d"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "flagsmith",
       "description": "Feature-flag provider backed by Flagsmith \u2014 drives a flag's rollout percentage in lockstep with a canary.",
       "homepage": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith",
