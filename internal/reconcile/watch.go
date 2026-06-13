@@ -143,16 +143,21 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	for _, nc := range configs {
 		cfg := nc.Config
 		// Image automation runs first: a bump is committed+pushed to Git, and the
-		// returned (bumped) config is what reconcile then deploys.
+		// returned (bumped) config is what reconcile then deploys. Best-effort: a
+		// scan/push failure is logged but never blocks reconciling desired state
+		// (managing the app matters more than the image bump).
 		if w.imageAuto != nil {
 			bumped, ref, ierr := w.imageAuto.Process(ctx, r.src, nc)
-			if ierr != nil {
-				out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Err: fmt.Errorf("watch: image automation: %w", ierr)})
-				continue
-			}
-			cfg = bumped
-			if ref != "" && w.logf != nil {
-				w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
+			switch {
+			case ierr != nil:
+				if w.logf != nil {
+					w.logf("image automation %s/%s: %v (continuing reconcile)", r.spec.Name, nc.Path, ierr)
+				}
+			case ref != "":
+				cfg = bumped
+				if w.logf != nil {
+					w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
+				}
 			}
 		}
 		o, rerr := w.rec.Reconcile(ctx, cfg, r.spec.Initiator)
