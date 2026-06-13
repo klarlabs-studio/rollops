@@ -1,6 +1,39 @@
 {
   "plugins": [
     {
+      "name": "cloudwatch",
+      "description": "Metric provider backed by AWS CloudWatch \u2014 resolves a CloudWatch metric query to a scalar for rollout analysis.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-cloudwatch",
+      "capabilities": [
+        "metricprovider"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-cloudwatch/releases/download/v0.1.0/rollops-plugin-cloudwatch_v0.1.0_darwin_arm64",
+              "sha256": "c72590823e835d6f9a9b024a45b728f7f06a56718a982517cbb5d8b47170d4a1"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-cloudwatch/releases/download/v0.1.0/rollops-plugin-cloudwatch_v0.1.0_linux_amd64",
+              "sha256": "003ba5378cb78bc6fecb2bb2c5c3478598487a1e80e4711aeea6f9b5d67c023e"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-cloudwatch/releases/download/v0.1.0/rollops-plugin-cloudwatch_v0.1.0_linux_arm64",
+              "sha256": "62a54fe584157df00ed2799c6f2f1a1396eac78c780f0990ce4e9cbf5b6df1ba"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "datadog",
       "description": "Metric provider backed by Datadog \u2014 resolves a Datadog metrics query to a scalar for rollout analysis.",
       "homepage": "https://github.com/klarlabs-studio/rollops-plugin-datadog",
