@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Plugin Lifecycle + Automatic Signature Verification
+## v0.9.0 - Plugin Lifecycle + Automatic Signature Verification
 
 - `rollops plugin info <name>` — prints full registry detail for one plugin:
   every published version with its per-platform artifacts and sha256 pins, plus
