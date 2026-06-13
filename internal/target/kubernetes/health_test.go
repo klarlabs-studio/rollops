@@ -62,6 +62,28 @@ func TestEvalConditions_MissingRequestedType(t *testing.T) {
 	}
 }
 
+func TestBaseArgs_MultiCluster(t *testing.T) {
+	cl := newKubectl(spec{
+		"kubeconfig": "/creds/prod-east.kubeconfig",
+		"context":    "prod-east",
+		"namespace":  "web",
+		"resource":   "deployment/api",
+	}, "team/prod/api").(*kubectlCluster)
+	got := strings.Join(cl.baseArgs(), " ")
+	want := "--kubeconfig /creds/prod-east.kubeconfig --context prod-east -n web"
+	if got != want {
+		t.Errorf("baseArgs = %q, want %q", got, want)
+	}
+}
+
+func TestBaseArgs_AmbientWhenUnset(t *testing.T) {
+	cl := newKubectl(spec{"resource": "deployment/api"}, "t/p/a").(*kubectlCluster)
+	// No kubeconfig/context → ambient resolution; only the default namespace.
+	if got := strings.Join(cl.baseArgs(), " "); got != "-n default" {
+		t.Errorf("baseArgs = %q, want '-n default'", got)
+	}
+}
+
 func TestResourceKind(t *testing.T) {
 	cases := map[string]string{"deployment/api": "deployment", "Certificate/app": "certificate", "sts": "sts"}
 	for in, want := range cases {

@@ -15,6 +15,7 @@ import (
 // kubectlCluster drives a cluster through the external kubectl binary. No
 // client-go is compiled into the Rollops core.
 type kubectlCluster struct {
+	kubeconfig string // explicit kubeconfig file (multi-cluster: per-target credentials)
 	context    string
 	namespace  string
 	resource   string // e.g. deployment/api
@@ -29,6 +30,7 @@ func newKubectl(s spec, ref string) Cluster {
 		ns = "default"
 	}
 	return &kubectlCluster{
+		kubeconfig: s.str("kubeconfig"),
 		context:    s.str("context"),
 		namespace:  ns,
 		resource:   s.str("resource"),
@@ -40,6 +42,11 @@ func newKubectl(s spec, ref string) Cluster {
 
 func (k *kubectlCluster) baseArgs() []string {
 	args := []string{}
+	// kubeconfig + context together let one daemon drive many clusters, each with
+	// its own credentials file, without a central cluster registry.
+	if k.kubeconfig != "" {
+		args = append(args, "--kubeconfig", k.kubeconfig)
+	}
 	if k.context != "" {
 		args = append(args, "--context", k.context)
 	}

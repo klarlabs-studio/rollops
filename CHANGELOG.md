@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - OCI Sources + CRD Health
+## Unreleased - OCI Sources, CRD Health, Multi-Cluster
 
 - **OCI artifact source for the Kubernetes target** (`oci` spec block) — the Flux
   `OCIRepository` model. Pull a non-Helm OCI artifact (a manifest bundle or
@@ -16,6 +16,11 @@
   checks: healthy when `Ready`/`Available`/`Succeeded` is `True`, unhealthy (with
   reason + message) when `False`, progressing otherwise. `healthCondition` pins a
   custom condition type. Standard workloads still use `kubectl rollout status`.
+- **Multi-cluster targeting.** A Kubernetes target can name its own `kubeconfig`
+  file (alongside the existing `context`), so one daemon drives rollouts across
+  many clusters — each with its own credentials — without a central cluster
+  registry. Per-target reconcile / drift / health / rollback run independently;
+  cross-cluster ordering uses `dependsOn`. See `docs/multi-cluster.md`.
 
 ## v0.12.0 - Pluggable Metric Providers
 
