@@ -109,28 +109,34 @@ func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
 	}
 	out := make([]RepoOutcome, 0, len(w.repos))
 	for _, r := range w.repos {
-		out = append(out, w.tickOne(ctx, r))
+		out = append(out, w.tickOne(ctx, r)...)
 	}
 	return out
 }
 
-func (w *Watcher) tickOne(ctx context.Context, r watched) RepoOutcome {
+func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	release, ok := w.locks.tryAcquire(r.spec.Name)
 	if !ok {
-		return RepoOutcome{Repo: r.spec.Name, Err: fmt.Errorf("watch: repo %s busy", r.spec.Name)}
+		return []RepoOutcome{{Repo: r.spec.Name, Err: fmt.Errorf("watch: repo %s busy", r.spec.Name)}}
 	}
 	defer release()
 
 	changed, _, err := r.src.Pull(ctx)
 	if err != nil {
-		return RepoOutcome{Repo: r.spec.Name, Err: fmt.Errorf("watch: pull: %w", err)}
+		return []RepoOutcome{{Repo: r.spec.Name, Err: fmt.Errorf("watch: pull: %w", err)}}
 	}
-	c, err := config.LoadFromDir(r.src.Dir(), r.spec.Ref)
+	// A repo path may address a single config file or a directory of them
+	// (manage many apps from one repo). Each config reconciles independently.
+	configs, err := config.LoadAllFromDir(r.src.Dir(), r.spec.Ref)
 	if err != nil {
-		return RepoOutcome{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("watch: load config: %w", err)}
+		return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("watch: load config: %w", err)}}
 	}
-	o, err := w.rec.Reconcile(ctx, c, r.spec.Initiator)
-	return RepoOutcome{Repo: r.spec.Name, Changed: changed, Outcome: o, Err: err}
+	out := make([]RepoOutcome, 0, len(configs))
+	for _, nc := range configs {
+		o, rerr := w.rec.Reconcile(ctx, nc.Config, r.spec.Initiator)
+		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Outcome: o, Err: rerr})
+	}
+	return out
 }
 
 // Run reconciles all repos on each interval tick until ctx is cancelled.

@@ -35,6 +35,50 @@ func TestLoadFromDir_ResolvesPathAndValidates(t *testing.T) {
 	}
 }
 
+func TestLoadAllFromDir_DirectoryOfConfigs(t *testing.T) {
+	dir := t.TempDir()
+	apps := filepath.Join(dir, "apps")
+	if err := os.MkdirAll(apps, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a.yaml", "b.yaml", "ignore.txt"} {
+		if err := os.WriteFile(filepath.Join(apps, n), []byte(validYAML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := LoadAllFromDir(dir, RepoRef{Path: "apps"})
+	if err != nil {
+		t.Fatalf("LoadAllFromDir: %v", err)
+	}
+	if len(got) != 2 { // a.yaml + b.yaml, ignore.txt skipped
+		t.Fatalf("loaded %d configs, want 2", len(got))
+	}
+	if got[0].Path != "apps/a.yaml" {
+		t.Errorf("path = %q, want apps/a.yaml", got[0].Path)
+	}
+}
+
+func TestLoadAllFromDir_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "rollops.yaml"), []byte(validYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadAllFromDir(dir, RepoRef{Path: "rollops.yaml"})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("single file: got %d configs, err %v", len(got), err)
+	}
+}
+
+func TestLoadAllFromDir_EmptyDirErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAllFromDir(dir, RepoRef{Path: "empty"}); err == nil {
+		t.Fatal("empty config dir must error")
+	}
+}
+
 func TestLoadFromDir_MissingFile(t *testing.T) {
 	if _, err := LoadFromDir(t.TempDir(), RepoRef{}); err == nil {
 		t.Fatal("expected error for missing config file")
