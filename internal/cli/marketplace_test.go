@@ -209,6 +209,103 @@ func TestPluginList_MissingDir(t *testing.T) {
 	}
 }
 
+// twoVersionServer serves an index for one plugin with an old (v0.1.0) and a
+// latest (v0.2.0) release, both for the current platform, with the given pins.
+func twoVersionServer(t *testing.T, oldSum, newSum string) (*http.Client, string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"plugins":[{"name":"flagsmith","description":"d","capabilities":["featureflag"],"latest":"v0.2.0",
+		"versions":{
+		  "v0.1.0":{"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/0.1.0","sha256":%q}]},
+		  "v0.2.0":{"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/0.2.0","sha256":%q}]}
+		}}]}`, runtime.GOOS, runtime.GOARCH, oldSum, runtime.GOOS, runtime.GOARCH, newSum)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) }))
+	t.Cleanup(srv.Close)
+	return srv.Client(), srv.URL
+}
+
+func sha(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+
+func TestPluginUpdate_ReportsOutdatedDryRun(t *testing.T) {
+	oldContent, newContent := "old-binary", "new-binary"
+	hc, url := twoVersionServer(t, sha(oldContent), sha(newContent))
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "flagsmith"), []byte(oldContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{Out: &buf, HTTPClient: hc}
+	if err := app.Run(context.Background(), []string{"plugin", "update", "--dir", dir, "--registry", url}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "outdated (flagsmith v0.1.0 -> v0.2.0)") {
+		t.Errorf("expected outdated report, got %q", out)
+	}
+	if !strings.Contains(out, "--apply") {
+		t.Errorf("expected apply hint, got %q", out)
+	}
+	// Dry run must not change the binary.
+	if got, _ := os.ReadFile(filepath.Join(dir, "flagsmith")); string(got) != oldContent {
+		t.Error("dry run must not modify the binary")
+	}
+}
+
+func TestPluginUpdate_ApplyUpgrades(t *testing.T) {
+	oldContent, newContent := "old-binary", "new-binary"
+	newSum := sha(newContent)
+	hc, url := twoVersionServer(t, sha(oldContent), newSum)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "flagsmith"), []byte(oldContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newBin := filepath.Join(t.TempDir(), "new")
+	if err := os.WriteFile(newBin, []byte(newContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return newBin, func() {}, nil },
+	}
+	if err := app.Run(context.Background(), []string{"plugin", "update", "--dir", dir, "--apply", "--registry", url}); err != nil {
+		t.Fatalf("update --apply: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "upgraded flagsmith to v0.2.0") || !strings.Contains(out, newSum) {
+		t.Errorf("expected upgrade confirmation, got %q", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "flagsmith")); string(got) != newContent {
+		t.Error("binary must be replaced with the new version on --apply")
+	}
+}
+
+func TestPluginUpdate_UpToDateAndUnknown(t *testing.T) {
+	newContent := "new-binary"
+	hc, url := twoVersionServer(t, sha("old-binary"), sha(newContent))
+	dir := t.TempDir()
+	// Installed binary is already the latest.
+	if err := os.WriteFile(filepath.Join(dir, "flagsmith"), []byte(newContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A binary not from this registry.
+	if err := os.WriteFile(filepath.Join(dir, "homegrown"), []byte("local"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{Out: &buf, HTTPClient: hc}
+	if err := app.Run(context.Background(), []string{"plugin", "update", "--dir", dir, "--registry", url}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "flagsmith\tup to date (flagsmith v0.2.0)") {
+		t.Errorf("expected up-to-date line, got %q", out)
+	}
+	if !strings.Contains(out, "homegrown\tunknown") {
+		t.Errorf("expected unknown line, got %q", out)
+	}
+}
+
 // signedRegistryServer serves both the index (at /) and a cosign bundle (at
 // /bundle) for a signed, platform-matching artifact with the given pin.
 func signedRegistryServer(t *testing.T, sum string) (*http.Client, string) {

@@ -137,6 +137,28 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+func TestFindVersionBySHA(t *testing.T) {
+	hc, url := serveIndex(t, sampleIndex)
+	idx, _ := Fetch(context.Background(), hc, url)
+
+	name, ver, ok := idx.FindVersionBySHA("aaa", "linux", "amd64")
+	if !ok || name != "flagsmith" || ver != "v0.1.0" {
+		t.Errorf("want flagsmith v0.1.0, got %s %s ok=%v", name, ver, ok)
+	}
+	// Case-insensitive on the hash.
+	if _, ver, ok := idx.FindVersionBySHA("BBB", "linux", "amd64"); !ok || ver != "v0.2.0" {
+		t.Errorf("want v0.2.0 for BBB, got %s ok=%v", ver, ok)
+	}
+	// Wrong platform must not match.
+	if _, _, ok := idx.FindVersionBySHA("ccc", "linux", "amd64"); ok {
+		t.Error("darwin artifact must not match linux/amd64")
+	}
+	// Unknown hash.
+	if _, _, ok := idx.FindVersionBySHA("zzz", "linux", "amd64"); ok {
+		t.Error("unknown sha must not match")
+	}
+}
+
 func TestURLEnvOverride(t *testing.T) {
 	t.Setenv("ROLLOPS_PLUGIN_REGISTRY", "https://example.test/index.json")
 	if got := URL(); got != "https://example.test/index.json" {

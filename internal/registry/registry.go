@@ -108,6 +108,22 @@ func (i Index) Find(name string) (Plugin, bool) {
 	return Plugin{}, false
 }
 
+// FindVersionBySHA identifies which published plugin and version an installed
+// binary corresponds to by matching its sha256 against the index's artifacts for
+// the given platform. Used by `plugin update` to recognise what is installed.
+func (i Index) FindVersionBySHA(sum, goos, goarch string) (plugin, version string, ok bool) {
+	for _, p := range i.Plugins {
+		for ver, v := range p.Versions {
+			for _, a := range v.Artifacts {
+				if a.OS == goos && a.Arch == goarch && strings.EqualFold(a.SHA256, sum) {
+					return p.Name, ver, true
+				}
+			}
+		}
+	}
+	return "", "", false
+}
+
 // Search returns plugins whose name, description, or capabilities match q
 // (case-insensitive substring); an empty q returns all. Sorted by name.
 func (i Index) Search(q string) []Plugin {

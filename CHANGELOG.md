@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased - Plugin Update
+
+- `rollops plugin update` — compares installed plugins against the marketplace
+  registry and reports which are `up to date`, `outdated (old -> new)`, or
+  `unknown (not from this registry)`. Each installed binary is identified by
+  matching its sha256 to a published artifact, so a plugin renamed at install
+  time is still recognised. Dry-run by default; `--apply` upgrades outdated
+  plugins in place, running the same sha256-pin and cosign checks as a fresh
+  install and printing the new pin. An optional name limits it to one plugin.
+- Internal: install and update share one `resolveAndInstall` path, so both
+  enforce identical pin + signature verification.
+
 ## v0.9.0 - Plugin Lifecycle + Automatic Signature Verification
 
 - `rollops plugin info <name>` — prints full registry detail for one plugin:

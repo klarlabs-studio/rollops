@@ -26,7 +26,7 @@ type PluginFetcher func(ctx context.Context, source string) (localPath string, c
 // plugin dispatches `rollops plugin <subcommand>`.
 func (a *App) plugin(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("plugin: subcommand required (search | info | install | list)")
+		return fmt.Errorf("plugin: subcommand required (search | info | install | list | update)")
 	}
 	switch args[0] {
 	case "search":
@@ -37,8 +37,10 @@ func (a *App) plugin(ctx context.Context, args []string) error {
 		return a.pluginInstall(ctx, args[1:])
 	case "list", "ls":
 		return a.pluginList(ctx, args[1:])
+	case "update", "upgrade":
+		return a.pluginUpdate(ctx, args[1:])
 	default:
-		return fmt.Errorf("plugin: unknown subcommand %q (try: search, info, install, list)", args[0])
+		return fmt.Errorf("plugin: unknown subcommand %q (try: search, info, install, list, update)", args[0])
 	}
 }
 
@@ -191,6 +193,94 @@ func (a *App) pluginList(_ context.Context, args []string) error {
 	return tw.Flush()
 }
 
+// pluginUpdate compares installed plugins against the marketplace registry and,
+// with --apply, upgrades outdated ones to their latest release. An installed
+// binary is identified by matching its sha256 to a published artifact, so a
+// plugin renamed at install time is still recognised. Dry-run by default.
+func (a *App) pluginUpdate(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("plugin update", flag.ContinueOnError)
+	fs.SetOutput(a.Out)
+	dir := fs.String("dir", defaultPluginDir(), "plugin directory to update")
+	regURL := fs.String("registry", registry.URL(), "plugin registry index URL")
+	apply := fs.Bool("apply", false, "actually upgrade outdated plugins (default: report only)")
+	// An optional plugin file name limits the update to one installed plugin;
+	// flags may precede or follow it.
+	var only string
+	rest := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		only, rest = args[0], args[1:]
+	}
+	if err := fs.Parse(rest); err != nil {
+		return err
+	}
+	if only == "" && fs.NArg() == 1 {
+		only = fs.Arg(0)
+	} else if fs.NArg() != 0 {
+		return fmt.Errorf("plugin update: unexpected extra arguments: %v", fs.Args())
+	}
+
+	idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
+	if err != nil {
+		return fmt.Errorf("plugin update: %w", err)
+	}
+	entries, err := os.ReadDir(*dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
+			return nil
+		}
+		return fmt.Errorf("plugin update: %w", err)
+	}
+
+	var outdated int
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if only != "" && e.Name() != only {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		path := filepath.Join(*dir, e.Name())
+		sum, err := sha256File(path)
+		if err != nil {
+			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
+		}
+		name, ver, ok := idx.FindVersionBySHA(sum, runtime.GOOS, runtime.GOARCH)
+		if !ok {
+			fmt.Fprintf(a.Out, "%s\tunknown (not from this registry)\n", e.Name())
+			continue
+		}
+		p, _ := idx.Find(name)
+		if ver == p.Latest {
+			fmt.Fprintf(a.Out, "%s\tup to date (%s %s)\n", e.Name(), name, ver)
+			continue
+		}
+		outdated++
+		fmt.Fprintf(a.Out, "%s\toutdated (%s %s -> %s)\n", e.Name(), name, ver, p.Latest)
+		if !*apply {
+			continue
+		}
+		art, cos, err := idx.Resolve(name, p.Latest, runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
+		}
+		newSum, err := a.resolveAndInstall(ctx, name, art, cos, path)
+		if err != nil {
+			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
+		}
+		fmt.Fprintf(a.Out, "upgraded %s to %s\nsha256 %s\n", e.Name(), p.Latest, newSum)
+	}
+
+	if outdated > 0 && !*apply {
+		fmt.Fprintln(a.Out, "run 'rollops plugin update --apply' to upgrade outdated plugins")
+	}
+	return nil
+}
+
 // pluginInstall fetches a plugin binary, optionally cosign-verifies it, installs
 // it to the plugin directory, and prints the sha256 to pin in a rollout spec.
 func (a *App) pluginInstall(ctx context.Context, args []string) error {
@@ -231,15 +321,7 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 
 	// A source that is neither a local path nor an https URL is treated as a
 	// marketplace plugin name: resolve it through the registry to a pinned,
-	// platform-specific artifact.
-	var registryName, registrySHA string
-	var regVerifier *security.CosignBlobVerifier
-	var cleanups []func()
-	defer func() {
-		for _, c := range cleanups {
-			c()
-		}
-	}()
+	// platform-specific artifact, verified and installed through the shared path.
 	if !isPathOrURL(source) {
 		idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
 		if err != nil {
@@ -249,43 +331,17 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("plugin install: %w", err)
 		}
-		registryName, registrySHA = source, art.SHA256
-		source = art.URL
-		if cos != nil {
-			fmt.Fprintf(a.Out, "registry: %s is published by %s\n", registryName, cos.Identity)
-			// A signed release lets the install verify the cosign signature
-			// automatically, with the index's identity/issuer as the expected
-			// signer — no manual flags. Fetch the signature material now.
-			if art.Signed() {
-				rv := &security.CosignBlobVerifier{
-					CertIdentity: cos.Identity, CertOIDCIssuer: cos.Issuer, Run: a.CosignRun,
-				}
-				if art.Bundle != "" {
-					p, clean, ferr := a.downloadTemp(ctx, art.Bundle)
-					if ferr != nil {
-						return fmt.Errorf("plugin install: fetch cosign bundle: %w", ferr)
-					}
-					cleanups = append(cleanups, clean)
-					rv.BundlePath = p
-				} else {
-					p, clean, ferr := a.downloadTemp(ctx, art.Signature)
-					if ferr != nil {
-						return fmt.Errorf("plugin install: fetch cosign signature: %w", ferr)
-					}
-					cleanups = append(cleanups, clean)
-					rv.SignaturePath = p
-					if art.Certificate != "" {
-						c, clean, ferr := a.downloadTemp(ctx, art.Certificate)
-						if ferr != nil {
-							return fmt.Errorf("plugin install: fetch cosign certificate: %w", ferr)
-						}
-						cleanups = append(cleanups, clean)
-						rv.CertificatePath = c
-					}
-				}
-				regVerifier = rv
-			}
+		target := *name
+		if target == "" {
+			target = source
 		}
+		dest := filepath.Join(*dir, target)
+		sum, err := a.resolveAndInstall(ctx, source, art, cos, dest)
+		if err != nil {
+			return fmt.Errorf("plugin install: %w", err)
+		}
+		a.printInstalledPin(dest, sum)
+		return nil
 	}
 
 	fetch := a.PluginFetcher
@@ -298,16 +354,12 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	}
 	defer cleanup()
 
-	// Optional cosign verification before the binary is placed. Manual flags take
-	// precedence; otherwise a signed registry release verifies automatically.
+	// Optional cosign verification before the binary is placed (manual flags only;
+	// signed registry releases verify automatically via resolveAndInstall above).
 	v := security.CosignBlobVerifier{
 		KeyPath: *keyPath, CertIdentity: *identity, CertOIDCIssuer: *issuer,
 		SignaturePath: *sigPath, CertificatePath: *certPath, BundlePath: *bundlePath,
 		Run: a.CosignRun,
-	}
-	if !v.Configured() && regVerifier != nil {
-		v = *regVerifier
-		fmt.Fprintln(a.Out, "cosign: verifying against the registry-published signature")
 	}
 	if v.Configured() {
 		ok, reason, verr := v.VerifyBlob(ctx, local)
@@ -324,22 +376,9 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Registry installs are pinned by the curated index: the download must match
-	// the published sha256, or it is rejected.
-	if registrySHA != "" {
-		if !strings.EqualFold(sum, registrySHA) {
-			return fmt.Errorf("plugin install: registry pin mismatch for %q: index %s, got %s", registryName, registrySHA, sum)
-		}
-		fmt.Fprintln(a.Out, "registry: sha256 matches the published pin")
-	}
-
 	target := *name
 	if target == "" {
-		if registryName != "" {
-			target = registryName
-		} else {
-			target = filepath.Base(strings.TrimSuffix(source, "/"))
-		}
+		target = filepath.Base(strings.TrimSuffix(source, "/"))
 	}
 	if err := os.MkdirAll(*dir, 0o755); err != nil {
 		return fmt.Errorf("plugin install: %w", err)
@@ -348,10 +387,100 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	if err := copyFileMode(local, dest, 0o755); err != nil {
 		return fmt.Errorf("plugin install: %w", err)
 	}
+	a.printInstalledPin(dest, sum)
+	return nil
+}
 
+// resolveAndInstall downloads a resolved marketplace artifact, auto-verifies its
+// cosign signature when the release is signed, enforces the index's sha256 pin,
+// and writes it to dest (0755). Shared by `plugin install <name>` and
+// `plugin update`, so both enforce identical trust checks.
+func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.Artifact, cos *registry.Cosign, dest string) (string, error) {
+	var cleanups []func()
+	defer func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}()
+
+	if cos != nil {
+		fmt.Fprintf(a.Out, "registry: %s is published by %s\n", name, cos.Identity)
+	}
+
+	// A signed release verifies automatically: the index's identity/issuer is the
+	// expected signer and the signature material rides alongside the artifact.
+	var v *security.CosignBlobVerifier
+	if cos != nil && art.Signed() {
+		rv := &security.CosignBlobVerifier{CertIdentity: cos.Identity, CertOIDCIssuer: cos.Issuer, Run: a.CosignRun}
+		if art.Bundle != "" {
+			p, clean, err := a.downloadTemp(ctx, art.Bundle)
+			if err != nil {
+				return "", fmt.Errorf("fetch cosign bundle: %w", err)
+			}
+			cleanups = append(cleanups, clean)
+			rv.BundlePath = p
+		} else {
+			p, clean, err := a.downloadTemp(ctx, art.Signature)
+			if err != nil {
+				return "", fmt.Errorf("fetch cosign signature: %w", err)
+			}
+			cleanups = append(cleanups, clean)
+			rv.SignaturePath = p
+			if art.Certificate != "" {
+				c, clean, err := a.downloadTemp(ctx, art.Certificate)
+				if err != nil {
+					return "", fmt.Errorf("fetch cosign certificate: %w", err)
+				}
+				cleanups = append(cleanups, clean)
+				rv.CertificatePath = c
+			}
+		}
+		v = rv
+	}
+
+	fetch := a.PluginFetcher
+	if fetch == nil {
+		fetch = fetchPlugin
+	}
+	local, cleanup, err := fetch(ctx, art.URL)
+	if err != nil {
+		return "", fmt.Errorf("fetch: %w", err)
+	}
+	defer cleanup()
+
+	if v != nil {
+		fmt.Fprintln(a.Out, "cosign: verifying against the registry-published signature")
+		ok, reason, verr := v.VerifyBlob(ctx, local)
+		if verr != nil {
+			return "", fmt.Errorf("cosign: %w", verr)
+		}
+		if !ok {
+			return "", fmt.Errorf("cosign verification failed: %s", reason)
+		}
+		fmt.Fprintln(a.Out, "cosign: verified")
+	}
+
+	sum, err := sha256File(local)
+	if err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(sum, art.SHA256) {
+		return "", fmt.Errorf("registry pin mismatch for %q: index %s, got %s", name, art.SHA256, sum)
+	}
+	fmt.Fprintln(a.Out, "registry: sha256 matches the published pin")
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return "", err
+	}
+	if err := copyFileMode(local, dest, 0o755); err != nil {
+		return "", err
+	}
+	return sum, nil
+}
+
+func (a *App) printInstalledPin(dest, sum string) {
 	fmt.Fprintf(a.Out, "installed %s\nsha256 %s\n", dest, sum)
 	fmt.Fprintf(a.Out, "pin it in your rollout spec, e.g.:\n  featureFlags:\n    plugin: %s\n    sha256: %s\n", dest, sum)
-	return nil
 }
 
 func defaultPluginDir() string {

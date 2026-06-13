@@ -135,7 +135,20 @@ rollops plugin install flagsmith                 # latest, current OS/arch
 rollops plugin install flagsmith --version v0.1.0 # pin a version
 
 rollops plugin list                   # installed plugins + their sha256 pins
+
+rollops plugin update                 # report which installed plugins are outdated
+rollops plugin update --apply         # upgrade outdated plugins to their latest
+rollops plugin update flagsmith --apply  # upgrade just one
 ```
+
+`plugin update` identifies each installed binary by matching its sha256 against
+the registry's published artifacts — so a plugin renamed with `--name` at
+install time is still recognised — and compares its version to `latest`. It is
+**dry-run by default**: it reports `up to date`, `outdated (name old -> new)`,
+or `unknown (not from this registry)` per binary and changes nothing. Pass
+`--apply` to actually upgrade outdated plugins in place; each upgrade runs the
+same sha256-pin and cosign checks as a fresh install. After upgrading, the new
+sha256 is printed — update the pin in your rollout specs to match.
 
 `plugin info <name>` prints the full registry detail for one plugin — each
 published version with its per-platform artifacts and sha256 pins, plus the
