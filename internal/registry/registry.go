@@ -53,12 +53,25 @@ type Cosign struct {
 	Issuer   string `json:"issuer"`
 }
 
-// Artifact is a downloadable binary for one OS/arch with its sha256 pin.
+// Artifact is a downloadable binary for one OS/arch with its sha256 pin and,
+// for a signed release, the URLs of its cosign signature material. A bundle is
+// self-contained; signature+certificate is the detached alternative. When the
+// version declares a Cosign identity and an artifact carries this material,
+// `plugin install` verifies the signature automatically.
 type Artifact struct {
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
+	OS          string `json:"os"`
+	Arch        string `json:"arch"`
+	URL         string `json:"url"`
+	SHA256      string `json:"sha256"`
+	Bundle      string `json:"bundle,omitempty"`      // sigstore bundle URL (self-contained)
+	Signature   string `json:"signature,omitempty"`   // detached signature URL
+	Certificate string `json:"certificate,omitempty"` // signing certificate URL (with Signature)
+}
+
+// Signed reports whether this artifact carries cosign signature material to
+// verify against.
+func (a Artifact) Signed() bool {
+	return a.Bundle != "" || a.Signature != ""
 }
 
 // Fetch loads and parses the registry index from url.

@@ -146,9 +146,17 @@ so you can recover a pin for a spec without re-downloading.
 
 Resolving a name picks the artifact for the running OS/arch, downloads it, and
 **enforces the index's sha256 pin** — a download whose hash differs from the
-published pin is rejected, never installed. If the release declares a cosign
-identity, the install prints the publisher before fetching. The default install
-name is the plugin name; the printed sha256 is what you then pin in your spec.
+published pin is rejected, never installed. The default install name is the
+plugin name; the printed sha256 is what you then pin in your spec.
+
+If the index declares a cosign identity for the release **and** the artifact
+carries signature material (a sigstore `bundle`, or a detached `signature` +
+`certificate`), the install **verifies the cosign signature automatically** —
+keyless, with the index's identity and issuer as the expected signer — before
+the binary is placed. No flags required; a failed verification blocks the
+install. Manual `--cosign-*` flags still take precedence when given. So a signed
+marketplace install enforces two independent checks: the curated sha256 pin and
+the publisher's signature.
 
 Override the index with `--registry <url>` or `ROLLOPS_PLUGIN_REGISTRY` (e.g. a
 private registry). A source containing `://` or matching a local file is treated

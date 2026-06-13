@@ -233,6 +233,13 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	// marketplace plugin name: resolve it through the registry to a pinned,
 	// platform-specific artifact.
 	var registryName, registrySHA string
+	var regVerifier *security.CosignBlobVerifier
+	var cleanups []func()
+	defer func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}()
 	if !isPathOrURL(source) {
 		idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
 		if err != nil {
@@ -246,6 +253,38 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 		source = art.URL
 		if cos != nil {
 			fmt.Fprintf(a.Out, "registry: %s is published by %s\n", registryName, cos.Identity)
+			// A signed release lets the install verify the cosign signature
+			// automatically, with the index's identity/issuer as the expected
+			// signer — no manual flags. Fetch the signature material now.
+			if art.Signed() {
+				rv := &security.CosignBlobVerifier{
+					CertIdentity: cos.Identity, CertOIDCIssuer: cos.Issuer, Run: a.CosignRun,
+				}
+				if art.Bundle != "" {
+					p, clean, ferr := a.downloadTemp(ctx, art.Bundle)
+					if ferr != nil {
+						return fmt.Errorf("plugin install: fetch cosign bundle: %w", ferr)
+					}
+					cleanups = append(cleanups, clean)
+					rv.BundlePath = p
+				} else {
+					p, clean, ferr := a.downloadTemp(ctx, art.Signature)
+					if ferr != nil {
+						return fmt.Errorf("plugin install: fetch cosign signature: %w", ferr)
+					}
+					cleanups = append(cleanups, clean)
+					rv.SignaturePath = p
+					if art.Certificate != "" {
+						c, clean, ferr := a.downloadTemp(ctx, art.Certificate)
+						if ferr != nil {
+							return fmt.Errorf("plugin install: fetch cosign certificate: %w", ferr)
+						}
+						cleanups = append(cleanups, clean)
+						rv.CertificatePath = c
+					}
+				}
+				regVerifier = rv
+			}
 		}
 	}
 
@@ -259,11 +298,16 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	}
 	defer cleanup()
 
-	// Optional cosign verification before the binary is placed.
+	// Optional cosign verification before the binary is placed. Manual flags take
+	// precedence; otherwise a signed registry release verifies automatically.
 	v := security.CosignBlobVerifier{
 		KeyPath: *keyPath, CertIdentity: *identity, CertOIDCIssuer: *issuer,
 		SignaturePath: *sigPath, CertificatePath: *certPath, BundlePath: *bundlePath,
 		Run: a.CosignRun,
+	}
+	if !v.Configured() && regVerifier != nil {
+		v = *regVerifier
+		fmt.Fprintln(a.Out, "cosign: verifying against the registry-published signature")
 	}
 	if v.Configured() {
 		ok, reason, verr := v.VerifyBlob(ctx, local)
@@ -328,6 +372,43 @@ func isPathOrURL(source string) bool {
 	}
 	_, err := os.Stat(source)
 	return err == nil
+}
+
+// downloadTemp fetches a URL (or copies a local path) to a temp file via the
+// app's HTTP client, returning the path and a cleanup. Used for small cosign
+// signature material that rides alongside a registry artifact.
+func (a *App) downloadTemp(ctx context.Context, src string) (string, func(), error) {
+	noop := func() {}
+	if !strings.Contains(src, "://") {
+		if _, err := os.Stat(src); err != nil {
+			return "", noop, err
+		}
+		return src, noop, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
+	if err != nil {
+		return "", noop, err
+	}
+	resp, err := a.httpClient().Do(req)
+	if err != nil {
+		return "", noop, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return "", noop, fmt.Errorf("download %s: status %d", src, resp.StatusCode)
+	}
+	f, err := os.CreateTemp("", "rollops-cosign-*")
+	if err != nil {
+		return "", noop, err
+	}
+	cleanup := func() { os.Remove(f.Name()) }
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		cleanup()
+		return "", noop, err
+	}
+	f.Close()
+	return f.Name(), cleanup, nil
 }
 
 // fetchPlugin retrieves a local path or https URL to a temp file.

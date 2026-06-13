@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Plugin Lifecycle Commands
+## Unreleased - Plugin Lifecycle + Automatic Signature Verification
 
 - `rollops plugin info <name>` — prints full registry detail for one plugin:
   every published version with its per-platform artifacts and sha256 pins, plus
@@ -8,6 +8,14 @@
 - `rollops plugin list` — lists installed plugins in the plugin directory with
   the sha256 each pins to (offline; matches what `install` printed). Recovers a
   pin for a spec without re-downloading. `--dir` overrides the directory.
+- **Automatic cosign verification for marketplace installs.** When the registry
+  declares a cosign identity for a release and the artifact carries signature
+  material (a sigstore `bundle`, or detached `signature` + `certificate`),
+  `plugin install <name>` now verifies the keyless signature automatically —
+  the index's identity/issuer is the expected signer — before placing the
+  binary. No flags required; a failed verification blocks the install. Manual
+  `--cosign-*` flags still take precedence. A signed install now enforces both
+  the sha256 pin and the publisher signature.
 
 ## v0.8.0 - Plugin Marketplace
 

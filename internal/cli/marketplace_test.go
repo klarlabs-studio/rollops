@@ -209,6 +209,96 @@ func TestPluginList_MissingDir(t *testing.T) {
 	}
 }
 
+// signedRegistryServer serves both the index (at /) and a cosign bundle (at
+// /bundle) for a signed, platform-matching artifact with the given pin.
+func signedRegistryServer(t *testing.T, sum string) (*http.Client, string) {
+	t.Helper()
+	var base string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/bundle", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("bundle-bytes")) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		body := fmt.Sprintf(`{"plugins":[{"name":"flagsmith","description":"d","capabilities":["featureflag"],"latest":"v0.1.0",
+			"versions":{"v0.1.0":{"cosign":{"identity":"signer@klarlabs","issuer":"https://token.actions.githubusercontent.com"},
+			"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/fs","sha256":%q,"bundle":%q}]}}}]}`,
+			runtime.GOOS, runtime.GOARCH, sum, base+"/bundle")
+		w.Write([]byte(body))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	base = srv.URL
+	return srv.Client(), srv.URL
+}
+
+func TestPluginInstall_ByName_AutoCosignVerifies(t *testing.T) {
+	content := "#!/bin/sh\necho fs\n"
+	h := sha256.Sum256([]byte(content))
+	sum := hex.EncodeToString(h[:])
+	hc, url := signedRegistryServer(t, sum)
+	dir := t.TempDir()
+
+	bin := filepath.Join(t.TempDir(), "downloaded")
+	if err := os.WriteFile(bin, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var gotArgs []string
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return bin, func() {}, nil },
+		CosignRun: func(_ context.Context, _ string, args ...string) (string, error) {
+			gotArgs = args
+			return "Verified OK", nil
+		},
+	}
+	if err := app.Run(context.Background(), []string{"plugin", "install", "flagsmith", "--dir", dir, "--registry", url}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "registry-published signature") || !strings.Contains(out, "cosign: verified") {
+		t.Errorf("expected auto cosign verify, got %q", out)
+	}
+	// The verifier must use the registry's identity/issuer and the fetched bundle.
+	joined := strings.Join(gotArgs, " ")
+	for _, want := range []string{"--certificate-identity signer@klarlabs", "--certificate-oidc-issuer https://token.actions.githubusercontent.com", "--bundle"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("cosign args missing %q: %v", want, gotArgs)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "flagsmith")); err != nil {
+		t.Fatalf("binary not installed: %v", err)
+	}
+}
+
+func TestPluginInstall_ByName_AutoCosignFailureBlocks(t *testing.T) {
+	content := "binary"
+	h := sha256.Sum256([]byte(content))
+	sum := hex.EncodeToString(h[:])
+	hc, url := signedRegistryServer(t, sum)
+	dir := t.TempDir()
+
+	bin := filepath.Join(t.TempDir(), "downloaded")
+	if err := os.WriteFile(bin, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return bin, func() {}, nil },
+		CosignRun: func(_ context.Context, _ string, _ ...string) (string, error) {
+			return "no matching signatures", os.ErrInvalid
+		},
+	}
+	err := app.Run(context.Background(), []string{"plugin", "install", "flagsmith", "--dir", dir, "--registry", url})
+	if err == nil {
+		t.Fatal("failed cosign verification must block install")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "flagsmith")); statErr == nil {
+		t.Error("binary must not be installed when signature verification fails")
+	}
+}
+
 func TestPluginInstall_ByName_UnknownPlugin(t *testing.T) {
 	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
 	var buf bytes.Buffer
