@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Flag-Provider Conformance Suite
+## v0.10.0 - Flag-Provider Conformance Suite
 
 - `pkg/flagconformance` — a shared contract test every feature-flag provider
   plugin should pass, the analogue of `pkg/conformance` for targets. `Run`
@@ -8,7 +8,7 @@
   (incl. boundaries), is idempotent across repeated applies, drives the disabled
   state, and honors context cancellation. Composable `Check*` functions too.
 
-## Unreleased - More Marketplace Plugins
+### More Marketplace Plugins
 
 - Four new feature-flag provider plugins published to the marketplace registry,
   each in its own public repo, each sha256-pinned: **unleash** (flexibleRollout
@@ -16,7 +16,7 @@
   rule coverage), and **openfeature** (flagd fractional targeting). Install any
   with `rollops plugin install <name>`.
 
-## Unreleased - Plugin Update
+### Plugin Update
 
 - `rollops plugin update` — compares installed plugins against the marketplace
   registry and reports which are `up to date`, `outdated (old -> new)`, or
