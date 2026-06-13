@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased - Commercial Flag Providers
+
+- Two more feature-flag provider plugins, covering the major commercial
+  platforms, each in its own public repo and sha256-pinned in the registry:
+  **launchdarkly** (environment fallthrough rollout, per-mille weights) and
+  **split** (default-rule treatment buckets). Both pass `pkg/flagconformance`.
+  The marketplace now spans seven providers — commercial (LaunchDarkly, Split),
+  OSS (Unleash, GrowthBook, PostHog), Flagsmith, and the OpenFeature/flagd
+  standard.
+
 ## v0.10.0 - Flag-Provider Conformance Suite
 
 - `pkg/flagconformance` — a shared contract test every feature-flag provider

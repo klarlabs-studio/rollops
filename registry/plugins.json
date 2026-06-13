@@ -67,6 +67,39 @@
       }
     },
     {
+      "name": "launchdarkly",
+      "description": "Feature-flag provider backed by LaunchDarkly \u2014 drives a flag's environment fallthrough rollout percentage in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-launchdarkly",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-launchdarkly/releases/download/v0.1.0/rollops-plugin-launchdarkly_v0.1.0_darwin_arm64",
+              "sha256": "0626484cd1205aa65c78157eeeca47d11001b1a459f6963042c4dd17b2baab7e"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-launchdarkly/releases/download/v0.1.0/rollops-plugin-launchdarkly_v0.1.0_linux_amd64",
+              "sha256": "d0f63f7f8c9a14465fc1e3ad00a5f995b63f1a76eb3e1f89c42a62d66f3ff3d4"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-launchdarkly/releases/download/v0.1.0/rollops-plugin-launchdarkly_v0.1.0_linux_arm64",
+              "sha256": "90cf831202be4dcb392d4aa1a6694b2be14237390435499f741ab24212fbbbb0"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "openfeature",
       "description": "Feature-flag provider for the OpenFeature ecosystem (flagd) \u2014 drives flagd fractional targeting in lockstep with a canary.",
       "homepage": "https://github.com/klarlabs-studio/rollops-plugin-openfeature",
@@ -127,6 +160,39 @@
               "arch": "arm64",
               "url": "https://github.com/klarlabs-studio/rollops-plugin-posthog/releases/download/v0.1.0/rollops-plugin-posthog_v0.1.0_linux_arm64",
               "sha256": "5f3f0afe2a3724ffc4afd0c26890fb2a5c88f42702c0768b71cfc550dfb59c4e"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "split",
+      "description": "Feature-flag provider backed by Split (Harness FME) \u2014 drives a split's default-rule treatment buckets in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-split",
+      "capabilities": [
+        "featureflag"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-split/releases/download/v0.1.0/rollops-plugin-split_v0.1.0_darwin_arm64",
+              "sha256": "f6dbe0decd488c4d0bad72ba419e1d37cf3c28836a4a7cadc40e02af0e1d01e3"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-split/releases/download/v0.1.0/rollops-plugin-split_v0.1.0_linux_amd64",
+              "sha256": "9ef1fdef044b6608132262d8fd54b5edc0903e86b858ae0326fa8e21d67350d9"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-split/releases/download/v0.1.0/rollops-plugin-split_v0.1.0_linux_arm64",
+              "sha256": "19181fa4e16e11b4e72db02cb845ad8456cb63713fdddc889e27c959a9227713"
             }
           ]
         }
