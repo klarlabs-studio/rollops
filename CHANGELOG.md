@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - OCI Sources, CRD Health, Multi-Cluster
+## v0.13.0 - OCI Sources, CRD Health, Multi-Cluster
 
 - **OCI artifact source for the Kubernetes target** (`oci` spec block) — the Flux
   `OCIRepository` model. Pull a non-Helm OCI artifact (a manifest bundle or
