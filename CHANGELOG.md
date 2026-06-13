@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased - Plugin Marketplace
+
+- **Plugin marketplace.** A curated, version-controlled registry
+  (`registry/plugins.json`) maps a plugin name to its published releases —
+  per-platform download URLs, each with a sha256 pin, plus optional cosign
+  identity. No service to run; the index is reviewed in Git.
+  - `rollops plugin search [query]` lists published plugins, matching on name,
+    description, or capability.
+  - `rollops plugin install <name>` resolves the name to the current OS/arch
+    artifact, downloads it, and enforces the registry's sha256 pin (a mismatch
+    is rejected, never installed). `--version` pins a release; `--registry` /
+    `ROLLOPS_PLUGIN_REGISTRY` override the index. Path and `https://` installs
+    are unchanged.
+
 ## v0.7.0 - Plugin Install + Release Automation
 
 - Release automation: a tag push (`v*`) now builds the cross-platform archives,

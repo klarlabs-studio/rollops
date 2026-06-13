@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -41,6 +42,7 @@ type App struct {
 	Doctor        Doctor
 	PluginFetcher PluginFetcher                                                          // overrides plugin source retrieval (tests)
 	CosignRun     func(ctx context.Context, name string, args ...string) (string, error) // overrides the cosign runner (tests)
+	HTTPClient    *http.Client                                                           // for registry fetches (tests)
 }
 
 // DaemonProbe checks whether a daemon can be reached and authenticated.
@@ -222,7 +224,7 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin install <src>     fetch, verify, and install a plugin binary\n  version                  print build version")
+	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  version                  print build version")
 	return nil
 }
 

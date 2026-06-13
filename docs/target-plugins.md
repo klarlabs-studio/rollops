@@ -115,11 +115,39 @@ invoking any tool — by default network egress must be allow-listed and only up
 to `active` risk is admitted. For a custom capability, drop to `NewManifest` /
 `NewServer` / `Serve` directly.
 
+## The Marketplace
+
+The plugin marketplace is a curated, version-controlled index
+(`registry/plugins.json` in the rollops repo) that maps a plugin name to its
+published releases: per-platform download URLs, each with a sha256 pin, plus
+optional cosign identity. It is just a JSON file served over HTTPS — no service
+to run — so the index itself is reviewed in Git like any other change.
+
+Search it and install by name:
+
+```sh
+rollops plugin search                 # list every published plugin
+rollops plugin search flag            # match name, description, or capability
+
+rollops plugin install flagsmith                 # latest, current OS/arch
+rollops plugin install flagsmith --version v0.1.0 # pin a version
+```
+
+Resolving a name picks the artifact for the running OS/arch, downloads it, and
+**enforces the index's sha256 pin** — a download whose hash differs from the
+published pin is rejected, never installed. If the release declares a cosign
+identity, the install prints the publisher before fetching. The default install
+name is the plugin name; the printed sha256 is what you then pin in your spec.
+
+Override the index with `--registry <url>` or `ROLLOPS_PLUGIN_REGISTRY` (e.g. a
+private registry). A source containing `://` or matching a local file is treated
+as a direct path/URL install instead of a marketplace name (see below).
+
 ## Installing a Plugin
 
-`rollops plugin install` fetches a plugin binary (a local path or `https://`
-URL), optionally verifies its cosign signature, installs it into the plugin
-directory, and prints the sha256 to pin:
+`rollops plugin install` also accepts a plugin binary directly (a local path or
+`https://` URL), optionally verifies its cosign signature, installs it into the
+plugin directory, and prints the sha256 to pin:
 
 ```sh
 # from a release URL, verifying a keyless cosign signature

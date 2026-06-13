@@ -1,0 +1,35 @@
+{
+  "plugins": [
+    {
+      "name": "flagsmith",
+      "description": "Feature-flag provider backed by Flagsmith — drives a flag's rollout percentage in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith",
+      "capabilities": ["featureflag"],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith/releases/download/v0.1.0/rollops-plugin-flagsmith_v0.1.0_darwin_arm64",
+              "sha256": "c687442c5b8b54c4f4a0fe98dfcbf4c94806dafad36840b8a18ea58b167d2394"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith/releases/download/v0.1.0/rollops-plugin-flagsmith_v0.1.0_linux_amd64",
+              "sha256": "ea91765eaf06f3afab6a9f585e6fa8daff3fa86e20999bcdf2dd45f1d82c90cc"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-flagsmith/releases/download/v0.1.0/rollops-plugin-flagsmith_v0.1.0_linux_arm64",
+              "sha256": "a1ff044d8fda6e78f307006f4a876d06a5b13f7134ef226177443783307659ff"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

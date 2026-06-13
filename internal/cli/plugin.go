@@ -10,8 +10,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"text/tabwriter"
 
+	"go.klarlabs.de/rollops/internal/registry"
 	"go.klarlabs.de/rollops/internal/security"
 )
 
@@ -22,14 +25,48 @@ type PluginFetcher func(ctx context.Context, source string) (localPath string, c
 // plugin dispatches `rollops plugin <subcommand>`.
 func (a *App) plugin(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("plugin: subcommand required (install)")
+		return fmt.Errorf("plugin: subcommand required (search | install)")
 	}
 	switch args[0] {
+	case "search":
+		return a.pluginSearch(ctx, args[1:])
 	case "install":
 		return a.pluginInstall(ctx, args[1:])
 	default:
-		return fmt.Errorf("plugin: unknown subcommand %q (try: install)", args[0])
+		return fmt.Errorf("plugin: unknown subcommand %q (try: search, install)", args[0])
 	}
+}
+
+func (a *App) httpClient() *http.Client {
+	if a.HTTPClient != nil {
+		return a.HTTPClient
+	}
+	return http.DefaultClient
+}
+
+// pluginSearch lists plugins in the marketplace registry matching the query.
+func (a *App) pluginSearch(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("plugin search", flag.ContinueOnError)
+	fs.SetOutput(a.Out)
+	regURL := fs.String("registry", registry.URL(), "plugin registry index URL")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
+	if err != nil {
+		return fmt.Errorf("plugin search: %w", err)
+	}
+	matches := idx.Search(strings.Join(fs.Args(), " "))
+	if len(matches) == 0 {
+		fmt.Fprintln(a.Out, "no plugins match")
+		return nil
+	}
+	tw := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tLATEST\tCAPABILITIES\tDESCRIPTION")
+	for _, p := range matches {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Latest, strings.Join(p.Capabilities, ","), p.Description)
+	}
+	return tw.Flush()
 }
 
 // pluginInstall fetches a plugin binary, optionally cosign-verifies it, installs
@@ -38,7 +75,9 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("plugin install", flag.ContinueOnError)
 	fs.SetOutput(a.Out)
 	dir := fs.String("dir", defaultPluginDir(), "directory to install the plugin into")
-	name := fs.String("name", "", "installed file name (default: source basename)")
+	name := fs.String("name", "", "installed file name (default: source basename or plugin name)")
+	version := fs.String("version", "", "registry plugin version (default: latest)")
+	regURL := fs.String("registry", registry.URL(), "plugin registry index URL")
 	keyPath := fs.String("cosign-key", "", "cosign public key for key-based signature verification")
 	identity := fs.String("cosign-identity", "", "expected signer identity (keyless)")
 	issuer := fs.String("cosign-issuer", "", "expected OIDC issuer (keyless)")
@@ -66,6 +105,26 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	if fs.NArg() != 0 {
 		fs.Usage()
 		return fmt.Errorf("plugin install: unexpected extra arguments: %v", fs.Args())
+	}
+
+	// A source that is neither a local path nor an https URL is treated as a
+	// marketplace plugin name: resolve it through the registry to a pinned,
+	// platform-specific artifact.
+	var registryName, registrySHA string
+	if !isPathOrURL(source) {
+		idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
+		if err != nil {
+			return fmt.Errorf("plugin install: %w", err)
+		}
+		art, cos, err := idx.Resolve(source, *version, runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			return fmt.Errorf("plugin install: %w", err)
+		}
+		registryName, registrySHA = source, art.SHA256
+		source = art.URL
+		if cos != nil {
+			fmt.Fprintf(a.Out, "registry: %s is published by %s\n", registryName, cos.Identity)
+		}
 	}
 
 	fetch := a.PluginFetcher
@@ -99,10 +158,22 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Registry installs are pinned by the curated index: the download must match
+	// the published sha256, or it is rejected.
+	if registrySHA != "" {
+		if !strings.EqualFold(sum, registrySHA) {
+			return fmt.Errorf("plugin install: registry pin mismatch for %q: index %s, got %s", registryName, registrySHA, sum)
+		}
+		fmt.Fprintln(a.Out, "registry: sha256 matches the published pin")
+	}
 
 	target := *name
 	if target == "" {
-		target = filepath.Base(strings.TrimSuffix(source, "/"))
+		if registryName != "" {
+			target = registryName
+		} else {
+			target = filepath.Base(strings.TrimSuffix(source, "/"))
+		}
 	}
 	if err := os.MkdirAll(*dir, 0o755); err != nil {
 		return fmt.Errorf("plugin install: %w", err)
@@ -125,6 +196,16 @@ func defaultPluginDir() string {
 		return filepath.Join(home, ".rollops", "plugins")
 	}
 	return "rollops-plugins"
+}
+
+// isPathOrURL reports whether source is an explicit local path or https URL,
+// rather than a marketplace plugin name.
+func isPathOrURL(source string) bool {
+	if strings.Contains(source, "://") {
+		return true
+	}
+	_, err := os.Stat(source)
+	return err == nil
 }
 
 // fetchPlugin retrieves a local path or https URL to a temp file.
