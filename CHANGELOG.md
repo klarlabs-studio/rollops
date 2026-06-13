@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased - Flag-Provider Conformance Suite
+
+- `pkg/flagconformance` — a shared contract test every feature-flag provider
+  plugin should pass, the analogue of `pkg/conformance` for targets. `Run`
+  drives a provider through the canary contract: accepts the full 0–100 range
+  (incl. boundaries), is idempotent across repeated applies, drives the disabled
+  state, and honors context cancellation. Composable `Check*` functions too.
+
 ## Unreleased - More Marketplace Plugins
 
 - Four new feature-flag provider plugins published to the marketplace registry,

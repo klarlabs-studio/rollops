@@ -70,3 +70,32 @@ trail but never aborts or rolls back the deploy — the rollout's own health
 gates remain the source of truth. The plugin binary is sha256-verified and its
 manifest validated against the plugin safety policy before it runs, exactly
 like a target plugin (see `docs/target-plugins.md`).
+
+## Provider conformance
+
+Every flag-provider plugin should pass the shared conformance suite,
+`pkg/flagconformance`. It is the flag-provider analogue of the target
+`pkg/conformance` suite: it drives a provider through the contract Rollops
+relies on so behavior is consistent across backends (Flagsmith, Unleash,
+PostHog, GrowthBook, OpenFeature/flagd, …). A provider is correct only if it:
+
+- accepts the full **0–100 canary range**, including the 0 and 100 boundaries;
+- is **idempotent** — re-applying the identical change (a retry or re-sync) is
+  not an error;
+- can drive the **disabled** state (used on rollback);
+- **honors context cancellation** — it threads the caller's context into its
+  backend calls rather than dropping it.
+
+Authors wire it from their `_test.go`, pointing the factory at a fake backend:
+
+```go
+func TestConformance(t *testing.T) {
+	flagconformance.Run(t, func() (plugin.FlagProvider, error) {
+		srv := newFakeBackend(t) // httptest server accepting the provider's writes
+		return Provider{BaseURL: srv.URL, Token: "x", HTTP: srv.Client()}, nil
+	}, plugin.FlagChange{Flag: "checkout", Environment: "production"})
+}
+```
+
+The individual `Check*` functions return errors, so they can also run outside
+the test harness.
