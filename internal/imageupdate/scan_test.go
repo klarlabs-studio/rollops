@@ -102,3 +102,27 @@ func TestSelectTag(t *testing.T) {
 		t.Error("non-semver current must not select")
 	}
 }
+
+// Mirrors the real registry: images tagged with commit SHAs + latest (no
+// semver). Semver selection must ignore them gracefully — never panic, never
+// pick a SHA — so SHA-tagged apps fall back to digest mode instead.
+func TestSelectTag_CommitSHATagsIgnored(t *testing.T) {
+	shaTags := []string{
+		"1a21311a2a2ec6655e9a242c46df2007ab5f1adc",
+		"30e868c372b800ce84f38c44072b8e43179f11b4",
+		"latest",
+	}
+	// SHA-tagged current → no semver to compare → no selection (no crash).
+	if got, ok := SelectTag("1a21311a2a2ec6655e9a242c46df2007ab5f1adc", shaTags, "minor", ""); ok {
+		t.Errorf("SHA current must not select, got %q", got)
+	}
+	// Semver current, only SHA/latest candidates → nothing qualifies.
+	if got, ok := SelectTag("v1.0.0", shaTags, "minor", ""); ok {
+		t.Errorf("SHA/latest candidates must not be selected, got %q", got)
+	}
+	// A SHA candidate alongside real semver: the semver wins, SHA ignored.
+	mixed := append([]string{"v1.1.0"}, shaTags...)
+	if got, ok := SelectTag("v1.0.0", mixed, "minor", ""); !ok || got != "v1.1.0" {
+		t.Errorf("semver must win over SHA tags, got %q ok=%v", got, ok)
+	}
+}

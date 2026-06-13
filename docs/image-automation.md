@@ -70,3 +70,23 @@ reaches the workload.
 Enable it on the daemon with `ROLLOPS_IMAGE_AUTOMATION=1`. Private registries:
 `ROLLOPS_REGISTRY_USER` / `ROLLOPS_REGISTRY_TOKEN`. Writeback needs a token with
 push access on the config repo (see `docs/deploy-kubernetes.md`).
+
+## Commit-SHA and mutable tags
+
+Not every pipeline publishes semver. Common schemes and the mode to use:
+
+| Image tags published | `imagePolicy.mode` | Tracked `image` |
+|----------------------|--------------------|-----------------|
+| `:vX.Y.Z` (semver releases) | `minor` / `major` / `patch` | `repo:vX.Y.Z` |
+| `:<git-sha>` **plus** `:latest` | `digest` | `repo:latest` |
+| `:latest` only | `digest` | `repo:latest` |
+
+`digest` mode resolves the mutable tag's current manifest digest and pins
+`repo:tag@sha256:…`, redeploying when the digest moves — so a SHA-per-build
+pipeline that also pushes `:latest` auto-updates without any semver. The semver
+modes safely **ignore** non-semver tags (commit SHAs, `latest`): they are never
+selected and never error, so a mixed tag list is fine.
+
+A pipeline that pushes **only** immutable SHA tags (no `:latest`, no semver) has
+no moving reference to track — pin the deployed SHA explicitly, or have CI also
+push a mutable tag (`:latest`) or a semver tag to enable automation.
