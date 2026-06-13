@@ -71,3 +71,38 @@ kubectl delete ns keel
 
 Rollback is just re-adding the keel annotations and scaling rollopsd to zero —
 nothing in the apps changed, so there is no data to recover.
+
+## Moving an app from digest to semver
+
+An app whose CI only publishes `:latest` (+ commit SHA) starts on `digest` mode —
+it auto-updates on every push, preserving the pre-Rollops behaviour. To switch
+to versioned releases:
+
+1. Make CI publish a semver image on a release tag (additive — keep
+   `:latest` + SHA on main). Example with `docker/metadata-action`:
+
+   ```yaml
+   on: { push: { tags: ['site-v*.*.*'] } }   # plus the existing branch trigger
+   - id: meta
+     uses: docker/metadata-action@v5
+     with:
+       images: ghcr.io/acme/site
+       tags: |
+         type=match,pattern=site-v(\d+\.\d+\.\d+),group=1
+         type=match,pattern=site-v(\d+\.\d+),group=1
+   - uses: docker/build-push-action@v6
+     with: { tags: "${{ steps.meta.outputs.tags }}" }
+   ```
+
+2. Cut the first release: `git tag site-v0.1.0 && git push origin site-v0.1.0`.
+
+3. Flip the app's `.rollops` config to track it:
+
+   ```yaml
+   spec:
+     target: { spec: { image: ghcr.io/acme/site:0.1.0 } }   # was :latest
+     imagePolicy: { mode: minor }                            # was digest
+   ```
+
+From then on Rollops adopts each new `site-vX.(Y+1).Z` automatically and commits
+the bump back to the app repo.
