@@ -13,6 +13,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.klarlabs.de/rollops/internal/config"
 	pt "go.klarlabs.de/rollops/pkg/target"
@@ -54,14 +55,23 @@ func New(cfg config.Target) (pt.Target, error) {
 
 func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
 
-// Apply applies the manifest if the live checksum differs. Idempotent.
+// Apply reconciles the cluster to the desired manifest. It is idempotent: when
+// the stamped checksum matches AND a live diff confirms the cluster genuinely
+// matches desired, it is a no-op. A matching stamp alone is not trusted — an
+// out-of-band field edit (e.g. `kubectl set image`) leaves the stamp intact, so
+// Apply re-applies when the diff shows drift, correcting it.
 func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
-	if cur, _ := t.cl.LiveChecksum(ctx); cur == m.Checksum && m.Checksum != "" {
-		return pt.Result{Changed: false, Detail: "cluster already at desired checksum"}, nil
-	}
 	manifest, err := manifestFromSpec(ctx, m.Spec, t.run)
 	if err != nil {
 		return pt.Result{}, err
+	}
+	if cur, _ := t.cl.LiveChecksum(ctx); cur == m.Checksum && m.Checksum != "" {
+		// Stamp matches; confirm live really equals desired before skipping.
+		if diff, derr := t.cl.Diff(ctx, manifest); derr == nil && strings.TrimSpace(diff) == "" {
+			return pt.Result{Changed: false, Detail: "cluster already at desired checksum"}, nil
+		}
+		// Non-empty diff (or diff unavailable): live drifted — fall through and
+		// re-apply to correct it.
 	}
 	if err := t.cl.Apply(ctx, manifest, m.Checksum); err != nil {
 		return pt.Result{}, fmt.Errorf("kubernetes: apply: %w", err)

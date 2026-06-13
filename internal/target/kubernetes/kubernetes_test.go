@@ -13,6 +13,7 @@ type fakeCluster struct {
 	checksum string
 	applied  [][]byte
 	unready  bool
+	drift    bool // when true, Diff reports a non-empty diff (live ≠ desired)
 }
 
 func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string) error {
@@ -28,7 +29,10 @@ func (c *fakeCluster) Healthy(context.Context) (bool, string, error) {
 	return true, "", nil
 }
 func (c *fakeCluster) Diff(_ context.Context, manifest []byte) (string, error) {
-	return "+ " + string(manifest), nil
+	if c.drift {
+		return "+ " + string(manifest), nil
+	}
+	return "", nil // in sync
 }
 func (c *fakeCluster) Resources(context.Context) ([]pt.Resource, error) {
 	return []pt.Resource{
@@ -65,8 +69,22 @@ func TestApply_RichObserveIdempotent(t *testing.T) {
 	}
 }
 
+func TestApply_ReappliesOnDriftDespiteMatchingStamp(t *testing.T) {
+	// Stamp already matches desired (out-of-band edit preserved it), but the
+	// cluster has drifted — Apply must re-apply to correct it.
+	cl := &fakeCluster{checksum: sample.Checksum, drift: true}
+	tgt := newWith(cl)
+	r, err := tgt.Apply(context.Background(), sample)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !r.Changed || len(cl.applied) != 1 {
+		t.Fatalf("drift with matching stamp must re-apply: changed=%v applied=%d", r.Changed, len(cl.applied))
+	}
+}
+
 func TestTarget_DifferAndInspector(t *testing.T) {
-	tgt := newWith(&fakeCluster{})
+	tgt := newWith(&fakeCluster{drift: true})
 	ctx := context.Background()
 
 	d, ok := pt.Target(tgt).(pt.Differ)
