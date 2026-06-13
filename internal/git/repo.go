@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -107,6 +108,12 @@ func (s *Source) CommitFile(ctx context.Context, relPath string, content []byte,
 // git runs a git command, threading per-repo auth via env (GIT_SSH_COMMAND for
 // deploy keys; token in the URL is handled by the caller for https).
 func (s *Source) git(ctx context.Context, workdir string, args ...string) (string, error) {
+	// An https token is passed as a per-command Authorization header so it is
+	// never written to disk (no credential helper, no token in the remote URL).
+	if s.auth.Token != "" {
+		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + s.auth.Token))
+		args = append([]string{"-c", "http.extraheader=Authorization: Basic " + basic}, args...)
+	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if workdir != "" {
 		cmd.Dir = workdir

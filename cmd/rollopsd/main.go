@@ -26,6 +26,7 @@ import (
 	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/git"
 	"go.klarlabs.de/rollops/internal/grpcapi"
 	"go.klarlabs.de/rollops/internal/mcp"
 	"go.klarlabs.de/rollops/internal/metrics"
@@ -229,16 +230,30 @@ func loadWatchSpecs(path string) ([]reconcile.RepoSpec, error) {
 	}
 	var raw []struct {
 		Name, URL, Branch, Path string
+		// Auth for a private repo. TokenFile/DeployKeyPath point at files (mount
+		// a Secret); Token is the inline value (env-substituted by the operator).
+		Token         string `json:"token"`
+		TokenFile     string `json:"tokenFile"`
+		DeployKeyPath string `json:"deployKeyPath"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse watch config: %w", err)
 	}
 	specs := make([]reconcile.RepoSpec, 0, len(raw))
 	for _, r := range raw {
+		auth := git.Auth{Token: r.Token, DeployKeyPath: r.DeployKeyPath}
+		if r.TokenFile != "" {
+			b, err := os.ReadFile(r.TokenFile)
+			if err != nil {
+				return nil, fmt.Errorf("watch repo %q: read tokenFile: %w", r.Name, err)
+			}
+			auth.Token = strings.TrimSpace(string(b))
+		}
 		specs = append(specs, reconcile.RepoSpec{
 			Name:      r.Name,
 			URL:       r.URL,
 			Ref:       config.RepoRef{Branch: r.Branch, Path: r.Path},
+			Auth:      auth,
 			Initiator: rollout.Identity{Kind: "ci", Name: "reconciler"},
 		})
 	}

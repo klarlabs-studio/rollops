@@ -47,6 +47,21 @@ within the repo holding `rollops.yaml` rollout configs:
 [{ "name": "demo", "url": "https://github.com/acme/config", "branch": "main", "path": "deploy" }]
 ```
 
+`path` may be a single file (`deploy/rollops.yaml`) or a **directory** — a
+directory loads every `*.yaml` in it, so one repo path manages many apps.
+
+For a **private** repo, add auth (mount a Secret, never inline the token in the
+ConfigMap):
+
+```json
+[{ "name": "cluster", "url": "https://github.com/acme/cluster-config",
+   "branch": "main", "path": "apps", "tokenFile": "/etc/rollops/git/token" }]
+```
+
+`tokenFile` is read at startup and sent as an `Authorization` header (never
+written to disk or the remote URL). `deployKeyPath` is the SSH alternative for
+`git+ssh` remotes.
+
 `ROLLOPS_WATCH` points at the mounted `watch.json`; `ROLLOPS_RECONCILE_INTERVAL`
 sets the poll cadence. A "Sync now" button in the UI triggers an immediate
 reconcile.
