@@ -117,6 +117,11 @@ func validateSemantics(c *Config) []error {
 	if c.Spec.TrafficRouting != nil {
 		errs = append(errs, validateTrafficRouting(c.Spec.TrafficRouting)...)
 	}
+	switch c.Spec.Verification {
+	case "", "shallow", "full":
+	default:
+		errs = append(errs, fmt.Errorf("config: verification %q must be shallow | full", c.Spec.Verification))
+	}
 	return errs
 }
 

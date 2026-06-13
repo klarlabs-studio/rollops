@@ -288,7 +288,23 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 		Observed:   cur,
 		ObservedAt: e.now(),
 	})
-	return newPlan(c.Spec.Target.Ref, m, cur), nil
+	// Full verification: the stamped checksum is a shallow marker — an
+	// out-of-band field edit (e.g. `kubectl set image`) leaves it intact. When
+	// the stamp says "in sync", run a live diff and treat any difference as
+	// drift, so live state that diverges from desired is surfaced.
+	deepDrift := false
+	if c.Spec.Verification == "full" && cur.Value == m.Checksum && m.Checksum != "" {
+		// Differ lives on the raw (unwrapped) target, not the fortify wrapper.
+		if raw, rerr := e.rawTarget(c.Spec.Target.Ref, m); rerr == nil {
+			defer closeTarget(raw)
+			if d, ok := raw.(pt.Differ); ok {
+				if diff, derr := d.Diff(ctx, m); derr == nil && strings.TrimSpace(diff) != "" {
+					deepDrift = true
+				}
+			}
+		}
+	}
+	return newPlan(c.Spec.Target.Ref, m, cur, deepDrift), nil
 }
 
 // DriftItem reports the drift status of one target.
@@ -353,10 +369,11 @@ type Plan struct {
 	Changed   bool
 	Action    PlanAction
 	Summary   string
+	DeepDrift bool // full-verification diff found live ≠ desired despite a matching stamp
 }
 
-func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint) *Plan {
-	changed := current.Value != desired.Checksum
+func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
+	changed := current.Value != desired.Checksum || deepDrift
 	action := PlanNoop
 	switch {
 	case current.Value == "":
@@ -364,7 +381,7 @@ func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint) *Plan {
 	case changed:
 		action = PlanUpdate
 	}
-	p := &Plan{TargetRef: ref, Desired: desired, Current: current, Changed: changed, Action: action}
+	p := &Plan{TargetRef: ref, Desired: desired, Current: current, Changed: changed, Action: action, DeepDrift: deepDrift}
 	p.Summary = p.render()
 	return p
 }
@@ -376,6 +393,9 @@ func (p *Plan) render() string {
 	case PlanCreate:
 		return fmt.Sprintf("%s [%s]: create — deploy checksum %s (no current state observed)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
 	default:
+		if p.DeepDrift {
+			return fmt.Sprintf("%s [%s]: update — live drifted from desired %s (full verification)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+		}
 		return fmt.Sprintf("%s [%s]: update — %s → %s", p.TargetRef, p.Desired.Kind, short(p.Current.Value), short(p.Desired.Checksum))
 	}
 }

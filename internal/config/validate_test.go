@@ -48,6 +48,20 @@ func TestValidate_TrafficRoutingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestValidate_VerificationEnum(t *testing.T) {
+	c := mustParse(t, validYAML)
+	for _, v := range []string{"", "shallow", "full"} {
+		c.Spec.Verification = v
+		if err := Validate(c); err != nil {
+			t.Errorf("verification %q should be valid: %v", v, err)
+		}
+	}
+	c.Spec.Verification = "deep"
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "verification") {
+		t.Errorf("invalid verification must error, got %v", err)
+	}
+}
+
 func TestValidate_MissingName(t *testing.T) {
 	c := mustParse(t, validYAML)
 	c.Metadata.Name = ""

@@ -53,6 +53,11 @@
           "type": "string",
           "format": "date-time",
           "description": "RFC3339 future time to queue this rollout."
+        },
+        "verification": {
+          "type": "string",
+          "enum": ["shallow", "full"],
+          "description": "Drift verification depth. shallow (default): stamped-checksum marker. full: also diff live against desired so out-of-band field edits are caught."
         }
       }
     }

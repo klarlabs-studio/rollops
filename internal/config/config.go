@@ -57,7 +57,8 @@ type Spec struct {
 	FeatureFlags   *FeatureFlags   `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
 	TrafficRouting *TrafficRouting `yaml:"trafficRouting,omitempty" json:"trafficRouting,omitempty"`
 	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
-	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"` // RFC3339 future time
+	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"`         // RFC3339 future time
+	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow (default) | full
 }
 
 // Analysis is the optional metric-based rollout analysis feature. When

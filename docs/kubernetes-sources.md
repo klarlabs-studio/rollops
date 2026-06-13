@@ -118,3 +118,23 @@ target:
     resource: certificates.cert-manager.io/app-cert
     healthCondition: Ready        # gate on this condition type
 ```
+
+## Drift verification depth
+
+By default Rollops detects drift with a stamped-checksum marker (`shallow`):
+cheap, but an out-of-band field edit that leaves the marker intact — e.g.
+`kubectl set image` — is not seen. Set `verification: full` at the spec level to
+also diff live state against the desired manifest, so any divergence is surfaced
+as drift:
+
+```yaml
+spec:
+  verification: full   # shallow (default) | full
+  target:
+    kind: kubernetes
+    spec: { resource: deployment/api, namespace: prod }
+```
+
+`full` runs a `kubectl diff` when the marker says "in sync"; a non-empty diff is
+reported as an update (`live drifted from desired …`). Use it where out-of-band
+changes must be caught at the cost of a diff per plan.

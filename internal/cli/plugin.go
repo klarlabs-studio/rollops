@@ -480,7 +480,9 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 
 func (a *App) printInstalledPin(dest, sum string) {
 	fmt.Fprintf(a.Out, "installed %s\nsha256 %s\n", dest, sum)
-	fmt.Fprintf(a.Out, "pin it in your rollout spec, e.g.:\n  featureFlags:\n    plugin: %s\n    sha256: %s\n", dest, sum)
+	// Pin it under the spec block matching the plugin's capability —
+	// featureFlags, trafficRouting, analysis, or a plugin target.
+	fmt.Fprintf(a.Out, "pin it in the matching rollout spec block, e.g.:\n  <featureFlags|trafficRouting|analysis>:\n    plugin: %s\n    sha256: %s\n", dest, sum)
 }
 
 func defaultPluginDir() string {

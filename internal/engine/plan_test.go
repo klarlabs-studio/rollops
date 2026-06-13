@@ -34,6 +34,22 @@ func TestPlan_ActionNoop(t *testing.T) {
 	}
 }
 
+func TestNewPlan_DeepDriftUpgradesNoopToUpdate(t *testing.T) {
+	desired := pt.Manifest{Kind: "kubernetes", Checksum: "abc123"}
+	cur := pt.Fingerprint{Value: "abc123"} // stamp matches desired → shallow says noop
+
+	if p := newPlan("t/p/a", desired, cur, false); p.Action != PlanNoop || p.Changed {
+		t.Fatalf("shallow: action=%q changed=%v, want noop/false", p.Action, p.Changed)
+	}
+	p := newPlan("t/p/a", desired, cur, true)
+	if p.Action != PlanUpdate || !p.Changed || !p.DeepDrift {
+		t.Fatalf("full: action=%q changed=%v deepDrift=%v, want update/true/true", p.Action, p.Changed, p.DeepDrift)
+	}
+	if !strings.Contains(p.Summary, "drifted") || !strings.Contains(p.Summary, "full verification") {
+		t.Errorf("summary = %q, want deep-drift message", p.Summary)
+	}
+}
+
 func TestPlan_ActionUpdate(t *testing.T) {
 	fake := &fakeTarget{fp: pt.Fingerprint{Value: "deadbeefcafe0000"}} // different from desired
 	e, _ := newEngine(t, fake)
