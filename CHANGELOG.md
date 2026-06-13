@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Pluggable Metric Providers
+## v0.12.0 - Pluggable Metric Providers
 
 - **Metric-provider plugin capability** (`metricprovider`). Rollout analysis is
   no longer Prometheus-only: any metrics backend (Datadog, CloudWatch, a custom
