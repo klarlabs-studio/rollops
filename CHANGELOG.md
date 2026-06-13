@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Bucket Sources + CloudWatch
+## v0.14.0 - Bucket Sources + CloudWatch
 
 - **Object-storage bucket source for the Kubernetes target** (`bucket` spec
   block) — the Flux `Bucket` source. Sync desired state from `s3://`
