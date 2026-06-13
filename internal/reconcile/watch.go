@@ -30,15 +30,16 @@ type RepoSpec struct {
 // webhook, periodic via this poll which doubles as the drift heartbeat) and
 // reconciles. Repos are independent and serialized per repo.
 type Watcher struct {
-	rec      *Reconciler
-	baseDir  string
-	repos    []watched
-	locks    *repoLocks
-	leases   store.LeaseStore
-	owner    string
-	leaseTTL time.Duration
-	now      func() time.Time
-	logf     func(format string, args ...any)
+	rec       *Reconciler
+	baseDir   string
+	repos     []watched
+	locks     *repoLocks
+	leases    store.LeaseStore
+	owner     string
+	leaseTTL  time.Duration
+	now       func() time.Time
+	logf      func(format string, args ...any)
+	imageAuto *ImageAuto
 }
 
 type watched struct {
@@ -60,6 +61,13 @@ func WithLeaderElection(leases store.LeaseStore, owner string, ttl time.Duration
 // drifts). Without it, the loop reconciles silently.
 func WithLogger(logf func(format string, args ...any)) WatcherOption {
 	return func(w *Watcher) { w.logf = logf }
+}
+
+// WithImageAutomation enables registry-poll image automation: before each
+// reconcile, configs with an imagePolicy are scanned for newer tags and bumped
+// back to Git.
+func WithImageAutomation(ia *ImageAuto) WatcherOption {
+	return func(w *Watcher) { w.imageAuto = ia }
 }
 
 // NewWatcher clones each repo into baseDir and returns a ready watcher.
@@ -133,7 +141,21 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	}
 	out := make([]RepoOutcome, 0, len(configs))
 	for _, nc := range configs {
-		o, rerr := w.rec.Reconcile(ctx, nc.Config, r.spec.Initiator)
+		cfg := nc.Config
+		// Image automation runs first: a bump is committed+pushed to Git, and the
+		// returned (bumped) config is what reconcile then deploys.
+		if w.imageAuto != nil {
+			bumped, ref, ierr := w.imageAuto.Process(ctx, r.src, nc)
+			if ierr != nil {
+				out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Err: fmt.Errorf("watch: image automation: %w", ierr)})
+				continue
+			}
+			cfg = bumped
+			if ref != "" && w.logf != nil {
+				w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
+			}
+		}
+		o, rerr := w.rec.Reconcile(ctx, cfg, r.spec.Initiator)
 		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Outcome: o, Err: rerr})
 	}
 	return out

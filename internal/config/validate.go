@@ -122,6 +122,16 @@ func validateSemantics(c *Config) []error {
 	default:
 		errs = append(errs, fmt.Errorf("config: verification %q must be shallow | full", c.Spec.Verification))
 	}
+	if c.Spec.ImagePolicy != nil {
+		switch c.Spec.ImagePolicy.Mode {
+		case "major", "minor", "patch", "any":
+		default:
+			errs = append(errs, fmt.Errorf("config: imagePolicy.mode %q must be major | minor | patch | any", c.Spec.ImagePolicy.Mode))
+		}
+		if img, _ := c.Spec.Target.Spec["image"].(string); img == "" {
+			errs = append(errs, fmt.Errorf("config: imagePolicy requires spec.target.spec.image (the tracked image)"))
+		}
+	}
 	return errs
 }
 

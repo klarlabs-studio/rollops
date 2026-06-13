@@ -39,6 +39,23 @@ func execRunner(ctx context.Context, name string, stdin []byte, args ...string) 
 // Flux OCIRepository model — pull a manifest/kustomize bundle from an OCI
 // registry instead of a checkout.
 func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, error) {
+	out, err := renderSource(ctx, spec, run)
+	if err != nil {
+		return nil, err
+	}
+	// An optional `image` overrides the container image of matching containers in
+	// the rendered manifest — the field image automation patches, so a tracked
+	// image can be bumped without editing the embedded manifest by hand.
+	if img := str(spec, "image"); img != "" {
+		out, err = overrideContainerImage(out, img)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func renderSource(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, error) {
 	if o, ok := spec["oci"].(map[string]any); ok {
 		return renderOCI(ctx, o, run)
 	}
@@ -55,6 +72,115 @@ func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, er
 		return []byte(s), nil
 	}
 	return nil, fmt.Errorf("kubernetes: spec must set one of oci / bucket / helm / kustomize / manifest")
+}
+
+// imageRepo strips the :tag (and @digest) from an image ref, leaving the repo.
+func imageRepo(image string) string {
+	if at := strings.IndexByte(image, '@'); at >= 0 {
+		image = image[:at]
+	}
+	if i := strings.LastIndexByte(image, ':'); i > strings.LastIndexByte(image, '/') {
+		image = image[:i]
+	}
+	return image
+}
+
+// overrideContainerImage rewrites, across every document in a (multi-doc)
+// manifest, the image of each container whose repository matches the override's
+// repository — leaving sidecars on other images untouched. If no container
+// matches (single-image workload whose ref differs only by registry), every
+// container is set, so the override is never a silent no-op.
+func overrideContainerImage(manifest []byte, image string) ([]byte, error) {
+	repo := imageRepo(image)
+	dec := yaml.NewDecoder(bytes.NewReader(manifest))
+	var out bytes.Buffer
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+	matchedAny := false
+	var docs []*yaml.Node
+	for {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); err != nil {
+			break
+		}
+		if setContainerImages(&doc, repo, image, &matchedAny) {
+			// tracked
+		}
+		d := doc
+		docs = append(docs, &d)
+	}
+	// Second pass: if nothing matched by repo, set all containers (single-image
+	// workloads where only the registry differs).
+	if !matchedAny {
+		for _, d := range docs {
+			setContainerImages(d, "", image, &matchedAny)
+		}
+	}
+	for _, d := range docs {
+		if err := enc.Encode(d); err != nil {
+			return nil, fmt.Errorf("kubernetes: image override encode: %w", err)
+		}
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// setContainerImages walks a document's pod template containers/initContainers
+// and sets the image of those whose repo matches repoFilter (empty = all).
+func setContainerImages(doc *yaml.Node, repoFilter, image string, matched *bool) bool {
+	tmpl := mappingPath(doc, "spec", "template", "spec")
+	if tmpl == nil {
+		return false
+	}
+	any := false
+	for _, key := range []string{"containers", "initContainers"} {
+		list := childByKey(tmpl, key)
+		if list == nil || list.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, c := range list.Content {
+			img := childByKey(c, "image")
+			if img == nil {
+				continue
+			}
+			if repoFilter == "" || imageRepo(img.Value) == repoFilter {
+				img.Value = image
+				any, *matched = true, true
+			}
+		}
+	}
+	return any
+}
+
+// mappingPath descends a document's mapping nodes by key, returning the value
+// node at the path or nil. It unwraps the document node.
+func mappingPath(n *yaml.Node, keys ...string) *yaml.Node {
+	cur := n
+	if cur.Kind == yaml.DocumentNode && len(cur.Content) > 0 {
+		cur = cur.Content[0]
+	}
+	for _, k := range keys {
+		cur = childByKey(cur, k)
+		if cur == nil {
+			return nil
+		}
+	}
+	return cur
+}
+
+// childByKey returns the value node for key in a mapping node, or nil.
+func childByKey(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // renderBucket syncs a desired-state tree from an object-storage bucket (the

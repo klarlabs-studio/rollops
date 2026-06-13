@@ -44,6 +44,7 @@
         "analysis": { "$ref": "#/$defs/analysis" },
         "featureFlags": { "$ref": "#/$defs/featureFlags" },
         "trafficRouting": { "$ref": "#/$defs/trafficRouting" },
+        "imagePolicy": { "$ref": "#/$defs/imagePolicy" },
         "dependsOn": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -229,6 +230,17 @@
         "flag": { "type": "string", "minLength": 1, "description": "Flag key to drive." },
         "environment": { "type": "string", "description": "Provider environment." },
         "when": { "type": "string", "enum": ["step", "promote", "both"], "description": "When to drive the flag (default both)." }
+      }
+    },
+    "imagePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "description": "Registry-poll image automation: scan for newer tags of spec.target.spec.image and write a bump back to Git.",
+      "properties": {
+        "mode": { "type": "string", "enum": ["major", "minor", "patch", "any"], "description": "Which version increments to auto-adopt." },
+        "pattern": { "type": "string", "description": "Optional regexp filter on candidate tags." },
+        "allowMutableTags": { "type": "boolean", "description": "Permit latest/main/master." }
       }
     },
     "trafficRouting": {

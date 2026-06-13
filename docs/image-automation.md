@@ -35,3 +35,38 @@ repos/branches allow writeback and when to publish the commit.
 
 The writeback helper rejects path escapes and no-ops cleanly when content is
 unchanged.
+
+## Registry-poll automation (keel-style)
+
+Beyond the validate-and-writeback helper above, rollopsd can **poll the registry**
+itself and bump images automatically — the keel model, but GitOps (Git stays the
+source of truth). Add an `imagePolicy` to a rollout config and set the tracked
+image as `spec.target.spec.image`:
+
+```yaml
+spec:
+  target:
+    kind: kubernetes
+    spec:
+      namespace: prod
+      resource: deployment/web
+      image: ghcr.io/acme/web:v1.4.0   # tracked image (overrides the manifest's container)
+      manifest: |
+        ...
+  imagePolicy:
+    mode: minor            # major | minor | patch | any
+    pattern: '^v\d'        # optional tag regexp
+    allowMutableTags: false
+```
+
+Each reconcile tick, for every config with an `imagePolicy`, rollopsd scans the
+registry (Docker Registry v2 + bearer challenge; works for ghcr.io, Docker Hub,
+…), selects the newest tag allowed by `mode`, and if it is newer than the tracked
+tag, **patches `spec.target.spec.image` and commits + pushes** the change to the
+config repo. The next reconcile deploys it. The `image` field overrides the
+container image of matching containers in the rendered manifest, so the bump
+reaches the workload.
+
+Enable it on the daemon with `ROLLOPS_IMAGE_AUTOMATION=1`. Private registries:
+`ROLLOPS_REGISTRY_USER` / `ROLLOPS_REGISTRY_TOKEN`. Writeback needs a token with
+push access on the config repo (see `docs/deploy-kubernetes.md`).

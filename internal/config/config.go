@@ -56,6 +56,7 @@ type Spec struct {
 	Analysis       *Analysis       `yaml:"analysis,omitempty" json:"analysis,omitempty"`
 	FeatureFlags   *FeatureFlags   `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
 	TrafficRouting *TrafficRouting `yaml:"trafficRouting,omitempty" json:"trafficRouting,omitempty"`
+	ImagePolicy    *ImagePolicy    `yaml:"imagePolicy,omitempty" json:"imagePolicy,omitempty"`
 	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"`         // RFC3339 future time
 	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow (default) | full
@@ -107,6 +108,16 @@ type TrafficRouting struct {
 	Namespace     string `yaml:"namespace" json:"namespace"`         // router object namespace
 	StableService string `yaml:"stableService" json:"stableService"` // backend for (100-weight)%
 	CanaryService string `yaml:"canaryService" json:"canaryService"` // backend for weight%
+}
+
+// ImagePolicy enables registry-poll image automation: the daemon periodically
+// scans the registry for newer tags of spec.target.spec.image and, per the
+// policy, writes a bumped image back to Git so the rollout reconciles to it —
+// the keel-style "new tag → deploy", but GitOps (Git stays the source of truth).
+type ImagePolicy struct {
+	Mode             string `yaml:"mode" json:"mode"`                                             // major | minor | patch | any
+	Pattern          string `yaml:"pattern,omitempty" json:"pattern,omitempty"`                   // optional tag regexp filter
+	AllowMutableTags bool   `yaml:"allowMutableTags,omitempty" json:"allowMutableTags,omitempty"` // permit latest/main/master
 }
 
 // Target selects the deployment target plugin and its criticality weight.

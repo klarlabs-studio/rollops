@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased - Fleet GitOps: Many-App Reconcile, Private Repos, Image Automation
+
+Everything needed to run a whole cluster's rollouts from Git (a keel replacement):
+
+- **Many configs per repo.** `config.LoadAllFromDir` — a watched repo path can be
+  a directory; the reconciler loads and reconciles every `*.yaml` independently.
+- **Private config repos.** `ROLLOPS_WATCH` entries accept `token`/`tokenFile`/
+  `deployKeyPath`; the git layer now actually applies an https token (previously
+  declared but unused) as an `Authorization` header, never written to disk.
+- **Registry-poll image automation** (`imagePolicy`). The daemon scans the
+  registry (Docker Registry v2 + bearer challenge; ghcr/Docker Hub/…) for newer
+  tags of `spec.target.spec.image`, selects per `mode` (major/minor/patch/any +
+  optional pattern), and writes the bump back to Git (commit + push) — the
+  keel-style "new tag → deploy", GitOps-native. A new `image` field on the
+  Kubernetes target overrides the rendered manifest's container image so the bump
+  reaches the workload. Enable with `ROLLOPS_IMAGE_AUTOMATION=1`. See
+  `docs/image-automation.md`.
+- The reconcile loop also no longer runs silently — see v0.15.0.
+
 ## v0.15.0 - Dogfood Fixes (live k3s)
 
 - **Full drift verification** (`verification: full`). The default shallow

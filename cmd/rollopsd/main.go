@@ -28,6 +28,7 @@ import (
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/git"
 	"go.klarlabs.de/rollops/internal/grpcapi"
+	"go.klarlabs.de/rollops/internal/imageupdate"
 	"go.klarlabs.de/rollops/internal/mcp"
 	"go.klarlabs.de/rollops/internal/metrics"
 	"go.klarlabs.de/rollops/internal/notify"
@@ -150,6 +151,16 @@ func run(args []string) error {
 		}
 		if leases, ok := any(db).(store.LeaseStore); ok {
 			watcherOpts = append(watcherOpts, reconcile.WithLeaderElection(leases, envOr("ROLLOPS_INSTANCE_ID", "rollopsd"), 2*time.Minute))
+		}
+		// Registry-poll image automation (replaces keel): configs with an
+		// imagePolicy are scanned + bumped back to Git. Registry creds optional.
+		if os.Getenv("ROLLOPS_IMAGE_AUTOMATION") != "" {
+			watcherOpts = append(watcherOpts, reconcile.WithImageAutomation(&reconcile.ImageAuto{
+				Scanner: imageupdate.Scanner{
+					Username: os.Getenv("ROLLOPS_REGISTRY_USER"),
+					Password: os.Getenv("ROLLOPS_REGISTRY_TOKEN"),
+				},
+			}))
 		}
 		w, err := reconcile.NewWatcher(ctx, rec, workdir, specs, watcherOpts...)
 		if err != nil {

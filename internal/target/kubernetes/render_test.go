@@ -207,6 +207,46 @@ func TestRender_Bucket_GCSManifest(t *testing.T) {
 	}
 }
 
+func TestRender_ImageOverride(t *testing.T) {
+	manifest := `apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web}
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/acme/web:v1.0.0
+        - name: sidecar
+          image: ghcr.io/acme/proxy:v2.0.0
+`
+	spec := map[string]any{"manifest": manifest, "image": "ghcr.io/acme/web:v1.3.0"}
+	out, err := render(context.Background(), spec, fakeRunner(&capturedRun{}))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "ghcr.io/acme/web:v1.3.0") {
+		t.Errorf("web image not overridden:\n%s", s)
+	}
+	if !strings.Contains(s, "ghcr.io/acme/proxy:v2.0.0") {
+		t.Errorf("sidecar (different repo) must be untouched:\n%s", s)
+	}
+}
+
+func TestRender_ImageOverride_NoRepoMatchSetsAll(t *testing.T) {
+	// Single-image workload where only the registry differs → still applied.
+	manifest := "apiVersion: apps/v1\nkind: Deployment\nmetadata: {name: web}\nspec:\n  template:\n    spec:\n      containers:\n        - name: web\n          image: old.registry/acme/web:v1\n"
+	spec := map[string]any{"manifest": manifest, "image": "ghcr.io/acme/web:v2"}
+	out, err := render(context.Background(), spec, fakeRunner(&capturedRun{}))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(string(out), "ghcr.io/acme/web:v2") {
+		t.Errorf("override should apply when no repo matches:\n%s", out)
+	}
+}
+
 func TestRender_Bucket_RequiresURL(t *testing.T) {
 	if _, err := render(context.Background(), map[string]any{"bucket": map[string]any{}}, fakeRunner(&capturedRun{})); err == nil {
 		t.Error("bucket without url must error")

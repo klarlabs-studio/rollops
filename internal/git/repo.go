@@ -105,6 +105,13 @@ func (s *Source) CommitFile(ctx context.Context, relPath string, content []byte,
 	return true, head, nil
 }
 
+// Push publishes the current branch to origin (used by image-automation
+// writeback). Auth is threaded through git() as for fetch/clone.
+func (s *Source) Push(ctx context.Context) error {
+	_, err := s.git(ctx, s.dir, "push", "origin", s.branch)
+	return err
+}
+
 // git runs a git command, threading per-repo auth via env (GIT_SSH_COMMAND for
 // deploy keys; token in the URL is handled by the caller for https).
 func (s *Source) git(ctx context.Context, workdir string, args ...string) (string, error) {
