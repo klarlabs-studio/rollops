@@ -38,6 +38,7 @@ type Watcher struct {
 	owner    string
 	leaseTTL time.Duration
 	now      func() time.Time
+	logf     func(format string, args ...any)
 }
 
 type watched struct {
@@ -53,6 +54,12 @@ func WithLeaderElection(leases store.LeaseStore, owner string, ttl time.Duration
 		w.owner = owner
 		w.leaseTTL = ttl
 	}
+}
+
+// WithLogger sets a logger for per-tick reconcile outcomes (errors, applied
+// drifts). Without it, the loop reconciles silently.
+func WithLogger(logf func(format string, args ...any)) WatcherOption {
+	return func(w *Watcher) { w.logf = logf }
 }
 
 // NewWatcher clones each repo into baseDir and returns a ready watcher.
@@ -130,13 +137,32 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) RepoOutcome {
 func (w *Watcher) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	w.Tick(ctx) // reconcile immediately on start
+	w.logOutcomes(w.Tick(ctx)) // reconcile immediately on start
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			w.Tick(ctx)
+			w.logOutcomes(w.Tick(ctx))
+		}
+	}
+}
+
+// logOutcomes surfaces each tick's result so an operator sees reconcile errors
+// and applied drifts instead of a silent loop. Not-leader is expected on the
+// non-leader instances, so it is left quiet.
+func (w *Watcher) logOutcomes(outcomes []RepoOutcome) {
+	if w.logf == nil {
+		return
+	}
+	for _, o := range outcomes {
+		switch {
+		case o.Err != nil && !errors.Is(o.Err, ErrNotLeader):
+			w.logf("reconcile %s: %v", o.Repo, o.Err)
+		case o.Outcome.Reconciled && o.Outcome.Rollout != nil:
+			w.logf("reconcile %s: applied %s → %s (%s)", o.Repo, o.Outcome.Rollout.TargetRef, o.Outcome.Rollout.Phase, o.Outcome.Plan.Summary)
+		case o.Outcome.Drift && o.Outcome.Rollout != nil:
+			w.logf("reconcile %s: drift on %s → %s", o.Repo, o.Outcome.Rollout.TargetRef, o.Outcome.Rollout.Phase)
 		}
 	}
 }

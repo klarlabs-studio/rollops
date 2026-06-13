@@ -142,7 +142,11 @@ func run(args []string) error {
 	} else if len(specs) > 0 {
 		rec := reconcile.New(eng, aud)
 		workdir := envOr("ROLLOPS_WORKDIR", filepath.Join(os.TempDir(), "rollops-repos"))
-		watcherOpts := []reconcile.WatcherOption{}
+		watcherOpts := []reconcile.WatcherOption{
+			reconcile.WithLogger(func(format string, args ...any) {
+				fmt.Fprintf(os.Stderr, "rollopsd: "+format+"\n", args...)
+			}),
+		}
 		if leases, ok := any(db).(store.LeaseStore); ok {
 			watcherOpts = append(watcherOpts, reconcile.WithLeaderElection(leases, envOr("ROLLOPS_INSTANCE_ID", "rollopsd"), 2*time.Minute))
 		}
