@@ -34,6 +34,39 @@
       }
     },
     {
+      "name": "gatewayapi",
+      "description": "Traffic-router backed by the Kubernetes Gateway API \u2014 shifts HTTPRoute backendRef weights in lockstep with a canary.",
+      "homepage": "https://github.com/klarlabs-studio/rollops-plugin-gatewayapi",
+      "capabilities": [
+        "trafficrouter"
+      ],
+      "latest": "v0.1.0",
+      "versions": {
+        "v0.1.0": {
+          "artifacts": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-gatewayapi/releases/download/v0.1.0/rollops-plugin-gatewayapi_v0.1.0_darwin_arm64",
+              "sha256": "e1c64e768cf36440337145c24e3b4d6673d5ecd36f6664d821589f5c65a8fc10"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-gatewayapi/releases/download/v0.1.0/rollops-plugin-gatewayapi_v0.1.0_linux_amd64",
+              "sha256": "57038273278a9b1f4a683f5670032ca7e67876694beb1f493b8b7792800779c2"
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "https://github.com/klarlabs-studio/rollops-plugin-gatewayapi/releases/download/v0.1.0/rollops-plugin-gatewayapi_v0.1.0_linux_arm64",
+              "sha256": "11151b7e658cd6670af1624cba0579914cfe16604eae1360f4440fb698c2ced0"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "growthbook",
       "description": "Feature-flag provider backed by GrowthBook \u2014 drives a rollout rule's coverage in lockstep with a canary.",
       "homepage": "https://github.com/klarlabs-studio/rollops-plugin-growthbook",
