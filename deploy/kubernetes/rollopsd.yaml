@@ -59,14 +59,25 @@ metadata:
   name: rollopsd-watch
   namespace: rollops-system
 data:
-  # Repos rollopsd reconciles. Here: this repo's demo/ path (public, no auth).
+  # Repos rollopsd reconciles. Best practice: each app's Rollops config lives in
+  # that app's own repo under `.rollops/` (config beside code, one PR per change,
+  # image-automation bumps push back there). `path` is the directory; a directory
+  # loads every *.yaml. Private repos use `tokenFile` (mounted Secret).
   watch.json: |
     [
       {
-        "name": "demo",
-        "url": "https://github.com/klarlabs-studio/rollops",
+        "name": "armada",
+        "url": "https://github.com/klarlabs-studio/armada",
         "branch": "main",
-        "path": "demo/rollops.yaml"
+        "path": ".rollops",
+        "tokenFile": "/etc/rollops/git/token"
+      },
+      {
+        "name": "vorhut",
+        "url": "https://github.com/klarlabs-studio/vorhut",
+        "branch": "main",
+        "path": ".rollops",
+        "tokenFile": "/etc/rollops/git/token"
       }
     ]
 ---
@@ -114,9 +125,18 @@ spec:
               valueFrom: { secretKeyRef: { name: rollopsd-secrets, key: admin-token } }
             - name: ROLLOPS_UI_PASSWORD
               valueFrom: { secretKeyRef: { name: rollopsd-secrets, key: ui-password } }
+            # Registry-poll image automation. Optional secrets so the daemon
+            # still starts without them (automation/private repos just disabled).
+            - { name: ROLLOPS_IMAGE_AUTOMATION, value: "1" }
+            - name: ROLLOPS_REGISTRY_USER
+              valueFrom: { secretKeyRef: { name: rollopsd-registry, key: user, optional: true } }
+            - name: ROLLOPS_REGISTRY_TOKEN
+              valueFrom: { secretKeyRef: { name: rollopsd-registry, key: token, optional: true } }
           volumeMounts:
             - { name: data, mountPath: /var/lib/rollops }
             - { name: watch, mountPath: /etc/rollops, readOnly: true }
+            # Git token for private config repos (tokenFile in watch.json).
+            - { name: git, mountPath: /etc/rollops/git, readOnly: true }
           readinessProbe:
             httpGet: { path: /readyz, port: http }
             initialDelaySeconds: 3
@@ -133,6 +153,8 @@ spec:
           persistentVolumeClaim: { claimName: rollopsd-data }
         - name: watch
           configMap: { name: rollopsd-watch }
+        - name: git
+          secret: { secretName: rollopsd-git, optional: true }
 ---
 apiVersion: v1
 kind: Service

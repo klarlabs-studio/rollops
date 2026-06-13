@@ -1,0 +1,26 @@
+# Live cutover patch for the in-cluster rollopsd: adds the git-token mount,
+# image-automation env, registry creds, and rolls to the fleet image. Strategic
+# merge (env / volumeMounts / volumes merge by name), so it only adds — it does
+# NOT touch the live watch ConfigMap.
+#
+#   kubectl -n rollops-system patch deploy rollopsd --patch-file deploy/kubernetes/cutover-patch.yaml
+#
+# Requires secrets rollopsd-git (key: token) and rollopsd-registry (keys:
+# user, token) to exist first.
+spec:
+  template:
+    spec:
+      containers:
+        - name: rollopsd
+          image: ghcr.io/klarlabs-studio/rollopsd:fleet1
+          env:
+            - { name: ROLLOPS_IMAGE_AUTOMATION, value: "1" }
+            - name: ROLLOPS_REGISTRY_USER
+              valueFrom: { secretKeyRef: { name: rollopsd-registry, key: user, optional: true } }
+            - name: ROLLOPS_REGISTRY_TOKEN
+              valueFrom: { secretKeyRef: { name: rollopsd-registry, key: token, optional: true } }
+          volumeMounts:
+            - { name: git, mountPath: /etc/rollops/git, readOnly: true }
+      volumes:
+        - name: git
+          secret: { secretName: rollopsd-git, optional: true }
