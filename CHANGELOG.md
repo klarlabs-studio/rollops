@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Real Canary Traffic Routing
+## v0.11.0 - Real Canary Traffic Routing
 
 - **Traffic-router plugin capability** (`trafficrouter`). A weighted canary now
   shifts real network traffic, not just bakes: as the canary advances through
@@ -15,7 +15,7 @@
   - Composable with `featureFlags`: traffic routing shifts network traffic;
     feature flags shift application exposure. See `docs/traffic-routing.md`.
 
-## Unreleased - Commercial Flag Providers
+### Commercial Flag Providers
 
 - Two more feature-flag provider plugins, covering the major commercial
   platforms, each in its own public repo and sha256-pinned in the registry:
