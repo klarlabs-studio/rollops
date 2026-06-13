@@ -1,12 +1,17 @@
 # Changelog
 
-## Unreleased - Dogfood Fixes
+## v0.15.0 - Dogfood Fixes (live k3s)
 
 - **Full drift verification** (`verification: full`). The default shallow
   stamped-checksum marker misses out-of-band field edits that leave the marker
   intact (e.g. `kubectl set image`). Full mode additionally diffs live state
   against the desired manifest in `plan`, reporting any divergence as drift
   (`live drifted from desired …`). Found while dogfooding on a live k3s cluster.
+- **Apply corrects drift even when the stamp matches.** `Target.Apply`
+  short-circuited on a matching stamped checksum, so an out-of-band field edit
+  (which preserves the annotation) was never reconciled. Apply now confirms with
+  a live diff before skipping: matching stamp + empty diff = no-op; matching
+  stamp + non-empty diff = re-apply. The GitOps self-heal path.
 - `plugin install` pin hint no longer hardcodes `featureFlags:` — it now points
   at the matching spec block for the plugin's capability (featureFlags /
   trafficRouting / analysis).
