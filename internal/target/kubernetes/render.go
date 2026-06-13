@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,8 +33,14 @@ func execRunner(ctx context.Context, name string, stdin []byte, args ...string) 
 // Flux and Argo, Rollops renders Helm charts and Kustomize overlays — not just
 // raw manifests — so existing chart/overlay users can adopt it unchanged.
 //
-// Precedence: helm > kustomize > manifest > (raw spec, used by the direct flow).
+// Precedence: oci > helm > kustomize > manifest > (raw spec, used by the direct
+// flow). The Git source is the daemon's own desired-state poll; oci adds the
+// Flux OCIRepository model — pull a manifest/kustomize bundle from an OCI
+// registry instead of a checkout.
 func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, error) {
+	if o, ok := spec["oci"].(map[string]any); ok {
+		return renderOCI(ctx, o, run)
+	}
 	if h, ok := spec["helm"].(map[string]any); ok {
 		return renderHelm(ctx, h, run)
 	}
@@ -42,7 +50,51 @@ func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, er
 	if s, ok := spec["manifest"].(string); ok && s != "" {
 		return []byte(s), nil
 	}
-	return nil, fmt.Errorf("kubernetes: spec must set one of helm / kustomize / manifest")
+	return nil, fmt.Errorf("kubernetes: spec must set one of oci / helm / kustomize / manifest")
+}
+
+// renderOCI pulls a non-Helm OCI artifact (a bundle of Kubernetes manifests or a
+// kustomize tree, the Flux OCIRepository model) with `oras pull`, then renders
+// its contents. `path` is an optional subdirectory within the artifact;
+// `render` selects how the extracted contents become a manifest (kustomize by
+// default, or a single manifest file via `file`).
+func renderOCI(ctx context.Context, o map[string]any, run cmdRunner) ([]byte, error) {
+	ref := str(o, "ref")
+	if ref == "" {
+		return nil, fmt.Errorf("kubernetes: oci.ref is required")
+	}
+	dir, err := os.MkdirTemp("", "rollops-oci-")
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: oci temp dir: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if _, err := run(ctx, "oras", nil, "pull", ref, "-o", dir); err != nil {
+		return nil, fmt.Errorf("kubernetes: oras pull %q: %w", ref, err)
+	}
+	root := dir
+	if sub := str(o, "path"); sub != "" {
+		root = filepath.Join(dir, sub)
+	}
+
+	switch str(o, "render") {
+	case "manifest":
+		file := str(o, "file")
+		if file == "" {
+			return nil, fmt.Errorf("kubernetes: oci.file is required when render is manifest")
+		}
+		data, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: oci read manifest: %w", err)
+		}
+		return data, nil
+	default: // kustomize (the default rendering for an artifact tree)
+		out, err := run(ctx, "kubectl", nil, "kustomize", root)
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: oci kustomize build: %w", err)
+		}
+		return []byte(out), nil
+	}
 }
 
 // renderHelm runs `helm template`, passing inline values over stdin. A remote

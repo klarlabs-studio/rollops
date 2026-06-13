@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased - OCI Artifact Sources
+
+- **OCI artifact source for the Kubernetes target** (`oci` spec block) — the Flux
+  `OCIRepository` model. Pull a non-Helm OCI artifact (a manifest bundle or
+  kustomize tree) with `oras pull`, then render it via `kubectl kustomize`
+  (default) or apply a single `file` verbatim. Desired state can now live in an
+  OCI registry, not only a Git checkout.
+  - OCI **Helm charts** (`helm.chart: oci://…`) and HTTP Helm repos were already
+    supported by the Helm renderer; documented in `docs/kubernetes-sources.md`
+    alongside the new artifact source.
+
 ## v0.12.0 - Pluggable Metric Providers
 
 - **Metric-provider plugin capability** (`metricprovider`). Rollout analysis is

@@ -2,6 +2,8 @@ package kubernetes
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -82,6 +84,72 @@ func TestRender_RawManifest(t *testing.T) {
 func TestRender_RequiresOneSource(t *testing.T) {
 	if _, err := render(context.Background(), map[string]any{"namespace": "x"}, fakeRunner(&capturedRun{})); err == nil {
 		t.Error("spec with no helm/kustomize/manifest should error")
+	}
+}
+
+// ociRunner simulates `oras pull -o <dir>` by writing files into the output dir,
+// then handles the follow-up kustomize call.
+func ociRunner(t *testing.T, files map[string]string, kustomizeOut string) (cmdRunner, *capturedRun) {
+	t.Helper()
+	c := &capturedRun{}
+	run := func(_ context.Context, name string, _ []byte, args ...string) (string, error) {
+		if name == "oras" && len(args) > 0 && args[0] == "pull" {
+			// Find -o <dir> and write the artifact's files there.
+			dir := ""
+			for i, a := range args {
+				if a == "-o" && i+1 < len(args) {
+					dir = args[i+1]
+				}
+			}
+			for rel, content := range files {
+				p := filepath.Join(dir, rel)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					return "", err
+				}
+				if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+					return "", err
+				}
+			}
+			return "", nil
+		}
+		c.name, c.args = name, args // capture the kustomize call
+		return kustomizeOut, nil
+	}
+	return run, c
+}
+
+func TestRender_OCI_ManifestMode(t *testing.T) {
+	run, _ := ociRunner(t, map[string]string{"deploy/app.yaml": "kind: Deployment\nmetadata:\n  name: app\n"}, "")
+	spec := map[string]any{"oci": map[string]any{
+		"ref": "oci://ghcr.io/acme/app:v1", "path": "deploy", "render": "manifest", "file": "app.yaml",
+	}}
+	out, err := render(context.Background(), spec, run)
+	if err != nil {
+		t.Fatalf("render oci manifest: %v", err)
+	}
+	if !strings.Contains(string(out), "name: app") {
+		t.Errorf("manifest from artifact = %q", out)
+	}
+}
+
+func TestRender_OCI_KustomizeMode(t *testing.T) {
+	run, c := ociRunner(t, map[string]string{"kustomization.yaml": "resources: [app.yaml]\n"}, "kind: Service\n")
+	spec := map[string]any{"oci": map[string]any{"ref": "oci://ghcr.io/acme/app:v1"}}
+	out, err := render(context.Background(), spec, run)
+	if err != nil {
+		t.Fatalf("render oci kustomize: %v", err)
+	}
+	if c.name != "kubectl" || c.args[0] != "kustomize" {
+		t.Errorf("expected kubectl kustomize, got %s %v", c.name, c.args)
+	}
+	if !strings.Contains(string(out), "Service") {
+		t.Errorf("kustomized artifact = %q", out)
+	}
+}
+
+func TestRender_OCI_RequiresRef(t *testing.T) {
+	if _, err := render(context.Background(), map[string]any{"oci": map[string]any{}}, fakeRunner(&capturedRun{})); err == nil {
+		t.Error("oci without ref must error")
 	}
 }
 
