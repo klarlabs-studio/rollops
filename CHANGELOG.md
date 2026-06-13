@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - OCI Artifact Sources
+## Unreleased - OCI Sources + CRD Health
 
 - **OCI artifact source for the Kubernetes target** (`oci` spec block) — the Flux
   `OCIRepository` model. Pull a non-Helm OCI artifact (a manifest bundle or
@@ -10,6 +10,12 @@
   - OCI **Helm charts** (`helm.chart: oci://…`) and HTTP Helm repos were already
     supported by the Helm renderer; documented in `docs/kubernetes-sources.md`
     alongside the new artifact source.
+- **CRD health assessment.** Health is no longer limited to rollout-able
+  workloads. Any other kind (a CRD — cert-manager `Certificate`, Argo `Rollout`,
+  Crossplane, …) is assessed from its `status.conditions` like Argo CD's health
+  checks: healthy when `Ready`/`Available`/`Succeeded` is `True`, unhealthy (with
+  reason + message) when `False`, progressing otherwise. `healthCondition` pins a
+  custom condition type. Standard workloads still use `kubectl rollout status`.
 
 ## v0.12.0 - Pluggable Metric Providers
 

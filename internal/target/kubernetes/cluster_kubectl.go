@@ -15,11 +15,12 @@ import (
 // kubectlCluster drives a cluster through the external kubectl binary. No
 // client-go is compiled into the Rollops core.
 type kubectlCluster struct {
-	context   string
-	namespace string
-	resource  string // e.g. deployment/api
-	prune     bool   // garbage-collect resources removed from desired
-	pruneVal  string // label value selecting this target's resources
+	context    string
+	namespace  string
+	resource   string // e.g. deployment/api
+	prune      bool   // garbage-collect resources removed from desired
+	pruneVal   string // label value selecting this target's resources
+	healthCond string // explicit status.conditions type to gate on (CRDs)
 }
 
 func newKubectl(s spec, ref string) Cluster {
@@ -28,11 +29,12 @@ func newKubectl(s spec, ref string) Cluster {
 		ns = "default"
 	}
 	return &kubectlCluster{
-		context:   s.str("context"),
-		namespace: ns,
-		resource:  s.str("resource"),
-		prune:     s.boolVal("prune"),
-		pruneVal:  labelValue(ref),
+		context:    s.str("context"),
+		namespace:  ns,
+		resource:   s.str("resource"),
+		prune:      s.boolVal("prune"),
+		pruneVal:   labelValue(ref),
+		healthCond: s.str("healthCondition"),
 	}
 }
 
@@ -90,12 +92,104 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// rolloutKinds are the workload kinds `kubectl rollout status` understands.
+var rolloutKinds = map[string]bool{
+	"deployment": true, "deploy": true, "deployments": true,
+	"statefulset": true, "sts": true, "statefulsets": true,
+	"daemonset": true, "ds": true, "daemonsets": true,
+}
+
+func resourceKind(resource string) string {
+	kind := resource
+	if i := strings.IndexByte(resource, '/'); i >= 0 {
+		kind = resource[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(kind))
+}
+
+// Healthy reports whether the managed resource is ready. Standard workload kinds
+// use `kubectl rollout status`; any other kind (a CRD) is assessed from its
+// status.conditions, the way Argo CD's health checks gate on a resource's Ready/
+// Available/Succeeded condition. An explicit healthCondition pins the type.
 func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
-	out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout=30s")
+	if k.healthCond == "" && rolloutKinds[resourceKind(k.resource)] {
+		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout=30s")
+		if err != nil {
+			return false, strings.TrimSpace(out), nil
+		}
+		return true, "", nil
+	}
+	return k.conditionHealthy(ctx)
+}
+
+type statusCondition struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// conditionHealthy assesses health from the resource's status.conditions. It
+// looks for the configured condition type (or, by default, the first of Ready /
+// Available / Succeeded present): True is healthy, False is unhealthy with the
+// reason/message, any other value is treated as still progressing. A resource
+// with no conditions is considered healthy — apply already succeeded and there
+// is nothing to gate on (Argo CD's default for resources without a health check).
+func (k *kubectlCluster) conditionHealthy(ctx context.Context) (bool, string, error) {
+	out, err := k.run(ctx, nil, "get", k.resource, "-o", "jsonpath={.status.conditions}")
 	if err != nil {
 		return false, strings.TrimSpace(out), nil
 	}
-	return true, "", nil
+	return evalConditions(out, k.healthCond)
+}
+
+// evalConditions is the pure assessment of a status.conditions JSON array
+// (kubectl jsonpath output) against the desired condition type.
+func evalConditions(raw, healthCond string) (bool, string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true, "", nil // no conditions to assess
+	}
+	var conds []statusCondition
+	if err := json.Unmarshal([]byte(raw), &conds); err != nil {
+		return false, fmt.Sprintf("parse status.conditions: %v", err), nil
+	}
+	wanted := []string{healthCond}
+	if healthCond == "" {
+		wanted = []string{"Ready", "Available", "Succeeded"}
+	}
+	for _, want := range wanted {
+		for _, c := range conds {
+			if !strings.EqualFold(c.Type, want) {
+				continue
+			}
+			switch {
+			case strings.EqualFold(c.Status, "True"):
+				return true, "", nil
+			case strings.EqualFold(c.Status, "False"):
+				return false, conditionReason(c), nil
+			default:
+				return false, fmt.Sprintf("%s is %s (progressing)", c.Type, c.Status), nil
+			}
+		}
+	}
+	if healthCond != "" {
+		return false, fmt.Sprintf("condition %q not found", healthCond), nil
+	}
+	return false, "no Ready/Available/Succeeded condition present", nil
+}
+
+func conditionReason(c statusCondition) string {
+	switch {
+	case c.Reason != "" && c.Message != "":
+		return c.Reason + ": " + c.Message
+	case c.Message != "":
+		return c.Message
+	case c.Reason != "":
+		return c.Reason
+	default:
+		return c.Type + " is False"
+	}
 }
 
 // Diff runs `kubectl diff` of the manifest against live state. kubectl exits

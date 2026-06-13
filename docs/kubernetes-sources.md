@@ -79,3 +79,23 @@ Inline YAML, applied verbatim:
       kind: Deployment
       ...
 ```
+
+## Health assessment (CRDs)
+
+Standard workloads (Deployment, StatefulSet, DaemonSet) report readiness via
+`kubectl rollout status`. Any other kind — a CRD such as a cert-manager
+`Certificate`, an Argo `Rollout`, a Crossplane resource — is assessed from its
+`status.conditions`, the way Argo CD's health checks do: the target is healthy
+when its `Ready` / `Available` / `Succeeded` condition is `True`, unhealthy (with
+the condition's reason + message) when `False`, and still progressing for any
+other value. A resource with no conditions is treated as healthy.
+
+Pin a specific condition type for CRDs that use a non-standard one:
+
+```yaml
+target:
+  kind: kubernetes
+  spec:
+    resource: certificates.cert-manager.io/app-cert
+    healthCondition: Ready        # gate on this condition type
+```
