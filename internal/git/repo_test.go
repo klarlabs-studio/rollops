@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,16 @@ func TestSource_CommitFile(t *testing.T) {
 	}
 	if _, _, err := src.CommitFile(context.Background(), "../escape", []byte("x"), "bad"); err == nil {
 		t.Fatal("path escape should fail")
+	}
+}
+
+func TestRedactArgs_MasksToken(t *testing.T) {
+	args := []string{"-c", "http.extraheader=Authorization: Basic c2VjcmV0VG9rZW4=", "clone", "--depth", "1", "https://github.com/acme/x"}
+	got := redactArgs(args)
+	if strings.Contains(got, "c2VjcmV0VG9rZW4=") || strings.Contains(got, "Basic ") {
+		t.Errorf("token not redacted: %q", got)
+	}
+	if !strings.Contains(got, "<redacted>") || !strings.Contains(got, "clone") {
+		t.Errorf("redaction malformed: %q", got)
 	}
 }

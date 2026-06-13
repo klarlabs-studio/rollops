@@ -81,7 +81,12 @@ func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []Re
 		dir := filepath.Join(baseDir, s.Name)
 		src, err := git.Clone(ctx, s.URL, s.Ref.Branch, dir, s.Auth)
 		if err != nil {
-			return nil, fmt.Errorf("watch: clone %s: %w", s.Name, err)
+			// One unreachable repo must not take the whole daemon down: log and
+			// skip it; the other repos still reconcile. It is retried at restart.
+			if w.logf != nil {
+				w.logf("watch: skip repo %q (clone failed): %v", s.Name, err)
+			}
+			continue
 		}
 		w.repos = append(w.repos, watched{spec: s, src: src})
 	}

@@ -132,7 +132,21 @@ func (s *Source) git(ctx context.Context, workdir string, args ...string) (strin
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+		return out.String(), fmt.Errorf("git %s: %w: %s", redactArgs(args), err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil
+}
+
+// redactArgs renders git args for an error message with any credential (the
+// http.extraheader Authorization value) masked, so tokens never reach logs.
+func redactArgs(args []string) string {
+	cp := make([]string, len(args))
+	for i, a := range args {
+		if strings.HasPrefix(a, "http.extraheader=") {
+			cp[i] = "http.extraheader=Authorization: <redacted>"
+		} else {
+			cp[i] = a
+		}
+	}
+	return strings.Join(cp, " ")
 }
