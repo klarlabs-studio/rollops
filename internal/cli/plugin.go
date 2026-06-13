@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -25,15 +26,19 @@ type PluginFetcher func(ctx context.Context, source string) (localPath string, c
 // plugin dispatches `rollops plugin <subcommand>`.
 func (a *App) plugin(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("plugin: subcommand required (search | install)")
+		return fmt.Errorf("plugin: subcommand required (search | info | install | list)")
 	}
 	switch args[0] {
 	case "search":
 		return a.pluginSearch(ctx, args[1:])
+	case "info":
+		return a.pluginInfo(ctx, args[1:])
 	case "install":
 		return a.pluginInstall(ctx, args[1:])
+	case "list", "ls":
+		return a.pluginList(ctx, args[1:])
 	default:
-		return fmt.Errorf("plugin: unknown subcommand %q (try: search, install)", args[0])
+		return fmt.Errorf("plugin: unknown subcommand %q (try: search, info, install, list)", args[0])
 	}
 }
 
@@ -65,6 +70,123 @@ func (a *App) pluginSearch(ctx context.Context, args []string) error {
 	fmt.Fprintln(tw, "NAME\tLATEST\tCAPABILITIES\tDESCRIPTION")
 	for _, p := range matches {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Latest, strings.Join(p.Capabilities, ","), p.Description)
+	}
+	return tw.Flush()
+}
+
+// pluginInfo prints the full registry detail for one plugin — every published
+// version with its per-platform artifacts and pins, plus cosign material — so an
+// operator can inspect a plugin before installing it.
+func (a *App) pluginInfo(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("plugin info", flag.ContinueOnError)
+	fs.SetOutput(a.Out)
+	regURL := fs.String("registry", registry.URL(), "plugin registry index URL")
+	// Name is the first positional; flags follow it (stdlib flag stops at the
+	// first positional, so we split before parsing).
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return fmt.Errorf("plugin info: a plugin name is required as the first argument")
+	}
+	name := args[0]
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("plugin info: unexpected extra arguments: %v", fs.Args())
+	}
+	idx, err := registry.Fetch(ctx, a.httpClient(), *regURL)
+	if err != nil {
+		return fmt.Errorf("plugin info: %w", err)
+	}
+	p, ok := idx.Find(name)
+	if !ok {
+		return fmt.Errorf("plugin info: plugin %q not found in registry", name)
+	}
+	fmt.Fprintf(a.Out, "%s\n", p.Name)
+	if p.Description != "" {
+		fmt.Fprintf(a.Out, "  %s\n", p.Description)
+	}
+	if p.Homepage != "" {
+		fmt.Fprintf(a.Out, "  homepage:     %s\n", p.Homepage)
+	}
+	fmt.Fprintf(a.Out, "  capabilities: %s\n", strings.Join(p.Capabilities, ", "))
+	fmt.Fprintf(a.Out, "  latest:       %s\n", p.Latest)
+	for _, ver := range sortedVersions(p) {
+		fmt.Fprintf(a.Out, "\n  %s\n", ver)
+		v := p.Versions[ver]
+		if v.Cosign != nil {
+			fmt.Fprintf(a.Out, "    cosign: %s (%s)\n", v.Cosign.Identity, v.Cosign.Issuer)
+		}
+		tw := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
+		for _, art := range v.Artifacts {
+			fmt.Fprintf(tw, "    %s/%s\t%s\t%s\n", art.OS, art.Arch, art.SHA256, art.URL)
+		}
+		tw.Flush()
+	}
+	return nil
+}
+
+// sortedVersions returns a plugin's version keys with latest first, then the
+// rest in reverse lexical order (a stable, newest-ish-first ordering without a
+// semver dependency).
+func sortedVersions(p registry.Plugin) []string {
+	vers := make([]string, 0, len(p.Versions))
+	for v := range p.Versions {
+		if v != p.Latest {
+			vers = append(vers, v)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(vers)))
+	if _, ok := p.Versions[p.Latest]; ok {
+		return append([]string{p.Latest}, vers...)
+	}
+	return vers
+}
+
+// pluginList shows the plugins installed in the plugin directory with the
+// sha256 each one would pin to. Offline by default: it reads the filesystem, not
+// the registry, so it matches the pins `plugin install` printed.
+func (a *App) pluginList(_ context.Context, args []string) error {
+	fs := flag.NewFlagSet("plugin list", flag.ContinueOnError)
+	fs.SetOutput(a.Out)
+	dir := fs.String("dir", defaultPluginDir(), "plugin directory to list")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(*dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
+			return nil
+		}
+		return fmt.Errorf("plugin list: %w", err)
+	}
+	tw := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
+	var listed int
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		// Only regular, executable files are plugins; skip the rest.
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		sum, err := sha256File(filepath.Join(*dir, e.Name()))
+		if err != nil {
+			return fmt.Errorf("plugin list: %s: %w", e.Name(), err)
+		}
+		if listed == 0 {
+			fmt.Fprintln(tw, "NAME\tSIZE\tSHA256")
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%s\n", e.Name(), info.Size(), sum)
+		listed++
+	}
+	if listed == 0 {
+		fmt.Fprintf(a.Out, "no plugins installed in %s\n", *dir)
+		return nil
 	}
 	return tw.Flush()
 }

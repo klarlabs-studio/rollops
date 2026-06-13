@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Plugin Lifecycle Commands
+
+- `rollops plugin info <name>` — prints full registry detail for one plugin:
+  every published version with its per-platform artifacts and sha256 pins, plus
+  cosign identity when the release is signed. Inspect before installing.
+- `rollops plugin list` — lists installed plugins in the plugin directory with
+  the sha256 each pins to (offline; matches what `install` printed). Recovers a
+  pin for a spec without re-downloading. `--dir` overrides the directory.
+
 ## v0.8.0 - Plugin Marketplace
 
 - **Plugin marketplace.** A curated, version-controlled registry

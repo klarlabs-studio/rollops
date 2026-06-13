@@ -129,9 +129,20 @@ Search it and install by name:
 rollops plugin search                 # list every published plugin
 rollops plugin search flag            # match name, description, or capability
 
+rollops plugin info flagsmith         # every version, artifact, pin, cosign id
+
 rollops plugin install flagsmith                 # latest, current OS/arch
 rollops plugin install flagsmith --version v0.1.0 # pin a version
+
+rollops plugin list                   # installed plugins + their sha256 pins
 ```
+
+`plugin info <name>` prints the full registry detail for one plugin — each
+published version with its per-platform artifacts and sha256 pins, plus the
+cosign identity when the release is signed — so you can inspect before
+installing. `plugin list` is offline: it reads the install directory and
+re-derives the sha256 each binary pins to (the same value `install` printed),
+so you can recover a pin for a spec without re-downloading.
 
 Resolving a name picks the artifact for the running OS/arch, downloads it, and
 **enforces the index's sha256 pin** — a download whose hash differs from the
