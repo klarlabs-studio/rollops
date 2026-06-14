@@ -36,6 +36,15 @@ func BuildRouter(cfg *config.TrafficRouting) (Router, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("trafficrouting: nil config")
 	}
+	// Built-in providers need no plugin binary.
+	switch cfg.Provider {
+	case "":
+		// plugin mode — fall through
+	case "gateway":
+		return newGatewayRouter(cfg.Kubeconfig, cfg.Context), nil
+	default:
+		return nil, fmt.Errorf("trafficrouting: unknown provider %q", cfg.Provider)
+	}
 	real, err := filepath.EvalSymlinks(cfg.Plugin)
 	if err != nil {
 		return nil, fmt.Errorf("trafficrouting: resolve plugin: %w", err)
