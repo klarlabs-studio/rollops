@@ -175,6 +175,15 @@ func TestAPI_PromoteForbiddenForViewer(t *testing.T) {
 	}
 }
 
+func TestAPI_FreezeForbiddenForViewer(t *testing.T) {
+	// The freeze endpoint is gated by PermFreeze — a viewer (status-only) is denied
+	// before reaching the engine. Proves the route + authz are wired.
+	h := newServer(t)
+	if rr := do(h, "POST", "/v1/freeze", "tok-bot", `{"active":true,"reason":"x"}`); rr.Code != http.StatusForbidden {
+		t.Errorf("viewer freeze = %d, want 403", rr.Code)
+	}
+}
+
 func TestAPI_RollbackValidationAndRBAC(t *testing.T) {
 	h := newServer(t)
 	if rr := do(h, "POST", "/v1/rollback", "tok-felix", `{}`); rr.Code != http.StatusBadRequest {

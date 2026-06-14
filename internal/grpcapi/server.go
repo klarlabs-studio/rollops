@@ -201,6 +201,19 @@ func (s *Server) rolloutAction(ctx context.Context, id string, perm security.Per
 	return &rollopsv1.RolloutActionResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Note: rl.Note}, nil
 }
 
+// Freeze implements the Freeze RPC (emergency kill-switch).
+func (s *Server) Freeze(ctx context.Context, req *rollopsv1.FreezeRequest) (*rollopsv1.FreezeResponse, error) {
+	actor := identityFrom(ctx)
+	if err := s.policy.Authorize(actor, security.PermFreeze, security.Scope{}); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	active, reason, err := s.eng.Freeze(ctx, req.GetActive(), actor, req.GetReason())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &rollopsv1.FreezeResponse{Active: active, Reason: reason}, nil
+}
+
 func scopeOf(c *config.Config) security.Scope {
 	return security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref}
 }

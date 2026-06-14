@@ -182,6 +182,30 @@ func (t *Tools) Promote(ctx context.Context, in ActionInput) (ActionOutput, erro
 	})
 }
 
+// FreezeInput toggles the emergency kill-switch.
+type FreezeInput struct {
+	Active bool   `json:"active" jsonschema:"true engages the freeze (blocks all applies), false lifts it"`
+	Reason string `json:"reason,omitempty" jsonschema:"recorded when engaging"`
+}
+
+// FreezeOutput is the resulting freeze state.
+type FreezeOutput struct {
+	Active bool   `json:"active"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// Freeze implements rollouts.freeze.
+func (t *Tools) Freeze(ctx context.Context, in FreezeInput) (FreezeOutput, error) {
+	if err := t.policy.Authorize(t.identity, security.PermFreeze, security.Scope{}); err != nil {
+		return FreezeOutput{}, err
+	}
+	active, reason, err := t.eng.Freeze(ctx, in.Active, t.identity, in.Reason)
+	if err != nil {
+		return FreezeOutput{}, err
+	}
+	return FreezeOutput{Active: active, Reason: reason}, nil
+}
+
 // action is the shared approve/reject/promote flow: scope authorization to the
 // rollout's target, run the engine op, return its outcome.
 func (t *Tools) action(ctx context.Context, id string, perm security.Permission, op func(string) (rollout.Rollout, error)) (ActionOutput, error) {
@@ -219,5 +243,6 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
 	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
 	srv.Tool("rollouts.promote").Description("Promote a verified rollout to complete").Handler(t.Promote)
+	srv.Tool("rollouts.freeze").Description("Engage or lift the emergency freeze that blocks all applies").Handler(t.Freeze)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)
 }

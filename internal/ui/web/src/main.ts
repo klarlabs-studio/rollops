@@ -106,7 +106,7 @@ const NW = 210,
   GX = 78,
   GY = 20;
 
-const emptyDash: Dashboard = { counts: {}, drift: [], rollouts: [], canSync: false };
+const emptyDash: Dashboard = { counts: {}, drift: [], rollouts: [], canSync: false, frozen: false, freezeReason: '' };
 
 interface State {
   view: 'dashboard' | 'detail';
@@ -294,6 +294,11 @@ const App = defineComponent({
       // The server kicks off an async reconcile; burst-refresh so the UI visibly
       // moves through the resulting phase transitions instead of looking idle.
       void this.act('/ui/api/sync', {}, 'sync triggered').then(() => this.burst());
+    },
+    toggleFreeze(): void {
+      const active = !this.dash.frozen;
+      const reason = active ? (window.prompt('Freeze reason?') ?? '') : '';
+      void this.act('/ui/api/freeze', { active, reason }, active ? 'frozen' : 'unfrozen').then(() => this.burst());
     },
     // burst polls faster than the steady 4s loop for a short window, so an
     // action's effect (a new rollout progressing) shows up promptly.

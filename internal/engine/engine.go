@@ -990,6 +990,35 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout
 	return e.promoteWithNote(ctx, rolloutID, "")
 }
 
+// Freeze engages or lifts the emergency kill-switch: while engaged, every apply
+// is blocked by the guardrails. Returns the resulting state. The freeze is held
+// in-memory (it does not survive a daemon restart), audited on every toggle.
+func (e *Engine) Freeze(ctx context.Context, on bool, by rollout.Identity, reason string) (active bool, activeReason string, err error) {
+	if e.guardrails == nil || e.guardrails.Freeze == nil {
+		return false, "", fmt.Errorf("engine: freeze is not configured")
+	}
+	if on {
+		e.guardrails.Freeze.Engage(by, reason)
+	} else {
+		e.guardrails.Freeze.Lift(by)
+	}
+	active, activeReason = e.guardrails.Freeze.Active()
+	detail := "freeze lifted"
+	if active {
+		detail = "freeze engaged: " + activeReason
+	}
+	e.record(audit.Entry{Action: audit.ActionFreeze, Actor: by, Detail: detail})
+	return active, activeReason, nil
+}
+
+// FreezeStatus reports whether the emergency freeze is engaged and its reason.
+func (e *Engine) FreezeStatus() (active bool, reason string) {
+	if e.guardrails == nil || e.guardrails.Freeze == nil {
+		return false, ""
+	}
+	return e.guardrails.Freeze.Active()
+}
+
 func (e *Engine) promoteWithNote(ctx context.Context, rolloutID, note string) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {

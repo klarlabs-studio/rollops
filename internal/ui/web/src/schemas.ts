@@ -38,6 +38,8 @@ export const DashboardSchema = z.object({
   drift: list(DriftSchema),
   rollouts: list(RolloutSchema),
   canSync: z.boolean().nullish().transform((v) => v ?? false),
+  frozen: z.boolean().nullish().transform((v) => v ?? false),
+  freezeReason: z.string().nullish().transform((v) => v ?? ''),
 });
 
 export const ResourceSchema = z.object({

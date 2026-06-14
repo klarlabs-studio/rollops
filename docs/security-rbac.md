@@ -72,3 +72,17 @@ policy.Bind("agent:nomi", "agent-staging-api")
 That still does not bypass guardrails. The policy floor, emergency freeze,
 artifact verification, rate limits, audit attribution, and rollback checks remain
 inside the engine path.
+
+## Emergency freeze
+
+The kill-switch (blocks every apply) is toggled through any interface, gated by
+`rollouts.freeze`:
+
+- CLI: `rollops freeze [reason]` / `rollops unfreeze`
+- gRPC: `Freeze(active, reason)`; REST: `POST /v1/freeze {"active":true,"reason":"…"}`
+- MCP: `rollouts.freeze` tool; UI: the freeze toggle on the dashboard
+
+Each toggle is audited (`ActionFreeze`). The state is held in memory — it does
+**not** survive a daemon restart (re-engage after a restart if an incident is
+still open). While frozen, `Apply` returns `ErrFrozen`; promote/rollback are not
+blocked (recovery must stay possible).
