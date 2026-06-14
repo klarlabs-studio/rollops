@@ -141,7 +141,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy})
+	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy, "note": rl.Note})
 }
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {

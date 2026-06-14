@@ -63,6 +63,7 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	db := openTemp(t)
 	ctx := context.Background()
 	in := sampleRollout("r1", rollout.PhaseDeploying)
+	in.Note = "database rollback: succeeded"
 	if err := db.SaveRollout(ctx, in); err != nil {
 		t.Fatalf("SaveRollout: %v", err)
 	}
@@ -87,6 +88,9 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	}
 	if !got.CreatedAt.Equal(in.CreatedAt) {
 		t.Errorf("createdAt = %v want %v", got.CreatedAt, in.CreatedAt)
+	}
+	if got.Note != "database rollback: succeeded" {
+		t.Errorf("note = %q, want it persisted on the row", got.Note)
 	}
 }
 

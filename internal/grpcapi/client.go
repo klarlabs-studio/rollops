@@ -76,6 +76,7 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	return rollout.Rollout{
 		ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Strategy: rollout.Strategy(r.GetStrategy()),
 		StepIndex: int(r.GetStepIndex()), StepTotal: int(r.GetStepTotal()), StepWeight: int(r.GetStepWeight()),
+		Note: r.GetNote(),
 	}, nil
 }
 

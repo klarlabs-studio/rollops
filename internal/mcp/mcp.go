@@ -66,6 +66,7 @@ type StatusOutput struct {
 	RolloutID string `json:"rollout_id"`
 	Phase     string `json:"phase"`
 	Target    string `json:"target"`
+	Note      string `json:"note,omitempty"`
 }
 
 // RollbackInput is the input to rollouts.rollback.
@@ -128,7 +129,7 @@ func (t *Tools) Status(ctx context.Context, in StatusInput) (StatusOutput, error
 	if err != nil {
 		return StatusOutput{}, err
 	}
-	return StatusOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef}, nil
+	return StatusOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note}, nil
 }
 
 // Rollback implements rollouts.rollback.
