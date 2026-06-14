@@ -51,6 +51,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/plan", s.handlePlan)
 	mux.HandleFunc("POST /v1/apply", s.handleApply)
 	mux.HandleFunc("POST /v1/rollback", s.handleRollback)
+	mux.HandleFunc("POST /v1/approve", s.handleApprove)
+	mux.HandleFunc("POST /v1/reject", s.handleReject)
+	mux.HandleFunc("POST /v1/promote", s.handlePromote)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return s.authMiddleware(mux)
@@ -142,6 +145,52 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy, "note": rl.Note})
+}
+
+func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Approve(ctx, id, by)
+	})
+}
+
+func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Reject(ctx, id, by)
+	})
+}
+
+func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermPromote, func(ctx context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Promote(ctx, id)
+	})
+}
+
+// rolloutAction is the shared approve/reject/promote flow: decode {id}, scope
+// authorization to the rollout's target, run the engine op, return its outcome.
+func (s *Server) rolloutAction(w http.ResponseWriter, r *http.Request, perm security.Permission, op func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
+	actor := identityFrom(r)
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.ID == "" {
+		writeErr(w, http.StatusBadRequest, "id required")
+		return
+	}
+	cur, err := s.eng.Status(r.Context(), body.ID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := s.policy.Authorize(actor, perm, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	rl, err := op(r.Context(), body.ID, actor)
+	if err != nil {
+		writeErr(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "note": rl.Note})
 }
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {

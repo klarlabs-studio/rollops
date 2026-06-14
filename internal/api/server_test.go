@@ -77,7 +77,7 @@ func newServerWithAuthAndID(t *testing.T, idgen func() string, auth Authenticato
 
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "op", Grants: []security.Grant{
-		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus}, {Perm: security.PermRollback},
+		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus}, {Perm: security.PermRollback}, {Perm: security.PermPromote}, {Perm: security.PermApprove},
 	}})
 	pol.DefineRole(security.Role{Name: "viewer", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("human:felix", "op")
@@ -150,6 +150,28 @@ func TestAPI_RollbackAuthorized(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "rolled-back") || !strings.Contains(rr.Body.String(), "demo/prod/app") {
 		t.Errorf("rollback body = %s", rr.Body)
+	}
+}
+
+func TestAPI_PromoteAuthorized(t *testing.T) {
+	h := newServer(t)
+	if rr := do(h, "POST", "/v1/apply", "tok-felix", cfgYAML); rr.Code != http.StatusAccepted {
+		t.Fatalf("apply = %d: %s", rr.Code, rr.Body)
+	}
+	rr := do(h, "POST", "/v1/promote", "tok-felix", `{"id":"ro-api"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("promote = %d: %s", rr.Code, rr.Body)
+	}
+	if !strings.Contains(rr.Body.String(), "promoted") {
+		t.Errorf("promote body = %s", rr.Body)
+	}
+}
+
+func TestAPI_PromoteForbiddenForViewer(t *testing.T) {
+	h := newServer(t)
+	_ = do(h, "POST", "/v1/apply", "tok-felix", cfgYAML)
+	if rr := do(h, "POST", "/v1/promote", "tok-bot", `{"id":"ro-api"}`); rr.Code != http.StatusForbidden {
+		t.Errorf("viewer promote = %d, want 403", rr.Code)
 	}
 }
 

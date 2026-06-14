@@ -18,6 +18,12 @@ service RolloutService {
   rpc Status(StatusRequest) returns (StatusResponse);
   // Rollback rolls a target back to its previous desired state.
   rpc Rollback(RollbackRequest) returns (RollbackResponse);
+  // Approve approves a rollout awaiting approval (and deploys it).
+  rpc Approve(RolloutActionRequest) returns (RolloutActionResponse);
+  // Reject rejects a rollout awaiting approval.
+  rpc Reject(RolloutActionRequest) returns (RolloutActionResponse);
+  // Promote marks a verified rollout promoted.
+  rpc Promote(RolloutActionRequest) returns (RolloutActionResponse);
 }
 
 message PlanRequest {
@@ -71,4 +77,16 @@ message RollbackResponse {
   string id = 1;
   string phase = 2;
   string target = 3;
+}
+
+// RolloutActionRequest identifies a rollout by id for approve/reject/promote.
+message RolloutActionRequest {
+  string id = 1;
+}
+
+message RolloutActionResponse {
+  string id = 1;
+  string phase = 2;
+  string target = 3;
+  string note = 4;
 }

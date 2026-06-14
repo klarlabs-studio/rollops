@@ -44,7 +44,7 @@ type policyFile struct {
 
 var knownPerms = map[Permission]bool{
 	PermStatus: true, PermPlan: true, PermApply: true, PermApprove: true,
-	PermRollback: true, PermSchedule: true, PermFreeze: true,
+	PermPromote: true, PermRollback: true, PermSchedule: true, PermFreeze: true,
 }
 
 // LoadPolicyFile reads an RBAC policy file and applies it to p.

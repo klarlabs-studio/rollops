@@ -159,6 +159,48 @@ func (s *Server) Rollback(ctx context.Context, req *rollopsv1.RollbackRequest) (
 	return &rollopsv1.RollbackResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef}, nil
 }
 
+// Approve implements the Approve RPC.
+func (s *Server) Approve(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApprove, func(id rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Approve(ctx, req.GetId(), id)
+	})
+}
+
+// Reject implements the Reject RPC.
+func (s *Server) Reject(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApprove, func(id rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Reject(ctx, req.GetId(), id)
+	})
+}
+
+// Promote implements the Promote RPC.
+func (s *Server) Promote(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermPromote, func(rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Promote(ctx, req.GetId())
+	})
+}
+
+// rolloutAction is the shared approve/reject/promote flow: validate id, scope
+// authorization to the rollout's target, run the engine op, return its outcome.
+func (s *Server) rolloutAction(ctx context.Context, id string, perm security.Permission, op func(rollout.Identity) (rollout.Rollout, error)) (*rollopsv1.RolloutActionResponse, error) {
+	actor := identityFrom(ctx)
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "id required")
+	}
+	cur, err := s.eng.Status(ctx, id)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if err := s.policy.Authorize(actor, perm, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	rl, err := op(actor)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &rollopsv1.RolloutActionResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Note: rl.Note}, nil
+}
+
 func scopeOf(c *config.Config) security.Scope {
 	return security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref}
 }

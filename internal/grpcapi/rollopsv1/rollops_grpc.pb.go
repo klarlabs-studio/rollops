@@ -23,6 +23,9 @@ const (
 	RolloutService_Apply_FullMethodName    = "/rollops.v1.RolloutService/Apply"
 	RolloutService_Status_FullMethodName   = "/rollops.v1.RolloutService/Status"
 	RolloutService_Rollback_FullMethodName = "/rollops.v1.RolloutService/Rollback"
+	RolloutService_Approve_FullMethodName  = "/rollops.v1.RolloutService/Approve"
+	RolloutService_Reject_FullMethodName   = "/rollops.v1.RolloutService/Reject"
+	RolloutService_Promote_FullMethodName  = "/rollops.v1.RolloutService/Promote"
 )
 
 // RolloutServiceClient is the client API for RolloutService service.
@@ -43,6 +46,12 @@ type RolloutServiceClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	// Rollback rolls a target back to its previous desired state.
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	// Approve approves a rollout awaiting approval (and deploys it).
+	Approve(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Reject rejects a rollout awaiting approval.
+	Reject(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Promote marks a verified rollout promoted.
+	Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 }
 
 type rolloutServiceClient struct {
@@ -93,6 +102,36 @@ func (c *rolloutServiceClient) Rollback(ctx context.Context, in *RollbackRequest
 	return out, nil
 }
 
+func (c *rolloutServiceClient) Approve(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Approve_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rolloutServiceClient) Reject(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Reject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rolloutServiceClient) Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Promote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RolloutServiceServer is the server API for RolloutService service.
 // All implementations must embed UnimplementedRolloutServiceServer
 // for forward compatibility.
@@ -111,6 +150,12 @@ type RolloutServiceServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	// Rollback rolls a target back to its previous desired state.
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	// Approve approves a rollout awaiting approval (and deploys it).
+	Approve(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Reject rejects a rollout awaiting approval.
+	Reject(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Promote marks a verified rollout promoted.
+	Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	mustEmbedUnimplementedRolloutServiceServer()
 }
 
@@ -132,6 +177,15 @@ func (UnimplementedRolloutServiceServer) Status(context.Context, *StatusRequest)
 }
 func (UnimplementedRolloutServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
+}
+func (UnimplementedRolloutServiceServer) Approve(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Approve not implemented")
+}
+func (UnimplementedRolloutServiceServer) Reject(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Reject not implemented")
+}
+func (UnimplementedRolloutServiceServer) Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Promote not implemented")
 }
 func (UnimplementedRolloutServiceServer) mustEmbedUnimplementedRolloutServiceServer() {}
 func (UnimplementedRolloutServiceServer) testEmbeddedByValue()                        {}
@@ -226,6 +280,60 @@ func _RolloutService_Rollback_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RolloutService_Approve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Approve(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Approve_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Approve(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RolloutService_Reject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Reject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Reject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Reject(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RolloutService_Promote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Promote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Promote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Promote(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RolloutService_ServiceDesc is the grpc.ServiceDesc for RolloutService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -248,6 +356,18 @@ var RolloutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Rollback",
 			Handler:    _RolloutService_Rollback_Handler,
+		},
+		{
+			MethodName: "Approve",
+			Handler:    _RolloutService_Approve_Handler,
+		},
+		{
+			MethodName: "Reject",
+			Handler:    _RolloutService_Reject_Handler,
+		},
+		{
+			MethodName: "Promote",
+			Handler:    _RolloutService_Promote_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

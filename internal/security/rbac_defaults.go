@@ -18,6 +18,7 @@ func DefaultRBACPolicy() *Policy {
 		{Perm: PermPlan},
 		{Perm: PermApply},
 		{Perm: PermApprove},
+		{Perm: PermPromote},
 		{Perm: PermRollback},
 		{Perm: PermStatus},
 		{Perm: PermSchedule},

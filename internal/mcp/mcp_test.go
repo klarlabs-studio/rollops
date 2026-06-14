@@ -61,7 +61,7 @@ func newTools(t *testing.T, id rollout.Identity) *Tools {
 
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "agent", Grants: []security.Grant{
-		{Perm: security.PermPlan}, {Perm: security.PermApply, Scope: security.Scope{Env: ""}}, {Perm: security.PermRollback}, {Perm: security.PermStatus},
+		{Perm: security.PermPlan}, {Perm: security.PermApply, Scope: security.Scope{Env: ""}}, {Perm: security.PermRollback}, {Perm: security.PermPromote}, {Perm: security.PermApprove}, {Perm: security.PermStatus},
 	}})
 	pol.DefineRole(security.Role{Name: "readonly", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("agent:nomi", "agent")
@@ -93,6 +93,34 @@ func TestTools_PlanApplyStatus(t *testing.T) {
 	}
 	if s.Phase != "verifying" {
 		t.Errorf("status = %+v", s)
+	}
+}
+
+func TestTools_Promote(t *testing.T) {
+	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
+	ctx := context.Background()
+	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	out, err := tl.Promote(ctx, ActionInput{RolloutID: "ro-mcp-1"})
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if out.Phase != "promoted" {
+		t.Errorf("promote output = %+v", out)
+	}
+}
+
+func TestTools_PromoteDeniedForReadonly(t *testing.T) {
+	// Seed a rollout as nomi, then a readonly agent must not promote it.
+	nomi := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
+	if _, err := nomi.Apply(context.Background(), ApplyInput{Config: cfgYAML}); err != nil {
+		t.Fatal(err)
+	}
+	// Share the engine+policy by acting through the same Tools but a weak identity.
+	weak := &Tools{eng: nomi.eng, policy: nomi.policy, identity: rollout.Identity{Kind: "agent", Name: "weak"}}
+	if _, err := weak.Promote(context.Background(), ActionInput{RolloutID: "ro-mcp-1"}); err == nil {
+		t.Fatal("readonly agent must not promote")
 	}
 }
 
