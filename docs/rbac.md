@@ -7,7 +7,8 @@ is **deny-by-default**: an identity with no matching grant is forbidden.
 ## Model
 
 - **Permissions**: `rollouts.status`, `rollouts.plan`, `rollouts.apply`,
-  `rollouts.approve`, `rollouts.rollback`, `rollouts.schedule`, `rollouts.freeze`.
+  `rollouts.approve` (gates approve **and** reject), `rollouts.promote`,
+  `rollouts.rollback`, `rollouts.schedule`, `rollouts.freeze`.
 - **Scope**: `{env, targetRef}`. An empty field on a *grant* is a wildcard. The
   request scope is derived from the config: `env` from `spec.target.env`,
   `targetRef` from `spec.target.ref`.

@@ -80,9 +80,27 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	}, nil
 }
 
-// Promote is not yet exposed over gRPC; use the daemon UI or a local engine.
+// Promote marks a verified rollout promoted over gRPC.
 func (c *Client) Promote(ctx context.Context, id string) (rollout.Rollout, error) {
-	return rollout.Rollout{}, fmt.Errorf("promote is not available in daemon mode yet; use the UI or a one-shot engine")
+	return c.rolloutAction(ctx, c.rpc.Promote, id)
+}
+
+// Approve approves a rollout awaiting approval over gRPC.
+func (c *Client) Approve(ctx context.Context, id string) (rollout.Rollout, error) {
+	return c.rolloutAction(ctx, c.rpc.Approve, id)
+}
+
+// Reject rejects a rollout awaiting approval over gRPC.
+func (c *Client) Reject(ctx context.Context, id string) (rollout.Rollout, error) {
+	return c.rolloutAction(ctx, c.rpc.Reject, id)
+}
+
+func (c *Client) rolloutAction(ctx context.Context, rpc func(context.Context, *rollopsv1.RolloutActionRequest, ...grpc.CallOption) (*rollopsv1.RolloutActionResponse, error), id string) (rollout.Rollout, error) {
+	r, err := rpc(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	return rollout.Rollout{ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Note: r.GetNote()}, nil
 }
 
 // RollbackLast rolls a target back over gRPC. force overrides the

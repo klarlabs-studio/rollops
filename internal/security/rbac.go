@@ -21,7 +21,8 @@ const (
 	PermStatus   Permission = "rollouts.status"
 	PermPlan     Permission = "rollouts.plan"
 	PermApply    Permission = "rollouts.apply"
-	PermApprove  Permission = "rollouts.approve"
+	PermApprove  Permission = "rollouts.approve" // gates approve + reject (approval authority)
+	PermPromote  Permission = "rollouts.promote"
 	PermRollback Permission = "rollouts.rollback"
 	PermSchedule Permission = "rollouts.schedule"
 	PermFreeze   Permission = "rollouts.freeze"

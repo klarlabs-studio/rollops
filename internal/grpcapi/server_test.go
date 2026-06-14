@@ -72,7 +72,7 @@ func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceCl
 
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "op", Grants: []security.Grant{
-		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus}, {Perm: security.PermRollback},
+		{Perm: security.PermPlan}, {Perm: security.PermApply}, {Perm: security.PermStatus}, {Perm: security.PermRollback}, {Perm: security.PermPromote}, {Perm: security.PermApprove},
 	}})
 	pol.DefineRole(security.Role{Name: "viewer", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("human:felix", "op")
@@ -157,6 +157,34 @@ func TestGRPC_RollbackLast(t *testing.T) {
 	}
 	if rb.GetPhase() != "rolled-back" || rb.GetTarget() != "demo/prod/app" {
 		t.Errorf("rollback = %+v", rb)
+	}
+}
+
+func TestGRPC_Promote(t *testing.T) {
+	c := dialBuf(t)
+	ctx := withToken("t-felix")
+	if _, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfgYAML}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	pr, err := c.Promote(ctx, &rollopsv1.RolloutActionRequest{Id: "ro-grpc"})
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if pr.GetPhase() != "promoted" || pr.GetTarget() != "demo/prod/app" {
+		t.Errorf("promote = %+v", pr)
+	}
+}
+
+func TestGRPC_Approve_NotAwaiting(t *testing.T) {
+	// A verifying (not awaiting-approval) rollout can't be approved — proves the
+	// Approve RPC routes to the engine and surfaces the precondition error.
+	c := dialBuf(t)
+	ctx := withToken("t-felix")
+	if _, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfgYAML}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if _, err := c.Approve(ctx, &rollopsv1.RolloutActionRequest{Id: "ro-grpc"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("approve of non-awaiting rollout code = %v, want FailedPrecondition", status.Code(err))
 	}
 }
 

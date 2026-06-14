@@ -148,6 +148,57 @@ func (t *Tools) authz(perm security.Permission, c *config.Config) error {
 	return t.policy.Authorize(t.identity, perm, security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref})
 }
 
+// ActionInput identifies a rollout by id for approve/reject/promote.
+type ActionInput struct {
+	RolloutID string `json:"rollout_id" jsonschema:"the rollout id to act on"`
+}
+
+// ActionOutput is the result of approve/reject/promote.
+type ActionOutput struct {
+	RolloutID string `json:"rollout_id"`
+	Phase     string `json:"phase"`
+	Target    string `json:"target"`
+	Note      string `json:"note,omitempty"`
+}
+
+// Approve implements rollouts.approve.
+func (t *Tools) Approve(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermApprove, func(id string) (rollout.Rollout, error) {
+		return t.eng.Approve(ctx, id, t.identity)
+	})
+}
+
+// Reject implements rollouts.reject.
+func (t *Tools) Reject(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermApprove, func(id string) (rollout.Rollout, error) {
+		return t.eng.Reject(ctx, id, t.identity)
+	})
+}
+
+// Promote implements rollouts.promote.
+func (t *Tools) Promote(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermPromote, func(id string) (rollout.Rollout, error) {
+		return t.eng.Promote(ctx, id)
+	})
+}
+
+// action is the shared approve/reject/promote flow: scope authorization to the
+// rollout's target, run the engine op, return its outcome.
+func (t *Tools) action(ctx context.Context, id string, perm security.Permission, op func(string) (rollout.Rollout, error)) (ActionOutput, error) {
+	cur, err := t.eng.Status(ctx, id)
+	if err != nil {
+		return ActionOutput{}, err
+	}
+	if err := t.policy.Authorize(t.identity, perm, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return ActionOutput{}, err
+	}
+	r, err := op(id)
+	if err != nil {
+		return ActionOutput{}, err
+	}
+	return ActionOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note}, nil
+}
+
 // NewServer builds an MCP server with the rollout tools registered. Serve it via
 // mcp.ServeStdio / ServeHTTP (embedded in the daemon or standalone).
 func NewServer(t *Tools) *mcpserver.Server {
@@ -165,5 +216,8 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.plan").Description("Show what an apply would change for a rollout config").Handler(t.Plan)
 	srv.Tool("rollouts.apply").Description("Deploy desired state from a rollout config").Handler(t.Apply)
 	srv.Tool("rollouts.rollback").Description("Roll back a target to its previous desired state").Handler(t.Rollback)
+	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
+	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
+	srv.Tool("rollouts.promote").Description("Promote a verified rollout to complete").Handler(t.Promote)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)
 }
