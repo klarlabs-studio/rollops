@@ -81,6 +81,10 @@
           "enum": ["low", "medium", "high", "critical"],
           "description": "Operator-set blast-radius weight feeding the risk gate."
         },
+        "env": {
+          "type": "string",
+          "description": "Environment tag (e.g. dev | staging | prod) used for env-scoped RBAC grants."
+        },
         "spec": {
           "type": "object",
           "description": "Target-specific desired state; validated by the target plugin.",

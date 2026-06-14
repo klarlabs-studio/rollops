@@ -185,7 +185,7 @@ func decodeConfig(r *http.Request) (*config.Config, error) {
 }
 
 func scopeOf(c *config.Config) security.Scope {
-	return security.Scope{TargetRef: c.Spec.Target.Ref}
+	return security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

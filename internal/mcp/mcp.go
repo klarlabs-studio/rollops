@@ -144,7 +144,7 @@ func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput,
 }
 
 func (t *Tools) authz(perm security.Permission, c *config.Config) error {
-	return t.policy.Authorize(t.identity, perm, security.Scope{TargetRef: c.Spec.Target.Ref})
+	return t.policy.Authorize(t.identity, perm, security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref})
 }
 
 // NewServer builds an MCP server with the rollout tools registered. Serve it via
