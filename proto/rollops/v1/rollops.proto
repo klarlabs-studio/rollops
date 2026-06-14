@@ -56,6 +56,7 @@ message StatusResponse {
   int32 step_index = 5;
   int32 step_total = 6;
   int32 step_weight = 7;
+  string note = 8; // latest transition note (e.g. "database rollback: succeeded")
 }
 
 message RollbackRequest {

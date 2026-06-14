@@ -283,9 +283,10 @@ type StatusResponse struct {
 	// Progressive step progress: the last step that passed its health gate
 	// (1-based), the plan's total, and the current traffic weight. All zero
 	// when the strategy has not started stepping.
-	StepIndex     int32 `protobuf:"varint,5,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
-	StepTotal     int32 `protobuf:"varint,6,opt,name=step_total,json=stepTotal,proto3" json:"step_total,omitempty"`
-	StepWeight    int32 `protobuf:"varint,7,opt,name=step_weight,json=stepWeight,proto3" json:"step_weight,omitempty"`
+	StepIndex     int32  `protobuf:"varint,5,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
+	StepTotal     int32  `protobuf:"varint,6,opt,name=step_total,json=stepTotal,proto3" json:"step_total,omitempty"`
+	StepWeight    int32  `protobuf:"varint,7,opt,name=step_weight,json=stepWeight,proto3" json:"step_weight,omitempty"`
+	Note          string `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"` // latest transition note (e.g. "database rollback: succeeded")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -367,6 +368,13 @@ func (x *StatusResponse) GetStepWeight() int32 {
 		return x.StepWeight
 	}
 	return 0
+}
+
+func (x *StatusResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
 }
 
 type RollbackRequest struct {
@@ -503,7 +511,7 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\"\x1f\n" +
 	"\rStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xc9\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xdd\x01\n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
@@ -514,7 +522,8 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\n" +
 	"step_total\x18\x06 \x01(\x05R\tstepTotal\x12\x1f\n" +
 	"\vstep_weight\x18\a \x01(\x05R\n" +
-	"stepWeight\"?\n" +
+	"stepWeight\x12\x12\n" +
+	"\x04note\x18\b \x01(\tR\x04note\"?\n" +
 	"\x0fRollbackRequest\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"P\n" +

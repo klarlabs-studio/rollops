@@ -74,7 +74,7 @@ type Rollout struct {
 	Desired   target.Manifest // desired state pulled from Git
 	RiskScore float64         // decision-kit blast-radius score
 	Initiator Identity        // who/what started this (full attribution)
-	Note      string          // optional transition note, persisted only to history
+	Note      string          // latest transition note, persisted on the row + to history
 	// Progressive step progress, persisted per health-gated step so operator
 	// surfaces can show "canary 2/3 (50%)" while a rollout bakes. Zero values
 	// mean the strategy has not started stepping (or predates this field).

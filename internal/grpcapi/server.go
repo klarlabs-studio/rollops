@@ -138,6 +138,7 @@ func (s *Server) Status(ctx context.Context, req *rollopsv1.StatusRequest) (*rol
 	return &rollopsv1.StatusResponse{
 		Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy),
 		StepIndex: int32(rl.StepIndex), StepTotal: int32(rl.StepTotal), StepWeight: int32(rl.StepWeight),
+		Note: rl.Note,
 	}, nil
 }
 
