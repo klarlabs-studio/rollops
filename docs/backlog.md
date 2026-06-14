@@ -16,6 +16,31 @@
 
 ---
 
+## Plugin supply-chain & policy — later iteration
+
+Net-new hardening on top of what shipped (sha256 pin + cosign key-based
+signature verification + capability/risk/confirmation policy). Not gaps; deferred
+by choice.
+
+- **Keyless / Rekor signature verification.** Today only cosign *key-based* blob
+  signatures are verified (stdlib ECDSA/Ed25519/RSA, no sigstore dep). Add
+  keyless (Fulcio cert + Rekor transparency-log) verification so plugins signed
+  by an OIDC identity are trusted without a pre-shared public key. Cost: pulls in
+  the sigstore dependency tree — weigh against the single-static-binary story
+  (maybe behind a build tag or an optional verifier).
+
+- **Multi-key / per-publisher signing.** `ROLLOPS_PLUGIN_PUBLIC_KEY` is a single
+  trusted key for the whole fleet. Support a set of trusted keys (e.g. a keyring
+  dir, or per-plugin key in the marketplace registry) so plugins from different
+  publishers each verify against their own key.
+
+- **Per-tool invoke-time gating.** Per-tool risk is admission introspection only
+  (effective-risk at load time). A real invoke-time gate — block/confirm an
+  individual `invasive` or `needs_confirmation` tool call while letting passive
+  tools through — needs a confirmation flow that suits a headless daemon (e.g.
+  reuse the rollout approval mechanism). Deliberately not built: interactive
+  per-invoke confirmation doesn't fit the reconcile loop without that design.
+
 <!-- DONE: Per-repo least-privilege git auth (deploy keys / GitHub App) — shipped.
      git.Auth gained a TokenSource provider seam; git.GitHubApp mints short-lived,
      auto-rotating installation tokens (JWT → installation access token, cached +
