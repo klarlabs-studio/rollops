@@ -32,3 +32,19 @@
   and a `rollops doctor` notify probe that sends a test event per channel.
 - Default risk threshold + criticality weights — sensible defaults shipped, operator tunes via CEL.
 - Release polish priority: `doctor` command, install/systemd packaging, first-run docs/examples, RBAC docs/defaults, plugin adapter hardening, dashboard workflow refinement, release-check aggregation, version metadata, changelog, and Roady drift cleanup are done.
+
+## 2026-06-14 update
+
+### Resolved
+- **keel replacement** — DONE. 28 first-party deployments migrated to Rollops GitOps; keel ns deleted. Config-in-app-repo, image automation (semver+digest) live.
+- **ArgoCD/Flux/Rollouts parity** — traffic routing, pluggable metrics, OCI+bucket sources, CRD health, multi-cluster all shipped (v0.11–v0.13).
+- **Plugin marketplace** — search/info/install/list/update + 10 providers across 3 capabilities; flagconformance suite.
+- **In-cluster rollopsd** — containerized, deployed, running the fleet on v0.16.0.
+
+### [WAITING] operator
+- Revoke leaked PAT `ghp_76ied…`; recreate `rollopsd-git`/`rollopsd-registry` privately (`read -rs`). Cluster works on the (leaked) token until then.
+
+### [OPEN]
+- **roady #34** — per-repo deploy keys / GitHub App for least-privilege multi-org git auth (replaces the broad classic PAT).
+- Marketing sites (armada/brotwerk/kraftsport-coach/klarlabs) digest→semver: their CI now supports `site-v*`/`marketing-v*` tags; flip `.rollops` imagePolicy to minor after first semver release. Or stay continuous-deploy (digest).
+- hermes/mnemos config lives in klarlabs-studio/mnemos repo (done); shared-service config ownership pattern may need revisiting.

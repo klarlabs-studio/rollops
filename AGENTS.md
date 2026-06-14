@@ -37,8 +37,9 @@ to ArgoCD/Flux; no Kubernetes dependency; runs on a bare Hetzner VPS.
 - Re-introducing observability assumptions into v1 risk/rollback. Keep them out.
 - Treating the Store as desired-state truth. It is not — Git is. Losing the Store must never corrupt what should be deployed.
 - Target implementations that aren't idempotent or have unstable fingerprints → conformance suite must catch this.
-- Leaking secret material into plans, diffs, logs, or MCP responses.
-- Letting the daemon become a single point of failure — one-shot in-process path must stay behaviourally identical.
+- Leaking secret material into plans, diffs, logs, or MCP responses. (Incl. git tokens in command args/error messages — redact `http.extraheader`. And NEVER let a credential reach the agent session: create k8s secrets in your own terminal with `read -rs`; reference secrets by name only. Tokens pasted into a chat command land in the transcript = compromised.)
+- Letting the daemon become a single point of failure — one-shot in-process path must stay behaviourally identical. (Also: one unreachable watched repo must not crash the whole daemon — log and skip; one app's image-automation/scan failure must not block its reconcile.)
+- Multi-org git auth with a fine-grained PAT — it is single-owner + selected-repos and silently 403s on other orgs and private repos (symptom: only PUBLIC repos clone). Use a classic PAT (`repo` + `read:packages`). A "recreated" secret that's stale means `create` errored (needs `delete` first) — check `creationTimestamp`.
 
 ## Open Items (TDD §17)
 

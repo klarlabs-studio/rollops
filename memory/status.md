@@ -1,6 +1,32 @@
 # Status — Rollops
 
-*Updated: 2026-06-10*
+*Updated: 2026-06-14*
+
+## Current State
+
+Rollops is **released at v0.16.0** and **operating its creator's entire production
+cluster**: 28 first-party deployments under GitOps reconcile (config in each app's
+own `.rollops/` dir), registry-poll image automation (semver + digest), drift +
+health gates — one in-cluster `rollopsd` (ns `rollops-system`, image v0.16.0).
+keel is fully retired. Marketplace: 10 plugins across 3 capabilities
+(featureflag×7, trafficrouter, metricprovider). ArgoCD/Flux/Rollouts parity gaps
+closed (traffic routing, pluggable metrics, OCI+bucket sources, CRD health,
+multi-cluster). Commercial Studio (private) and the open-core boundary remain
+intact. ~8 live-dogfood bugs found+fixed this session.
+
+**Last Session Summary (2026-06-14):** Built plugin marketplace + 6 more providers
++ conformance; closed the ArgoCD-parity gaps as plugin capabilities; containerized
+rollopsd; dogfooded in-cluster; migrated the whole klarlabs cluster off keel onto
+Rollops (28 deployments); cut + released v0.16.0; moved the cluster to the official
+image. Found and fixed silent-watcher, image-auto-blocks-reconcile, one-bad-repo-
+crashes-daemon, token-in-logs, apply-not-self-healing bugs on live infra.
+
+**Next Session Should:** Confirm the operator revoked the leaked PAT (`ghp_76ied…`)
+and recreated `rollopsd-git`/`rollopsd-registry` privately (`read -rs`) — verify
+all 12 repos still clone (`kubectl -n rollops-system logs deploy/rollopsd | grep
+"watching\|skip repo"`). Then pick the next thrust: GitHub App / per-repo deploy
+keys for least-privilege multi-org auth (roady #34), or move the marketing sites
+digest→semver, or Studio billing.
 
 ## 🛠️ Distribution maturity (2026-06-11, unreleased, → v0.7.0)
 
