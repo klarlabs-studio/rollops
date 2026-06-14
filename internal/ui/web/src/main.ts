@@ -275,6 +275,9 @@ const App = defineComponent({
     reject(id: string): void {
       void this.act('/ui/api/reject', { id }, 'rejected').then(() => this.burst());
     },
+    promote(id: string): void {
+      void this.act('/ui/api/promote', { id }, 'promoted').then(() => this.burst());
+    },
     rollback(t: string): void {
       this.confirmTarget = t;
       this.confirmForce = false;

@@ -117,6 +117,7 @@ export const template = `
         <div class="actions">
           <button v-if="detail.awaiting" class="ok" :disabled="busy" @click="approve(detail.rollout.id)">Approve</button>
           <button v-if="detail.awaiting" class="bad" :disabled="busy" @click="reject(detail.rollout.id)">Reject</button>
+          <button v-if="detail.rollout.phase==='verifying'" class="ok" :disabled="busy" @click="promote(detail.rollout.id)">✓ Promote</button>
           <button class="bad" :disabled="busy" @click="rollback(ref)">↩ Rollback</button>
           <span class="vsplit"></span>
           <button :class="{active:mode==='graph'}" @click="mode='graph'" title="Tree view">⤳</button>

@@ -31,6 +31,7 @@ type Backend interface {
 	Resources(ctx context.Context, rolloutID string) ([]pt.Resource, error)
 	Approve(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
+	Promote(ctx context.Context, id string) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 }
 
@@ -71,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui/api/target", s.apiTarget)
 	mux.HandleFunc("POST /ui/api/approve", s.apiApprove)
 	mux.HandleFunc("POST /ui/api/reject", s.apiReject)
+	mux.HandleFunc("POST /ui/api/promote", s.apiPromote)
 	mux.HandleFunc("POST /ui/api/rollback", s.apiRollback)
 	mux.HandleFunc("POST /ui/api/sync", s.apiSync)
 	return securityHeaders(mux)
@@ -274,6 +276,23 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiApprove(w http.ResponseWriter, r *http.Request) { s.actByID(w, r, s.be.Approve) }
 func (s *Server) apiReject(w http.ResponseWriter, r *http.Request)  { s.actByID(w, r, s.be.Reject) }
+
+// apiPromote promotes a verified rollout. Promote takes no actor identity (it
+// completes an already-approved rollout), so it can't use actByID.
+func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		writeErr(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if _, err := s.be.Promote(r.Context(), body.ID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
 
 func (s *Server) actByID(w http.ResponseWriter, r *http.Request, fn func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
 	var body struct {

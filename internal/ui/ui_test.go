@@ -22,6 +22,7 @@ type fakeBackend struct {
 	resources        []pt.Resource
 	approved         string
 	rejected         string
+	promoted         string
 	rolledBackTarget string
 }
 
@@ -47,6 +48,10 @@ func (f *fakeBackend) Approve(_ context.Context, id string, _ rollout.Identity) 
 func (f *fakeBackend) Reject(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
 	f.rejected = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhaseRolledBack}, nil
+}
+func (f *fakeBackend) Promote(_ context.Context, id string) (rollout.Rollout, error) {
+	f.promoted = id
+	return rollout.Rollout{ID: id, Phase: rollout.PhasePromoted}, nil
 }
 
 func srv(be Backend, opts ...Option) http.Handler {
@@ -191,6 +196,9 @@ func TestAPI_Actions(t *testing.T) {
 	}
 	if rr := do(h, "POST", "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
 		t.Errorf("reject = %d rejected=%q", rr.Code, be.rejected)
+	}
+	if rr := do(h, "POST", "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
+		t.Errorf("promote = %d promoted=%q", rr.Code, be.promoted)
 	}
 	if rr := do(h, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
 		t.Errorf("rollback = %d target=%q", rr.Code, be.rolledBackTarget)
