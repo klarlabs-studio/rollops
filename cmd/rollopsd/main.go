@@ -98,6 +98,14 @@ func run(args []string) error {
 		auth[tok] = rollout.Identity{Kind: "human", Name: "admin"}
 	}
 	policy := security.DefaultRBACPolicy()
+	// Layer an operator-defined RBAC policy (custom roles + bindings) on top of
+	// the bootstrap defaults, so "group:backend may apply to staging" needs no
+	// recompile. A bad policy file is fatal — fail closed, not open.
+	if pf := os.Getenv("ROLLOPS_POLICY_FILE"); pf != "" {
+		if err := security.LoadPolicyFile(policy, pf); err != nil {
+			return err
+		}
+	}
 	var httpAuth api.Authenticator = auth
 	oidcAuth := buildOIDCAuth()
 	if oidcAuth != nil {

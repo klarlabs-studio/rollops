@@ -81,6 +81,9 @@ func NewPolicy() *Policy {
 // DefineRole registers a role.
 func (p *Policy) DefineRole(r Role) { p.roles[r.Name] = r }
 
+// hasRole reports whether a role is defined.
+func (p *Policy) hasRole(name string) bool { _, ok := p.roles[name]; return ok }
+
 // Bind grants roles to an identity key ("agent:nomi", "human:felix", "ci:*").
 func (p *Policy) Bind(identityKey string, roles ...string) {
 	p.bindings[identityKey] = append(p.bindings[identityKey], roles...)

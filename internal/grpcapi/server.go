@@ -159,5 +159,5 @@ func (s *Server) Rollback(ctx context.Context, req *rollopsv1.RollbackRequest) (
 }
 
 func scopeOf(c *config.Config) security.Scope {
-	return security.Scope{TargetRef: c.Spec.Target.Ref}
+	return security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref}
 }

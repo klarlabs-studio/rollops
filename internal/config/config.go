@@ -126,6 +126,7 @@ type Target struct {
 	Kind        string         `yaml:"kind" json:"kind"`               // ssh | ftp | kubernetes | <plugin>
 	Ref         string         `yaml:"ref" json:"ref"`                 // stable target identity
 	Criticality string         `yaml:"criticality" json:"criticality"` // low | medium | high | critical
+	Env         string         `yaml:"env,omitempty" json:"env,omitempty"` // dev | staging | prod — for env-scoped RBAC
 	Spec        map[string]any `yaml:"spec,omitempty" json:"spec,omitempty"`
 }
 
