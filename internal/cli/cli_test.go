@@ -74,7 +74,8 @@ func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App
 	}), engine.WithIDGen(idgen))
 
 	var buf bytes.Buffer
-	app := &App{Ops: eng, Out: &buf, Actor: rollout.Identity{Kind: "human", Name: "felix"}}
+	actor := rollout.Identity{Kind: "human", Name: "felix"}
+	app := &App{Ops: EngineOps{Engine: eng, Actor: actor}, Out: &buf, Actor: actor}
 
 	cfgPath := filepath.Join(t.TempDir(), "rollops.yaml")
 	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
@@ -135,6 +136,12 @@ func (statusNoteOps) Status(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{ID: "ro-cli", TargetRef: "demo/prod/app", Phase: rollout.PhaseRolledBack, Strategy: rollout.StrategyRolling}, nil
 }
 func (statusNoteOps) Promote(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Approve(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Reject(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
 func (statusNoteOps) RollbackLast(context.Context, string, bool) (rollout.Rollout, error) {

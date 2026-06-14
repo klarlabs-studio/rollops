@@ -27,7 +27,28 @@ type Operations interface {
 	Apply(ctx context.Context, req engine.ApplyRequest) (*rollout.Rollout, error)
 	Status(ctx context.Context, id string) (rollout.Rollout, error)
 	Promote(ctx context.Context, id string) (rollout.Rollout, error)
+	Approve(ctx context.Context, id string) (rollout.Rollout, error)
+	Reject(ctx context.Context, id string) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
+}
+
+// EngineOps adapts an in-process *engine.Engine to Operations, supplying the
+// local actor identity for approve/reject (which the engine attributes to the
+// approver). The gRPC client implements Operations directly (identity travels in
+// the bearer token), so daemon-mode needs no adapter.
+type EngineOps struct {
+	*engine.Engine
+	Actor rollout.Identity
+}
+
+// Approve approves a rollout, attributed to the local actor.
+func (o EngineOps) Approve(ctx context.Context, id string) (rollout.Rollout, error) {
+	return o.Engine.Approve(ctx, id, o.Actor)
+}
+
+// Reject rejects a rollout, attributed to the local actor.
+func (o EngineOps) Reject(ctx context.Context, id string) (rollout.Rollout, error) {
+	return o.Engine.Reject(ctx, id, o.Actor)
 }
 
 type historyOperations interface {
@@ -74,6 +95,10 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.status(ctx, rest)
 	case "promote":
 		return a.promote(ctx, rest)
+	case "approve":
+		return a.approve(ctx, rest)
+	case "reject":
+		return a.reject(ctx, rest)
 	case "rollback":
 		return a.rollback(ctx, rest)
 	case "doctor":
@@ -85,7 +110,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		return a.usage()
 	default:
-		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, rollback, doctor, plugin, version)", cmd)
+		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, approve, reject, rollback, doctor, plugin, version)", cmd)
 	}
 }
 
@@ -149,6 +174,30 @@ func (a *App) promote(ctx context.Context, args []string) error {
 		return fmt.Errorf("promote: rollout id required")
 	}
 	r, err := a.Ops.Promote(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	return nil
+}
+
+func (a *App) approve(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("approve: rollout id required")
+	}
+	r, err := a.Ops.Approve(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	return nil
+}
+
+func (a *App) reject(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("reject: rollout id required")
+	}
+	r, err := a.Ops.Reject(ctx, args[0])
 	if err != nil {
 		return err
 	}
@@ -235,7 +284,7 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 

@@ -72,7 +72,7 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
-	app.Ops = engine.New(db, target.Builtin())
+	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin()), Actor: app.Actor}
 	return app.Run(context.Background(), args)
 }
 
