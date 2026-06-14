@@ -11,8 +11,8 @@
      Serve/HandleTool, ServeTarget/ServeFlagProvider/ServeTrafficRouter/
      ServeMetricProvider); capabilities target/featureflag/trafficrouter/
      metricprovider; host safety-policy validation (internal/pluginhost/policy.go).
-     Residual (not built): needs_confirmation is declared + policy-admitted but not
-     enforced as an interactive gate at invoke time. -->
+     needs_confirmation is now a load-time gate: a plugin declaring it won't load
+     unless named in ROLLOPS_PLUGIN_CONFIRM (or "*"). -->
 
 ---
 

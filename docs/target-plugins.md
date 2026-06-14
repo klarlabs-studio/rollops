@@ -115,6 +115,23 @@ invoking any tool — by default network egress must be allow-listed and only up
 to `active` risk is admitted. For a custom capability, drop to `NewManifest` /
 `NewServer` / `Serve` directly.
 
+### needs_confirmation
+
+A plugin that declares `Safety{NeedsConfirmation: true}` will **not load** until
+the operator confirms it by name. Since a daemon can't prompt interactively,
+confirmation is an explicit, audited opt-in at load time via the
+`ROLLOPS_PLUGIN_CONFIRM` env var — a comma-separated list of plugin names, or
+`*` to confirm any:
+
+```bash
+ROLLOPS_PLUGIN_CONFIRM="acme/dangerous,acme/invasive"   # confirm specific plugins
+ROLLOPS_PLUGIN_CONFIRM="*"                               # confirm all (use sparingly)
+```
+
+An unconfirmed confirmation-requiring plugin is rejected before any tool runs,
+with an error naming the env var. Use this for plugins whose actions an operator
+should consciously accept (destructive targets, invasive risk class).
+
 ## The Marketplace
 
 The plugin marketplace is a curated, version-controlled index
