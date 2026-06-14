@@ -40,6 +40,50 @@ func TestPolicy_Validate(t *testing.T) {
 	}
 }
 
+func TestPolicy_NeedsConfirmation(t *testing.T) {
+	man := pub.Manifest{Name: "acme/dangerous", Safety: pub.Safety{NeedsConfirmation: true}}
+
+	// Not confirmed → rejected, even though AllowConfirmation is true by default.
+	p := DefaultPolicy()
+	p.ConfirmedPlugins = nil
+	if err := p.Validate(man); err == nil {
+		t.Error("unconfirmed needs_confirmation plugin must be rejected")
+	}
+	// Confirmed by name → ok.
+	p.ConfirmedPlugins = []string{"acme/dangerous"}
+	if err := p.Validate(man); err != nil {
+		t.Errorf("confirmed plugin → ok, got %v", err)
+	}
+	// Wildcard confirms any.
+	p.ConfirmedPlugins = []string{"*"}
+	if err := p.Validate(man); err != nil {
+		t.Errorf("wildcard confirm → ok, got %v", err)
+	}
+	// Master switch off → rejected regardless of confirmation list.
+	p.AllowConfirmation = false
+	if err := p.Validate(man); err == nil {
+		t.Error("AllowConfirmation=false must reject needs_confirmation plugin")
+	}
+	// A plugin that does not need confirmation is unaffected.
+	p = DefaultPolicy()
+	p.ConfirmedPlugins = nil
+	if err := p.Validate(pub.Manifest{Name: "plain"}); err != nil {
+		t.Errorf("non-confirmation plugin → ok, got %v", err)
+	}
+}
+
+func TestDefaultPolicy_ConfirmFromEnv(t *testing.T) {
+	t.Setenv(ConfirmEnv, " a/b , c/d ")
+	got := DefaultPolicy().ConfirmedPlugins
+	if len(got) != 2 || got[0] != "a/b" || got[1] != "c/d" {
+		t.Fatalf("ConfirmedPlugins from env = %v, want [a/b c/d]", got)
+	}
+	t.Setenv(ConfirmEnv, "")
+	if got := DefaultPolicy().ConfirmedPlugins; len(got) != 0 {
+		t.Fatalf("empty env → no confirmed plugins, got %v", got)
+	}
+}
+
 func TestHasCapability(t *testing.T) {
 	m := pub.Manifest{Capabilities: []pub.Capability{{Name: pub.CapabilityTarget}}}
 	if !HasCapability(m, pub.CapabilityTarget) {
