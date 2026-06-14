@@ -123,6 +123,7 @@ interface State {
   toastErr: boolean;
   busy: boolean;
   confirmTarget: string; // rollback confirmation modal ('' = closed)
+  confirmForce: boolean; // force rollback past the backward-compatibility gate
   failures: number; // consecutive refresh failures → stale banner
   authFailed: boolean; // last refresh got 401/403 → unauthorized banner
   loadedOnce: boolean; // any successful load yet — picks the stale message
@@ -153,6 +154,7 @@ const App = defineComponent({
       toastErr: false,
       busy: false,
       confirmTarget: '',
+      confirmForce: false,
       failures: 0,
       authFailed: false,
       loadedOnce: false,
@@ -250,7 +252,7 @@ const App = defineComponent({
         this.toast = '';
       }, 3200);
     },
-    async act(u: string, body: Record<string, string>, label: string): Promise<void> {
+    async act(u: string, body: Record<string, string | boolean>, label: string): Promise<void> {
       this.busy = true;
       try {
         const r = await fetch(u, {
@@ -275,12 +277,15 @@ const App = defineComponent({
     },
     rollback(t: string): void {
       this.confirmTarget = t;
+      this.confirmForce = false;
     },
     confirmRollback(): void {
       const t = this.confirmTarget;
+      const force = this.confirmForce;
       this.confirmTarget = '';
+      this.confirmForce = false;
       if (t)
-        void this.act('/ui/api/rollback', { target: t }, 'rollback started').then(() => this.burst());
+        void this.act('/ui/api/rollback', { target: t, force }, 'rollback started').then(() => this.burst());
     },
     sync(): void {
       // The server kicks off an async reconcile; burst-refresh so the UI visibly

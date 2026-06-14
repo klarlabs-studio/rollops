@@ -237,6 +237,7 @@ export const template = `
     <div class="modal" role="dialog" aria-modal="true" aria-label="Confirm rollback">
       <h3>Roll back {{ confirmTarget }}?</h3>
       <p>The target returns to its previous desired state. The change is recorded in history and audit.</p>
+      <label class="force-opt"><input type="checkbox" v-model="confirmForce" /> Force — override the backward-compatibility gate (release ran a non-backwardCompatible migration with no reverse command)</label>
       <div class="modal-actions">
         <button @click="confirmTarget=''">Cancel</button>
         <button class="bad" :disabled="busy" @click="confirmRollback">↩ Roll back</button>
