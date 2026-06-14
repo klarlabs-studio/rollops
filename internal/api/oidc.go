@@ -1,11 +1,18 @@
 package api
 
 import (
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/hmac"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"hash"
+	"math/big"
 	"strings"
 	"time"
 
@@ -28,14 +35,15 @@ func (c ChainAuth) Identify(token string) (rollout.Identity, bool) {
 type OIDCConfig struct {
 	Issuer     string
 	Audience   string
-	HMACSecret string
+	HMACSecret string    // HS256 (shared-secret) verification
+	Keys       KeySource // RS*/ES* verification against the IdP's published JWKS
 	Now        func() time.Time
 }
 
-// OIDCAuth validates a compact HS256 JWT and maps claims to a Rollops identity.
-// It is intentionally small and strict; production deployments can put a full
-// OIDC proxy/JWKS verifier in front and still feed bearer identities through the
-// same Authenticator boundary.
+// OIDCAuth validates a compact JWT and maps claims to a Rollops identity. It
+// verifies HS256 with a shared secret, or RS256/384/512 and ES256/384/512
+// against an IdP's JWKS (set Config.Keys) — so a real OIDC provider's
+// asymmetric, rotating keys work without a shared secret or external proxy.
 type OIDCAuth struct {
 	Config OIDCConfig
 }
@@ -55,6 +63,7 @@ func (a OIDCAuth) Identify(token string) (rollout.Identity, bool) {
 type oidcHeader struct {
 	Alg string `json:"alg"`
 	Typ string `json:"typ"`
+	Kid string `json:"kid"`
 }
 
 type oidcClaims struct {
@@ -80,11 +89,8 @@ func (a OIDCAuth) claims(token string) (oidcClaims, error) {
 	if err := decodeJWT(parts[0], &h); err != nil {
 		return oidcClaims{}, err
 	}
-	if h.Alg != "HS256" {
-		return oidcClaims{}, errors.New("oidc: unsupported alg")
-	}
-	if !validHMAC(parts[0]+"."+parts[1], parts[2], cfg.HMACSecret) {
-		return oidcClaims{}, errors.New("oidc: invalid signature")
+	if err := verifySignature(h, parts[0]+"."+parts[1], parts[2], cfg); err != nil {
+		return oidcClaims{}, err
 	}
 	var c oidcClaims
 	if err := decodeJWT(parts[1], &c); err != nil {
@@ -100,6 +106,80 @@ func (a OIDCAuth) claims(token string) (oidcClaims, error) {
 		return oidcClaims{}, errors.New("oidc: token expired")
 	}
 	return c, nil
+}
+
+// verifySignature checks the JWT signature per its alg: HS256 against the shared
+// secret, RS*/ES* against the JWKS key for the token's kid.
+func verifySignature(h oidcHeader, signingInput, sig string, cfg OIDCConfig) error {
+	switch h.Alg {
+	case "HS256":
+		if !validHMAC(signingInput, sig, cfg.HMACSecret) {
+			return errors.New("oidc: invalid HS256 signature")
+		}
+		return nil
+	case "RS256", "RS384", "RS512", "ES256", "ES384", "ES512":
+		if cfg.Keys == nil {
+			return fmt.Errorf("oidc: alg %s requires a JWKS key source", h.Alg)
+		}
+		key, err := cfg.Keys.Key(h.Kid)
+		if err != nil {
+			return err
+		}
+		return verifyAsymmetric(h.Alg, signingInput, sig, key)
+	default:
+		return errors.New("oidc: unsupported alg " + h.Alg)
+	}
+}
+
+func verifyAsymmetric(alg, signingInput, sigB64 string, key crypto.PublicKey) error {
+	sig, err := base64.RawURLEncoding.DecodeString(sigB64)
+	if err != nil {
+		return fmt.Errorf("oidc: decode signature: %w", err)
+	}
+	h, cryptoHash := hashFor(alg)
+	h.Write([]byte(signingInput))
+	digest := h.Sum(nil)
+
+	switch alg[:2] {
+	case "RS":
+		pub, ok := key.(*rsa.PublicKey)
+		if !ok {
+			return fmt.Errorf("oidc: %s token but key is %T", alg, key)
+		}
+		if err := rsa.VerifyPKCS1v15(pub, cryptoHash, digest, sig); err != nil {
+			return fmt.Errorf("oidc: %s verification failed: %w", alg, err)
+		}
+		return nil
+	case "ES":
+		pub, ok := key.(*ecdsa.PublicKey)
+		if !ok {
+			return fmt.Errorf("oidc: %s token but key is %T", alg, key)
+		}
+		// JWS ECDSA signatures are fixed-length r||s, not ASN.1 DER.
+		n := (pub.Curve.Params().BitSize + 7) / 8
+		if len(sig) != 2*n {
+			return fmt.Errorf("oidc: %s signature length %d, want %d", alg, len(sig), 2*n)
+		}
+		r := new(big.Int).SetBytes(sig[:n])
+		s := new(big.Int).SetBytes(sig[n:])
+		if !ecdsa.Verify(pub, digest, r, s) {
+			return fmt.Errorf("oidc: %s verification failed", alg)
+		}
+		return nil
+	default:
+		return errors.New("oidc: unsupported alg " + alg)
+	}
+}
+
+func hashFor(alg string) (hash.Hash, crypto.Hash) {
+	switch alg[2:] {
+	case "384":
+		return sha512.New384(), crypto.SHA384
+	case "512":
+		return sha512.New(), crypto.SHA512
+	default: // 256
+		return sha256.New(), crypto.SHA256
+	}
 }
 
 func decodeJWT(part string, out any) error {
