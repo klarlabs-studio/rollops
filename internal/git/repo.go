@@ -11,13 +11,31 @@ import (
 	"strings"
 )
 
+// TokenProvider resolves an https token at command time. It lets short-lived,
+// auto-rotating credentials (GitHub App installation tokens) be minted and
+// refreshed on demand instead of pinned at startup. Implementations must be
+// safe for concurrent use and cache until near expiry.
+type TokenProvider func(ctx context.Context) (string, error)
+
 // Auth carries per-repo credentials. Tokens/keys come from the SecretProvider
 // at execution time, never stored locally by Rollops.
 type Auth struct {
 	// DeployKeyPath is an SSH private key path for git+ssh remotes.
 	DeployKeyPath string
-	// Token is a GitHub App installation / PAT token for https remotes.
+	// Token is a static GitHub App installation / PAT token for https remotes.
 	Token string
+	// TokenSource, when set, resolves the https token per git command and takes
+	// precedence over Token — the seam for short-lived, rotating credentials.
+	TokenSource TokenProvider
+}
+
+// token resolves the https token for one command: the dynamic source when set,
+// else the static token.
+func (a Auth) token(ctx context.Context) (string, error) {
+	if a.TokenSource != nil {
+		return a.TokenSource(ctx)
+	}
+	return a.Token, nil
 }
 
 // Source is a checked-out working tree for one repo at one branch.
@@ -117,8 +135,13 @@ func (s *Source) Push(ctx context.Context) error {
 func (s *Source) git(ctx context.Context, workdir string, args ...string) (string, error) {
 	// An https token is passed as a per-command Authorization header so it is
 	// never written to disk (no credential helper, no token in the remote URL).
-	if s.auth.Token != "" {
-		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + s.auth.Token))
+	// Resolve it per command so a rotating provider mints/refreshes on demand.
+	token, err := s.auth.token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("git: resolve token: %w", err)
+	}
+	if token != "" {
+		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
 		args = append([]string{"-c", "http.extraheader=Authorization: Basic " + basic}, args...)
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
