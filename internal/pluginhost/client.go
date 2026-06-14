@@ -23,7 +23,7 @@ func (c *Client) Manifest(ctx context.Context) (pub.Manifest, error) {
 	for _, c := range resp.GetCapabilities() {
 		cap := pub.Capability{Name: c.GetName(), Description: c.GetDescription()}
 		for _, t := range c.GetTools() {
-			cap.Tools = append(cap.Tools, pub.Tool{Name: t.GetName(), Description: t.GetDescription(), Mutating: t.GetMutating()})
+			cap.Tools = append(cap.Tools, pub.Tool{Name: t.GetName(), Description: t.GetDescription(), Mutating: t.GetMutating(), RiskClass: pub.RiskClass(t.GetRiskClass())})
 		}
 		m.Capabilities = append(m.Capabilities, cap)
 	}

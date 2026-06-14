@@ -43,7 +43,8 @@ message Capability {
 message ToolDef {
   string name = 1;
   string description = 2;
-  bool mutating = 3; // changes external state (vs a read-only probe)
+  bool mutating = 3;     // changes external state (vs a read-only probe)
+  string risk_class = 4; // optional per-tool risk: passive | active | invasive
 }
 
 // SafetyRequirements declares the scopes a plugin needs. The host rejects a

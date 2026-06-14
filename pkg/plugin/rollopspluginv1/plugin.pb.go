@@ -208,7 +208,8 @@ type ToolDef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	Mutating      bool                   `protobuf:"varint,3,opt,name=mutating,proto3" json:"mutating,omitempty"` // changes external state (vs a read-only probe)
+	Mutating      bool                   `protobuf:"varint,3,opt,name=mutating,proto3" json:"mutating,omitempty"`                   // changes external state (vs a read-only probe)
+	RiskClass     string                 `protobuf:"bytes,4,opt,name=risk_class,json=riskClass,proto3" json:"risk_class,omitempty"` // optional per-tool risk: passive | active | invasive
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -262,6 +263,13 @@ func (x *ToolDef) GetMutating() bool {
 		return x.Mutating
 	}
 	return false
+}
+
+func (x *ToolDef) GetRiskClass() string {
+	if x != nil {
+		return x.RiskClass
+	}
+	return ""
 }
 
 // SafetyRequirements declares the scopes a plugin needs. The host rejects a
@@ -465,11 +473,13 @@ const file_rollops_plugin_v1_plugin_proto_rawDesc = "" +
 	"Capability\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x120\n" +
-	"\x05tools\x18\x03 \x03(\v2\x1a.rollops.plugin.v1.ToolDefR\x05tools\"[\n" +
+	"\x05tools\x18\x03 \x03(\v2\x1a.rollops.plugin.v1.ToolDefR\x05tools\"z\n" +
 	"\aToolDef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
-	"\bmutating\x18\x03 \x01(\bR\bmutating\"\xc1\x01\n" +
+	"\bmutating\x18\x03 \x01(\bR\bmutating\x12\x1d\n" +
+	"\n" +
+	"risk_class\x18\x04 \x01(\tR\triskClass\"\xc1\x01\n" +
 	"\x12SafetyRequirements\x12#\n" +
 	"\rnetwork_hosts\x18\x01 \x03(\tR\fnetworkHosts\x12\x1d\n" +
 	"\n" +

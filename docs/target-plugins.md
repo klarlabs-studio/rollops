@@ -115,6 +115,13 @@ invoking any tool — by default network egress must be allow-listed and only up
 to `active` risk is admitted. For a custom capability, drop to `NewManifest` /
 `NewServer` / `Serve` directly.
 
+A tool may also carry its own risk class via `ToolRisk(name, desc, mutating,
+risk)`. When the plugin-wide `Safety.RiskClass` is unset, the host admits the
+plugin against the **highest per-tool risk** — so marking one tool `invasive`
+is enough to be caught by the policy even if the plugin-wide class was omitted.
+Note this is admission introspection, not a sandbox: the process has whatever
+authority the OS grants it regardless of which tool runs.
+
 ### needs_confirmation
 
 A plugin that declares `Safety{NeedsConfirmation: true}` will **not load** until
