@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.17.0 - Enterprise Hardening: DB Lifecycle, RBAC, SSO, Supply Chain, Gateway Routing
+
+Hardening surfaced by dogfooding the keel→Rollops fleet cutover and by closing
+the remaining gaps against ArgoCD/Flux/Argo Rollouts. All changes are additive
+and backward-compatible.
+
+- **Database lifecycle.** A `spec.database` block makes schema changes a
+  first-class part of the rollout (Flagger does this via DIY webhooks; Rollops
+  makes it config):
+  - `migrate` runs a forward migration at deploy time (`when: pre-deploy`,
+    default) or after promotion (`when: post-promote` — contract / backfill); a
+    failed pre-deploy migration aborts the deploy.
+  - `rollback` (supersedes the deprecated `spec.rollback.database`, still
+    honoured) now runs on **every** rollback path — manual and agent, not only
+    auto — via a command persisted on the rollout.
+  - `backwardCompatible` gates rollback: a release that ran a
+    non-backward-compatible migration with no reverse command is **blocked**
+    unless forced (`rollback --force`, `force: true`); auto-rollback bypasses.
+  - `rollops plan` previews the pending migration.
+- **Image automation.** Digest-pinned `image` refs under a semver policy are
+  migrated once to the matching semver tag (reverse digest→tag lookup), so semver
+  automation can take over.
+- **Per-repo least-privilege git auth.** GitHub App installation tokens —
+  short-lived, auto-rotating, per-installation (multi-org) — minted from an app
+  key (`githubAppId`/`githubInstallationId`/`githubAppPrivateKeyFile` in
+  `watch.json`). Replaces sharing a broad PAT across repos.
+- **RBAC, configurable.** `ROLLOPS_POLICY_FILE` defines custom roles + bindings
+  (incl. `group:` from OIDC) without recompiling; env-scoped grants now work via
+  `spec.target.env`; **SIGHUP hot-reloads** the policy (atomic swap, bad file
+  kept-current).
+- **SSO depth.** OIDC now verifies RS256/384/512 and ES256/384/512 against the
+  IdP's **JWKS** (cached, key-rotation aware) with optional OIDC discovery —
+  no shared secret or external proxy needed. HS256 still supported.
+- **Plugin supply chain.** Optional **cosign** signature verification
+  (`ROLLOPS_PLUGIN_PUBLIC_KEY`, stdlib ECDSA/Ed25519/RSA) on top of the sha256
+  pin; `needs_confirmation` is now a load-time gate (`ROLLOPS_PLUGIN_CONFIRM`);
+  per-tool risk class feeds effective-risk policy admission.
+- **Built-in Gateway API traffic router.** `trafficRouting.provider: gateway`
+  shifts canary weight by patching an `HTTPRoute`'s `backendRefs` — progressive
+  delivery with no plugin to install. Plugin routers remain for other meshes.
+
+Note: a plugin declaring `needs_confirmation` will not load unless named in
+`ROLLOPS_PLUGIN_CONFIRM` (or `*`). No shipped plugin declares it.
+
+See also `docs/design/multi-cluster-scale.md` — a draft RFC scoping
+ApplicationSet-style multi-cluster fan-out (not yet implemented).
+
 ## v0.16.0 - Fleet GitOps: Many-App Reconcile, Private Repos, Image Automation
 
 Everything needed to run a whole cluster's rollouts from Git — a keel
