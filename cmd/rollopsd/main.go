@@ -246,6 +246,12 @@ func loadWatchSpecs(path string) ([]reconcile.RepoSpec, error) {
 		Token         string `json:"token"`
 		TokenFile     string `json:"tokenFile"`
 		DeployKeyPath string `json:"deployKeyPath"`
+		// GitHub App: mint short-lived, auto-rotating per-installation tokens
+		// instead of a long-lived PAT. All three are required together and take
+		// precedence over Token/TokenFile.
+		GitHubAppID             string `json:"githubAppId"`
+		GitHubInstallationID    string `json:"githubInstallationId"`
+		GitHubAppPrivateKeyFile string `json:"githubAppPrivateKeyFile"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse watch config: %w", err)
@@ -259,6 +265,20 @@ func loadWatchSpecs(path string) ([]reconcile.RepoSpec, error) {
 				return nil, fmt.Errorf("watch repo %q: read tokenFile: %w", r.Name, err)
 			}
 			auth.Token = strings.TrimSpace(string(b))
+		}
+		if r.GitHubAppID != "" || r.GitHubInstallationID != "" || r.GitHubAppPrivateKeyFile != "" {
+			if r.GitHubAppID == "" || r.GitHubInstallationID == "" || r.GitHubAppPrivateKeyFile == "" {
+				return nil, fmt.Errorf("watch repo %q: githubAppId, githubInstallationId, and githubAppPrivateKeyFile are required together", r.Name)
+			}
+			pem, err := os.ReadFile(r.GitHubAppPrivateKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("watch repo %q: read githubAppPrivateKeyFile: %w", r.Name, err)
+			}
+			app, err := git.NewGitHubApp(r.GitHubAppID, r.GitHubInstallationID, pem)
+			if err != nil {
+				return nil, fmt.Errorf("watch repo %q: github app: %w", r.Name, err)
+			}
+			auth.TokenSource = app.Token
 		}
 		specs = append(specs, reconcile.RepoSpec{
 			Name:      r.Name,

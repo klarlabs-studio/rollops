@@ -62,7 +62,15 @@ data:
   # Repos rollopsd reconciles. Best practice: each app's Rollops config lives in
   # that app's own repo under `.rollops/` (config beside code, one PR per change,
   # image-automation bumps push back there). `path` is the directory; a directory
-  # loads every *.yaml. Private repos use `tokenFile` (mounted Secret).
+  # loads every *.yaml.
+  #
+  # Per-repo least-privilege auth, in order of preference:
+  #   - githubApp* : mint short-lived, auto-rotating installation tokens scoped
+  #     to that installation's repos (works across orgs + personal accounts via
+  #     separate installations). Best for a daemon that writes bumps to many repos.
+  #   - deployKeyPath : per-repo SSH key (git+ssh url), naturally single-repo.
+  #   - tokenFile / token : a (broad) PAT. Simplest, least scoped — avoid sharing
+  #     one across repos/orgs.
   watch.json: |
     [
       {
@@ -70,7 +78,9 @@ data:
         "url": "https://github.com/klarlabs-studio/armada",
         "branch": "main",
         "path": ".rollops",
-        "tokenFile": "/etc/rollops/git/token"
+        "githubAppId": "123456",
+        "githubInstallationId": "78901234",
+        "githubAppPrivateKeyFile": "/etc/rollops/git/armada-app.pem"
       },
       {
         "name": "vorhut",
@@ -135,7 +145,8 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /var/lib/rollops }
             - { name: watch, mountPath: /etc/rollops, readOnly: true }
-            # Git token for private config repos (tokenFile in watch.json).
+            # Git credentials for private config repos: GitHub App private key(s),
+            # deploy keys, and/or a token — referenced by path in watch.json.
             - { name: git, mountPath: /etc/rollops/git, readOnly: true }
           readinessProbe:
             httpGet: { path: /readyz, port: http }

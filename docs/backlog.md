@@ -11,8 +11,11 @@ Replace the typed TargetPlugin gRPC service with a single generic Plugin service
 
 ---
 
-## Per-repo least-privilege git auth (deploy keys / GitHub App) for the reconcile watch
-
-Replace the single broad classic PAT (currently used for ROLLOPS_WATCH across klarlabs-studio + felixgeelhaar repos) with least-privilege, per-repo credentials. Two viable designs: (a) per-repo SSH deploy keys — the watch already supports `deployKeyPath`, so wire one key per repo (mount a Secret per repo, switch URLs to git+ssh, read+write scoped to that single repo); naturally multi-org. (b) GitHub App installation tokens — install the App on the org + personal account, mint short-lived per-installation tokens (least privilege, auto-rotating, multi-owner); the git layer's Auth would gain an App-token provider and the watch config a per-repo/app reference. Motivation: a fine-grained PAT is scoped to ONE owner (can't span klarlabs-studio + felixgeelhaar), and a classic PAT is broad (all the operator's repos) — both poor for a daemon that writes image-automation bumps back to many repos across orgs. Acceptance: each watched repo authenticates with a credential scoped to just that repo; no single token grants access beyond what a repo needs; tokens never written to disk or logs (redaction already shipped); rotation is per-repo. Surfaced while dogfooding the keel→Rollops fleet cutover (a broad PAT leaked into pod logs on a clone crash; fine-grained PAT 403'd on cross-org repos).
+<!-- DONE: Per-repo least-privilege git auth (deploy keys / GitHub App) — shipped.
+     git.Auth gained a TokenSource provider seam; git.GitHubApp mints short-lived,
+     auto-rotating installation tokens (JWT → installation access token, cached +
+     refreshed). watch.json gains githubAppId/githubInstallationId/
+     githubAppPrivateKeyFile per repo; deploy keys + PAT still supported. See
+     docs/git-auth.md. -->
 
 ---
