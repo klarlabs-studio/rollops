@@ -55,7 +55,7 @@ func manifestToProto(m Manifest) *rollopspluginv1.GetManifestResponse {
 	for _, c := range m.Capabilities {
 		tools := make([]*rollopspluginv1.ToolDef, 0, len(c.Tools))
 		for _, t := range c.Tools {
-			tools = append(tools, &rollopspluginv1.ToolDef{Name: t.Name, Description: t.Description, Mutating: t.Mutating})
+			tools = append(tools, &rollopspluginv1.ToolDef{Name: t.Name, Description: t.Description, Mutating: t.Mutating, RiskClass: string(t.RiskClass)})
 		}
 		caps = append(caps, &rollopspluginv1.Capability{Name: c.Name, Description: c.Description, Tools: tools})
 	}

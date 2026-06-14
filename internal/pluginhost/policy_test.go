@@ -40,6 +40,35 @@ func TestPolicy_Validate(t *testing.T) {
 	}
 }
 
+func TestPolicy_EffectiveRiskFromTools(t *testing.T) {
+	// No plugin-wide risk, but a tool is invasive → effective risk is invasive,
+	// which exceeds the default max (active) and is rejected.
+	m := pub.Manifest{
+		Name: "p",
+		Capabilities: []pub.Capability{{
+			Name: pub.CapabilityTarget,
+			Tools: []pub.Tool{
+				{Name: "observe", RiskClass: pub.RiskPassive},
+				{Name: "apply", Mutating: true, RiskClass: pub.RiskInvasive},
+			},
+		}},
+	}
+	if err := DefaultPolicy().Validate(m); err == nil {
+		t.Error("invasive per-tool risk must be caught even without a plugin-wide class")
+	}
+	// All tools active → effective active → admitted by default.
+	m.Capabilities[0].Tools[1].RiskClass = pub.RiskActive
+	if err := DefaultPolicy().Validate(m); err != nil {
+		t.Errorf("active effective risk → ok, got %v", err)
+	}
+	// Plugin-wide class wins over per-tool when set.
+	m.Safety.RiskClass = pub.RiskPassive
+	m.Capabilities[0].Tools[1].RiskClass = pub.RiskInvasive
+	if err := DefaultPolicy().Validate(m); err != nil {
+		t.Errorf("explicit plugin-wide passive overrides per-tool, got %v", err)
+	}
+}
+
 func TestPolicy_NeedsConfirmation(t *testing.T) {
 	man := pub.Manifest{Name: "acme/dangerous", Safety: pub.Safety{NeedsConfirmation: true}}
 

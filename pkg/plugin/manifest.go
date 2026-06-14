@@ -18,6 +18,10 @@ type Tool struct {
 	Name        string
 	Description string
 	Mutating    bool
+	// RiskClass optionally rates this tool's risk. When tools set it but the
+	// plugin-wide Safety.RiskClass is unset, the host uses the highest tool risk
+	// as the plugin's effective risk for policy admission.
+	RiskClass RiskClass
 }
 
 // Capability is a named group of tools (e.g. "target", "featureflag").
@@ -77,6 +81,14 @@ func (b *ManifestBuilder) Capability(name, description string) *ManifestBuilder 
 func (b *ManifestBuilder) Tool(name, description string, mutating bool) *ManifestBuilder {
 	if b.cap != nil {
 		b.cap.Tools = append(b.cap.Tools, Tool{Name: name, Description: description, Mutating: mutating})
+	}
+	return b
+}
+
+// ToolRisk adds a tool with an explicit per-tool risk class.
+func (b *ManifestBuilder) ToolRisk(name, description string, mutating bool, risk RiskClass) *ManifestBuilder {
+	if b.cap != nil {
+		b.cap.Tools = append(b.cap.Tools, Tool{Name: name, Description: description, Mutating: mutating, RiskClass: risk})
 	}
 	return b
 }

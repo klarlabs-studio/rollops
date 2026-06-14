@@ -56,11 +56,32 @@ func splitList(v string) []string {
 
 var riskRank = map[pub.RiskClass]int{pub.RiskPassive: 0, pub.RiskActive: 1, pub.RiskInvasive: 2}
 
+// effectiveRisk is the plugin-wide risk class when declared, else the highest
+// risk class across the manifest's tools (unset when none declare one).
+func effectiveRisk(m pub.Manifest) pub.RiskClass {
+	if m.Safety.RiskClass != "" {
+		return m.Safety.RiskClass
+	}
+	best := pub.RiskClass("")
+	for _, c := range m.Capabilities {
+		for _, t := range c.Tools {
+			if t.RiskClass != "" && riskRank[t.RiskClass] > riskRank[best] {
+				best = t.RiskClass
+			}
+		}
+	}
+	return best
+}
+
 // Validate rejects a manifest whose safety requirements exceed the policy.
 func (p Policy) Validate(m pub.Manifest) error {
 	s := m.Safety
-	if rank, ok := riskRank[s.RiskClass]; s.RiskClass != "" && (!ok || rank > riskRank[p.MaxRiskClass]) {
-		return fmt.Errorf("plugin %q: risk class %q exceeds policy max %q", m.Name, s.RiskClass, p.MaxRiskClass)
+	// Effective risk is the plugin-wide class when set, else the highest per-tool
+	// class — so a plugin that rates a tool invasive but omits a plugin-wide class
+	// is still caught.
+	eff := effectiveRisk(m)
+	if rank, ok := riskRank[eff]; eff != "" && (!ok || rank > riskRank[p.MaxRiskClass]) {
+		return fmt.Errorf("plugin %q: risk class %q exceeds policy max %q", m.Name, eff, p.MaxRiskClass)
 	}
 	if s.NeedsConfirmation {
 		if !p.AllowConfirmation {

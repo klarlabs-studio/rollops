@@ -28,6 +28,22 @@ func TestManifestBuilder(t *testing.T) {
 	}
 }
 
+func TestManifestBuilder_ToolRisk(t *testing.T) {
+	m := NewManifest("p", "1").
+		Capability(CapabilityTarget, "deploy").
+		ToolRisk(ToolApply, "apply", true, RiskInvasive).
+		Tool(ToolObserve, "observe", false).
+		Done().
+		Build()
+	tools := m.Capabilities[0].Tools
+	if tools[0].RiskClass != RiskInvasive {
+		t.Errorf("apply risk = %q, want invasive", tools[0].RiskClass)
+	}
+	if tools[1].RiskClass != "" {
+		t.Errorf("observe risk = %q, want unset", tools[1].RiskClass)
+	}
+}
+
 func TestServer_RoutesAndRejects(t *testing.T) {
 	srv := NewServer(NewManifest("p", "1").Build()).
 		HandleTool("cap", "echo", func(_ context.Context, in []byte) ([]byte, error) { return in, nil })
