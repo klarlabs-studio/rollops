@@ -7,6 +7,8 @@ package security
 
 import (
 	"fmt"
+	"maps"
+	"sync"
 
 	"go.klarlabs.de/rollops/internal/rollout"
 )
@@ -67,8 +69,11 @@ func (e ErrForbidden) Error() string {
 }
 
 // Policy holds roles and binds identities to them. Bindings key on "kind:name"
-// with a "kind:*" fallback so all agents (or all CI) can share a role.
+// with a "kind:*" fallback so all agents (or all CI) can share a role. It is safe
+// for concurrent use: Authorize takes a read lock, mutations a write lock, so the
+// live policy can be hot-reloaded (ReplaceWith) while requests are in flight.
 type Policy struct {
+	mu       sync.RWMutex
 	roles    map[string]Role
 	bindings map[string][]string
 }
@@ -79,16 +84,46 @@ func NewPolicy() *Policy {
 }
 
 // DefineRole registers a role.
-func (p *Policy) DefineRole(r Role) { p.roles[r.Name] = r }
+func (p *Policy) DefineRole(r Role) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.roles[r.Name] = r
+}
 
 // hasRole reports whether a role is defined.
-func (p *Policy) hasRole(name string) bool { _, ok := p.roles[name]; return ok }
+func (p *Policy) hasRole(name string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.roles[name]
+	return ok
+}
 
 // Bind grants roles to an identity key ("agent:nomi", "human:felix", "ci:*").
 func (p *Policy) Bind(identityKey string, roles ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.bindings[identityKey] = append(p.bindings[identityKey], roles...)
 }
 
+// ReplaceWith atomically swaps this policy's roles and bindings for another's,
+// so an operator can hot-reload the policy file (e.g. on SIGHUP) without dropping
+// in-flight requests or restarting the daemon.
+func (p *Policy) ReplaceWith(other *Policy) {
+	other.mu.RLock()
+	roles := make(map[string]Role, len(other.roles))
+	maps.Copy(roles, other.roles)
+	bindings := make(map[string][]string, len(other.bindings))
+	for k, v := range other.bindings {
+		bindings[k] = append([]string(nil), v...)
+	}
+	other.mu.RUnlock()
+
+	p.mu.Lock()
+	p.roles, p.bindings = roles, bindings
+	p.mu.Unlock()
+}
+
+// rolesFor assumes the read lock is held.
 func (p *Policy) rolesFor(id rollout.Identity) []string {
 	var out []string
 	out = append(out, p.bindings[id.Kind+":"+id.Name]...)
@@ -104,6 +139,8 @@ func (p *Policy) rolesFor(id rollout.Identity) []string {
 
 // Authorize returns nil if id may perform perm within scope, else ErrForbidden.
 func (p *Policy) Authorize(id rollout.Identity, perm Permission, scope Scope) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	for _, roleName := range p.rolesFor(id) {
 		role, ok := p.roles[roleName]
 		if !ok {

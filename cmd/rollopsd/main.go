@@ -97,26 +97,32 @@ func run(args []string) error {
 	if tok := os.Getenv("ROLLOPS_ADMIN_TOKEN"); tok != "" {
 		auth[tok] = rollout.Identity{Kind: "human", Name: "admin"}
 	}
-	policy := security.DefaultRBACPolicy()
-	// Layer an operator-defined RBAC policy (custom roles + bindings) on top of
-	// the bootstrap defaults, so "group:backend may apply to staging" needs no
-	// recompile. A bad policy file is fatal — fail closed, not open.
-	if pf := os.Getenv("ROLLOPS_POLICY_FILE"); pf != "" {
-		if err := security.LoadPolicyFile(policy, pf); err != nil {
-			return err
-		}
-	}
 	var httpAuth api.Authenticator = auth
 	oidcAuth := buildOIDCAuth()
 	if oidcAuth != nil {
 		httpAuth = api.ChainAuth{auth, oidcAuth}
-		if group := envOr("ROLLOPS_OIDC_ADMIN_GROUP", "rollops-admins"); group != "" {
-			policy.Bind("group:"+group, security.RoleAdmin)
-		}
-		if group := os.Getenv("ROLLOPS_OIDC_AGENT_GROUP"); group != "" {
-			policy.Bind("group:"+group, security.RoleAgent)
-		}
 	}
+	// Build the RBAC policy (bootstrap defaults + optional policy file + OIDC group
+	// binds). A bad policy file is fatal at startup — fail closed, not open.
+	policy, err := buildPolicy(oidcAuth != nil)
+	if err != nil {
+		return err
+	}
+	// Hot-reload on SIGHUP: rebuild and atomically swap. A bad file keeps the
+	// current policy (logged), so a typo can't lock everyone out mid-flight.
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGHUP)
+		for range ch {
+			fresh, err := buildPolicy(oidcAuth != nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "rollopsd: policy reload failed, keeping current: %v\n", err)
+				continue
+			}
+			policy.ReplaceWith(fresh)
+			fmt.Fprintln(os.Stderr, "rollopsd: RBAC policy reloaded")
+		}
+	}()
 
 	// Self-observability: /metrics and /readyz unauthenticated for scrapers,
 	// everything else behind the authenticated API.
@@ -383,6 +389,27 @@ func bearerToken(r *http.Request) string {
 
 func subtleEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// buildPolicy assembles the RBAC policy from bootstrap defaults, an optional
+// ROLLOPS_POLICY_FILE, and (when OIDC is enabled) the OIDC group→role binds.
+// Used at startup and on every SIGHUP reload.
+func buildPolicy(oidcOn bool) (*security.Policy, error) {
+	policy := security.DefaultRBACPolicy()
+	if pf := os.Getenv("ROLLOPS_POLICY_FILE"); pf != "" {
+		if err := security.LoadPolicyFile(policy, pf); err != nil {
+			return nil, err
+		}
+	}
+	if oidcOn {
+		if group := envOr("ROLLOPS_OIDC_ADMIN_GROUP", "rollops-admins"); group != "" {
+			policy.Bind("group:"+group, security.RoleAdmin)
+		}
+		if group := os.Getenv("ROLLOPS_OIDC_AGENT_GROUP"); group != "" {
+			policy.Bind("group:"+group, security.RoleAgent)
+		}
+	}
+	return policy, nil
 }
 
 func buildOIDCAuth() api.Authenticator {
