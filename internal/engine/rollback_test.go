@@ -158,6 +158,54 @@ func TestApply_ForwardMigrationRunsBeforeDeploy(t *testing.T) {
 	}
 }
 
+func TestPromote_PostPromoteMigrationRunsAtPromoteNotDeploy(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{
+		Command: []string{"goose", "up"},
+		When:    config.MigratePostPromote,
+	}}
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	// Deferred: nothing should have run at deploy time.
+	if len(db.calls) != 0 {
+		t.Fatalf("post-promote migration must not run at deploy, got %v", db.calls)
+	}
+	out, err := e.Promote(context.Background(), r.ID)
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if strings.Join(db.command, " ") != "goose up" {
+		t.Fatalf("migration command at promote = %v, want [goose up]", db.command)
+	}
+	if string(out.Phase) != "promoted" {
+		t.Errorf("phase = %q, want promoted", out.Phase)
+	}
+	if !strings.Contains(out.Note, "database migrate (post-promote): succeeded") {
+		t.Errorf("note = %q, want post-promote success", out.Note)
+	}
+}
+
+func TestPlan_SurfacesPendingMigration(t *testing.T) {
+	e, _ := newEngine(t, &fakeTarget{})
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{Command: []string{"goose", "up"}}}
+	p, err := e.Plan(context.Background(), c)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if p.Migration != "migrate (pre-deploy): goose up" {
+		t.Errorf("plan migration = %q", p.Migration)
+	}
+	if !strings.Contains(p.Summary, "database migrate (pre-deploy): goose up") {
+		t.Errorf("summary missing migration line:\n%s", p.Summary)
+	}
+}
+
 func TestApply_ForwardMigrationFailureAbortsDeploy(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	db := &fakeDBRollback{err: errors.New("migration failed")}

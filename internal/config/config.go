@@ -182,7 +182,17 @@ type Rollback struct {
 type DatabaseRollback struct {
 	Command []string `yaml:"command" json:"command"`
 	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	// When applies only to a forward migration: pre-deploy (default) runs it
+	// before the new manifest is applied (expand); post-promote runs it after the
+	// rollout is promoted (contract / data backfill). Ignored on the reverse hook.
+	When string `yaml:"when,omitempty" json:"when,omitempty"`
 }
+
+// Migration timing values for DatabaseRollback.When (forward migration only).
+const (
+	MigratePreDeploy   = "pre-deploy"   // before the new manifest is applied (default)
+	MigratePostPromote = "post-promote" // after the rollout is promoted
+)
 
 // Database groups a rollout's optional database lifecycle hooks:
 //
@@ -207,6 +217,15 @@ func (s Spec) DatabaseMigrate() *DatabaseRollback {
 		return s.Database.Migrate
 	}
 	return nil
+}
+
+// DatabaseMigrateWhen returns when the forward migration runs, defaulting to
+// pre-deploy when unset or no migration is configured.
+func (s Spec) DatabaseMigrateWhen() string {
+	if mig := s.DatabaseMigrate(); mig != nil && mig.When != "" {
+		return mig.When
+	}
+	return MigratePreDeploy
 }
 
 // DatabaseRollbackHook returns the rollback (down) command, preferring the new

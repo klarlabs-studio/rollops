@@ -109,11 +109,19 @@ func validateSemantics(c *Config) []error {
 		errs = append(errs, validateDatabaseCommand("rollback.database", c.Spec.Rollback.Database)...)
 	}
 	if c.Spec.Database != nil {
-		if c.Spec.Database.Migrate != nil {
-			errs = append(errs, validateDatabaseCommand("database.migrate", c.Spec.Database.Migrate)...)
+		if m := c.Spec.Database.Migrate; m != nil {
+			errs = append(errs, validateDatabaseCommand("database.migrate", m)...)
+			switch m.When {
+			case "", MigratePreDeploy, MigratePostPromote:
+			default:
+				errs = append(errs, fmt.Errorf("config: database.migrate.when %q must be %s | %s", m.When, MigratePreDeploy, MigratePostPromote))
+			}
 		}
-		if c.Spec.Database.Rollback != nil {
-			errs = append(errs, validateDatabaseCommand("database.rollback", c.Spec.Database.Rollback)...)
+		if rb := c.Spec.Database.Rollback; rb != nil {
+			errs = append(errs, validateDatabaseCommand("database.rollback", rb)...)
+			if rb.When != "" {
+				errs = append(errs, fmt.Errorf("config: database.rollback.when is not valid; when applies only to database.migrate"))
+			}
 		}
 	}
 	if c.Spec.Analysis != nil {

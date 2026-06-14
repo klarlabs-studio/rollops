@@ -87,8 +87,10 @@ type Rollout struct {
 	// Mirror config without coupling this model to the config package.
 	DBRollbackCmd        []string // reverse (down) command; empty means no hook
 	DBRollbackTimeout    string
-	DBMigrateCmd         []string // forward migration that ran at deploy; empty means none
-	DBBackwardCompatible bool     // migration declared safe for the previous app version
+	DBMigrateCmd         []string // forward migration command; empty means none
+	DBMigrateTimeout     string
+	DBMigrateWhen        string // pre-deploy (default) | post-promote
+	DBBackwardCompatible bool   // migration declared safe for the previous app version
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

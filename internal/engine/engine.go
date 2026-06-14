@@ -304,7 +304,13 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 			}
 		}
 	}
-	return newPlan(c.Spec.Target.Ref, m, cur, deepDrift), nil
+	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
+	// Surface a pending database migration so operators see it before applying.
+	if mig := c.Spec.DatabaseMigrate(); mig != nil {
+		p.Migration = fmt.Sprintf("migrate (%s): %s", c.Spec.DatabaseMigrateWhen(), strings.Join(mig.Command, " "))
+		p.Summary = p.render()
+	}
+	return p, nil
 }
 
 // DriftItem reports the drift status of one target.
@@ -369,7 +375,8 @@ type Plan struct {
 	Changed   bool
 	Action    PlanAction
 	Summary   string
-	DeepDrift bool // full-verification diff found live ≠ desired despite a matching stamp
+	DeepDrift bool   // full-verification diff found live ≠ desired despite a matching stamp
+	Migration string // pending database migration ("migrate (when): cmd"), empty when none
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
@@ -387,17 +394,23 @@ func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift 
 }
 
 func (p *Plan) render() string {
+	var base string
 	switch p.Action {
 	case PlanNoop:
-		return fmt.Sprintf("%s [%s]: no changes (checksum %s)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+		base = fmt.Sprintf("%s [%s]: no changes (checksum %s)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
 	case PlanCreate:
-		return fmt.Sprintf("%s [%s]: create — deploy checksum %s (no current state observed)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+		base = fmt.Sprintf("%s [%s]: create — deploy checksum %s (no current state observed)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
 	default:
 		if p.DeepDrift {
-			return fmt.Sprintf("%s [%s]: update — live drifted from desired %s (full verification)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+			base = fmt.Sprintf("%s [%s]: update — live drifted from desired %s (full verification)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+		} else {
+			base = fmt.Sprintf("%s [%s]: update — %s → %s", p.TargetRef, p.Desired.Kind, short(p.Current.Value), short(p.Desired.Checksum))
 		}
-		return fmt.Sprintf("%s [%s]: update — %s → %s", p.TargetRef, p.Desired.Kind, short(p.Current.Value), short(p.Desired.Checksum))
 	}
+	if p.Migration != "" {
+		base += "\n  + database " + p.Migration
+	}
+	return base
 }
 
 // String renders the plan for CLI/agent display.
@@ -633,6 +646,8 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	}
 	if mig := cfg.Spec.DatabaseMigrate(); mig != nil {
 		r.DBMigrateCmd = mig.Command
+		r.DBMigrateTimeout = mig.Timeout
+		r.DBMigrateWhen = cfg.Spec.DatabaseMigrateWhen()
 	}
 	r.DBBackwardCompatible = cfg.Spec.DatabaseBackwardCompatible()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
@@ -656,10 +671,11 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 				return nil
 			}
 			deployed = true
-			// Forward migration runs once, before the new manifest is applied, so
-			// the schema is ready for the new version. A migration failure aborts
-			// the deploy — the target is never touched.
-			if mig := cfg.Spec.DatabaseMigrate(); mig != nil {
+			// Pre-deploy forward migration runs once, before the new manifest is
+			// applied, so the schema is ready for the new version (expand). A
+			// migration failure aborts the deploy — the target is never touched.
+			// A post-promote migration is deferred to promoteWithNote instead.
+			if mig := cfg.Spec.DatabaseMigrate(); mig != nil && cfg.Spec.DatabaseMigrateWhen() == config.MigratePreDeploy {
 				if err := e.runDatabaseCommand(ctx, mig); err != nil {
 					return fmt.Errorf("database migrate: %w", err)
 				}
@@ -987,6 +1003,19 @@ func (e *Engine) promoteWithNote(ctx context.Context, rolloutID, note string) (r
 		return r, err // not in a promotable phase
 	}
 	r.Phase = lc.Phase()
+	// Post-promote forward migration (contract / data backfill) runs once the
+	// rollout is promoted. A failure leaves the rollout promoted but records the
+	// failure loudly, so the schema state gets operator attention.
+	if r.DBMigrateWhen == config.MigratePostPromote && len(r.DBMigrateCmd) > 0 {
+		mig := &config.DatabaseRollback{Command: r.DBMigrateCmd, Timeout: r.DBMigrateTimeout}
+		if err := e.runDatabaseCommand(ctx, mig); err != nil {
+			r.Note = appendNote(note, "database migrate (post-promote): failed: "+err.Error())
+			r.UpdatedAt = e.now()
+			_ = e.store.SaveRollout(ctx, r)
+			return r, fmt.Errorf("database migrate (post-promote): %w", err)
+		}
+		note = appendNote(note, "database migrate (post-promote): succeeded")
+	}
 	r.Note = note
 	r.UpdatedAt = e.now()
 	if err := e.store.SaveRollout(ctx, r); err != nil {

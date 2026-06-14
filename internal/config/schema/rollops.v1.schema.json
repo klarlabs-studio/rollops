@@ -195,14 +195,34 @@
         }
       }
     },
+    "databaseMigrate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "description": "Forward migration command with optional timing.",
+      "properties": {
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Executable and args, e.g. [\"goose\", \"up\"]."
+        },
+        "timeout": { "type": "string", "description": "Go duration for the migration command." },
+        "when": {
+          "type": "string",
+          "enum": ["pre-deploy", "post-promote"],
+          "description": "pre-deploy (default) runs before the manifest is applied; post-promote runs after promotion."
+        }
+      }
+    },
     "database": {
       "type": "object",
       "additionalProperties": false,
       "description": "Database lifecycle hooks: forward migration at deploy, reverse on rollback, and a backward-compatibility gate.",
       "properties": {
         "migrate": {
-          "$ref": "#/$defs/databaseRollback",
-          "description": "Forward migration run at deploy time, before the new manifest is applied. A failure aborts the deploy."
+          "$ref": "#/$defs/databaseMigrate",
+          "description": "Forward migration. pre-deploy (default) runs before the new manifest is applied; post-promote runs after the rollout is promoted."
         },
         "rollback": {
           "$ref": "#/$defs/databaseRollback",
