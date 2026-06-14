@@ -91,6 +91,13 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 		}
 		return mutable + "@" + newDigest, shortDigest(oldDigest), shortDigest(newDigest), nil
 	}
+	// digest→semver migration: a digest-pinned ref under a semver policy can't be
+	// compared as a version (splitImage would choke on the @sha256: suffix). Once,
+	// convert it to the semver tag the pinned digest points at, so ordinary semver
+	// automation takes over from the next tick. Git stays the source of truth.
+	if strings.ContainsRune(image, '@') {
+		return ia.migrate(ctx, image, pol)
+	}
 	// semver modes
 	repo, curTag := splitImage(image)
 	tags, terr := ia.Scanner.Tags(ctx, repo)
@@ -110,6 +117,47 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 		return "", "", "", verr
 	}
 	return repo + ":" + newTag, curTag, newTag, nil
+}
+
+// migrate converts a digest-pinned image ref to a semver-tracked tag. If the ref
+// already carries a semver tag (repo:v1.2.3@sha256:…) it trusts that tag and just
+// strips the digest. Otherwise (repo@sha256:… or repo:latest@sha256:…) it
+// reverse-looks-up the registry for the highest semver tag whose manifest digest
+// equals the pinned one. A faithful conversion: the same image, now expressed as
+// a version. Returns an error when no semver tag points at the pinned digest —
+// best-effort, so the reconcile loop logs it and never blocks.
+func (ia ImageAuto) migrate(ctx context.Context, image string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
+	repo, tag, pinned := splitDigestRef(image)
+	if imageupdate.IsSemver(tag) {
+		return repo + ":" + tag, shortDigest(pinned), tag, nil
+	}
+	if pinned == "" {
+		return "", "", "", nil // nothing to migrate from
+	}
+	tags, terr := ia.Scanner.Tags(ctx, repo)
+	if terr != nil {
+		return "", "", "", fmt.Errorf("imageauto: scan %s: %w", repo, terr)
+	}
+	match, ok := ia.semverForDigest(ctx, repo, pinned, tags, pol.Pattern)
+	if !ok {
+		return "", "", "", fmt.Errorf("imageauto: no semver tag for digest %s of %s", shortDigest(pinned), repo)
+	}
+	return repo + ":" + match, shortDigest(pinned), match, nil
+}
+
+// semverForDigest finds the highest semver tag in tags whose manifest digest
+// equals pinned, checking newest first so the first match is the highest version.
+func (ia ImageAuto) semverForDigest(ctx context.Context, repo, pinned string, tags []string, pattern string) (string, bool) {
+	for _, t := range imageupdate.SemverTagsDesc(tags, pattern) {
+		d, err := ia.Scanner.Digest(ctx, repo+":"+t)
+		if err != nil {
+			continue // can't resolve this tag's digest; try the next
+		}
+		if d == pinned {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // splitImage splits image:tag, defaulting the tag to "latest".

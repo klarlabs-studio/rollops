@@ -103,6 +103,22 @@ func TestSelectTag(t *testing.T) {
 	}
 }
 
+func TestSemverTagsDesc(t *testing.T) {
+	in := []string{"v1.0.0", "v2.0.0", "v1.2.3", "v2.1.0-rc1", "latest", "abc123"}
+	got := SemverTagsDesc(in, "")
+	want := []string{"v2.0.0", "v1.2.3", "v1.0.0"} // sorted desc; pre-release + non-semver dropped
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("SemverTagsDesc = %v, want %v", got, want)
+	}
+	// Pattern filter applies.
+	if got := SemverTagsDesc(in, `^v1\.`); strings.Join(got, ",") != "v1.2.3,v1.0.0" {
+		t.Errorf("pattern-filtered = %v", got)
+	}
+	if !IsSemver("v1.2.3") || IsSemver("v2.1.0-rc1") || IsSemver("latest") {
+		t.Error("IsSemver classification wrong")
+	}
+}
+
 // Mirrors the real registry: images tagged with commit SHAs + latest (no
 // semver). Semver selection must ignore them gracefully — never panic, never
 // pick a SHA — so SHA-tagged apps fall back to digest mode instead.
