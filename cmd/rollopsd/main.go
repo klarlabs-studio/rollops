@@ -388,15 +388,31 @@ func subtleEqual(a, b string) bool {
 func buildOIDCAuth() api.Authenticator {
 	issuer := os.Getenv("ROLLOPS_OIDC_ISSUER")
 	audience := os.Getenv("ROLLOPS_OIDC_AUDIENCE")
-	secret := os.Getenv("ROLLOPS_OIDC_HS256_SECRET")
-	if issuer == "" || audience == "" || secret == "" {
+	if issuer == "" || audience == "" {
 		return nil
 	}
-	return api.OIDCAuth{Config: api.OIDCConfig{
-		Issuer:     issuer,
-		Audience:   audience,
-		HMACSecret: secret,
-	}}
+	cfg := api.OIDCConfig{Issuer: issuer, Audience: audience}
+	// Asymmetric (real IdP) verification: an explicit JWKS URL, or discover it
+	// from the issuer's OIDC well-known document. Falls back to a shared HS256
+	// secret when no JWKS is configured.
+	jwksURL := os.Getenv("ROLLOPS_OIDC_JWKS_URL")
+	if jwksURL == "" && os.Getenv("ROLLOPS_OIDC_DISCOVER") != "" {
+		if u, err := api.DiscoverJWKSURL(nil, issuer); err == nil {
+			jwksURL = u
+		} else {
+			fmt.Fprintf(os.Stderr, "rollopsd: OIDC discovery failed: %v\n", err)
+		}
+	}
+	switch {
+	case jwksURL != "":
+		cfg.Keys = api.NewJWKS(jwksURL)
+	case os.Getenv("ROLLOPS_OIDC_HS256_SECRET") != "":
+		cfg.HMACSecret = os.Getenv("ROLLOPS_OIDC_HS256_SECRET")
+	default:
+		fmt.Fprintf(os.Stderr, "rollopsd: OIDC issuer/audience set but no JWKS URL or HS256 secret — OIDC disabled\n")
+		return nil
+	}
+	return api.OIDCAuth{Config: cfg}
 }
 
 func envOr(key, def string) string {
