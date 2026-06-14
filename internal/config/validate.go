@@ -153,11 +153,19 @@ func validateSemantics(c *Config) []error {
 
 func validateTrafficRouting(t *TrafficRouting) []error {
 	var errs []error
-	if t.Plugin == "" {
-		errs = append(errs, fmt.Errorf("config: trafficRouting.plugin (binary path) is required"))
-	}
-	if t.SHA256 == "" {
-		errs = append(errs, fmt.Errorf("config: trafficRouting.sha256 pin is required"))
+	switch t.Provider {
+	case "":
+		// Plugin mode: a pinned binary is required.
+		if t.Plugin == "" {
+			errs = append(errs, fmt.Errorf("config: trafficRouting.plugin (binary path) is required when no provider is set"))
+		}
+		if t.SHA256 == "" {
+			errs = append(errs, fmt.Errorf("config: trafficRouting.sha256 pin is required when no provider is set"))
+		}
+	case "gateway":
+		// Built-in router: no plugin needed.
+	default:
+		errs = append(errs, fmt.Errorf("config: trafficRouting.provider %q must be gateway (or empty for a plugin)", t.Provider))
 	}
 	if t.Route == "" {
 		errs = append(errs, fmt.Errorf("config: trafficRouting.route is required"))

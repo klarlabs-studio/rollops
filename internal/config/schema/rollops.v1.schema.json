@@ -290,15 +290,18 @@
     "trafficRouting": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["plugin", "sha256", "route", "stableService", "canaryService"],
-      "description": "Couple the rollout to a traffic-router plugin; each canary step shifts that weight of live traffic to the canary backend.",
+      "required": ["route", "stableService", "canaryService"],
+      "description": "Shift canary-weight of live traffic to the canary backend each step, via a built-in provider or a traffic-router plugin.",
       "properties": {
-        "plugin": { "type": "string", "minLength": 1, "description": "Path to the traffic-router plugin binary." },
-        "sha256": { "type": "string", "minLength": 1, "description": "Required sha256 pin of the plugin binary." },
+        "provider": { "type": "string", "enum": ["gateway"], "description": "Built-in router. Omit to use a plugin (plugin + sha256 then required)." },
+        "plugin": { "type": "string", "minLength": 1, "description": "Path to the traffic-router plugin binary (plugin mode)." },
+        "sha256": { "type": "string", "minLength": 1, "description": "Required sha256 pin of the plugin binary (plugin mode)." },
         "route": { "type": "string", "minLength": 1, "description": "Router object name (e.g. Gateway API HTTPRoute)." },
         "namespace": { "type": "string", "description": "Router object namespace." },
         "stableService": { "type": "string", "minLength": 1, "description": "Backend receiving (100-weight)% of traffic." },
-        "canaryService": { "type": "string", "minLength": 1, "description": "Backend receiving weight% of traffic." }
+        "canaryService": { "type": "string", "minLength": 1, "description": "Backend receiving weight% of traffic." },
+        "kubeconfig": { "type": "string", "description": "Kubeconfig path for the built-in router (optional; defaults to in-cluster)." },
+        "context": { "type": "string", "description": "Kube context for the built-in router (optional)." }
       }
     },
     "analysis": {

@@ -1,20 +1,45 @@
 # Traffic Routing
 
 A weighted canary is only real if the weight shifts live traffic. Rollops drives
-traffic at each canary step through a **traffic-router plugin** — a gRPC plugin
-declaring the `trafficrouter` capability — so a step weight of 25 sends 25% of
-production traffic to the canary backend and 75% to the stable backend, the way
-Argo Rollouts does with its traffic-router integrations.
+traffic at each canary step through either the **built-in Gateway API router**
+(no plugin needed) or a **traffic-router plugin** — so a step weight of 25 sends
+25% of production traffic to the canary backend and 75% to the stable backend,
+the way Argo Rollouts does with its traffic-router integrations.
 
-This is independent of, and composable with, the feature-flag coupling
+## Built-in Gateway API router (recommended)
+
+Set `provider: gateway` and Rollops patches a Gateway API `HTTPRoute`'s
+`backendRefs` weights directly via `kubectl` — no plugin binary to install.
+Gateway API is the vendor-neutral standard, so any conformant implementation
+(Istio, Contour, NGINX Gateway Fabric, …) honours the weights.
+
+```yaml
+spec:
+  strategy:
+    type: canary
+    steps: [{weight: 20}, {weight: 50}, {weight: 100}]
+  trafficRouting:
+    provider: gateway
+    route: app-route           # HTTPRoute name
+    namespace: prod
+    stableService: app-stable  # backendRef receiving (100 - weight)%
+    canaryService: app-canary  # backendRef receiving weight%
+    # kubeconfig / context optional — defaults to in-cluster
+```
+
+The `HTTPRoute` must already list both services as `backendRefs` under one or
+more rules; Rollops matches them by name and sets each `weight`. It never creates
+or deletes the route — only shifts weights.
+
+Either router is independent of, and composable with, the feature-flag coupling
 (`featureFlags`): traffic routing shifts *network* traffic at the mesh/ingress
 layer; feature flags shift *application* exposure. Use either or both.
 
-## How it works
+## Plugin router (other meshes / custom logic)
 
-Add a `trafficRouting` block to the rollout spec. As the canary advances through
-its strategy steps, Rollops calls the plugin's `set_weight` tool with the step
-weight, the route object, and the stable/canary backends:
+For a mesh without Gateway API, or custom routing logic, omit `provider` and
+point at a traffic-router plugin instead. As the canary advances, Rollops calls
+the plugin's `set_weight` tool with the step weight, route, and backends:
 
 ```yaml
 spec:

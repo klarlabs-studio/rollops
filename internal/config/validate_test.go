@@ -48,6 +48,22 @@ func TestValidate_TrafficRoutingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestValidate_TrafficRoutingGatewayProvider(t *testing.T) {
+	// Built-in gateway provider needs no plugin/sha256.
+	gw := &TrafficRouting{Provider: "gateway", Route: "r", StableService: "st", CanaryService: "ca"}
+	if errs := validateTrafficRouting(gw); len(errs) != 0 {
+		t.Fatalf("gateway provider should validate without a plugin, got %v", errs)
+	}
+	// Unknown provider rejected.
+	if errs := validateTrafficRouting(&TrafficRouting{Provider: "nope", Route: "r", StableService: "st", CanaryService: "ca"}); len(errs) == 0 {
+		t.Fatal("unknown provider must error")
+	}
+	// Plugin mode (no provider) still requires plugin + sha256.
+	if errs := validateTrafficRouting(&TrafficRouting{Route: "r", StableService: "st", CanaryService: "ca"}); len(errs) < 2 {
+		t.Fatalf("plugin mode must require plugin + sha256, got %v", errs)
+	}
+}
+
 func TestValidate_DatabaseHooks(t *testing.T) {
 	// Empty migrate command is rejected with a database.migrate path.
 	c := mustParse(t, validYAML)

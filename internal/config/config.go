@@ -103,12 +103,19 @@ type FeatureFlags struct {
 // like a target plugin (sha256-pinned binary). This turns weighted steps into
 // real network-level traffic shifting (Gateway API, Istio, NGINX, …).
 type TrafficRouting struct {
-	Plugin        string `yaml:"plugin" json:"plugin"`               // path to the traffic-router plugin binary
-	SHA256        string `yaml:"sha256" json:"sha256"`               // required pin
+	// Provider selects a built-in router ("gateway" = Gateway API HTTPRoute);
+	// empty means a plugin (Plugin + SHA256). Built-in routers need no plugin
+	// binary, so canary traffic shifting works out of the box.
+	Provider      string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Plugin        string `yaml:"plugin,omitempty" json:"plugin,omitempty"` // path to the traffic-router plugin binary
+	SHA256        string `yaml:"sha256,omitempty" json:"sha256,omitempty"` // required pin (plugin mode)
 	Route         string `yaml:"route" json:"route"`                 // router object name (e.g. HTTPRoute)
 	Namespace     string `yaml:"namespace" json:"namespace"`         // router object namespace
 	StableService string `yaml:"stableService" json:"stableService"` // backend for (100-weight)%
 	CanaryService string `yaml:"canaryService" json:"canaryService"` // backend for weight%
+	// Cluster access for built-in routers (optional; defaults to in-cluster).
+	Kubeconfig string `yaml:"kubeconfig,omitempty" json:"kubeconfig,omitempty"`
+	Context    string `yaml:"context,omitempty" json:"context,omitempty"`
 }
 
 // ImagePolicy enables registry-poll image automation: the daemon periodically
