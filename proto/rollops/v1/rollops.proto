@@ -24,6 +24,8 @@ service RolloutService {
   rpc Reject(RolloutActionRequest) returns (RolloutActionResponse);
   // Promote marks a verified rollout promoted.
   rpc Promote(RolloutActionRequest) returns (RolloutActionResponse);
+  // Freeze engages or lifts the emergency kill-switch that blocks all applies.
+  rpc Freeze(FreezeRequest) returns (FreezeResponse);
 }
 
 message PlanRequest {
@@ -89,4 +91,14 @@ message RolloutActionResponse {
   string phase = 2;
   string target = 3;
   string note = 4;
+}
+
+message FreezeRequest {
+  bool active = 1;   // true engages the freeze, false lifts it
+  string reason = 2; // recorded when engaging
+}
+
+message FreezeResponse {
+  bool active = 1;
+  string reason = 2;
 }

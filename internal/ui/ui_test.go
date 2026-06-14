@@ -24,6 +24,8 @@ type fakeBackend struct {
 	rejected         string
 	promoted         string
 	rolledBackTarget string
+	frozen           bool
+	freezeReason     string
 }
 
 func (f *fakeBackend) List(context.Context, int) ([]rollout.Rollout, error) { return f.rollouts, nil }
@@ -53,6 +55,14 @@ func (f *fakeBackend) Promote(_ context.Context, id string) (rollout.Rollout, er
 	f.promoted = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhasePromoted}, nil
 }
+func (f *fakeBackend) Freeze(_ context.Context, on bool, _ rollout.Identity, reason string) (bool, string, error) {
+	f.frozen, f.freezeReason = on, reason
+	if !on {
+		f.freezeReason = ""
+	}
+	return f.frozen, f.freezeReason, nil
+}
+func (f *fakeBackend) FreezeStatus() (bool, string) { return f.frozen, f.freezeReason }
 
 func srv(be Backend, opts ...Option) http.Handler {
 	return New(be, rollout.Identity{Kind: "human", Name: "felix"}, opts...).Handler()
@@ -199,6 +209,9 @@ func TestAPI_Actions(t *testing.T) {
 	}
 	if rr := do(h, "POST", "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
 		t.Errorf("promote = %d promoted=%q", rr.Code, be.promoted)
+	}
+	if rr := do(h, "POST", "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
+		t.Errorf("freeze = %d frozen=%v", rr.Code, be.frozen)
 	}
 	if rr := do(h, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
 		t.Errorf("rollback = %d target=%q", rr.Code, be.rolledBackTarget)

@@ -26,6 +26,7 @@ const (
 	RolloutService_Approve_FullMethodName  = "/rollops.v1.RolloutService/Approve"
 	RolloutService_Reject_FullMethodName   = "/rollops.v1.RolloutService/Reject"
 	RolloutService_Promote_FullMethodName  = "/rollops.v1.RolloutService/Promote"
+	RolloutService_Freeze_FullMethodName   = "/rollops.v1.RolloutService/Freeze"
 )
 
 // RolloutServiceClient is the client API for RolloutService service.
@@ -52,6 +53,8 @@ type RolloutServiceClient interface {
 	Reject(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 	// Promote marks a verified rollout promoted.
 	Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Freeze engages or lifts the emergency kill-switch that blocks all applies.
+	Freeze(ctx context.Context, in *FreezeRequest, opts ...grpc.CallOption) (*FreezeResponse, error)
 }
 
 type rolloutServiceClient struct {
@@ -132,6 +135,16 @@ func (c *rolloutServiceClient) Promote(ctx context.Context, in *RolloutActionReq
 	return out, nil
 }
 
+func (c *rolloutServiceClient) Freeze(ctx context.Context, in *FreezeRequest, opts ...grpc.CallOption) (*FreezeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FreezeResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Freeze_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RolloutServiceServer is the server API for RolloutService service.
 // All implementations must embed UnimplementedRolloutServiceServer
 // for forward compatibility.
@@ -156,6 +169,8 @@ type RolloutServiceServer interface {
 	Reject(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	// Promote marks a verified rollout promoted.
 	Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Freeze engages or lifts the emergency kill-switch that blocks all applies.
+	Freeze(context.Context, *FreezeRequest) (*FreezeResponse, error)
 	mustEmbedUnimplementedRolloutServiceServer()
 }
 
@@ -186,6 +201,9 @@ func (UnimplementedRolloutServiceServer) Reject(context.Context, *RolloutActionR
 }
 func (UnimplementedRolloutServiceServer) Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Promote not implemented")
+}
+func (UnimplementedRolloutServiceServer) Freeze(context.Context, *FreezeRequest) (*FreezeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Freeze not implemented")
 }
 func (UnimplementedRolloutServiceServer) mustEmbedUnimplementedRolloutServiceServer() {}
 func (UnimplementedRolloutServiceServer) testEmbeddedByValue()                        {}
@@ -334,6 +352,24 @@ func _RolloutService_Promote_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RolloutService_Freeze_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FreezeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Freeze(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Freeze_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Freeze(ctx, req.(*FreezeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RolloutService_ServiceDesc is the grpc.ServiceDesc for RolloutService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -368,6 +404,10 @@ var RolloutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Promote",
 			Handler:    _RolloutService_Promote_Handler,
+		},
+		{
+			MethodName: "Freeze",
+			Handler:    _RolloutService_Freeze_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

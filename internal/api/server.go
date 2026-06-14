@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/approve", s.handleApprove)
 	mux.HandleFunc("POST /v1/reject", s.handleReject)
 	mux.HandleFunc("POST /v1/promote", s.handlePromote)
+	mux.HandleFunc("POST /v1/freeze", s.handleFreeze)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return s.authMiddleware(mux)
@@ -191,6 +192,28 @@ func (s *Server) rolloutAction(w http.ResponseWriter, r *http.Request, perm secu
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "note": rl.Note})
+}
+
+func (s *Server) handleFreeze(w http.ResponseWriter, r *http.Request) {
+	actor := identityFrom(r)
+	if err := s.policy.Authorize(actor, security.PermFreeze, security.Scope{}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	var body struct {
+		Active bool   `json:"active"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	active, reason, err := s.eng.Freeze(r.Context(), body.Active, actor, body.Reason)
+	if err != nil {
+		writeErr(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"active": active, "reason": reason})
 }
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {

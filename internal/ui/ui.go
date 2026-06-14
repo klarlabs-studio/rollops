@@ -33,6 +33,8 @@ type Backend interface {
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Promote(ctx context.Context, id string) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
+	Freeze(ctx context.Context, on bool, by rollout.Identity, reason string) (bool, string, error)
+	FreezeStatus() (active bool, reason string)
 }
 
 // Server serves the SPA and the JSON API.
@@ -73,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/api/approve", s.apiApprove)
 	mux.HandleFunc("POST /ui/api/reject", s.apiReject)
 	mux.HandleFunc("POST /ui/api/promote", s.apiPromote)
+	mux.HandleFunc("POST /ui/api/freeze", s.apiFreeze)
 	mux.HandleFunc("POST /ui/api/rollback", s.apiRollback)
 	mux.HandleFunc("POST /ui/api/sync", s.apiSync)
 	return securityHeaders(mux)
@@ -135,10 +138,12 @@ type rolloutJSON struct {
 }
 
 type dashboardJSON struct {
-	Counts   map[string]int `json:"counts"`
-	Drift    []driftJSON    `json:"drift"`
-	Rollouts []rolloutJSON  `json:"rollouts"`
-	CanSync  bool           `json:"canSync"`
+	Counts       map[string]int `json:"counts"`
+	Drift        []driftJSON    `json:"drift"`
+	Rollouts     []rolloutJSON  `json:"rollouts"`
+	CanSync      bool           `json:"canSync"`
+	Frozen       bool           `json:"frozen"`
+	FreezeReason string         `json:"freezeReason,omitempty"`
 }
 
 func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +168,25 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, d := range drift {
 		dj = append(dj, driftJSON{Target: d.TargetRef, Phase: string(d.Phase), Desired: d.Desired, Observed: d.Observed, Drifted: d.Drifted})
 	}
-	writeJSON(w, http.StatusOK, dashboardJSON{Counts: counts, Drift: dj, Rollouts: rs, CanSync: s.sync != nil})
+	frozen, freezeReason := s.be.FreezeStatus()
+	writeJSON(w, http.StatusOK, dashboardJSON{Counts: counts, Drift: dj, Rollouts: rs, CanSync: s.sync != nil, Frozen: frozen, FreezeReason: freezeReason})
+}
+
+// apiFreeze toggles the emergency kill-switch from the console.
+func (s *Server) apiFreeze(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Active bool   `json:"active"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if _, _, err := s.be.Freeze(r.Context(), body.Active, s.actor, body.Reason); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 type resourceJSON struct {

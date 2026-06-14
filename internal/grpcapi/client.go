@@ -95,6 +95,15 @@ func (c *Client) Reject(ctx context.Context, id string) (rollout.Rollout, error)
 	return c.rolloutAction(ctx, c.rpc.Reject, id)
 }
 
+// Freeze toggles the emergency kill-switch over gRPC.
+func (c *Client) Freeze(ctx context.Context, on bool, reason string) (bool, string, error) {
+	r, err := c.rpc.Freeze(c.ctx(ctx), &rollopsv1.FreezeRequest{Active: on, Reason: reason})
+	if err != nil {
+		return false, "", err
+	}
+	return r.GetActive(), r.GetReason(), nil
+}
+
 func (c *Client) rolloutAction(ctx context.Context, rpc func(context.Context, *rollopsv1.RolloutActionRequest, ...grpc.CallOption) (*rollopsv1.RolloutActionResponse, error), id string) (rollout.Rollout, error) {
 	r, err := rpc(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id})
 	if err != nil {

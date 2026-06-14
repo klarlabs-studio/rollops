@@ -11,7 +11,9 @@ export const template = `
   <button v-if="dashCanSync" class="sync" :disabled="busy" @click="sync">
     <span class="spin" :class="{on:busy}">⟳</span> {{ busy ? 'Syncing…' : 'Sync now' }}
   </button>
+  <button v-if="view==='dashboard'" class="bad" :disabled="busy" @click="toggleFreeze">{{ dash.frozen ? '❄ Unfreeze' : '❄ Freeze' }}</button>
 </header>
+<div v-if="dash.frozen" class="freeze-banner">❄ Rollouts are frozen — all applies are blocked.<span v-if="dash.freezeReason"> ({{ dash.freezeReason }})</span></div>
 <main>
   <!-- DASHBOARD -->
   <template v-if="view==='dashboard'">
