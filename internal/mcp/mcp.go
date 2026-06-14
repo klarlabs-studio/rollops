@@ -71,6 +71,7 @@ type StatusOutput struct {
 // RollbackInput is the input to rollouts.rollback.
 type RollbackInput struct {
 	TargetRef string `json:"target_ref" jsonschema:"the target to roll back to its previous desired state"`
+	Force     bool   `json:"force,omitempty" jsonschema:"override the backward-compatibility gate for a non-backwardCompatible migration with no reverse command"`
 }
 
 // RollbackOutput is the result of rollouts.rollback.
@@ -135,7 +136,7 @@ func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput,
 	if err := t.policy.Authorize(t.identity, security.PermRollback, security.Scope{TargetRef: in.TargetRef}); err != nil {
 		return RollbackOutput{}, err
 	}
-	r, err := t.eng.RollbackLast(ctx, in.TargetRef)
+	r, err := t.eng.RollbackLast(ctx, in.TargetRef, in.Force)
 	if err != nil {
 		return RollbackOutput{}, err
 	}

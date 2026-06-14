@@ -75,7 +75,7 @@ func TestRollbackLast_RevertsToPrior(t *testing.T) {
 		t.Fatal("precondition: the two deploys must differ")
 	}
 
-	out, err := e.RollbackLast(ctx, "demo/prod/app")
+	out, err := e.RollbackLast(ctx, "demo/prod/app", false)
 	if err != nil {
 		t.Fatalf("RollbackLast: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestRollbackLast_RevertsToPrior(t *testing.T) {
 func TestRollbackLast_NoPrior(t *testing.T) {
 	e, _ := newEngine(t, &fakeTarget{})
 	_, _ = e.Apply(context.Background(), ApplyRequest{Config: loadConfig(t)})
-	if _, err := e.RollbackLast(context.Background(), "demo/prod/app"); err == nil {
+	if _, err := e.RollbackLast(context.Background(), "demo/prod/app", false); err == nil {
 		t.Fatal("single rollout → no prior state → should error")
 	}
 }

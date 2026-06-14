@@ -60,6 +60,10 @@ message StatusResponse {
 
 message RollbackRequest {
   string target = 1;
+  // force overrides the backward-compatibility gate: roll back even when the
+  // release ran a database migration not declared backwardCompatible and has no
+  // reverse command configured.
+  bool force = 2;
 }
 
 message RollbackResponse {

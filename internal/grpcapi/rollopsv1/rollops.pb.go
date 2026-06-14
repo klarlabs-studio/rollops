@@ -370,8 +370,12 @@ func (x *StatusResponse) GetStepWeight() int32 {
 }
 
 type RollbackRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Target        string                 `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Target string                 `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	// force overrides the backward-compatibility gate: roll back even when the
+	// release ran a database migration not declared backwardCompatible and has no
+	// reverse command configured.
+	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -411,6 +415,13 @@ func (x *RollbackRequest) GetTarget() string {
 		return x.Target
 	}
 	return ""
+}
+
+func (x *RollbackRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 type RollbackResponse struct {
@@ -503,9 +514,10 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\n" +
 	"step_total\x18\x06 \x01(\x05R\tstepTotal\x12\x1f\n" +
 	"\vstep_weight\x18\a \x01(\x05R\n" +
-	"stepWeight\")\n" +
+	"stepWeight\"?\n" +
 	"\x0fRollbackRequest\x12\x16\n" +
-	"\x06target\x18\x01 \x01(\tR\x06target\"P\n" +
+	"\x06target\x18\x01 \x01(\tR\x06target\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"P\n" +
 	"\x10RollbackResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +

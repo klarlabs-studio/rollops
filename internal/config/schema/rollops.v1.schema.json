@@ -45,6 +45,7 @@
         "featureFlags": { "$ref": "#/$defs/featureFlags" },
         "trafficRouting": { "$ref": "#/$defs/trafficRouting" },
         "imagePolicy": { "$ref": "#/$defs/imagePolicy" },
+        "database": { "$ref": "#/$defs/database" },
         "dependsOn": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -191,6 +192,25 @@
         "timeout": {
           "type": "string",
           "description": "Go duration for the rollback command."
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Database lifecycle hooks: forward migration at deploy, reverse on rollback, and a backward-compatibility gate.",
+      "properties": {
+        "migrate": {
+          "$ref": "#/$defs/databaseRollback",
+          "description": "Forward migration run at deploy time, before the new manifest is applied. A failure aborts the deploy."
+        },
+        "rollback": {
+          "$ref": "#/$defs/databaseRollback",
+          "description": "Reverse command run on any rollback. Supersedes the deprecated spec.rollback.database."
+        },
+        "backwardCompatible": {
+          "type": "boolean",
+          "description": "Whether the migration is safe to run the previous app version against. When false and no rollback command is set, a rollback is blocked unless forced."
         }
       }
     },

@@ -106,7 +106,15 @@ func validateSemantics(c *Config) []error {
 		}
 	}
 	if c.Spec.Rollback.Database != nil {
-		errs = append(errs, validateDatabaseRollback(c.Spec.Rollback.Database)...)
+		errs = append(errs, validateDatabaseCommand("rollback.database", c.Spec.Rollback.Database)...)
+	}
+	if c.Spec.Database != nil {
+		if c.Spec.Database.Migrate != nil {
+			errs = append(errs, validateDatabaseCommand("database.migrate", c.Spec.Database.Migrate)...)
+		}
+		if c.Spec.Database.Rollback != nil {
+			errs = append(errs, validateDatabaseCommand("database.rollback", c.Spec.Database.Rollback)...)
+		}
 	}
 	if c.Spec.Analysis != nil {
 		errs = append(errs, validateAnalysis(c.Spec.Analysis)...)
@@ -174,14 +182,16 @@ func validateFeatureFlags(f *FeatureFlags) []error {
 	return errs
 }
 
-func validateDatabaseRollback(db *DatabaseRollback) []error {
+// validateDatabaseCommand checks a database command hook (forward migrate or
+// rollback), reporting errors under the given config path for clear messages.
+func validateDatabaseCommand(path string, db *DatabaseRollback) []error {
 	var errs []error
 	if len(db.Command) == 0 {
-		errs = append(errs, fmt.Errorf("config: rollback.database.command must not be empty"))
+		errs = append(errs, fmt.Errorf("config: %s.command must not be empty", path))
 	}
 	if db.Timeout != "" {
 		if _, err := time.ParseDuration(db.Timeout); err != nil {
-			errs = append(errs, fmt.Errorf("config: rollback.database.timeout %q is not a Go duration: %w", db.Timeout, err))
+			errs = append(errs, fmt.Errorf("config: %s.timeout %q is not a Go duration: %w", path, db.Timeout, err))
 		}
 	}
 	return errs

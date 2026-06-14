@@ -36,7 +36,7 @@ func (f *fakeBackend) Diff(context.Context, string) (string, error) { return f.d
 func (f *fakeBackend) Resources(context.Context, string) ([]pt.Resource, error) {
 	return f.resources, nil
 }
-func (f *fakeBackend) RollbackLast(_ context.Context, ref string) (rollout.Rollout, error) {
+func (f *fakeBackend) RollbackLast(_ context.Context, ref string, _ bool) (rollout.Rollout, error) {
 	f.rolledBackTarget = ref
 	return rollout.Rollout{TargetRef: ref, Phase: rollout.PhaseRolledBack}, nil
 }

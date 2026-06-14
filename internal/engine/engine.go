@@ -624,12 +624,17 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	// Capture the database rollback command so a later manual/agent rollback can
-	// run it too — not just the auto path that still holds the config in hand.
-	if db := cfg.Spec.Rollback.Database; db != nil {
+	// Capture the database hooks so a later manual/agent rollback can run the
+	// reverse command (not just the auto path that still holds the config) and so
+	// a rollback can be gated on the migration's backward-compatibility.
+	if db := cfg.Spec.DatabaseRollbackHook(); db != nil {
 		r.DBRollbackCmd = db.Command
 		r.DBRollbackTimeout = db.Timeout
 	}
+	if mig := cfg.Spec.DatabaseMigrate(); mig != nil {
+		r.DBMigrateCmd = mig.Command
+	}
+	r.DBBackwardCompatible = cfg.Spec.DatabaseBackwardCompatible()
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -651,6 +656,14 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 				return nil
 			}
 			deployed = true
+			// Forward migration runs once, before the new manifest is applied, so
+			// the schema is ready for the new version. A migration failure aborts
+			// the deploy — the target is never touched.
+			if mig := cfg.Spec.DatabaseMigrate(); mig != nil {
+				if err := e.runDatabaseCommand(ctx, mig); err != nil {
+					return fmt.Errorf("database migrate: %w", err)
+				}
+			}
 			_, derr := tgt.Apply(ctx, m)
 			return derr
 		},
@@ -733,7 +746,9 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 		if !auto {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
 		}
-		rb, err := e.rollbackWithDatabase(ctx, rolloutID, prior, reason, c.Spec.Rollback.Database)
+		// Auto-rollback forces past the backward-compatibility gate: the deploy
+		// already failed, so recovering to the prior state beats leaving it up.
+		rb, err := e.rollbackWithDatabase(ctx, rolloutID, prior, reason, c.Spec.DatabaseRollbackHook(), true)
 		if err != nil {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: auto-rollback after %q: %w", reason, err)
 		}
@@ -981,16 +996,19 @@ func (e *Engine) promoteWithNote(ctx context.Context, rolloutID, note string) (r
 }
 
 // Rollback re-applies a prior manifest to the target — the observability-free
-// recovery path, driveable manually, by an agent, or automatically.
-func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manifest) (rollout.Rollout, error) {
-	return e.rollbackWithNote(ctx, rolloutID, prior, "")
+// recovery path, driveable manually, by an agent, or automatically. When force
+// is false, a rollback is blocked if the release ran a database migration that
+// was not declared backward-compatible and carries no reverse command (see the
+// gate in rollbackWithDatabase); force overrides that guard.
+func (e *Engine) Rollback(ctx context.Context, rolloutID string, prior pt.Manifest, force bool) (rollout.Rollout, error) {
+	return e.rollbackWithNote(ctx, rolloutID, prior, "", force)
 }
 
-func (e *Engine) rollbackWithNote(ctx context.Context, rolloutID string, prior pt.Manifest, note string) (rollout.Rollout, error) {
-	return e.rollbackWithDatabase(ctx, rolloutID, prior, note, nil)
+func (e *Engine) rollbackWithNote(ctx context.Context, rolloutID string, prior pt.Manifest, note string, force bool) (rollout.Rollout, error) {
+	return e.rollbackWithDatabase(ctx, rolloutID, prior, note, nil, force)
 }
 
-func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, prior pt.Manifest, note string, db *config.DatabaseRollback) (rollout.Rollout, error) {
+func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, prior pt.Manifest, note string, db *config.DatabaseRollback, force bool) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return rollout.Rollout{}, err
@@ -1009,6 +1027,15 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 	// not only auto — reverses the database.
 	if db == nil && len(r.DBRollbackCmd) > 0 {
 		db = &config.DatabaseRollback{Command: r.DBRollbackCmd, Timeout: r.DBRollbackTimeout}
+	}
+
+	// Backward-compatibility gate: if this release ran a forward migration that
+	// was not declared backwardCompatible and there is no reverse command to undo
+	// it, rolling the app back would run the old version against the new schema —
+	// unsafe. Block it unless the caller forces. Auto-rollback passes force=true:
+	// the deploy already failed, so leaving the bad version up is worse.
+	if !force && len(r.DBMigrateCmd) > 0 && !r.DBBackwardCompatible && (db == nil || len(db.Command) == 0) {
+		return r, fmt.Errorf("engine: rollback blocked: release ran a database migration not declared backwardCompatible and has no database rollback command; force the rollback to override")
 	}
 
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
@@ -1030,7 +1057,7 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 	r.Desired = prior
 	r.UpdatedAt = e.now()
 	if db != nil && len(db.Command) > 0 {
-		if err := e.runDatabaseRollback(ctx, db); err != nil {
+		if err := e.runDatabaseCommand(ctx, db); err != nil {
 			r.Note = appendNote(note, "database rollback: failed: "+err.Error())
 			_ = e.store.SaveRollout(ctx, r)
 			return r, fmt.Errorf("database rollback: %w", err)
@@ -1045,7 +1072,9 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 	return r, nil
 }
 
-func (e *Engine) runDatabaseRollback(ctx context.Context, db *config.DatabaseRollback) error {
+// runDatabaseCommand runs a database hook (forward migrate or reverse rollback)
+// via the configured runner, honouring an optional per-command timeout.
+func (e *Engine) runDatabaseCommand(ctx context.Context, db *config.DatabaseRollback) error {
 	if db.Timeout != "" {
 		d, err := time.ParseDuration(db.Timeout)
 		if err != nil {
@@ -1128,8 +1157,9 @@ func (e *Engine) Resources(ctx context.Context, rolloutID string) ([]pt.Resource
 }
 
 // RollbackLast rolls a target back to its previous distinct desired state by
-// re-applying the prior rollout's manifest — the UI "Rollback" action.
-func (e *Engine) RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error) {
+// re-applying the prior rollout's manifest — the UI "Rollback" action. force
+// overrides the backward-compatibility gate (see Rollback).
+func (e *Engine) RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error) {
 	rs, err := e.store.ListRollouts(ctx, 0) // newest first
 	if err != nil {
 		return rollout.Rollout{}, err
@@ -1155,7 +1185,7 @@ func (e *Engine) RollbackLast(ctx context.Context, targetRef string) (rollout.Ro
 	if prior == nil {
 		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
 	}
-	return e.Rollback(ctx, current.ID, *prior)
+	return e.Rollback(ctx, current.ID, *prior, force)
 }
 
 // List returns the most recent rollouts, newest first.

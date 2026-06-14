@@ -84,9 +84,10 @@ func (c *Client) Promote(ctx context.Context, id string) (rollout.Rollout, error
 	return rollout.Rollout{}, fmt.Errorf("promote is not available in daemon mode yet; use the UI or a one-shot engine")
 }
 
-// RollbackLast rolls a target back over gRPC.
-func (c *Client) RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error) {
-	r, err := c.rpc.Rollback(c.ctx(ctx), &rollopsv1.RollbackRequest{Target: targetRef})
+// RollbackLast rolls a target back over gRPC. force overrides the
+// backward-compatibility gate.
+func (c *Client) RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error) {
+	r, err := c.rpc.Rollback(c.ctx(ctx), &rollopsv1.RollbackRequest{Target: targetRef, Force: force})
 	if err != nil {
 		return rollout.Rollout{}, err
 	}

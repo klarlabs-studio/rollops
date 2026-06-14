@@ -137,7 +137,7 @@ func (statusNoteOps) Status(context.Context, string) (rollout.Rollout, error) {
 func (statusNoteOps) Promote(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
-func (statusNoteOps) RollbackLast(context.Context, string) (rollout.Rollout, error) {
+func (statusNoteOps) RollbackLast(context.Context, string, bool) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
 func (statusNoteOps) History(context.Context, string) ([]rollout.RolloutRecord, error) {
