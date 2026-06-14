@@ -1,4 +1,14 @@
 
+## Multi-cluster at scale (RolloutSet generators)
+
+Deploy a service across N clusters without per-cluster boilerplate, ArgoCD
+ApplicationSet-style. Scoped in `docs/design/multi-cluster-scale.md` (draft RFC):
+recommended approach is a `RolloutSet` kind + cluster registry that expands
+in-memory to N ordinary configs (no engine/store change). Phased: list generator
+→ cluster generator → matrix/git + fleet status rollup. Not yet approved.
+
+---
+
 <!-- DONE: Target plugin process lifecycle + distribution — shipped. Subprocess
      launch + handshake (pkg/plugin/handshake.go), unix-socket gRPC dial + clean
      teardown (internal/pluginhost/launch.go), sha256 pin (VerifyBinary), and a
