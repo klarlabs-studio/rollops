@@ -22,6 +22,19 @@ type fakeDigest string
 func (d fakeDigest) Tags(context.Context, string) ([]string, error) { return nil, nil }
 func (d fakeDigest) Digest(context.Context, string) (string, error) { return string(d), nil }
 
+// fakeRegistry maps each tag to its manifest digest, so Digest("repo:tag")
+// resolves per-tag — what digest→semver migration needs.
+type fakeRegistry struct {
+	tags    []string
+	digests map[string]string // tag -> digest
+}
+
+func (f fakeRegistry) Tags(context.Context, string) ([]string, error) { return f.tags, nil }
+func (f fakeRegistry) Digest(_ context.Context, image string) (string, error) {
+	_, tag := splitImage(image)
+	return f.digests[tag], nil
+}
+
 const imgConfigYAML = `apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
@@ -141,6 +154,69 @@ func TestImageAuto_DigestModeUnchanged(t *testing.T) {
 	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("same digest must be a no-op, got ref=%q err=%v", ref, err)
+	}
+}
+
+func TestImageAuto_MigrateDigestToSemver(t *testing.T) {
+	// Digest-pinned, no usable tag, under a semver policy → reverse-lookup the
+	// semver tag whose digest matches, and rewrite to it.
+	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web@sha256:abc123")
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := fakeRegistry{
+		tags: []string{"v1.0.0", "v1.1.0", "v1.2.0", "latest"},
+		digests: map[string]string{
+			"v1.0.0": "sha256:old0",
+			"v1.1.0": "sha256:old1",
+			"v1.2.0": "sha256:abc123", // the pinned digest
+			"latest": "sha256:abc123",
+		},
+	}
+	bumped, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "ghcr.io/acme/web:v1.2.0" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0", ref)
+	}
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.2.0" {
+		t.Errorf("migrated image = %q", got)
+	}
+}
+
+func TestImageAuto_MigrateEmbeddedSemverTagStripsDigest(t *testing.T) {
+	// repo:v1.1.0@sha256:… → trust the embedded semver tag, drop the digest. No
+	// registry calls needed (nil scanner would panic if it tried).
+	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web:v1.1.0@sha256:abc123")
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	_, ref, err := ImageAuto{Scanner: fakeRegistry{}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "ghcr.io/acme/web:v1.1.0" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.1.0 (digest stripped)", ref)
+	}
+}
+
+func TestImageAuto_MigrateNoMatchingDigest(t *testing.T) {
+	// Pinned digest points at no published semver tag → error (best-effort), no bump.
+	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web@sha256:orphan")
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	reg := fakeRegistry{
+		tags:    []string{"v1.0.0", "v1.1.0"},
+		digests: map[string]string{"v1.0.0": "sha256:a", "v1.1.0": "sha256:b"},
+	}
+	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err == nil {
+		t.Fatal("expected error when no semver tag matches the pinned digest")
+	}
+	if ref != "" {
+		t.Errorf("ref = %q, want empty on no match", ref)
 	}
 }
 

@@ -2,6 +2,7 @@ package imageupdate
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -86,4 +87,45 @@ func SelectTag(current string, available []string, mode, pattern string) (string
 		}
 	}
 	return bestTag, bestTag != ""
+}
+
+// IsSemver reports whether tag parses as a non-pre-release semver version.
+func IsSemver(tag string) bool {
+	v, ok := parseSemver(tag)
+	return ok && !v.pre
+}
+
+// SemverTagsDesc returns the non-pre-release semver tags from available
+// (optionally filtered by pattern), sorted highest version first. Used by
+// digest→semver migration to find the version a pinned digest corresponds to,
+// checking the most likely (newest) tags first so the highest matching tag wins.
+func SemverTagsDesc(available []string, pattern string) []string {
+	var re *regexp.Regexp
+	if pattern != "" {
+		var err error
+		if re, err = regexp.Compile(pattern); err != nil {
+			return nil
+		}
+	}
+	type tagged struct {
+		tag string
+		v   semver
+	}
+	var out []tagged
+	for _, t := range available {
+		if re != nil && !re.MatchString(t) {
+			continue
+		}
+		v, ok := parseSemver(t)
+		if !ok || v.pre {
+			continue
+		}
+		out = append(out, tagged{t, v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].v.greater(out[j].v) })
+	tags := make([]string, len(out))
+	for i, x := range out {
+		tags[i] = x.tag
+	}
+	return tags
 }

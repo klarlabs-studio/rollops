@@ -90,3 +90,22 @@ selected and never error, so a mixed tag list is fine.
 A pipeline that pushes **only** immutable SHA tags (no `:latest`, no semver) has
 no moving reference to track — pin the deployed SHA explicitly, or have CI also
 push a mutable tag (`:latest`) or a semver tag to enable automation.
+
+## Digest → semver migration
+
+A digest-pinned `image` under a **semver** policy (`major` / `minor` / `patch` /
+`any`) is migrated to a semver-tracked tag automatically — once — so ordinary
+semver bumps take over. This lets you adopt semver automation on a workload that
+was previously pinned to a digest, without hand-editing the ref:
+
+| Tracked `image` | Migration result |
+|-----------------|------------------|
+| `repo:v1.2.3@sha256:…` | `repo:v1.2.3` (trusts the embedded semver tag, strips the digest) |
+| `repo@sha256:…` / `repo:latest@sha256:…` | reverse-lookup: the **highest semver tag whose manifest digest equals the pinned one** → `repo:vX.Y.Z` |
+
+The conversion is faithful — the same image, now expressed as a version — and is
+committed + pushed to Git like any other bump (`chore(image): web sha256:… ->
+v1.2.0`). The next tick resumes normal semver selection from that tag. If no
+published semver tag points at the pinned digest, migration is a no-op and logs
+the reason (best-effort, never blocks reconcile). `digest` mode itself is
+unaffected: it keeps pinning a mutable tag's digest and is not migrated.
