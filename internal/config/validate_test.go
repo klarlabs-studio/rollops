@@ -64,12 +64,24 @@ func TestValidate_DatabaseHooks(t *testing.T) {
 	// A complete database block validates.
 	c = mustParse(t, validYAML)
 	c.Spec.Database = &Database{
-		Migrate:            &DatabaseRollback{Command: []string{"goose", "up"}, Timeout: "60s"},
+		Migrate:            &DatabaseRollback{Command: []string{"goose", "up"}, Timeout: "60s", When: MigratePostPromote},
 		Rollback:           &DatabaseRollback{Command: []string{"goose", "down"}},
 		BackwardCompatible: true,
 	}
 	if err := Validate(c); err != nil {
 		t.Errorf("complete database block should validate, got %v", err)
+	}
+	// Bad migrate.when is rejected.
+	c = mustParse(t, validYAML)
+	c.Spec.Database = &Database{Migrate: &DatabaseRollback{Command: []string{"goose", "up"}, When: "whenever"}}
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.migrate.when") {
+		t.Errorf("bad migrate.when must error, got %v", err)
+	}
+	// when on the rollback hook is rejected (only valid for migrate).
+	c = mustParse(t, validYAML)
+	c.Spec.Database = &Database{Rollback: &DatabaseRollback{Command: []string{"goose", "down"}, When: MigratePreDeploy}}
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.rollback.when") {
+		t.Errorf("when on rollback must error, got %v", err)
 	}
 }
 

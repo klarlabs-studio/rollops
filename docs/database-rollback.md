@@ -10,25 +10,40 @@ Three hooks live under `spec.database`:
 spec:
   database:
     migrate:
-      command: ["goose", "up"]     # forward migration, run at deploy
+      command: ["goose", "up"]     # forward migration
       timeout: 60s
+      when: pre-deploy             # pre-deploy (default) | post-promote
     rollback:
       command: ["goose", "down"]   # reverse migration, run on rollback
       timeout: 30s
     backwardCompatible: false      # is the new schema safe for the OLD app?
 ```
 
-- **migrate** — runs once at deploy time, **before** the new manifest is applied,
-  so the schema is ready for the new version. A migration failure **aborts the
-  deploy**: the target is never touched and the rollout ends `rolled-back`.
+- **migrate** — forward migration with a `when`:
+  - `pre-deploy` (default) runs **before** the new manifest is applied, so the
+    schema is ready for the new version (the *expand* step). A failure **aborts
+    the deploy**: the target is never touched and the rollout ends `rolled-back`.
+  - `post-promote` runs **after** the rollout is promoted — the *contract* step or
+    a data backfill the new version drives. A failure leaves the rollout promoted
+    but records the failure loudly for operator attention.
 - **rollback** — runs on *any* rollback (manual, agent, or auto) after the prior
   manifest is re-applied. Supersedes the deprecated `spec.rollback.database`
-  (still honoured as a fallback when `spec.database.rollback` is absent).
+  (still honoured as a fallback when `spec.database.rollback` is absent). `when`
+  is not valid here.
 - **backwardCompatible** — operator assertion that the migration is safe to run
   the *previous* app version against (expand/contract). Drives the rollback gate
   below.
 
 Each hook's `command` is required and `timeout` is an optional Go duration.
+
+## Plan preview
+
+`rollops plan` surfaces a pending migration before anything runs, e.g.:
+
+```
+demo/prod/web [kubernetes]: update — a1b2c3 → d4e5f6
+  + database migrate (pre-deploy): goose up
+```
 
 ## Rollback gate (backward-compatibility)
 
