@@ -82,6 +82,41 @@ func TestApplyPolicyFile_EnvWildcardGrantStillMatchesScopedRequest(t *testing.T)
 	}
 }
 
+func TestPolicy_ReplaceWith_HotSwap(t *testing.T) {
+	live := DefaultRBACPolicy()
+	dev := rollout.Identity{Kind: "human", Name: "dev", Groups: []string{"team"}}
+	// Not yet granted.
+	if err := live.Authorize(dev, PermApply, Scope{}); err == nil {
+		t.Fatal("dev should not have apply before reload")
+	}
+	// Build a fresh policy that grants it, swap in.
+	fresh := DefaultRBACPolicy()
+	if err := ApplyPolicyFile(fresh, []byte("roles:\n  - name: dep\n    grants:\n      - perm: rollouts.apply\nbindings:\n  - subject: group:team\n    roles: [dep]\n")); err != nil {
+		t.Fatal(err)
+	}
+	live.ReplaceWith(fresh)
+	if err := live.Authorize(dev, PermApply, Scope{}); err != nil {
+		t.Errorf("dev should have apply after ReplaceWith: %v", err)
+	}
+}
+
+func TestPolicy_ConcurrentAuthorizeAndReplace(t *testing.T) {
+	// Run with -race: Authorize (RLock) must not race ReplaceWith (Lock).
+	live := DefaultRBACPolicy()
+	id := rollout.Identity{Kind: "human", Name: "admin"}
+	done := make(chan struct{})
+	go func() {
+		for range 1000 {
+			live.Authorize(id, PermApply, Scope{})
+		}
+		close(done)
+	}()
+	for range 1000 {
+		live.ReplaceWith(DefaultRBACPolicy())
+	}
+	<-done
+}
+
 func TestApplyPolicyFile_EmptyIsNoop(t *testing.T) {
 	p := DefaultRBACPolicy()
 	if err := ApplyPolicyFile(p, []byte("")); err != nil {

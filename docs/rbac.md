@@ -76,8 +76,18 @@ safety layer inside the engine — emergency freeze, agent rate-limit, and a pol
 floor that forces human approval for critical/prod-schema changes regardless of
 RBAC grants.
 
+## Hot reload
+
+Send `SIGHUP` to `rollopsd` to reload the policy file without a restart — the
+policy is rebuilt (defaults + file + OIDC group binds) and swapped atomically,
+so in-flight requests are unaffected. A malformed file is **rejected and the
+current policy kept** (logged), so a typo can't lock everyone out.
+
+```sh
+kill -HUP $(pidof rollopsd)   # or: kubectl exec … -- kill -HUP 1
+```
+
 ## Limitations
 
-- Policy is loaded at startup; no hot reload yet (restart to apply changes).
 - Group bindings beyond the two bootstrap env vars require the policy file.
 - No built-in policy-editing API/UI — the file is the source of truth.
