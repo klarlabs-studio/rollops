@@ -1,23 +1,40 @@
 # Changelog
 
-## Unreleased - Fleet GitOps: Many-App Reconcile, Private Repos, Image Automation
+## v0.16.0 - Fleet GitOps: Many-App Reconcile, Private Repos, Image Automation
 
-Everything needed to run a whole cluster's rollouts from Git (a keel replacement):
+Everything needed to run a whole cluster's rollouts from Git — a keel
+replacement, validated by migrating a live production fleet (28 deployments) off
+keel onto Rollops.
 
 - **Many configs per repo.** `config.LoadAllFromDir` — a watched repo path can be
-  a directory; the reconciler loads and reconciles every `*.yaml` independently.
+  a directory; the reconciler loads and reconciles every `*.yaml` independently,
+  so one repo (or many) manages a whole cluster.
 - **Private config repos.** `ROLLOPS_WATCH` entries accept `token`/`tokenFile`/
   `deployKeyPath`; the git layer now actually applies an https token (previously
   declared but unused) as an `Authorization` header, never written to disk.
 - **Registry-poll image automation** (`imagePolicy`). The daemon scans the
   registry (Docker Registry v2 + bearer challenge; ghcr/Docker Hub/…) for newer
-  tags of `spec.target.spec.image`, selects per `mode` (major/minor/patch/any +
-  optional pattern), and writes the bump back to Git (commit + push) — the
-  keel-style "new tag → deploy", GitOps-native. A new `image` field on the
-  Kubernetes target overrides the rendered manifest's container image so the bump
-  reaches the workload. Enable with `ROLLOPS_IMAGE_AUTOMATION=1`. See
-  `docs/image-automation.md`.
-- The reconcile loop also no longer runs silently — see v0.15.0.
+  tags of `spec.target.spec.image` and writes the bump back to Git (commit +
+  push) — the keel-style "new tag → deploy", GitOps-native:
+  - semver modes `major`/`minor`/`patch`/`any` (+ optional tag pattern); commit-
+    SHA and `latest` tags are ignored safely, never selected.
+  - `digest` mode pins a mutable tag's (`:latest`) manifest digest to
+    `repo:tag@sha256:…` and redeploys when the digest moves (keel "force" parity).
+  - a new `image` field on the Kubernetes target overrides the rendered
+    manifest's container image so the bump reaches the workload. Enable on the
+    daemon with `ROLLOPS_IMAGE_AUTOMATION=1` (+ registry creds for private). See
+    `docs/image-automation.md`.
+- **Containerized daemon + Kubernetes deploy.** A `Dockerfile` (pure-Go, embedded
+  UI, kubectl+git on Alpine), `deploy/kubernetes/rollopsd.yaml` (namespace, SA,
+  RBAC, watch ConfigMap, PVC, Deployment, Service), `cutover-patch.yaml`, and
+  `docs/deploy-kubernetes.md` + `docs/keel-migration.md`.
+- **Reliability/security fixes** surfaced dogfooding the live cutover:
+  - image automation is best-effort — a scan/push failure no longer aborts the
+    reconcile of that app.
+  - the watcher logs per-tick outcomes (was silent); one unreachable repo is
+    logged and skipped instead of crashing the whole daemon.
+  - git tokens are redacted from error messages (an `http.extraheader` had leaked
+    into a logged command on a clone failure).
 
 ## v0.15.0 - Dogfood Fixes (live k3s)
 
