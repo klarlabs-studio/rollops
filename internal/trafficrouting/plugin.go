@@ -40,7 +40,7 @@ func BuildRouter(cfg *config.TrafficRouting) (Router, error) {
 	if err != nil {
 		return nil, fmt.Errorf("trafficrouting: resolve plugin: %w", err)
 	}
-	if err := pluginhost.VerifyBinary(real, cfg.SHA256); err != nil {
+	if err := pluginhost.VerifyArtifact(real, cfg.SHA256); err != nil {
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
 	proc, err := pluginhost.Launch(context.Background(), real)
