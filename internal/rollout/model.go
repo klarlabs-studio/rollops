@@ -81,12 +81,14 @@ type Rollout struct {
 	StepIndex  int // 1-based step currently passed
 	StepTotal  int // total steps in the resolved plan
 	StepWeight int // traffic percentage of the current step
-	// Database rollback command captured at deploy time so any later rollback —
-	// manual or agent-driven, not only the auto path that still holds the config —
-	// can run it. Mirrors config.DatabaseRollback without coupling this model to
-	// the config package. Empty command means no database hook.
-	DBRollbackCmd     []string
-	DBRollbackTimeout string
+	// Database hooks captured at deploy time so any later rollback — manual or
+	// agent-driven, not only the auto path that still holds the config — can run
+	// them, and so a rollback can be gated on migration backward-compatibility.
+	// Mirror config without coupling this model to the config package.
+	DBRollbackCmd        []string // reverse (down) command; empty means no hook
+	DBRollbackTimeout    string
+	DBMigrateCmd         []string // forward migration that ran at deploy; empty means none
+	DBBackwardCompatible bool     // migration declared safe for the previous app version
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

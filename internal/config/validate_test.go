@@ -48,6 +48,44 @@ func TestValidate_TrafficRoutingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestValidate_DatabaseHooks(t *testing.T) {
+	// Empty migrate command is rejected with a database.migrate path.
+	c := mustParse(t, validYAML)
+	c.Spec.Database = &Database{Migrate: &DatabaseRollback{}}
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.migrate.command") {
+		t.Errorf("empty migrate command must error, got %v", err)
+	}
+	// Bad timeout on the rollback hook is rejected.
+	c = mustParse(t, validYAML)
+	c.Spec.Database = &Database{Rollback: &DatabaseRollback{Command: []string{"goose", "down"}, Timeout: "nope"}}
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.rollback.timeout") {
+		t.Errorf("bad rollback timeout must error, got %v", err)
+	}
+	// A complete database block validates.
+	c = mustParse(t, validYAML)
+	c.Spec.Database = &Database{
+		Migrate:            &DatabaseRollback{Command: []string{"goose", "up"}, Timeout: "60s"},
+		Rollback:           &DatabaseRollback{Command: []string{"goose", "down"}},
+		BackwardCompatible: true,
+	}
+	if err := Validate(c); err != nil {
+		t.Errorf("complete database block should validate, got %v", err)
+	}
+}
+
+func TestSpec_DatabaseRollbackHookFallback(t *testing.T) {
+	// Deprecated spec.rollback.database is honoured when spec.database.rollback is absent.
+	s := Spec{Rollback: Rollback{Database: &DatabaseRollback{Command: []string{"legacy", "down"}}}}
+	if got := s.DatabaseRollbackHook(); got == nil || got.Command[0] != "legacy" {
+		t.Fatalf("fallback to rollback.database failed: %+v", got)
+	}
+	// spec.database.rollback takes precedence over the deprecated field.
+	s.Database = &Database{Rollback: &DatabaseRollback{Command: []string{"new", "down"}}}
+	if got := s.DatabaseRollbackHook(); got == nil || got.Command[0] != "new" {
+		t.Fatalf("database.rollback should win: %+v", got)
+	}
+}
+
 func TestValidate_VerificationEnum(t *testing.T) {
 	c := mustParse(t, validYAML)
 	for _, v := range []string{"", "shallow", "full"} {

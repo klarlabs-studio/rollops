@@ -38,12 +38,14 @@ type fakeSmoke struct{ code int }
 func (f fakeSmoke) Run(context.Context, []string) (int, error) { return f.code, nil }
 
 type fakeDBRollback struct {
-	command []string
+	command []string   // last command run (forward or reverse)
+	calls   [][]string // every command run, in order
 	err     error
 }
 
 func (f *fakeDBRollback) Run(_ context.Context, command []string) error {
 	f.command = append([]string(nil), command...)
+	f.calls = append(f.calls, append([]string(nil), command...))
 	return f.err
 }
 
@@ -138,6 +140,139 @@ func TestVerifyOrRollback_DatabaseRollbackHookRunsAfterAutoRollback(t *testing.T
 	}
 }
 
+func TestApply_ForwardMigrationRunsBeforeDeploy(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 0}), WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{Command: []string{"goose", "up"}}}
+
+	if _, err := e.Apply(context.Background(), ApplyRequest{Config: c}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if strings.Join(db.command, " ") != "goose up" {
+		t.Fatalf("forward migration command = %v, want [goose up]", db.command)
+	}
+	if len(fake.applied) == 0 {
+		t.Fatal("target should have been applied after the migration")
+	}
+}
+
+func TestApply_ForwardMigrationFailureAbortsDeploy(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{err: errors.New("migration failed")}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{Command: []string{"goose", "up"}}}
+
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c})
+	if err == nil {
+		t.Fatal("a failed forward migration must abort the deploy")
+	}
+	if len(fake.applied) != 0 {
+		t.Errorf("target must not be applied when the migration fails, got %d applies", len(fake.applied))
+	}
+	if r != nil && string(r.Phase) != "rolled-back" {
+		t.Errorf("phase = %q, want rolled-back", r.Phase)
+	}
+}
+
+func TestRollback_BlockedWhenMigrationNotBackwardCompatible(t *testing.T) {
+	// A release that ran a non-backwardCompatible migration with no reverse
+	// command is unsafe to roll back: the old app would hit the new schema.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{
+		Migrate:            &config.DatabaseRollback{Command: []string{"goose", "up"}},
+		BackwardCompatible: false,
+	}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	prior := pt.Manifest{Kind: "fake", Checksum: "prior"}
+	_, err := e.Rollback(context.Background(), r.ID, prior, false)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("err = %v, want rollback blocked", err)
+	}
+	// force overrides the gate.
+	out, err := e.Rollback(context.Background(), r.ID, prior, true)
+	if err != nil {
+		t.Fatalf("forced rollback: %v", err)
+	}
+	if string(out.Phase) != "rolled-back" {
+		t.Errorf("phase = %q, want rolled-back", out.Phase)
+	}
+}
+
+func TestRollback_AllowedWhenBackwardCompatible(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{
+		Migrate:            &config.DatabaseRollback{Command: []string{"goose", "up"}},
+		BackwardCompatible: true, // safe for the old app → rollback allowed
+	}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	out, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, false)
+	if err != nil {
+		t.Fatalf("backward-compatible rollback must be allowed: %v", err)
+	}
+	if string(out.Phase) != "rolled-back" {
+		t.Errorf("phase = %q, want rolled-back", out.Phase)
+	}
+}
+
+func TestRollback_AllowedWhenReverseCommandPresent(t *testing.T) {
+	// Not backward-compatible, but a reverse command exists → rollback allowed and
+	// the down migration runs.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{
+		Migrate:            &config.DatabaseRollback{Command: []string{"goose", "up"}},
+		Rollback:           &config.DatabaseRollback{Command: []string{"goose", "down"}},
+		BackwardCompatible: false,
+	}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	out, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, false)
+	if err != nil {
+		t.Fatalf("rollback with reverse command must be allowed: %v", err)
+	}
+	if strings.Join(db.command, " ") != "goose down" {
+		t.Fatalf("reverse command = %v, want [goose down]", db.command)
+	}
+	if !strings.Contains(out.Note, "database rollback: succeeded") {
+		t.Errorf("note = %q, want database rollback success", out.Note)
+	}
+}
+
+func TestVerifyOrRollback_AutoBypassesBackwardCompatGate(t *testing.T) {
+	// Auto-rollback must recover even when the migration is non-backwardCompatible
+	// with no reverse command: the deploy already failed.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 1}), WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Database = &config.Database{
+		Migrate:            &config.DatabaseRollback{Command: []string{"goose", "up"}},
+		BackwardCompatible: false,
+	}
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	out, err := e.VerifyOrRollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, c)
+	if err != nil {
+		t.Fatalf("VerifyOrRollback: %v", err)
+	}
+	if !out.RolledBack {
+		t.Fatal("auto-rollback must proceed despite the gate")
+	}
+}
+
 func TestRollback_ManualRunsPersistedDatabaseHook(t *testing.T) {
 	// A manual rollback has no config in hand, but the database command captured
 	// on the rollout at deploy time must still run — closing the gap where only
@@ -153,7 +288,7 @@ func TestRollback_ManualRunsPersistedDatabaseHook(t *testing.T) {
 	}
 
 	// Manual rollback: caller passes only the prior manifest, no DB config.
-	out, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"})
+	out, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, false)
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -176,7 +311,7 @@ func TestRollback_ManualNoDatabaseHookNoop(t *testing.T) {
 	c := loadAutoRollback(t) // no rollback.database block
 	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
 
-	if _, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}); err != nil {
+	if _, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}, false); err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
 	if db.command != nil {

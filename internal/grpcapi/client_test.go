@@ -73,7 +73,7 @@ func TestClient_RollbackThroughGRPC(t *testing.T) {
 	if _, err := c.Apply(ctx, engine.ApplyRequest{Config: cfg2}); err != nil {
 		t.Fatalf("Apply second: %v", err)
 	}
-	rb, err := c.RollbackLast(ctx, "demo/prod/app")
+	rb, err := c.RollbackLast(ctx, "demo/prod/app", false)
 	if err != nil {
 		t.Fatalf("RollbackLast: %v", err)
 	}

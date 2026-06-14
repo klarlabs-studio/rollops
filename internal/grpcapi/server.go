@@ -151,7 +151,7 @@ func (s *Server) Rollback(ctx context.Context, req *rollopsv1.RollbackRequest) (
 	if err := s.policy.Authorize(id, security.PermRollback, security.Scope{TargetRef: target}); err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	rl, err := s.eng.RollbackLast(ctx, target)
+	rl, err := s.eng.RollbackLast(ctx, target, req.GetForce())
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}

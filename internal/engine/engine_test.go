@@ -299,7 +299,7 @@ func TestRollback_ReappliesPrior(t *testing.T) {
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
 	prior := pt.Manifest{Kind: "fake", Spec: []byte(`{"x":0}`), Checksum: "prior"}
-	rb, err := e.Rollback(ctx, r.ID, prior)
+	rb, err := e.Rollback(ctx, r.ID, prior, false)
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestDriftReport_AssertsRolledBackBaseline(t *testing.T) {
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
 	prior := pt.Manifest{Kind: "fake", Spec: []byte(`{"x":0}`), Checksum: "prior"}
-	if _, err := e.Rollback(ctx, r.ID, prior); err != nil {
+	if _, err := e.Rollback(ctx, r.ID, prior, false); err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
 

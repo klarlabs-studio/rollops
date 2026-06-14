@@ -57,6 +57,7 @@ type Spec struct {
 	FeatureFlags   *FeatureFlags   `yaml:"featureFlags,omitempty" json:"featureFlags,omitempty"`
 	TrafficRouting *TrafficRouting `yaml:"trafficRouting,omitempty" json:"trafficRouting,omitempty"`
 	ImagePolicy    *ImagePolicy    `yaml:"imagePolicy,omitempty" json:"imagePolicy,omitempty"`
+	Database       *Database       `yaml:"database,omitempty" json:"database,omitempty"`
 	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"`         // RFC3339 future time
 	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow (default) | full
@@ -174,12 +175,53 @@ type Rollback struct {
 	Trigger     string            `yaml:"trigger,omitempty" json:"trigger,omitempty"` // CEL bool
 }
 
-// DatabaseRollback is an optional command hook run after manifest auto-rollback.
-// It lets operators delegate reversible schema/data steps to their migration
-// tool of choice without making Rollops database-vendor aware.
+// DatabaseRollback is an optional command hook delegating reversible schema/data
+// steps to the operator's migration tool of choice, without making Rollops
+// database-vendor aware. It is the generic shape for both the forward migration
+// and the rollback command (see Database).
 type DatabaseRollback struct {
 	Command []string `yaml:"command" json:"command"`
 	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+}
+
+// Database groups a rollout's optional database lifecycle hooks:
+//
+//   - Migrate runs a forward migration at deploy time, before the new manifest is
+//     applied. A migration failure aborts the deploy (the target is never touched).
+//   - Rollback reverses schema/data on any rollback (manual, agent, or auto).
+//   - BackwardCompatible asserts the migration is safe to run the PREVIOUS app
+//     version against (expand/contract). When false and no Rollback command is
+//     configured, a rollback is blocked as unsafe unless the caller forces it.
+//
+// Rollback here supersedes the deprecated spec.rollback.database (still honoured
+// as a fallback). All commands delegate to the operator's migration tool.
+type Database struct {
+	Migrate            *DatabaseRollback `yaml:"migrate,omitempty" json:"migrate,omitempty"`
+	Rollback           *DatabaseRollback `yaml:"rollback,omitempty" json:"rollback,omitempty"`
+	BackwardCompatible bool              `yaml:"backwardCompatible,omitempty" json:"backwardCompatible,omitempty"`
+}
+
+// DatabaseMigrate returns the forward migration hook, or nil when none is set.
+func (s Spec) DatabaseMigrate() *DatabaseRollback {
+	if s.Database != nil {
+		return s.Database.Migrate
+	}
+	return nil
+}
+
+// DatabaseRollbackHook returns the rollback (down) command, preferring the new
+// spec.database.rollback and falling back to the deprecated spec.rollback.database.
+func (s Spec) DatabaseRollbackHook() *DatabaseRollback {
+	if s.Database != nil && s.Database.Rollback != nil {
+		return s.Database.Rollback
+	}
+	return s.Rollback.Database
+}
+
+// DatabaseBackwardCompatible reports whether the deploy's migration was declared
+// safe to run the previous app version against.
+func (s Spec) DatabaseBackwardCompatible() bool {
+	return s.Database != nil && s.Database.BackwardCompatible
 }
 
 // HealthCheck is an observability-free liveness probe (exactly one of HTTP/TCP/Command).

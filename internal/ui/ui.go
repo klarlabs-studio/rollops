@@ -31,7 +31,7 @@ type Backend interface {
 	Resources(ctx context.Context, rolloutID string) ([]pt.Resource, error)
 	Approve(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
-	RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error)
+	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 }
 
 // Server serves the SPA and the JSON API.
@@ -293,12 +293,13 @@ func (s *Server) actByID(w http.ResponseWriter, r *http.Request, fn func(context
 func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Target string `json:"target"`
+		Force  bool   `json:"force"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Target == "" {
 		writeErr(w, http.StatusBadRequest, "target required")
 		return
 	}
-	if _, err := s.be.RollbackLast(r.Context(), body.Target); err != nil {
+	if _, err := s.be.RollbackLast(r.Context(), body.Target, body.Force); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

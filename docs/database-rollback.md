@@ -1,27 +1,65 @@
-# Database Rollback
+# Database Lifecycle (Migrate, Rollback, Gate)
 
-Database rollback is an optional Phase 2 hook for the auto-rollback path. It is
-not a migration framework: Rollops re-applies the prior target manifest, then
-runs the operator-provided command so the service's own migration tool can
-reverse schema or data changes.
+Rollops is not a migration framework: it delegates schema/data changes to the
+service's own migration tool (goose, flyway, liquibase, …). It orchestrates
+*when* those commands run around a deploy and *whether* a rollback is safe.
 
-## Config
-
-The hook lives under `spec.rollback.database`:
+Three hooks live under `spec.database`:
 
 ```yaml
-rollback:
-  auto: true
-  smokeTest:
-    command: ["./smoke.sh"]
+spec:
   database:
-    command: ["goose", "down"]
-    timeout: 30s
+    migrate:
+      command: ["goose", "up"]     # forward migration, run at deploy
+      timeout: 60s
+    rollback:
+      command: ["goose", "down"]   # reverse migration, run on rollback
+      timeout: 30s
+    backwardCompatible: false      # is the new schema safe for the OLD app?
 ```
 
-Fields:
+- **migrate** — runs once at deploy time, **before** the new manifest is applied,
+  so the schema is ready for the new version. A migration failure **aborts the
+  deploy**: the target is never touched and the rollout ends `rolled-back`.
+- **rollback** — runs on *any* rollback (manual, agent, or auto) after the prior
+  manifest is re-applied. Supersedes the deprecated `spec.rollback.database`
+  (still honoured as a fallback when `spec.database.rollback` is absent).
+- **backwardCompatible** — operator assertion that the migration is safe to run
+  the *previous* app version against (expand/contract). Drives the rollback gate
+  below.
 
-- `command`: executable and arguments. Required when `database` is present.
+Each hook's `command` is required and `timeout` is an optional Go duration.
+
+## Rollback gate (backward-compatibility)
+
+A rollback re-applies the old app manifest. If that release ran a forward
+migration that is **not** `backwardCompatible` and there is **no** `rollback`
+command to reverse the schema, the old app would run against the new schema —
+unsafe. Rollops **blocks** such a rollback:
+
+```
+engine: rollback blocked: release ran a database migration not declared
+backwardCompatible and has no database rollback command; force the rollback to override
+```
+
+Override with force:
+
+- CLI: `rollops rollback <target-ref> --force`
+- gRPC/REST/UI/MCP: `force: true` on the rollback request
+
+The gate is bypassed automatically on **auto-rollback** (`VerifyOrRollback`): the
+deploy already failed, so recovering to the prior state beats leaving the bad
+version running.
+
+The gate clears (rollback allowed without force) when either the migration is
+declared `backwardCompatible: true`, or a `rollback` command is configured to
+reverse it, or the release ran no forward migration at all.
+
+## Rollback command details
+
+Fields (shared shape for `migrate` and `rollback`):
+
+- `command`: executable and arguments. Required.
 - `timeout`: optional Go duration for the command.
 
 The command is **captured on the rollout at deploy time**, so every rollback

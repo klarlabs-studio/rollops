@@ -148,6 +148,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	id := identityFrom(r)
 	var body struct {
 		Target string `json:"target"`
+		Force  bool   `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.Target == "" {
 		writeErr(w, http.StatusBadRequest, "target required")
@@ -157,7 +158,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, err.Error())
 		return
 	}
-	rl, err := s.eng.RollbackLast(r.Context(), body.Target)
+	rl, err := s.eng.RollbackLast(r.Context(), body.Target, body.Force)
 	if err != nil {
 		writeErr(w, http.StatusPreconditionFailed, err.Error())
 		return

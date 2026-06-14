@@ -27,7 +27,7 @@ type Operations interface {
 	Apply(ctx context.Context, req engine.ApplyRequest) (*rollout.Rollout, error)
 	Status(ctx context.Context, id string) (rollout.Rollout, error)
 	Promote(ctx context.Context, id string) (rollout.Rollout, error)
-	RollbackLast(ctx context.Context, targetRef string) (rollout.Rollout, error)
+	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 }
 
 type historyOperations interface {
@@ -157,10 +157,21 @@ func (a *App) promote(ctx context.Context, args []string) error {
 }
 
 func (a *App) rollback(ctx context.Context, args []string) error {
-	if len(args) < 1 {
+	// --force overrides the backward-compatibility gate (non-backwardCompatible
+	// migration with no reverse command). Accept it in any position.
+	force := false
+	var rest []string
+	for _, arg := range args {
+		if arg == "--force" || arg == "-f" {
+			force = true
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	if len(rest) < 1 {
 		return fmt.Errorf("rollback: target ref required")
 	}
-	r, err := a.Ops.RollbackLast(ctx, args[0])
+	r, err := a.Ops.RollbackLast(ctx, rest[0], force)
 	if err != nil {
 		return err
 	}
