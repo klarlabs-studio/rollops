@@ -624,6 +624,12 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	// Capture the database rollback command so a later manual/agent rollback can
+	// run it too — not just the auto path that still holds the config in hand.
+	if db := cfg.Spec.Rollback.Database; db != nil {
+		r.DBRollbackCmd = db.Command
+		r.DBRollbackTimeout = db.Timeout
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -997,6 +1003,13 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 		return r, ErrTargetBusy
 	}
 	defer release()
+
+	// When no explicit hook was passed (manual or agent rollback), fall back to
+	// the command captured on the rollout at deploy time, so every rollback path —
+	// not only auto — reverses the database.
+	if db == nil && len(r.DBRollbackCmd) > 0 {
+		db = &config.DatabaseRollback{Command: r.DBRollbackCmd, Timeout: r.DBRollbackTimeout}
+	}
 
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
 	if err != nil {

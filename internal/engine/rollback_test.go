@@ -138,6 +138,52 @@ func TestVerifyOrRollback_DatabaseRollbackHookRunsAfterAutoRollback(t *testing.T
 	}
 }
 
+func TestRollback_ManualRunsPersistedDatabaseHook(t *testing.T) {
+	// A manual rollback has no config in hand, but the database command captured
+	// on the rollout at deploy time must still run — closing the gap where only
+	// auto-rollback reversed the database.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t)
+	c.Spec.Rollback.Database = &config.DatabaseRollback{Command: []string{"goose", "down"}}
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	// Manual rollback: caller passes only the prior manifest, no DB config.
+	out, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"})
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if string(out.Phase) != "rolled-back" {
+		t.Errorf("phase = %q, want rolled-back", out.Phase)
+	}
+	if strings.Join(db.command, " ") != "goose down" {
+		t.Fatalf("manual rollback database command = %v, want [goose down]", db.command)
+	}
+	if !strings.Contains(out.Note, "database rollback: succeeded") {
+		t.Errorf("note = %q, want database rollback success", out.Note)
+	}
+}
+
+func TestRollback_ManualNoDatabaseHookNoop(t *testing.T) {
+	// No database command configured → manual rollback must not invoke the runner.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	db := &fakeDBRollback{}
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	c := loadAutoRollback(t) // no rollback.database block
+	r, _ := e.Apply(context.Background(), ApplyRequest{Config: c})
+
+	if _, err := e.Rollback(context.Background(), r.ID, pt.Manifest{Kind: "fake", Checksum: "prior"}); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if db.command != nil {
+		t.Fatalf("database runner must not be called without a configured command, got %v", db.command)
+	}
+}
+
 func TestVerifyOrRollback_DatabaseRollbackHookFailureIsLoud(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	db := &fakeDBRollback{err: errors.New("migration refused")}

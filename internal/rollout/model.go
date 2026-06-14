@@ -81,8 +81,14 @@ type Rollout struct {
 	StepIndex  int // 1-based step currently passed
 	StepTotal  int // total steps in the resolved plan
 	StepWeight int // traffic percentage of the current step
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// Database rollback command captured at deploy time so any later rollback —
+	// manual or agent-driven, not only the auto path that still holds the config —
+	// can run it. Mirrors config.DatabaseRollback without coupling this model to
+	// the config package. Empty command means no database hook.
+	DBRollbackCmd     []string
+	DBRollbackTimeout string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —

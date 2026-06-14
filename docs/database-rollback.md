@@ -24,9 +24,12 @@ Fields:
 - `command`: executable and arguments. Required when `database` is present.
 - `timeout`: optional Go duration for the command.
 
-The command runs only when `VerifyOrRollback` performs an automatic rollback.
-Manual `rollops rollback <target-ref>` remains manifest-only because it does not
-have the rollout config in hand and must not infer database intent.
+The command is **captured on the rollout at deploy time**, so every rollback
+path runs it — automatic (`VerifyOrRollback`), manual (`rollops rollback
+<target-ref>`), or agent-driven. A manual rollback no longer needs the config in
+hand: the engine reads the persisted command from the store and runs it after the
+manifest re-apply. A rollout deployed without a `database` block carries no
+command, so its rollback stays manifest-only — no database intent is inferred.
 
 ## Operator Visibility
 
