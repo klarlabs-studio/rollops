@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.18.0 - Interface Completeness: Every Op on Every Surface
+
+Every rollout operation is now reachable from every interface (CLI, gRPC, REST,
+MCP, UI), surfaced during an end-to-end wiring audit. All additive.
+
+- **Rollout note in Status.** The latest transition note (e.g. `database
+  rollback: succeeded`, a post-promote migration failure) is persisted on the
+  rollout row and returned by Status over gRPC, REST, and MCP — previously only
+  CLI/UI history showed it.
+- **Promote / Approve / Reject over gRPC, REST, and MCP.** These were UI-only
+  (approve/reject) or CLI-in-process (promote); agents and CI can now drive them.
+  Approve/reject use `rollouts.approve`; promote uses the new `rollouts.promote`
+  permission.
+- **CLI `approve` / `reject`** subcommands; **UI Promote button** (shown while a
+  rollout is verifying) and the rollback modal's **Force** checkbox.
+- **Emergency freeze on every interface.** The kill-switch (`security.Freeze`)
+  is now runtime-togglable everywhere — `rollops freeze [reason]` / `unfreeze`,
+  the `Freeze` gRPC RPC, `POST /v1/freeze`, the `rollouts.freeze` MCP tool, and a
+  UI freeze toggle + banner — gated by `rollouts.freeze`. While frozen, applies
+  are blocked but promote/rollback stay available so recovery is never blocked.
+  State is in-memory and does not survive a daemon restart.
+
 ## v0.17.0 - Enterprise Hardening: DB Lifecycle, RBAC, SSO, Supply Chain, Gateway Routing
 
 Hardening surfaced by dogfooding the keel→Rollops fleet cutover and by closing
