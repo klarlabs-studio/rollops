@@ -260,6 +260,21 @@ binary you run as the daemon's user.
   directory writable only by root (or the daemon's deploy user) — e.g.
   `/usr/local/lib/rollops/plugins/` on a trusted mount — never a
   world-writable or operator-writable location.
+- **Provenance (signing).** Set `ROLLOPS_PLUGIN_PUBLIC_KEY` to a cosign public
+  key (PEM) to additionally require a valid signature on every plugin binary —
+  integrity (sha256) plus provenance (who signed it). Sign with cosign's
+  key-based blob signing and ship the signature beside the binary as
+  `<binary>.sig`:
+
+  ```bash
+  cosign sign-blob --key cosign.key --output-signature plugin.sig plugin
+  # deploy: plugin, plugin.sig, and ROLLOPS_PLUGIN_PUBLIC_KEY=/etc/rollops/cosign.pub
+  ```
+
+  Verification is stdlib-only (ECDSA-P256, Ed25519, or RSA per the key type) —
+  no sigstore dependency, so the daemon stays a single static binary. Keyless
+  (Fulcio/Rekor) signing is not verified. When the env var is unset, signing is
+  off and only the sha256 pin applies.
 - **Secrets.** Plugins do **not** receive resolved secrets. `secret:<ref>`
   values in a plugin target's spec reach the plugin as the literal reference
   string, not the plaintext (secret resolution is reserved for first-party

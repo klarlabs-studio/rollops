@@ -36,7 +36,7 @@ func Build(cfg config.Target) (pt.Target, error) {
 		return nil, fmt.Errorf("plugin: target %q: resolve binary: %w", cfg.Ref, err)
 	}
 	pin, _ := cfg.Spec["sha256"].(string)
-	if err := pluginhost.VerifyBinary(real, pin); err != nil {
+	if err := pluginhost.VerifyArtifact(real, pin); err != nil {
 		return nil, fmt.Errorf("plugin: target %q: %w", cfg.Ref, err)
 	}
 	proc, err := pluginhost.Launch(context.Background(), real)

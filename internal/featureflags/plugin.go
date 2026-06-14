@@ -40,7 +40,7 @@ func BuildProvider(cfg *config.FeatureFlags) (Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("featureflags: resolve plugin: %w", err)
 	}
-	if err := pluginhost.VerifyBinary(real, cfg.SHA256); err != nil {
+	if err := pluginhost.VerifyArtifact(real, cfg.SHA256); err != nil {
 		return nil, fmt.Errorf("featureflags: %w", err)
 	}
 	proc, err := pluginhost.Launch(context.Background(), real)
