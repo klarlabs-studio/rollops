@@ -39,17 +39,17 @@ const sampleIndex = `{
   ]
 }`
 
-func serveIndex(t *testing.T, body string) (*http.Client, string) {
+func serveIndex(t *testing.T) (*http.Client, string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(sampleIndex))
 	}))
 	t.Cleanup(srv.Close)
 	return srv.Client(), srv.URL
 }
 
 func TestFetchAndFind(t *testing.T) {
-	hc, url := serveIndex(t, sampleIndex)
+	hc, url := serveIndex(t)
 	idx, err := Fetch(context.Background(), hc, url)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
@@ -76,7 +76,7 @@ func TestFetchNon200(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	hc, url := serveIndex(t, sampleIndex)
+	hc, url := serveIndex(t)
 	idx, _ := Fetch(context.Background(), hc, url)
 
 	all := idx.Search("")
@@ -98,7 +98,7 @@ func TestSearch(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	hc, url := serveIndex(t, sampleIndex)
+	hc, url := serveIndex(t)
 	idx, _ := Fetch(context.Background(), hc, url)
 
 	// Empty version uses latest, returns the platform artifact + cosign material.
@@ -138,7 +138,7 @@ func TestResolve(t *testing.T) {
 }
 
 func TestFindVersionBySHA(t *testing.T) {
-	hc, url := serveIndex(t, sampleIndex)
+	hc, url := serveIndex(t)
 	idx, _ := Fetch(context.Background(), hc, url)
 
 	name, ver, ok := idx.FindVersionBySHA("aaa", "linux", "amd64")

@@ -47,7 +47,7 @@ func (f *ftpConn) Retrieve(_ context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
 }
 

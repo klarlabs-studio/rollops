@@ -87,7 +87,7 @@ func (t *sshTransport) Run(ctx context.Context, cmd string) (int, string, error)
 	if err != nil {
 		return -1, "", err
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	// Separate buffers: x/crypto/ssh copies stdout and stderr in concurrent
 	// goroutines, so sharing one bytes.Buffer is a data race that corrupts or
@@ -117,7 +117,7 @@ func (t *sshTransport) WriteFile(ctx context.Context, path string, content []byt
 	if err != nil {
 		return err
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 	sess.Stdin = bytes.NewReader(content)
 	if err := sess.Run("cat > " + shellQuote(path)); err != nil {
 		return fmt.Errorf("ssh: write %s: %w", path, err)

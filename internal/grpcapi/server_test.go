@@ -61,7 +61,7 @@ func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceCl
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil })
 	tick := 0
@@ -90,7 +90,7 @@ func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceCl
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 	return rollopsv1.NewRolloutServiceClient(conn)
 }
 

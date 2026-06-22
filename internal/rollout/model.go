@@ -91,8 +91,8 @@ type Rollout struct {
 	DBMigrateTimeout     string
 	DBMigrateWhen        string // pre-deploy (default) | post-promote
 	DBBackwardCompatible bool   // migration declared safe for the previous app version
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —

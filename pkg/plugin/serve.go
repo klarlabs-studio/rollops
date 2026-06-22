@@ -21,7 +21,7 @@ func Serve(srv *Server) error {
 	if err != nil {
 		return fmt.Errorf("plugin: serve: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	sock := filepath.Join(dir, "plugin.sock")
 
 	lis, err := net.Listen("unix", sock)

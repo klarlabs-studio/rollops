@@ -54,11 +54,11 @@ func TestApplyPolicyFile_RolesAndBindings(t *testing.T) {
 
 func TestApplyPolicyFile_Rejects(t *testing.T) {
 	cases := map[string]string{
-		"unknown perm": "roles:\n  - name: r\n    grants:\n      - perm: rollouts.nope\n",
+		"unknown perm":            "roles:\n  - name: r\n    grants:\n      - perm: rollouts.nope\n",
 		"binding to missing role": "bindings:\n  - subject: group:x\n    roles: [ghost]\n",
-		"role without name": "roles:\n  - grants:\n      - perm: rollouts.status\n",
+		"role without name":       "roles:\n  - grants:\n      - perm: rollouts.status\n",
 		"binding without subject": "bindings:\n  - roles: [admin]\n",
-		"unknown field": "roles:\n  - name: r\n    bogus: 1\n",
+		"unknown field":           "roles:\n  - name: r\n    bogus: 1\n",
 	}
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestPolicy_ConcurrentAuthorizeAndReplace(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for range 1000 {
-			live.Authorize(id, PermApply, Scope{})
+			_ = live.Authorize(id, PermApply, Scope{})
 		}
 		close(done)
 	}()

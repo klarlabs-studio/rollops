@@ -87,7 +87,7 @@ func Fetch(ctx context.Context, hc *http.Client, url string) (Index, error) {
 	if err != nil {
 		return Index{}, fmt.Errorf("registry: fetch %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return Index{}, fmt.Errorf("registry: fetch %s: status %d", url, resp.StatusCode)
 	}

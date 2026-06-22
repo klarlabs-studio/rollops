@@ -17,20 +17,21 @@ import (
 
 // registryServer serves a one-plugin index whose only artifact matches the
 // current runtime platform and carries the given sha256 pin.
-func registryServer(t *testing.T, name, version, sum string) (*http.Client, string) {
+func registryServer(t *testing.T, sum string) (*http.Client, string) {
 	t.Helper()
+	const name, version = "flagsmith", "v0.1.0"
 	body := fmt.Sprintf(`{"plugins":[{"name":%q,"description":"test provider","capabilities":["featureflag"],"latest":%q,
 		"versions":{%q:{"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/%s","sha256":%q}]}}}]}`,
 		name, version, version, runtime.GOOS, runtime.GOARCH, name, sum)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
 	return srv.Client(), srv.URL
 }
 
 func TestPluginSearch_ListsMatches(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
+	hc, url := registryServer(t, "deadbeef")
 	var buf bytes.Buffer
 	app := &App{Out: &buf, HTTPClient: hc}
 	if err := app.Run(context.Background(), []string{"plugin", "search", "--registry", url, "flag"}); err != nil {
@@ -43,7 +44,7 @@ func TestPluginSearch_ListsMatches(t *testing.T) {
 }
 
 func TestPluginSearch_NoMatches(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
+	hc, url := registryServer(t, "deadbeef")
 	var buf bytes.Buffer
 	app := &App{Out: &buf, HTTPClient: hc}
 	if err := app.Run(context.Background(), []string{"plugin", "search", "--registry", url, "zzz"}); err != nil {
@@ -59,7 +60,7 @@ func TestPluginInstall_ByName_VerifiesPin(t *testing.T) {
 	h := sha256.Sum256([]byte(content))
 	sum := hex.EncodeToString(h[:])
 
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", sum)
+	hc, url := registryServer(t, sum)
 	dir := t.TempDir()
 
 	// The fetcher stands in for the artifact download, returning the binary
@@ -91,7 +92,7 @@ func TestPluginInstall_ByName_VerifiesPin(t *testing.T) {
 }
 
 func TestPluginInstall_ByName_PinMismatchRejects(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "0000000000000000000000000000000000000000000000000000000000000000")
+	hc, url := registryServer(t, "0000000000000000000000000000000000000000000000000000000000000000")
 	dir := t.TempDir()
 
 	bin := filepath.Join(t.TempDir(), "downloaded")
@@ -124,7 +125,7 @@ func TestPluginInfo_PrintsVersionsAndPins(t *testing.T) {
 		  "v0.1.0":{"artifacts":[{"os":"linux","arch":"amd64","url":"https://x/0.1.0","sha256":"aaa"}]},
 		  "v0.2.0":{"cosign":{"identity":"id-x","issuer":"iss-x"},"artifacts":[{"os":"linux","arch":"amd64","url":"https://x/0.2.0","sha256":"bbb"}]}
 		}}]}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
 	defer srv.Close()
 
 	var buf bytes.Buffer
@@ -145,7 +146,7 @@ func TestPluginInfo_PrintsVersionsAndPins(t *testing.T) {
 }
 
 func TestPluginInfo_UnknownPlugin(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
+	hc, url := registryServer(t, "deadbeef")
 	app := &App{Out: &bytes.Buffer{}, HTTPClient: hc}
 	if err := app.Run(context.Background(), []string{"plugin", "info", "nope", "--registry", url}); err == nil {
 		t.Fatal("unknown plugin must error")
@@ -153,7 +154,7 @@ func TestPluginInfo_UnknownPlugin(t *testing.T) {
 }
 
 func TestPluginInfo_RequiresName(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
+	hc, url := registryServer(t, "deadbeef")
 	app := &App{Out: &bytes.Buffer{}, HTTPClient: hc}
 	if err := app.Run(context.Background(), []string{"plugin", "info", "--registry", url}); err == nil {
 		t.Fatal("missing name must error")
@@ -218,7 +219,7 @@ func twoVersionServer(t *testing.T, oldSum, newSum string) (*http.Client, string
 		  "v0.1.0":{"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/0.1.0","sha256":%q}]},
 		  "v0.2.0":{"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/0.2.0","sha256":%q}]}
 		}}]}`, runtime.GOOS, runtime.GOARCH, oldSum, runtime.GOOS, runtime.GOARCH, newSum)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
 	t.Cleanup(srv.Close)
 	return srv.Client(), srv.URL
 }
@@ -312,13 +313,13 @@ func signedRegistryServer(t *testing.T, sum string) (*http.Client, string) {
 	t.Helper()
 	var base string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/bundle", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("bundle-bytes")) })
+	mux.HandleFunc("/bundle", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("bundle-bytes")) })
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		body := fmt.Sprintf(`{"plugins":[{"name":"flagsmith","description":"d","capabilities":["featureflag"],"latest":"v0.1.0",
 			"versions":{"v0.1.0":{"cosign":{"identity":"signer@klarlabs","issuer":"https://token.actions.githubusercontent.com"},
 			"artifacts":[{"os":%q,"arch":%q,"url":"https://artifact/fs","sha256":%q,"bundle":%q}]}}}]}`,
 			runtime.GOOS, runtime.GOARCH, sum, base+"/bundle")
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -397,7 +398,7 @@ func TestPluginInstall_ByName_AutoCosignFailureBlocks(t *testing.T) {
 }
 
 func TestPluginInstall_ByName_UnknownPlugin(t *testing.T) {
-	hc, url := registryServer(t, "flagsmith", "v0.1.0", "deadbeef")
+	hc, url := registryServer(t, "deadbeef")
 	var buf bytes.Buffer
 	app := &App{Out: &buf, HTTPClient: hc}
 	err := app.Run(context.Background(), []string{"plugin", "install", "nonexistent", "--registry", url})

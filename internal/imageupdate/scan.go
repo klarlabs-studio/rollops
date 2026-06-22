@@ -125,7 +125,7 @@ func (s Scanner) doMethod(ctx context.Context, method, url, bearer string) (regR
 	if err != nil {
 		return regResp{}, fmt.Errorf("imageupdate: registry request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body := make([]byte, 0)
 	buf := make([]byte, 4096)
 	for {
@@ -212,7 +212,7 @@ func (s Scanner) token(ctx context.Context, challenge, repo string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("imageupdate: token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("imageupdate: token endpoint status %d", resp.StatusCode)
 	}

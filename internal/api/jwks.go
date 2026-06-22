@@ -76,7 +76,7 @@ func (j *JWKS) refresh() error {
 	if err != nil {
 		return fmt.Errorf("oidc: fetch JWKS: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("oidc: JWKS status %d", resp.StatusCode)
 	}
@@ -194,7 +194,7 @@ func DiscoverJWKSURL(httpc *http.Client, issuer string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("oidc: discovery: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("oidc: discovery status %d", resp.StatusCode)
 	}

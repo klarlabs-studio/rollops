@@ -63,7 +63,7 @@ func verifyCosignSignature(path string, sigB64, pubPEM []byte) error {
 	if err != nil {
 		return fmt.Errorf("plugin: open binary: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return fmt.Errorf("plugin: hash binary: %w", err)
@@ -81,7 +81,7 @@ func verifyCosignSignature(path string, sigB64, pubPEM []byte) error {
 		if err != nil {
 			return fmt.Errorf("plugin: open binary: %w", err)
 		}
-		defer f2.Close()
+		defer func() { _ = f2.Close() }()
 		content, err := io.ReadAll(f2)
 		if err != nil {
 			return fmt.Errorf("plugin: read binary: %w", err)

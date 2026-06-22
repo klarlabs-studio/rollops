@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func mustParse(t *testing.T, y string) *Config {
+func mustParse(t *testing.T) *Config {
 	t.Helper()
-	c, err := Parse([]byte(y))
+	c, err := Parse([]byte(validYAML))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -15,7 +15,7 @@ func mustParse(t *testing.T, y string) *Config {
 }
 
 func TestValidate_Valid(t *testing.T) {
-	if err := Validate(mustParse(t, validYAML)); err != nil {
+	if err := Validate(mustParse(t)); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
 	}
 }
@@ -66,19 +66,19 @@ func TestValidate_TrafficRoutingGatewayProvider(t *testing.T) {
 
 func TestValidate_DatabaseHooks(t *testing.T) {
 	// Empty migrate command is rejected with a database.migrate path.
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Database = &Database{Migrate: &DatabaseRollback{}}
 	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.migrate.command") {
 		t.Errorf("empty migrate command must error, got %v", err)
 	}
 	// Bad timeout on the rollback hook is rejected.
-	c = mustParse(t, validYAML)
+	c = mustParse(t)
 	c.Spec.Database = &Database{Rollback: &DatabaseRollback{Command: []string{"goose", "down"}, Timeout: "nope"}}
 	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.rollback.timeout") {
 		t.Errorf("bad rollback timeout must error, got %v", err)
 	}
 	// A complete database block validates.
-	c = mustParse(t, validYAML)
+	c = mustParse(t)
 	c.Spec.Database = &Database{
 		Migrate:            &DatabaseRollback{Command: []string{"goose", "up"}, Timeout: "60s", When: MigratePostPromote},
 		Rollback:           &DatabaseRollback{Command: []string{"goose", "down"}},
@@ -88,13 +88,13 @@ func TestValidate_DatabaseHooks(t *testing.T) {
 		t.Errorf("complete database block should validate, got %v", err)
 	}
 	// Bad migrate.when is rejected.
-	c = mustParse(t, validYAML)
+	c = mustParse(t)
 	c.Spec.Database = &Database{Migrate: &DatabaseRollback{Command: []string{"goose", "up"}, When: "whenever"}}
 	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.migrate.when") {
 		t.Errorf("bad migrate.when must error, got %v", err)
 	}
 	// when on the rollback hook is rejected (only valid for migrate).
-	c = mustParse(t, validYAML)
+	c = mustParse(t)
 	c.Spec.Database = &Database{Rollback: &DatabaseRollback{Command: []string{"goose", "down"}, When: MigratePreDeploy}}
 	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "database.rollback.when") {
 		t.Errorf("when on rollback must error, got %v", err)
@@ -115,7 +115,7 @@ func TestSpec_DatabaseRollbackHookFallback(t *testing.T) {
 }
 
 func TestValidate_VerificationEnum(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	for _, v := range []string{"", "shallow", "full"} {
 		c.Spec.Verification = v
 		if err := Validate(c); err != nil {
@@ -129,7 +129,7 @@ func TestValidate_VerificationEnum(t *testing.T) {
 }
 
 func TestValidate_MissingName(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Metadata.Name = ""
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "name") {
@@ -138,7 +138,7 @@ func TestValidate_MissingName(t *testing.T) {
 }
 
 func TestValidate_BadCriticality(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Target.Criticality = "extreme"
 	if err := Validate(c); err == nil {
 		t.Fatal("expected error for invalid criticality")
@@ -146,7 +146,7 @@ func TestValidate_BadCriticality(t *testing.T) {
 }
 
 func TestValidate_BadStrategyType(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Strategy.Type = "instant"
 	if err := Validate(c); err == nil {
 		t.Fatal("expected error for invalid strategy type")
@@ -154,7 +154,7 @@ func TestValidate_BadStrategyType(t *testing.T) {
 }
 
 func TestValidate_HealthProbe_BothSet(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Rollback.HealthCheck.TCP = "api.internal:443" // already has HTTP
 	if err := Validate(c); err == nil {
 		t.Fatal("expected error: health check must set exactly one of http/tcp/command")
@@ -162,7 +162,7 @@ func TestValidate_HealthProbe_BothSet(t *testing.T) {
 }
 
 func TestValidate_HealthProbe_NoneSet(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Rollback.HealthCheck.HTTP = ""
 	if err := Validate(c); err == nil {
 		t.Fatal("expected error: empty health check")
@@ -170,7 +170,7 @@ func TestValidate_HealthProbe_NoneSet(t *testing.T) {
 }
 
 func TestValidate_BadSchedule(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Schedule = "tomorrow morning"
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "schedule") {
@@ -179,7 +179,7 @@ func TestValidate_BadSchedule(t *testing.T) {
 }
 
 func TestValidate_SelfDependency(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.DependsOn = []string{c.Spec.Target.Ref}
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "depend") {
@@ -188,7 +188,7 @@ func TestValidate_SelfDependency(t *testing.T) {
 }
 
 func TestValidate_CanaryNeedsSteps(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Strategy.Steps = nil // canary with no steps
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "step") {
@@ -197,7 +197,7 @@ func TestValidate_CanaryNeedsSteps(t *testing.T) {
 }
 
 func TestValidate_BadCELSensitive(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Risk.Sensitive = `changeType ===` // syntax error
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "sensitive") {
@@ -206,7 +206,7 @@ func TestValidate_BadCELSensitive(t *testing.T) {
 }
 
 func TestValidate_BadCELTrigger(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Rollback.Trigger = `mystery > 1` // unknown variable
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "trigger") {
@@ -215,7 +215,7 @@ func TestValidate_BadCELTrigger(t *testing.T) {
 }
 
 func TestValidate_GoodCEL(t *testing.T) {
-	c := mustParse(t, validYAML)
+	c := mustParse(t)
 	c.Spec.Risk.Sensitive = `changeType == "schema" && environment == "prod"`
 	c.Spec.Rollback.Trigger = `score > 0.9`
 	if err := Validate(c); err != nil {

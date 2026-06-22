@@ -65,36 +65,37 @@ spec:
 
 // newGitRepo creates a working tree with one committed config file and an origin
 // it can push to (a bare repo), returning the Source.
-func newGitRepo(t *testing.T, relPath, content string) *git.Source {
+func newGitRepo(t *testing.T, content string) *git.Source {
 	t.Helper()
+	const relPath = "apps/web.yaml"
 	bare := t.TempDir()
-	run(t, bare, "git", "init", "--bare", "-b", "main")
+	run(t, bare, "init", "--bare", "-b", "main")
 	work := t.TempDir()
-	run(t, work, "git", "init", "-b", "main")
-	run(t, work, "git", "remote", "add", "origin", bare)
+	run(t, work, "init", "-b", "main")
+	run(t, work, "remote", "add", "origin", bare)
 	if err := os.MkdirAll(filepath.Dir(filepath.Join(work, relPath)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(work, relPath), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run(t, work, "git", "add", ".")
-	run(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init")
-	run(t, work, "git", "push", "-u", "origin", "main")
+	run(t, work, "add", ".")
+	run(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init")
+	run(t, work, "push", "-u", "origin", "main")
 	return git.Open(work, "main", git.Auth{})
 }
 
-func run(t *testing.T, dir, name string, args ...string) {
+func run(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %s: %v: %s", name, strings.Join(args, " "), err, out)
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
 	}
 }
 
 func TestImageAuto_BumpsAndCommits(t *testing.T) {
-	src := newGitRepo(t, "apps/web.yaml", imgConfigYAML)
+	src := newGitRepo(t, imgConfigYAML)
 	cfg, err := config.Load([]byte(imgConfigYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +130,7 @@ func TestImageAuto_NoPolicyNoop(t *testing.T) {
 func TestImageAuto_DigestModePinsMutableTag(t *testing.T) {
 	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, err := config.Load([]byte(cfgYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +150,7 @@ func TestImageAuto_DigestModePinsMutableTag(t *testing.T) {
 func TestImageAuto_DigestModeUnchanged(t *testing.T) {
 	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:same", 1)
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
 	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil || ref != "" {
@@ -161,7 +162,7 @@ func TestImageAuto_MigrateDigestToSemver(t *testing.T) {
 	// Digest-pinned, no usable tag, under a semver policy → reverse-lookup the
 	// semver tag whose digest matches, and rewrite to it.
 	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web@sha256:abc123")
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, err := config.Load([]byte(cfgYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +192,7 @@ func TestImageAuto_MigrateEmbeddedSemverTagStripsDigest(t *testing.T) {
 	// repo:v1.1.0@sha256:… → trust the embedded semver tag, drop the digest. No
 	// registry calls needed (nil scanner would panic if it tried).
 	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web:v1.1.0@sha256:abc123")
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
 	_, ref, err := ImageAuto{Scanner: fakeRegistry{}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
@@ -205,7 +206,7 @@ func TestImageAuto_MigrateEmbeddedSemverTagStripsDigest(t *testing.T) {
 func TestImageAuto_MigrateNoMatchingDigest(t *testing.T) {
 	// Pinned digest points at no published semver tag → error (best-effort), no bump.
 	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web@sha256:orphan")
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
 	reg := fakeRegistry{
 		tags:    []string{"v1.0.0", "v1.1.0"},
@@ -221,7 +222,7 @@ func TestImageAuto_MigrateNoMatchingDigest(t *testing.T) {
 }
 
 func TestImageAuto_AlreadyCurrent(t *testing.T) {
-	src := newGitRepo(t, "apps/web.yaml", imgConfigYAML)
+	src := newGitRepo(t, imgConfigYAML)
 	cfg, _ := config.Load([]byte(imgConfigYAML))
 	// Only the current tag available → no bump.
 	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.0.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})

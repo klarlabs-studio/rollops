@@ -38,7 +38,7 @@ func (b Briefkasten) call() func(context.Context, string, any) (bool, string, er
 		if _, err := c.Initialize(ctx); err != nil {
 			return false, "", err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		res, err := c.CallTool(ctx, name, args)
 		if err != nil {
 			return false, "", err

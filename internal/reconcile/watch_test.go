@@ -69,7 +69,7 @@ func newWatcher(t *testing.T, fake *fakeTarget) *Watcher {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -84,7 +84,7 @@ func TestWatcher_LeaderElectionSkipsNonLeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 	w1 := &Watcher{locks: newRepoLocks(), leases: db, owner: "one", leaseTTL: time.Minute, now: func() time.Time { return now }}
 	w2 := &Watcher{locks: newRepoLocks(), leases: db, owner: "two", leaseTTL: time.Minute, now: func() time.Time { return now.Add(time.Second) }}

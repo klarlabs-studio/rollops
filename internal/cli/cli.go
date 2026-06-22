@@ -133,7 +133,7 @@ func (a *App) plan(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, p.Summary)
+	_, _ = fmt.Fprintln(a.Out, p.Summary)
 	return nil
 }
 
@@ -150,7 +150,7 @@ func (a *App) apply(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
 	return nil
 }
 
@@ -162,15 +162,15 @@ func (a *App) status(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "%s\t%s\t%s\t%s\n", r.ID, r.Phase, r.TargetRef, r.Strategy)
+	_, _ = fmt.Fprintf(a.Out, "%s\t%s\t%s\t%s\n", r.ID, r.Phase, r.TargetRef, r.Strategy)
 	if r.StepTotal > 0 {
-		fmt.Fprintf(a.Out, "steps\t%d/%d (%d%%)\n", r.StepIndex, r.StepTotal, r.StepWeight)
+		_, _ = fmt.Fprintf(a.Out, "steps\t%d/%d (%d%%)\n", r.StepIndex, r.StepTotal, r.StepWeight)
 	}
 	if h, ok := a.Ops.(historyOperations); ok {
 		if hist, herr := h.History(ctx, r.TargetRef); herr == nil {
 			for _, rec := range hist {
 				if rec.RolloutID == r.ID && rec.Note != "" {
-					fmt.Fprintf(a.Out, "note\t%s\n", rec.Note)
+					_, _ = fmt.Fprintf(a.Out, "note\t%s\n", rec.Note)
 					break
 				}
 			}
@@ -187,7 +187,7 @@ func (a *App) promote(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
 	return nil
 }
 
@@ -199,7 +199,7 @@ func (a *App) approve(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
 	return nil
 }
 
@@ -211,7 +211,7 @@ func (a *App) reject(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
 	return nil
 }
 
@@ -224,9 +224,9 @@ func (a *App) freeze(ctx context.Context, args []string, on bool) error {
 		return err
 	}
 	if active {
-		fmt.Fprintf(a.Out, "frozen: %s\n", r)
+		_, _ = fmt.Fprintf(a.Out, "frozen: %s\n", r)
 	} else {
-		fmt.Fprintln(a.Out, "unfrozen")
+		_, _ = fmt.Fprintln(a.Out, "unfrozen")
 	}
 	return nil
 }
@@ -250,7 +250,7 @@ func (a *App) rollback(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
 	return nil
 }
 
@@ -258,24 +258,24 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 	var failed []string
 	if len(args) > 0 {
 		if _, err := loadConfigArg(args[:1]); err != nil {
-			fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
+			_, _ = fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
 			failed = append(failed, "config")
 		} else {
-			fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
+			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
 		}
 	} else {
-		fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
+		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
 	}
 
 	if a.Doctor.DaemonAddr != "" {
 		if a.Doctor.Probe == nil {
-			fmt.Fprintln(a.Out, "daemon: fail (probe not configured)")
+			_, _ = fmt.Fprintln(a.Out, "daemon: fail (probe not configured)")
 			failed = append(failed, "daemon")
 		} else if err := a.Doctor.Probe(ctx, a.Doctor.DaemonAddr, a.Doctor.Token); err != nil {
-			fmt.Fprintf(a.Out, "daemon: fail (%v)\n", err)
+			_, _ = fmt.Fprintf(a.Out, "daemon: fail (%v)\n", err)
 			failed = append(failed, "daemon")
 		} else {
-			fmt.Fprintf(a.Out, "daemon: ok (%s)\n", a.Doctor.DaemonAddr)
+			_, _ = fmt.Fprintf(a.Out, "daemon: ok (%s)\n", a.Doctor.DaemonAddr)
 		}
 	} else {
 		dbPath := a.Doctor.DBPath
@@ -284,23 +284,23 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		}
 		db, err := sqlite.Open(dbPath)
 		if err != nil {
-			fmt.Fprintf(a.Out, "database: fail (%v)\n", err)
+			_, _ = fmt.Fprintf(a.Out, "database: fail (%v)\n", err)
 			failed = append(failed, "database")
 		} else {
 			_ = db.Close()
-			fmt.Fprintf(a.Out, "database: ok (%s)\n", dbPath)
+			_, _ = fmt.Fprintf(a.Out, "database: ok (%s)\n", dbPath)
 		}
 	}
 
 	if a.Doctor.Notifier != nil {
 		if err := a.Doctor.Notifier.Notify(ctx, notify.Event{Kind: notify.Test, TargetRef: "doctor"}); err != nil {
-			fmt.Fprintf(a.Out, "notify: fail (%v)\n", err)
+			_, _ = fmt.Fprintf(a.Out, "notify: fail (%v)\n", err)
 			failed = append(failed, "notify")
 		} else {
-			fmt.Fprintf(a.Out, "notify: ok (%s)\n", strings.Join(a.Doctor.NotifyChannels, ", "))
+			_, _ = fmt.Fprintf(a.Out, "notify: ok (%s)\n", strings.Join(a.Doctor.NotifyChannels, ", "))
 		}
 	} else {
-		fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_BRIEFKASTEN_URL, ROLLOPS_SMTP_ADDR, or ROLLOPS_WEBHOOK_URL)")
+		_, _ = fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_BRIEFKASTEN_URL, ROLLOPS_SMTP_ADDR, or ROLLOPS_WEBHOOK_URL)")
 	}
 
 	if len(failed) > 0 {
@@ -310,12 +310,12 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 
 func (a *App) version() error {
-	fmt.Fprintln(a.Out, version.String())
+	_, _ = fmt.Fprintln(a.Out, version.String())
 	return nil
 }
 

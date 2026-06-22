@@ -42,7 +42,7 @@ func TestBuildProvider_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildProvider: %v", err)
 	}
-	defer prov.(interface{ Close() error }).Close()
+	defer func() { _ = prov.(interface{ Close() error }).Close() }()
 
 	for _, pct := range []int{25, 100} {
 		if err := prov.ApplyFlag(context.Background(), Change{Flag: "checkout", Environment: "prod", Percentage: pct}); err != nil {

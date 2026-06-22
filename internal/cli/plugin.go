@@ -65,13 +65,13 @@ func (a *App) pluginSearch(ctx context.Context, args []string) error {
 	}
 	matches := idx.Search(strings.Join(fs.Args(), " "))
 	if len(matches) == 0 {
-		fmt.Fprintln(a.Out, "no plugins match")
+		_, _ = fmt.Fprintln(a.Out, "no plugins match")
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tLATEST\tCAPABILITIES\tDESCRIPTION")
+	_, _ = fmt.Fprintln(tw, "NAME\tLATEST\tCAPABILITIES\tDESCRIPTION")
 	for _, p := range matches {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Latest, strings.Join(p.Capabilities, ","), p.Description)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Latest, strings.Join(p.Capabilities, ","), p.Description)
 	}
 	return tw.Flush()
 }
@@ -103,26 +103,26 @@ func (a *App) pluginInfo(ctx context.Context, args []string) error {
 	if !ok {
 		return fmt.Errorf("plugin info: plugin %q not found in registry", name)
 	}
-	fmt.Fprintf(a.Out, "%s\n", p.Name)
+	_, _ = fmt.Fprintf(a.Out, "%s\n", p.Name)
 	if p.Description != "" {
-		fmt.Fprintf(a.Out, "  %s\n", p.Description)
+		_, _ = fmt.Fprintf(a.Out, "  %s\n", p.Description)
 	}
 	if p.Homepage != "" {
-		fmt.Fprintf(a.Out, "  homepage:     %s\n", p.Homepage)
+		_, _ = fmt.Fprintf(a.Out, "  homepage:     %s\n", p.Homepage)
 	}
-	fmt.Fprintf(a.Out, "  capabilities: %s\n", strings.Join(p.Capabilities, ", "))
-	fmt.Fprintf(a.Out, "  latest:       %s\n", p.Latest)
+	_, _ = fmt.Fprintf(a.Out, "  capabilities: %s\n", strings.Join(p.Capabilities, ", "))
+	_, _ = fmt.Fprintf(a.Out, "  latest:       %s\n", p.Latest)
 	for _, ver := range sortedVersions(p) {
-		fmt.Fprintf(a.Out, "\n  %s\n", ver)
+		_, _ = fmt.Fprintf(a.Out, "\n  %s\n", ver)
 		v := p.Versions[ver]
 		if v.Cosign != nil {
-			fmt.Fprintf(a.Out, "    cosign: %s (%s)\n", v.Cosign.Identity, v.Cosign.Issuer)
+			_, _ = fmt.Fprintf(a.Out, "    cosign: %s (%s)\n", v.Cosign.Identity, v.Cosign.Issuer)
 		}
 		tw := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
 		for _, art := range v.Artifacts {
-			fmt.Fprintf(tw, "    %s/%s\t%s\t%s\n", art.OS, art.Arch, art.SHA256, art.URL)
+			_, _ = fmt.Fprintf(tw, "    %s/%s\t%s\t%s\n", art.OS, art.Arch, art.SHA256, art.URL)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ func (a *App) pluginList(_ context.Context, args []string) error {
 	entries, err := os.ReadDir(*dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
+			_, _ = fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
 			return nil
 		}
 		return fmt.Errorf("plugin list: %w", err)
@@ -181,13 +181,13 @@ func (a *App) pluginList(_ context.Context, args []string) error {
 			return fmt.Errorf("plugin list: %s: %w", e.Name(), err)
 		}
 		if listed == 0 {
-			fmt.Fprintln(tw, "NAME\tSIZE\tSHA256")
+			_, _ = fmt.Fprintln(tw, "NAME\tSIZE\tSHA256")
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%s\n", e.Name(), info.Size(), sum)
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%s\n", e.Name(), info.Size(), sum)
 		listed++
 	}
 	if listed == 0 {
-		fmt.Fprintf(a.Out, "no plugins installed in %s\n", *dir)
+		_, _ = fmt.Fprintf(a.Out, "no plugins installed in %s\n", *dir)
 		return nil
 	}
 	return tw.Flush()
@@ -226,7 +226,7 @@ func (a *App) pluginUpdate(ctx context.Context, args []string) error {
 	entries, err := os.ReadDir(*dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
+			_, _ = fmt.Fprintf(a.Out, "no plugins installed (%s does not exist)\n", *dir)
 			return nil
 		}
 		return fmt.Errorf("plugin update: %w", err)
@@ -251,16 +251,16 @@ func (a *App) pluginUpdate(ctx context.Context, args []string) error {
 		}
 		name, ver, ok := idx.FindVersionBySHA(sum, runtime.GOOS, runtime.GOARCH)
 		if !ok {
-			fmt.Fprintf(a.Out, "%s\tunknown (not from this registry)\n", e.Name())
+			_, _ = fmt.Fprintf(a.Out, "%s\tunknown (not from this registry)\n", e.Name())
 			continue
 		}
 		p, _ := idx.Find(name)
 		if ver == p.Latest {
-			fmt.Fprintf(a.Out, "%s\tup to date (%s %s)\n", e.Name(), name, ver)
+			_, _ = fmt.Fprintf(a.Out, "%s\tup to date (%s %s)\n", e.Name(), name, ver)
 			continue
 		}
 		outdated++
-		fmt.Fprintf(a.Out, "%s\toutdated (%s %s -> %s)\n", e.Name(), name, ver, p.Latest)
+		_, _ = fmt.Fprintf(a.Out, "%s\toutdated (%s %s -> %s)\n", e.Name(), name, ver, p.Latest)
 		if !*apply {
 			continue
 		}
@@ -272,11 +272,11 @@ func (a *App) pluginUpdate(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
 		}
-		fmt.Fprintf(a.Out, "upgraded %s to %s\nsha256 %s\n", e.Name(), p.Latest, newSum)
+		_, _ = fmt.Fprintf(a.Out, "upgraded %s to %s\nsha256 %s\n", e.Name(), p.Latest, newSum)
 	}
 
 	if outdated > 0 && !*apply {
-		fmt.Fprintln(a.Out, "run 'rollops plugin update --apply' to upgrade outdated plugins")
+		_, _ = fmt.Fprintln(a.Out, "run 'rollops plugin update --apply' to upgrade outdated plugins")
 	}
 	return nil
 }
@@ -297,7 +297,7 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	certPath := fs.String("certificate", "", "cosign signing certificate (keyless)")
 	bundlePath := fs.String("bundle", "", "cosign sigstore bundle")
 	fs.Usage = func() {
-		fmt.Fprintln(a.Out, "rollops plugin install <path|https-url> [flags]\n\nFetch a plugin binary, verify it, install it, and print the sha256 to pin.")
+		_, _ = fmt.Fprintln(a.Out, "rollops plugin install <path|https-url> [flags]\n\nFetch a plugin binary, verify it, install it, and print the sha256 to pin.")
 		fs.PrintDefaults()
 	}
 	// Source is the first positional; flags follow it (stdlib flag stops at the
@@ -369,7 +369,7 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 		if !ok {
 			return fmt.Errorf("plugin install: cosign verification failed: %s", reason)
 		}
-		fmt.Fprintln(a.Out, "cosign: verified")
+		_, _ = fmt.Fprintln(a.Out, "cosign: verified")
 	}
 
 	sum, err := sha256File(local)
@@ -404,7 +404,7 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 	}()
 
 	if cos != nil {
-		fmt.Fprintf(a.Out, "registry: %s is published by %s\n", name, cos.Identity)
+		_, _ = fmt.Fprintf(a.Out, "registry: %s is published by %s\n", name, cos.Identity)
 	}
 
 	// A signed release verifies automatically: the index's identity/issuer is the
@@ -449,7 +449,7 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 	defer cleanup()
 
 	if v != nil {
-		fmt.Fprintln(a.Out, "cosign: verifying against the registry-published signature")
+		_, _ = fmt.Fprintln(a.Out, "cosign: verifying against the registry-published signature")
 		ok, reason, verr := v.VerifyBlob(ctx, local)
 		if verr != nil {
 			return "", fmt.Errorf("cosign: %w", verr)
@@ -457,7 +457,7 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 		if !ok {
 			return "", fmt.Errorf("cosign verification failed: %s", reason)
 		}
-		fmt.Fprintln(a.Out, "cosign: verified")
+		_, _ = fmt.Fprintln(a.Out, "cosign: verified")
 	}
 
 	sum, err := sha256File(local)
@@ -467,7 +467,7 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 	if !strings.EqualFold(sum, art.SHA256) {
 		return "", fmt.Errorf("registry pin mismatch for %q: index %s, got %s", name, art.SHA256, sum)
 	}
-	fmt.Fprintln(a.Out, "registry: sha256 matches the published pin")
+	_, _ = fmt.Fprintln(a.Out, "registry: sha256 matches the published pin")
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
@@ -479,10 +479,10 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 }
 
 func (a *App) printInstalledPin(dest, sum string) {
-	fmt.Fprintf(a.Out, "installed %s\nsha256 %s\n", dest, sum)
+	_, _ = fmt.Fprintf(a.Out, "installed %s\nsha256 %s\n", dest, sum)
 	// Pin it under the spec block matching the plugin's capability —
 	// featureFlags, trafficRouting, analysis, or a plugin target.
-	fmt.Fprintf(a.Out, "pin it in the matching rollout spec block, e.g.:\n  <featureFlags|trafficRouting|analysis>:\n    plugin: %s\n    sha256: %s\n", dest, sum)
+	_, _ = fmt.Fprintf(a.Out, "pin it in the matching rollout spec block, e.g.:\n  <featureFlags|trafficRouting|analysis>:\n    plugin: %s\n    sha256: %s\n", dest, sum)
 }
 
 func defaultPluginDir() string {
@@ -524,7 +524,7 @@ func (a *App) downloadTemp(ctx context.Context, src string) (string, func(), err
 	if err != nil {
 		return "", noop, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return "", noop, fmt.Errorf("download %s: status %d", src, resp.StatusCode)
 	}
@@ -532,13 +532,13 @@ func (a *App) downloadTemp(ctx context.Context, src string) (string, func(), err
 	if err != nil {
 		return "", noop, err
 	}
-	cleanup := func() { os.Remove(f.Name()) }
+	cleanup := func() { _ = os.Remove(f.Name()) }
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
+		_ = f.Close()
 		cleanup()
 		return "", noop, err
 	}
-	f.Close()
+	_ = f.Close()
 	return f.Name(), cleanup, nil
 }
 
@@ -553,7 +553,7 @@ func fetchPlugin(ctx context.Context, source string) (string, func(), error) {
 		if err != nil {
 			return "", func() {}, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode >= 300 {
 			return "", func() {}, fmt.Errorf("download %s: status %d", source, resp.StatusCode)
 		}
@@ -561,13 +561,13 @@ func fetchPlugin(ctx context.Context, source string) (string, func(), error) {
 		if err != nil {
 			return "", func() {}, err
 		}
-		cleanup := func() { os.Remove(f.Name()) }
+		cleanup := func() { _ = os.Remove(f.Name()) }
 		if _, err := io.Copy(f, resp.Body); err != nil {
-			f.Close()
+			_ = f.Close()
 			cleanup()
 			return "", func() {}, err
 		}
-		f.Close()
+		_ = f.Close()
 		return f.Name(), cleanup, nil
 	}
 	if strings.Contains(source, "://") {
@@ -584,7 +584,7 @@ func sha256File(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -597,13 +597,13 @@ func copyFileMode(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		return err
 	}
 	return out.Close()

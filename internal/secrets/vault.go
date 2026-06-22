@@ -49,7 +49,7 @@ func (v VaultProvider) Resolve(ctx context.Context, ref string) (Secret, error) 
 	if err != nil {
 		return Secret{}, fmt.Errorf("secrets: vault: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return Secret{}, fmt.Errorf("%w: vault %s", ErrNotFound, ref)
 	}

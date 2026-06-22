@@ -64,7 +64,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("sqlite: ping: %w", err)
 	}
 	if _, err := db.Exec(migration0001); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: migrate: %w", err)
 	}
 	// 0002+ add columns. ALTER TABLE ADD COLUMN is not idempotent in SQLite, so
@@ -79,7 +79,7 @@ func Open(path string) (*Store, error) {
 		{"0006", migration0006},
 	} {
 		if err := applyAddColumns(db, m.sql); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("sqlite: migrate %s: %w", m.name, err)
 		}
 	}
@@ -131,7 +131,7 @@ func (s *Store) SaveRollout(ctx context.Context, r rollout.Rollout) error {
 	if err != nil {
 		return fmt.Errorf("sqlite: begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO rollouts (id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, note, created_at, updated_at)
@@ -193,7 +193,7 @@ func decodeDBCmd(s string) ([]string, error) {
 func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, error) {
 	var (
 		r                rollout.Rollout
-		phase, strat     string
+		phase, strategy  string
 		manifest         []byte
 		dbCmd, migCmd    string
 		created, updated string
@@ -201,7 +201,7 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, note, created_at, updated_at
 		FROM rollouts WHERE id = ?`, id).
-		Scan(&r.ID, &r.TargetRef, &phase, &strat, &manifest, &r.RiskScore, &r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &r.Note, &created, &updated)
+		Scan(&r.ID, &r.TargetRef, &phase, &strategy, &manifest, &r.RiskScore, &r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &r.Note, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return rollout.Rollout{}, store.ErrNotFound
 	}
@@ -209,7 +209,7 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 		return rollout.Rollout{}, fmt.Errorf("sqlite: load rollout: %w", err)
 	}
 	r.Phase = rollout.Phase(phase)
-	r.Strategy = rollout.Strategy(strat)
+	r.Strategy = rollout.Strategy(strategy)
 	if r.DBRollbackCmd, err = decodeDBCmd(dbCmd); err != nil {
 		return rollout.Rollout{}, fmt.Errorf("sqlite: unmarshal db rollback cmd: %w", err)
 	}
@@ -241,23 +241,23 @@ func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout,
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: list rollouts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []rollout.Rollout
 	for rows.Next() {
 		var (
 			r                rollout.Rollout
-			phase, strat     string
+			phase, strategy  string
 			manifest         []byte
 			dbCmd, migCmd    string
 			created, updated string
 		)
-		if err := rows.Scan(&r.ID, &r.TargetRef, &phase, &strat, &manifest, &r.RiskScore,
+		if err := rows.Scan(&r.ID, &r.TargetRef, &phase, &strategy, &manifest, &r.RiskScore,
 			&r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &r.Note, &created, &updated); err != nil {
 			return nil, fmt.Errorf("sqlite: scan rollout: %w", err)
 		}
 		r.Phase = rollout.Phase(phase)
-		r.Strategy = rollout.Strategy(strat)
+		r.Strategy = rollout.Strategy(strategy)
 		r.DBRollbackCmd, _ = decodeDBCmd(dbCmd)
 		r.DBMigrateCmd, _ = decodeDBCmd(migCmd)
 		_ = json.Unmarshal(manifest, &r.Desired)
@@ -316,7 +316,7 @@ func (s *Store) ObservedFingerprints(ctx context.Context) (map[string]string, er
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: observed fingerprints: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make(map[string]string)
 	for rows.Next() {
 		var ref, fp string
@@ -363,7 +363,7 @@ func (s *Store) DueSchedules(ctx context.Context, now time.Time) ([]rollout.Sche
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: due schedules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []rollout.ScheduledRollout
 	for rows.Next() {
@@ -394,7 +394,7 @@ func (s *Store) History(ctx context.Context, targetRef string) ([]rollout.Rollou
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []rollout.RolloutRecord
 	for rows.Next() {
@@ -425,7 +425,7 @@ func (s *Store) AcquireLease(ctx context.Context, key, owner string, ttl time.Du
 	if err != nil {
 		return false, fmt.Errorf("sqlite: lease begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	nowText := now.Format(timeFormat)
 	expires := now.Add(ttl).Format(timeFormat)
