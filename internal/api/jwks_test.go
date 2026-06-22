@@ -57,18 +57,34 @@ func leftPad(b []byte, n int) []byte {
 	return out
 }
 
+// ecCoords returns the fixed-length big-endian X and Y coordinates of an
+// EC public key via its uncompressed point encoding (0x04 || X || Y).
+func ecCoords(t *testing.T, pub *ecdsa.PublicKey) ([]byte, []byte) {
+	t.Helper()
+	ek, err := pub.ECDH()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := ek.Bytes() // 0x04 || X || Y
+	n := (len(b) - 1) / 2
+	return b[1 : 1+n], b[1+n:]
+}
+
+func ecX(t *testing.T, pub *ecdsa.PublicKey) []byte { x, _ := ecCoords(t, pub); return x }
+func ecY(t *testing.T, pub *ecdsa.PublicKey) []byte { _, y := ecCoords(t, pub); return y }
+
 // jwksServer serves a JWKS document with one RSA and one EC key.
 func jwksServer(t *testing.T, rsaKey *rsa.PublicKey, ecKey *ecdsa.PublicKey, calls *int) *httptest.Server {
 	t.Helper()
 	keys := []map[string]any{
 		{"kid": "rsa1", "kty": "RSA", "n": b64u(rsaKey.N.Bytes()), "e": b64u(big.NewInt(int64(rsaKey.E)).Bytes())},
-		{"kid": "ec1", "kty": "EC", "crv": "P-256", "x": b64u(ecKey.X.Bytes()), "y": b64u(ecKey.Y.Bytes())},
+		{"kid": "ec1", "kty": "EC", "crv": "P-256", "x": b64u(ecX(t, ecKey)), "y": b64u(ecY(t, ecKey))},
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls != nil {
 			*calls++
 		}
-		json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
 	}))
 }
 
@@ -141,7 +157,7 @@ func TestOIDC_RS256_RequiresKeySource(t *testing.T) {
 func TestDiscoverJWKSURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/.well-known/openid-configuration" {
-			json.NewEncoder(w).Encode(map[string]any{"jwks_uri": "https://idp.example/keys"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"jwks_uri": "https://idp.example/keys"})
 			return
 		}
 		w.WriteHeader(404)

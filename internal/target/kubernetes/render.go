@@ -103,9 +103,7 @@ func overrideContainerImage(manifest []byte, image string) ([]byte, error) {
 		if err := dec.Decode(&doc); err != nil {
 			break
 		}
-		if setContainerImages(&doc, repo, image, &matchedAny) {
-			// tracked
-		}
+		setContainerImages(&doc, repo, image, &matchedAny)
 		d := doc
 		docs = append(docs, &d)
 	}
@@ -129,12 +127,11 @@ func overrideContainerImage(manifest []byte, image string) ([]byte, error) {
 
 // setContainerImages walks a document's pod template containers/initContainers
 // and sets the image of those whose repo matches repoFilter (empty = all).
-func setContainerImages(doc *yaml.Node, repoFilter, image string, matched *bool) bool {
+func setContainerImages(doc *yaml.Node, repoFilter, image string, matched *bool) {
 	tmpl := mappingPath(doc, "spec", "template", "spec")
 	if tmpl == nil {
-		return false
+		return
 	}
-	any := false
 	for _, key := range []string{"containers", "initContainers"} {
 		list := childByKey(tmpl, key)
 		if list == nil || list.Kind != yaml.SequenceNode {
@@ -147,11 +144,10 @@ func setContainerImages(doc *yaml.Node, repoFilter, image string, matched *bool)
 			}
 			if repoFilter == "" || imageRepo(img.Value) == repoFilter {
 				img.Value = image
-				any, *matched = true, true
+				*matched = true
 			}
 		}
 	}
-	return any
 }
 
 // mappingPath descends a document's mapping nodes by key, returning the value
@@ -196,7 +192,7 @@ func renderBucket(ctx context.Context, b map[string]any, run cmdRunner) ([]byte,
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: bucket temp dir: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	switch {
 	case strings.HasPrefix(urlStr, "s3://"):
@@ -232,7 +228,7 @@ func renderOCI(ctx context.Context, o map[string]any, run cmdRunner) ([]byte, er
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: oci temp dir: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	if _, err := run(ctx, "oras", nil, "pull", ref, "-o", dir); err != nil {
 		return nil, fmt.Errorf("kubernetes: oras pull %q: %w", ref, err)

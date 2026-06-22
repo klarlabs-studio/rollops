@@ -65,7 +65,7 @@ func wiredEngine(t *testing.T, opts ...Option) (*Engine, *captureTarget, *bytes.
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	cap := &captureTarget{}
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(c config.Target) (pt.Target, error) { cap.spec = c.Spec; return cap, nil })

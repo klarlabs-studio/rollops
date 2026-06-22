@@ -109,10 +109,10 @@ type TrafficRouting struct {
 	Provider      string `yaml:"provider,omitempty" json:"provider,omitempty"`
 	Plugin        string `yaml:"plugin,omitempty" json:"plugin,omitempty"` // path to the traffic-router plugin binary
 	SHA256        string `yaml:"sha256,omitempty" json:"sha256,omitempty"` // required pin (plugin mode)
-	Route         string `yaml:"route" json:"route"`                 // router object name (e.g. HTTPRoute)
-	Namespace     string `yaml:"namespace" json:"namespace"`         // router object namespace
-	StableService string `yaml:"stableService" json:"stableService"` // backend for (100-weight)%
-	CanaryService string `yaml:"canaryService" json:"canaryService"` // backend for weight%
+	Route         string `yaml:"route" json:"route"`                       // router object name (e.g. HTTPRoute)
+	Namespace     string `yaml:"namespace" json:"namespace"`               // router object namespace
+	StableService string `yaml:"stableService" json:"stableService"`       // backend for (100-weight)%
+	CanaryService string `yaml:"canaryService" json:"canaryService"`       // backend for weight%
 	// Cluster access for built-in routers (optional; defaults to in-cluster).
 	Kubeconfig string `yaml:"kubeconfig,omitempty" json:"kubeconfig,omitempty"`
 	Context    string `yaml:"context,omitempty" json:"context,omitempty"`
@@ -130,9 +130,9 @@ type ImagePolicy struct {
 
 // Target selects the deployment target plugin and its criticality weight.
 type Target struct {
-	Kind        string         `yaml:"kind" json:"kind"`               // ssh | ftp | kubernetes | <plugin>
-	Ref         string         `yaml:"ref" json:"ref"`                 // stable target identity
-	Criticality string         `yaml:"criticality" json:"criticality"` // low | medium | high | critical
+	Kind        string         `yaml:"kind" json:"kind"`                   // ssh | ftp | kubernetes | <plugin>
+	Ref         string         `yaml:"ref" json:"ref"`                     // stable target identity
+	Criticality string         `yaml:"criticality" json:"criticality"`     // low | medium | high | critical
 	Env         string         `yaml:"env,omitempty" json:"env,omitempty"` // dev | staging | prod — for env-scoped RBAC
 	Spec        map[string]any `yaml:"spec,omitempty" json:"spec,omitempty"`
 }

@@ -160,7 +160,7 @@ func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.Traffi
 		return
 	}
 	if c, ok := router.(interface{ Close() error }); ok {
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 	}
 	hook := trafficrouting.Hook{Router: router}
 	if err := hook.Apply(ctx, trafficrouting.Change{
@@ -197,7 +197,7 @@ func (e *Engine) driveFlag(ctx context.Context, ref string, ff *config.FeatureFl
 		return
 	}
 	if c, ok := prov.(interface{ Close() error }); ok {
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 	}
 	hook := featureflags.Hook{Provider: prov}
 	if err := hook.Apply(ctx, featureflags.Change{Flag: ff.Flag, Environment: ff.Environment, Percentage: percentage}); err != nil {
@@ -244,9 +244,9 @@ func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 		dbRollback:   execDBRollback{},
 		owner:        defaultOwner(),
 		leaseTTL:     2 * time.Minute,
-		flagBuild:    func(c *config.FeatureFlags) (featureflags.Provider, error) { return featureflags.BuildProvider(c) },
-		routerBuild:  func(c *config.TrafficRouting) (trafficrouting.Router, error) { return trafficrouting.BuildRouter(c) },
-		metricsBuild: func(c *config.Analysis) (analysis.MetricsProvider, error) { return metricplugin.Build(c) },
+		flagBuild:    featureflags.BuildProvider,
+		routerBuild:  trafficrouting.BuildRouter,
+		metricsBuild: metricplugin.Build,
 		now:          func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
@@ -834,7 +834,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 				return false, "analysis: " + err.Error()
 			}
 			if c, ok := p.(interface{ Close() error }); ok {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 			}
 			provider = p
 		case a.Provider == "prometheus":

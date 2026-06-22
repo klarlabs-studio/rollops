@@ -59,7 +59,7 @@ func TestBuild_TargetCapabilityEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	defer tgt.(interface{ Close() error }).Close()
+	defer func() { _ = tgt.(interface{ Close() error }).Close() }()
 
 	res, err := tgt.Apply(ctx, pt.Manifest{Kind: "plugin", Spec: []byte(`{"x":1}`), Checksum: "sha:abc"})
 	if err != nil || !res.Changed || !strings.Contains(res.Detail, "sha:abc") {

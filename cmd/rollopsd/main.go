@@ -52,7 +52,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) > 0 && (args[0] == "version" || args[0] == "--version") {
-		fmt.Fprintln(os.Stdout, version.String())
+		_, _ = fmt.Fprintln(os.Stdout, version.String())
 		return nil
 	}
 
@@ -63,7 +63,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Full enforced pipeline: audit every action, hard agent guardrails, and
 	// secret resolution at execution time. Artifact provenance is enabled when a
@@ -358,7 +358,7 @@ func basicAuth(next http.Handler) http.Handler {
 			}
 		}
 		u, p, ok := r.BasicAuth()
-		if !ok || subtleEqual(u, user) == false || subtleEqual(p, pass) == false {
+		if !ok || !subtleEqual(u, user) || !subtleEqual(p, pass) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="rollops"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

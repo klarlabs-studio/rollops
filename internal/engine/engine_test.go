@@ -61,7 +61,7 @@ func newEngine(t *testing.T, fake *fakeTarget, extra ...Option) (*Engine, *sqlit
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
 

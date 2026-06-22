@@ -45,7 +45,7 @@ func engineCounterIDs(t *testing.T, fake *fakeTarget) *Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
 	n := 0

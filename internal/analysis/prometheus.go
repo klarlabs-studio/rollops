@@ -51,7 +51,7 @@ func (p Prometheus) Query(ctx context.Context, query string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("analysis: prometheus: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("analysis: prometheus status %d", resp.StatusCode)
 	}

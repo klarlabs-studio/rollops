@@ -61,7 +61,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		app.Ops = client
 		return app.Run(context.Background(), args)
 	}
@@ -70,7 +70,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin()), Actor: app.Actor}
 	return app.Run(context.Background(), args)
@@ -83,7 +83,7 @@ func probeDaemon(ctx context.Context, addr, token string) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	_, err = client.Status(ctx, "__rollops_doctor_probe__")
 	switch status.Code(err) {
 	case codes.NotFound:

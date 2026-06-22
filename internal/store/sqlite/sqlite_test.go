@@ -18,7 +18,7 @@ func openTemp(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -47,12 +47,12 @@ func TestOpen_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first open: %v", err)
 	}
-	db1.Close()
+	_ = db1.Close()
 	db2, err := Open(path) // re-run migrations on existing db
 	if err != nil {
 		t.Fatalf("second open: %v", err)
 	}
-	db2.Close()
+	_ = db2.Close()
 }
 
 func TestStore_Interface(t *testing.T) {
@@ -140,7 +140,7 @@ func TestLease_AcquireRenewReleaseAndExpire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 

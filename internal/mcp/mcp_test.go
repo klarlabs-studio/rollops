@@ -47,7 +47,7 @@ func newTools(t *testing.T, id rollout.Identity) *Tools {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil })
 	n := 0

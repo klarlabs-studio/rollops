@@ -33,7 +33,7 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 			if u, p, _ := r.BasicAuth(); u != "me" || p != "pat" {
 				t.Errorf("token basic auth = %q/%q", u, p)
 			}
-			w.Write([]byte(`{"token":"BEARER123"}`))
+			_, _ = w.Write([]byte(`{"token":"BEARER123"}`))
 		case strings.HasSuffix(r.URL.Path, "/tags/list"):
 			if r.Header.Get("Authorization") != "Bearer BEARER123" {
 				// First (unauth) hit: issue the challenge.
@@ -41,7 +41,7 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			w.Write([]byte(`{"name":"acme/app","tags":["v1.0.0","v1.1.0","v1.2.0"]}`))
+			_, _ = w.Write([]byte(`{"name":"acme/app","tags":["v1.0.0","v1.1.0","v1.2.0"]}`))
 		default:
 			w.WriteHeader(404)
 		}

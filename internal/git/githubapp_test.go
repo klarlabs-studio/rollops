@@ -45,7 +45,7 @@ func tokenServer(t *testing.T, pub *rsa.PublicKey, calls *int, expiry func() tim
 		}
 		*calls++
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, `{"token":"ghs_tok%d","expires_at":%q}`, *calls, expiry().UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(w, `{"token":"ghs_tok%d","expires_at":%q}`, *calls, expiry().UTC().Format(time.RFC3339))
 	}))
 }
 
@@ -130,7 +130,7 @@ func TestGitHubApp_ErrorOnBadStatus(t *testing.T) {
 	pemBytes, _ := testKeyPEM(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"message":"Bad credentials"}`)
+		_, _ = fmt.Fprint(w, `{"message":"Bad credentials"}`)
 	}))
 	defer srv.Close()
 	app, _ := NewGitHubApp("app-123", "456", pemBytes, WithGitHubAPIBase(srv.URL), WithHTTPClient(srv.Client()))

@@ -32,7 +32,7 @@ func TestLifecycle_HappyPath_NoApproval(t *testing.T) {
 
 func TestLifecycle_ApprovalBranch(t *testing.T) {
 	l, _ := NewLifecycle(LifeContext{PlanProduced: true, NeedsApproval: true})
-	l.Send(EventValidate)
+	_, _ = l.Send(EventValidate)
 	got, err := l.Send(EventGate)
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +51,8 @@ func TestLifecycle_ApprovalBranch(t *testing.T) {
 
 func TestLifecycle_RejectRollsBack(t *testing.T) {
 	l, _ := NewLifecycle(LifeContext{PlanProduced: true, NeedsApproval: true})
-	l.Send(EventValidate)
-	l.Send(EventGate)
+	_, _ = l.Send(EventValidate)
+	_, _ = l.Send(EventGate)
 	got, err := l.Send(EventReject)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestLifecycle_RejectRollsBack(t *testing.T) {
 // deploying must not pass.
 func TestLifecycle_NoPlan_CannotDeploy(t *testing.T) {
 	l, _ := NewLifecycle(LifeContext{PlanProduced: false, NeedsApproval: false})
-	l.Send(EventValidate)
+	_, _ = l.Send(EventValidate)
 	_, err := l.Send(EventGate)
 	if err == nil {
 		t.Fatal("expected GATE to be rejected without a produced plan")
@@ -86,8 +86,8 @@ func TestLifecycle_IllegalTransition(t *testing.T) {
 
 func TestLifecycle_RollbackFromDeploying(t *testing.T) {
 	l, _ := NewLifecycle(LifeContext{PlanProduced: true})
-	l.Send(EventValidate)
-	l.Send(EventGate)
+	_, _ = l.Send(EventValidate)
+	_, _ = l.Send(EventGate)
 	got, err := l.Send(EventRollback)
 	if err != nil {
 		t.Fatal(err)
@@ -99,9 +99,9 @@ func TestLifecycle_RollbackFromDeploying(t *testing.T) {
 
 func TestLifecycle_VerifyFailRollback(t *testing.T) {
 	l, _ := NewLifecycle(LifeContext{PlanProduced: true})
-	l.Send(EventValidate)
-	l.Send(EventGate)
-	l.Send(EventDeployed)
+	_, _ = l.Send(EventValidate)
+	_, _ = l.Send(EventGate)
+	_, _ = l.Send(EventDeployed)
 	got, err := l.Send(EventRollback)
 	if err != nil {
 		t.Fatal(err)
