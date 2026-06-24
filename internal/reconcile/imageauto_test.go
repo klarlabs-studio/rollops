@@ -132,7 +132,7 @@ func TestImageAuto_ModeNoneNoop(t *testing.T) {
 	// the scanner would otherwise resolve a different digest for the mutable tag.
 	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:pinned", 1)
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: none", 1)
-	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	src := newGitRepo(t, cfgYAML)
 	cfg, err := config.Load([]byte(cfgYAML))
 	if err != nil {
 		t.Fatal(err)
