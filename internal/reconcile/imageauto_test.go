@@ -127,6 +127,25 @@ func TestImageAuto_NoPolicyNoop(t *testing.T) {
 	}
 }
 
+func TestImageAuto_ModeNoneNoop(t *testing.T) {
+	// mode: none disables automation — a digest-pinned image stays put even when
+	// the scanner would otherwise resolve a different digest for the mutable tag.
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:pinned", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: none", 1)
+	src := newGitRepo(t, "apps/web.yaml", cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil || ref != "" {
+		t.Fatalf("mode none must be a no-op, got ref=%q err=%v", ref, err)
+	}
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:latest@sha256:pinned" {
+		t.Errorf("image must be unchanged, got %q", got)
+	}
+}
+
 func TestImageAuto_DigestModePinsMutableTag(t *testing.T) {
 	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)

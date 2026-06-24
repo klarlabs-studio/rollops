@@ -33,7 +33,10 @@ type ImageAuto struct {
 // (the bumped one when it changed, else the original) and the new image ref.
 func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.NamedConfig) (*config.Config, string, error) {
 	pol := nc.Config.Spec.ImagePolicy
-	if pol == nil {
+	if pol == nil || pol.Mode == "none" {
+		// No automation: the image committed in Git is authoritative. "none" makes
+		// this explicit for digest-pinned configs that must not be re-bumped from a
+		// mutable tag.
 		return nc.Config, "", nil
 	}
 	image, _ := nc.Config.Spec.Target.Spec["image"].(string)

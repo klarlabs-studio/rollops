@@ -122,8 +122,12 @@ type TrafficRouting struct {
 // scans the registry for newer tags of spec.target.spec.image and, per the
 // policy, writes a bumped image back to Git so the rollout reconciles to it —
 // the keel-style "new tag → deploy", but GitOps (Git stays the source of truth).
+//
+// Mode "none" disables automation: the image committed in Git is authoritative
+// and never overridden. Use it when you pin exact digests per release yourself
+// (so a mutable tag like :latest does not silently re-bump the rollout).
 type ImagePolicy struct {
-	Mode             string `yaml:"mode" json:"mode"`                                             // major | minor | patch | any
+	Mode             string `yaml:"mode" json:"mode"`                                             // none | major | minor | patch | any | digest
 	Pattern          string `yaml:"pattern,omitempty" json:"pattern,omitempty"`                   // optional tag regexp filter
 	AllowMutableTags bool   `yaml:"allowMutableTags,omitempty" json:"allowMutableTags,omitempty"` // permit latest/main/master
 }
