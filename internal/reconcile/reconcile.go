@@ -41,6 +41,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		return Outcome{}, fmt.Errorf("reconcile: plan: %w", err)
 	}
 	if !plan.Changed {
+		// detect mode: live drift found but intentionally not auto-corrected —
+		// record an alert so operators see it, then stop (no apply).
+		if plan.DriftAlert {
+			r.record(audit.Entry{
+				Action:    audit.ActionDrift,
+				TargetRef: c.Spec.Target.Ref,
+				Actor:     by,
+				Detail:    plan.Summary,
+			})
+			return Outcome{Drift: true, Plan: plan}, nil
+		}
 		return Outcome{Drift: false, Plan: plan}, nil
 	}
 

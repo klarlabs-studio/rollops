@@ -60,7 +60,7 @@ type Spec struct {
 	Database       *Database       `yaml:"database,omitempty" json:"database,omitempty"`
 	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"`         // RFC3339 future time
-	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow (default) | full
+	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow | detect (default) | full
 }
 
 // Analysis is the optional metric-based rollout analysis feature. When

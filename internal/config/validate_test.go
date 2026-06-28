@@ -116,7 +116,7 @@ func TestSpec_DatabaseRollbackHookFallback(t *testing.T) {
 
 func TestValidate_VerificationEnum(t *testing.T) {
 	c := mustParse(t)
-	for _, v := range []string{"", "shallow", "full"} {
+	for _, v := range []string{"", "shallow", "detect", "full"} {
 		c.Spec.Verification = v
 		if err := Validate(c); err != nil {
 			t.Errorf("verification %q should be valid: %v", v, err)

@@ -134,9 +134,9 @@ func validateSemantics(c *Config) []error {
 		errs = append(errs, validateTrafficRouting(c.Spec.TrafficRouting)...)
 	}
 	switch c.Spec.Verification {
-	case "", "shallow", "full":
+	case "", "shallow", "detect", "full":
 	default:
-		errs = append(errs, fmt.Errorf("config: verification %q must be shallow | full", c.Spec.Verification))
+		errs = append(errs, fmt.Errorf("config: verification %q must be shallow | detect | full", c.Spec.Verification))
 	}
 	if c.Spec.ImagePolicy != nil {
 		switch c.Spec.ImagePolicy.Mode {
