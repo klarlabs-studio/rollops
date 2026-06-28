@@ -26,12 +26,21 @@ rules:
   - apiGroups: [""]
     resources: [namespaces, services, pods, configmaps]
     verbs: [get, list, watch, create, update, patch]
+  # PVCs are managed but never deleted by the reconciler (no `delete` verb) —
+  # deleting a bound PVC would destroy data.
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch]
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]
     verbs: [get, list, watch, create, update, patch]
   - apiGroups: [gateway.networking.k8s.io]
     resources: [httproutes]
     verbs: [get, list, watch, update, patch]
+  # Classic Ingress (alongside Gateway API httproutes above).
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
   # Read CRDs and their instances for status.conditions health assessment.
   - apiGroups: [apiextensions.k8s.io]
     resources: [customresourcedefinitions]
