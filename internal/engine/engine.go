@@ -386,15 +386,15 @@ const (
 // is the "show exactly what will change before anything is applied" contract:
 // an agent-driven Apply requires a Plan to have been produced first.
 type Plan struct {
-	TargetRef string
-	Desired   pt.Manifest
-	Current   pt.Fingerprint
-	Changed   bool
-	Action    PlanAction
-	Summary   string
-	DeepDrift bool   // full-verification diff found live ≠ desired despite a matching stamp
-	DriftAlert bool  // detect-verification found live drift, but it is NOT auto-corrected (alert only)
-	Migration string // pending database migration ("migrate (when): cmd"), empty when none
+	TargetRef  string
+	Desired    pt.Manifest
+	Current    pt.Fingerprint
+	Changed    bool
+	Action     PlanAction
+	Summary    string
+	DeepDrift  bool   // full-verification diff found live ≠ desired despite a matching stamp
+	DriftAlert bool   // detect-verification found live drift, but it is NOT auto-corrected (alert only)
+	Migration  string // pending database migration ("migrate (when): cmd"), empty when none
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
@@ -413,8 +413,7 @@ func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift 
 
 func (p *Plan) render() string {
 	var base string
-	switch {
-	case p.DriftAlert && p.Action == PlanNoop:
+	if p.DriftAlert && p.Action == PlanNoop {
 		base = fmt.Sprintf("%s [%s]: live drift detected — NOT auto-corrected (detect mode; set verification: full to self-heal) [checksum %s]", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
 		if p.Migration != "" {
 			base += "\n  + database " + p.Migration
