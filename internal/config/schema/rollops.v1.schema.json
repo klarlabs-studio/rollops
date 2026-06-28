@@ -58,8 +58,8 @@
         },
         "verification": {
           "type": "string",
-          "enum": ["shallow", "full"],
-          "description": "Drift verification depth. shallow (default): stamped-checksum marker. full: also diff live against desired so out-of-band field edits are caught."
+          "enum": ["shallow", "detect", "full"],
+          "description": "Drift verification depth. shallow: stamped-checksum marker only (cheapest). detect (default): also live-diff against desired and ALERT on out-of-band field edits, without auto-correcting. full: same live diff and auto-reconcile drift back to desired (self-heal)."
         }
       }
     }

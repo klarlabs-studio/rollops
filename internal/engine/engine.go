@@ -288,23 +288,40 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 		Observed:   cur,
 		ObservedAt: e.now(),
 	})
-	// Full verification: the stamped checksum is a shallow marker — an
-	// out-of-band field edit (e.g. `kubectl set image`) leaves it intact. When
-	// the stamp says "in sync", run a live diff and treat any difference as
-	// drift, so live state that diverges from desired is surfaced.
-	deepDrift := false
-	if c.Spec.Verification == "full" && cur.Value == m.Checksum && m.Checksum != "" {
+	// Verification depth (the stamped checksum is a shallow marker — an
+	// out-of-band field edit like `kubectl set image` leaves it intact):
+	//   shallow          — checksum stamp only (cheapest; no live diff).
+	//   detect (default) — when the stamp says "in sync", live-diff anyway and
+	//                      ALERT on any divergence, but do NOT auto-correct.
+	//   full             — same live diff, and auto-reconcile drift to desired.
+	// The live diff only runs when the cheap stamp already matches, so it is
+	// bounded to one diff per in-sync target per tick.
+	ver := c.Spec.Verification
+	if ver == "" {
+		ver = "detect"
+	}
+	deepDrift := false  // drift that triggers auto-reconcile (full)
+	driftAlert := false // drift detected but intentionally not auto-corrected (detect)
+	if (ver == "detect" || ver == "full") && cur.Value == m.Checksum && m.Checksum != "" {
 		// Differ lives on the raw (unwrapped) target, not the fortify wrapper.
 		if raw, rerr := e.rawTarget(c.Spec.Target.Ref, m); rerr == nil {
 			defer closeTarget(raw)
 			if d, ok := raw.(pt.Differ); ok {
 				if diff, derr := d.Diff(ctx, m); derr == nil && strings.TrimSpace(diff) != "" {
-					deepDrift = true
+					if ver == "full" {
+						deepDrift = true
+					} else {
+						driftAlert = true
+					}
 				}
 			}
 		}
 	}
 	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
+	if driftAlert {
+		p.DriftAlert = true
+		p.Summary = p.render()
+	}
 	// Surface a pending database migration so operators see it before applying.
 	if mig := c.Spec.DatabaseMigrate(); mig != nil {
 		p.Migration = fmt.Sprintf("migrate (%s): %s", c.Spec.DatabaseMigrateWhen(), strings.Join(mig.Command, " "))
@@ -376,6 +393,7 @@ type Plan struct {
 	Action    PlanAction
 	Summary   string
 	DeepDrift bool   // full-verification diff found live ≠ desired despite a matching stamp
+	DriftAlert bool  // detect-verification found live drift, but it is NOT auto-corrected (alert only)
 	Migration string // pending database migration ("migrate (when): cmd"), empty when none
 }
 
@@ -395,6 +413,14 @@ func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift 
 
 func (p *Plan) render() string {
 	var base string
+	switch {
+	case p.DriftAlert && p.Action == PlanNoop:
+		base = fmt.Sprintf("%s [%s]: live drift detected — NOT auto-corrected (detect mode; set verification: full to self-heal) [checksum %s]", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
+		if p.Migration != "" {
+			base += "\n  + database " + p.Migration
+		}
+		return base
+	}
 	switch p.Action {
 	case PlanNoop:
 		base = fmt.Sprintf("%s [%s]: no changes (checksum %s)", p.TargetRef, p.Desired.Kind, short(p.Desired.Checksum))
