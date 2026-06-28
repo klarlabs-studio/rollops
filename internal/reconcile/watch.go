@@ -144,6 +144,24 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	if err != nil {
 		return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("watch: load config: %w", err)}}
 	}
+	// Guard against duplicate target refs: drift state is keyed by target ref,
+	// so two configs sharing a ref flip-flop (each reconcile overwrites the
+	// other's observed fingerprint → perpetual false drift). Keep the first and
+	// skip the rest with a loud warning so the collision is fixed, not silent.
+	seenRef := make(map[string]string, len(configs))
+	deduped := make([]config.NamedConfig, 0, len(configs))
+	for _, nc := range configs {
+		ref := nc.Config.Spec.Target.Ref
+		if prev, dup := seenRef[ref]; dup {
+			if w.logf != nil {
+				w.logf("watch %s: skipping %s — duplicate target ref %q already declared by %s", r.spec.Name, nc.Path, ref, prev)
+			}
+			continue
+		}
+		seenRef[ref] = nc.Path
+		deduped = append(deduped, nc)
+	}
+	configs = deduped
 	out := make([]RepoOutcome, 0, len(configs))
 	for _, nc := range configs {
 		cfg := nc.Config
