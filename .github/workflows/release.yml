@@ -52,11 +52,15 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      # Prefer CR_PAT (a PAT with write:packages) — GITHUB_TOKEN cannot push to a
+      # ghcr package that isn't linked to this repo (manually-created packages
+      # aren't), failing with `denied: permission_denied: write_package`. Add a
+      # CR_PAT secret to make releases self-serve; falls back to GITHUB_TOKEN.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
