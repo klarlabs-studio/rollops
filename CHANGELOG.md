@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Deploy: fix the mTLS CA chain.** The v0.21.0 Kubernetes manifest issued the
+  server cert directly from a self-signed `ClusterIssuer`, so the mounted
+  `ca.crt` was the server's own leaf and no client cert could ever verify —
+  mutual TLS was effectively non-functional. Reworked to a proper chain
+  (self-signed issuer → root CA `Certificate` → CA `Issuer` → server + client
+  certs), so client certs issued from the same CA `Issuer` verify against
+  `ROLLOPS_TLS_CLIENT_CA`. Added `deploy/kubernetes/rollops-client-cert.example.yaml`
+  for issuing per-caller client certs, and corrected `docs/tls.md`. Deploy-only;
+  no daemon code or image change.
+
 ## v0.21.0 - Native TLS + mTLS (zero-trust transport)
 
 rollopsd now terminates TLS itself on every network listener instead of relying
