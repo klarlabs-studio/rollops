@@ -72,8 +72,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		return Outcome{Drift: true, Plan: plan, Rollout: rl}, nil
 	}
 
-	// Finalize: post-deploy health/smoke gate promotes or auto-rolls-back.
-	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, rl.Desired, c)
+	// Finalize: post-deploy health/smoke gate promotes or auto-rolls-back. The
+	// prior handed to VerifyOrRollback must be the last-known-good manifest, not
+	// rl.Desired (the manifest we just applied) — otherwise a failed post-deploy
+	// gate would "roll back" to the broken version. Fall back to rl.Desired only
+	// when the target has no distinct prior state (first deploy).
+	prior := rl.Desired
+	if p, ok := r.eng.PriorManifest(ctx, rl.TargetRef, rl.Desired.Checksum); ok {
+		prior = p
+	}
+	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, prior, c)
 	if err != nil {
 		return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
 	}

@@ -88,6 +88,83 @@ func TestReconcile_DriftDetectedAndReconciled(t *testing.T) {
 	}
 }
 
+type failingSmoke struct{}
+
+func (failingSmoke) Run(context.Context, []string) (int, error) { return 1, nil } // exit 1 != expect 0
+
+// TestReconcile_FailedPostDeployRollsBackToPriorNotNew proves Fix B: when the
+// post-deploy gate fails, reconcile hands VerifyOrRollback the PRIOR good
+// manifest, so the auto-rollback restores it — not the just-applied broken one.
+func TestReconcile_FailedPostDeployRollsBackToPriorNotNew(t *testing.T) {
+	fake := &fakeTarget{}
+	db, err := sqlite.Open(t.TempDir() + "/r.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	n := 0
+	eng := engine.New(db, reg,
+		engine.WithClock(func() time.Time { return clock }),
+		engine.WithIDGen(func() string { n++; return "ro-" + string(rune('a'+n)) }),
+		engine.WithSmokeRunner(failingSmoke{}),
+	)
+	rec := New(eng, nil)
+	ctx := context.Background()
+
+	// First reconcile: deploy manifest A (no smoke test → promotes). Prior good.
+	good, err := config.Load([]byte(cfgYAML)) // spec x: 1
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rec.Reconcile(ctx, good, actor); err != nil {
+		t.Fatalf("seed reconcile: %v", err)
+	}
+	priorChecksum := fake.fp.Value // A, stamped by Apply
+
+	// Second reconcile: a NEW manifest B whose post-deploy smoke test fails and
+	// opts into auto-rollback.
+	badYAML := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec:
+      x: 2
+  strategy:
+    type: rolling
+  rollback:
+    auto: true
+    smokeTest:
+      command: ["./smoke.sh"]
+      expectExit: 0
+`
+	bad, err := config.Load([]byte(badYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rec.Reconcile(ctx, bad, actor); err != nil {
+		t.Fatalf("failing reconcile: %v", err)
+	}
+	// The rollback must restore the PRIOR good manifest (A, spec x:1), not the
+	// just-applied broken one (B, spec x:2). Before Fix B, reconcile passed
+	// rl.Desired (B) as prior, so the "rollback" re-applied the broken version.
+	last := fake.applied[len(fake.applied)-1]
+	if last.Checksum != priorChecksum {
+		t.Fatalf("rolled back to %q, want prior good %q (not the new broken manifest)", last.Checksum, priorChecksum)
+	}
+	if fake.fp.Value != priorChecksum {
+		t.Errorf("live state = %q, want restored prior %q", fake.fp.Value, priorChecksum)
+	}
+}
+
 func TestReconcile_InSyncNoop(t *testing.T) {
 	fake := &fakeTarget{}
 	r, _, c := setup(t, fake)
