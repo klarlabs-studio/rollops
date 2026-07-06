@@ -13,6 +13,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/rollopsd ./cmd/rollopsd
 
 FROM alpine:3.20
+# Link this image to its source repo on GHCR (provenance + lets the repo's
+# GITHUB_TOKEN inherit push access, so releases don't need a standing PAT).
+LABEL org.opencontainers.image.source="https://github.com/klarlabs-studio/rollops"
 ARG KUBECTL_VERSION=v1.31.0
 RUN apk add --no-cache ca-certificates curl git \
  && curl -fsSLo /usr/local/bin/kubectl \
