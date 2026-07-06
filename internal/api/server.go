@@ -6,6 +6,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,10 +29,28 @@ type Authenticator interface {
 // it with mTLS-derived identity or an external IdP.
 type TokenAuth map[string]rollout.Identity
 
-// Identify implements Authenticator.
+// Identify implements Authenticator. It compares the presented token against
+// each configured token in constant time (over SHA-256 digests, so token length
+// isn't leaked either) rather than via a map lookup, so response timing can't be
+// used to recover a valid token. An empty token is always rejected.
 func (t TokenAuth) Identify(token string) (rollout.Identity, bool) {
-	id, ok := t[token]
-	return id, ok
+	if token == "" {
+		return rollout.Identity{}, false
+	}
+	sum := sha256.Sum256([]byte(token))
+	var (
+		match rollout.Identity
+		found bool
+	)
+	for known, id := range t {
+		knownSum := sha256.Sum256([]byte(known))
+		// Compare every entry (no early return) so timing is independent of which
+		// token, if any, matched.
+		if subtle.ConstantTimeCompare(sum[:], knownSum[:]) == 1 {
+			match, found = id, true
+		}
+	}
+	return match, found
 }
 
 // Server is the HTTP handler over the engine.

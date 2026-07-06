@@ -200,3 +200,27 @@ func TestAPI_Healthz(t *testing.T) {
 		t.Errorf("healthz = %d", rr.Code)
 	}
 }
+
+func TestTokenAuth_Identify(t *testing.T) {
+	ta := TokenAuth{
+		"tok-felix": {Kind: "human", Name: "felix"},
+		"tok-bot":   {Kind: "ci", Name: "bot"},
+	}
+	if id, ok := ta.Identify("tok-felix"); !ok || id.Name != "felix" {
+		t.Errorf("valid token = %+v ok=%v, want felix", id, ok)
+	}
+	if id, ok := ta.Identify("tok-bot"); !ok || id.Kind != "ci" {
+		t.Errorf("valid token = %+v ok=%v, want ci/bot", id, ok)
+	}
+	// Empty token is always rejected (no accidental match on a zero-length key).
+	if _, ok := ta.Identify(""); ok {
+		t.Error("empty token must be rejected")
+	}
+	if _, ok := ta.Identify("tok-unknown"); ok {
+		t.Error("unknown token must be rejected")
+	}
+	// An empty map rejects everything, including the empty token.
+	if _, ok := (TokenAuth{}).Identify("anything"); ok {
+		t.Error("empty TokenAuth must reject all tokens")
+	}
+}
