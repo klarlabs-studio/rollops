@@ -1,0 +1,42 @@
+# EXAMPLE ONLY — the rollopsd-watch ConfigMap holds the live list of repos the
+# daemon reconciles. It is intentionally NOT part of rollopsd.yaml: applying the
+# main manifest must never overwrite a running fleet's watch list. Manage this
+# ConfigMap on its own, and edit it in place (kubectl edit / your own overlay)
+# rather than re-applying this example.
+#
+# Best practice: each app's Rollops config lives in that app's own repo under
+# `.rollops/` (config beside code, one PR per change, image-automation bumps push
+# back there). `path` is the directory; a directory loads every *.yaml.
+#
+# Per-repo least-privilege auth, in order of preference:
+#   - githubApp* : mint short-lived, auto-rotating installation tokens scoped to
+#     that installation's repos (works across orgs + personal accounts via
+#     separate installations). Best for a daemon that writes bumps to many repos.
+#   - deployKeyPath : per-repo SSH key (git+ssh url), naturally single-repo.
+#   - tokenFile / token : a (broad) PAT. Simplest, least scoped — avoid sharing
+#     one across repos/orgs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollopsd-watch
+  namespace: rollops-system
+data:
+  watch.json: |
+    [
+      {
+        "name": "armada",
+        "url": "https://github.com/klarlabs-studio/armada",
+        "branch": "main",
+        "path": ".rollops",
+        "githubAppId": "123456",
+        "githubInstallationId": "78901234",
+        "githubAppPrivateKeyFile": "/etc/rollops/git/armada-app.pem"
+      },
+      {
+        "name": "vorhut",
+        "url": "https://github.com/klarlabs-studio/vorhut",
+        "branch": "main",
+        "path": ".rollops",
+        "tokenFile": "/etc/rollops/git/token"
+      }
+    ]

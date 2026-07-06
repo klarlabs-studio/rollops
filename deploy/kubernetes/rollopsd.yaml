@@ -150,49 +150,22 @@ subjects:
     name: rollopsd
     namespace: rollops-system
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: rollopsd-watch
-  namespace: rollops-system
-data:
-  # Repos rollopsd reconciles. Best practice: each app's Rollops config lives in
-  # that app's own repo under `.rollops/` (config beside code, one PR per change,
-  # image-automation bumps push back there). `path` is the directory; a directory
-  # loads every *.yaml.
-  #
-  # Per-repo least-privilege auth, in order of preference:
-  #   - githubApp* : mint short-lived, auto-rotating installation tokens scoped
-  #     to that installation's repos (works across orgs + personal accounts via
-  #     separate installations). Best for a daemon that writes bumps to many repos.
-  #   - deployKeyPath : per-repo SSH key (git+ssh url), naturally single-repo.
-  #   - tokenFile / token : a (broad) PAT. Simplest, least scoped — avoid sharing
-  #     one across repos/orgs.
-  watch.json: |
-    [
-      {
-        "name": "armada",
-        "url": "https://github.com/klarlabs-studio/armada",
-        "branch": "main",
-        "path": ".rollops",
-        "githubAppId": "123456",
-        "githubInstallationId": "78901234",
-        "githubAppPrivateKeyFile": "/etc/rollops/git/armada-app.pem"
-      },
-      {
-        "name": "vorhut",
-        "url": "https://github.com/klarlabs-studio/vorhut",
-        "branch": "main",
-        "path": ".rollops",
-        "tokenFile": "/etc/rollops/git/token"
-      }
-    ]
+# NOTE: the `rollopsd-watch` ConfigMap (the live list of repos to reconcile) is
+# deliberately NOT defined here — re-applying this manifest must never clobber a
+# running fleet's watch list. Create it once from `rollopsd-watch.example.yaml`
+# and manage it separately (kubectl edit / your own overlay). The Deployment
+# below mounts it by name.
 ---
+# ENVIRONMENT-SPECIFIC: set the storageClass, and if your cluster already holds
+# the data volume under a different name, adjust BOTH this claim's name and the
+# Deployment's `data` volume `claimName` to match — that claim must be the PVC
+# that actually holds `/var/lib/rollops/rollops.db`. A default 1Gi RWO claim:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: rollopsd-data
   namespace: rollops-system
+  # storageClassName: longhorn   # set your cluster's storage class
 spec:
   accessModes: [ReadWriteOnce]
   resources:
