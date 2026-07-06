@@ -89,6 +89,16 @@ func run(args []string) error {
 	if n, _ := notify.FromEnv(os.Getenv); n != nil {
 		engOpts = append(engOpts, engine.WithNotifier(n))
 	}
+	// Multi-tenant confinement (opt-in, default off). In the "one repo per
+	// customer" model repo config is untrusted; these allowlists stop a poisoned
+	// repo from running arbitrary commands on the host or escaping its namespace /
+	// cluster scope. The kubernetes target reads the same env for its own checks.
+	confinement := security.ConfinementFromEnv(os.Getenv)
+	engOpts = append(engOpts, engine.WithConfinement(confinement))
+	fmt.Fprintf(os.Stderr, "rollopsd: multi-tenant confinement: %s\n", confinement.LogSummary())
+	if !confinement.Active() {
+		fmt.Fprintln(os.Stderr, "rollopsd: multi-tenant confinement is OFF (trusted-repo mode); for untrusted/multi-tenant repos set ROLLOPS_ALLOWED_COMMANDS, ROLLOPS_ALLOWED_NAMESPACES, and/or ROLLOPS_CONFINE_TARGET_CLUSTER=1")
+	}
 	eng := engine.New(db, target.Builtin(), engOpts...)
 
 	// A single bootstrap admin token from the environment; production swaps this
