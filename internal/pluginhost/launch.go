@@ -28,9 +28,57 @@ import (
 
 const (
 	handshakeTimeout = 10 * time.Second
+	// ManifestTimeout bounds the first gRPC call (GetManifest): the handshake
+	// timeout only covers stdout, so a plugin that dials but never answers the
+	// manifest RPC would otherwise hang the daemon indefinitely. Adapters that
+	// fetch the manifest share this bound.
+	ManifestTimeout  = 10 * time.Second
 	maxHandshakeLine = 64 * 1024
 	maxStderrBytes   = 1 << 20 // 1 MiB
 )
+
+// essentialEnvVars are always forwarded to a plugin subprocess: a normal
+// program needs them to find its tools/interpreter, temp dir, and home, and
+// none carry daemon secrets. Everything else is withheld unless the operator
+// explicitly allow-lists it, so a plugin never inherits the daemon's cloud
+// credentials, Kubernetes tokens, registry PAT, or webhook/SMTP secrets.
+var essentialEnvVars = []string{"PATH", "HOME", "TMPDIR"}
+
+// buildPluginEnv computes the confined environment for a plugin subprocess from
+// an allow-list of variable names (Policy.AllowedEnvVars). The essential set is
+// always included. A single "*" entry inherits the full parent environment —
+// the explicit, only way to hand a plugin the daemon's secrets. Otherwise only
+// the essentials plus the named variables that are actually present are
+// forwarded; the default (empty allow-list) is deny.
+func buildPluginEnv(allowed, parentEnv []string) []string {
+	for _, a := range allowed {
+		if a == "*" {
+			out := make([]string, len(parentEnv))
+			copy(out, parentEnv)
+			return out
+		}
+	}
+	want := make(map[string]struct{}, len(essentialEnvVars)+len(allowed))
+	for _, k := range essentialEnvVars {
+		want[k] = struct{}{}
+	}
+	for _, k := range allowed {
+		if k = strings.TrimSpace(k); k != "" {
+			want[k] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(want))
+	for _, kv := range parentEnv {
+		i := strings.IndexByte(kv, '=')
+		if i < 0 {
+			continue
+		}
+		if _, ok := want[kv[:i]]; ok {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
 
 // VerifyBinary compares the file's sha256 against the pinned hex digest. The
 // pin is required: an unpinned plugin binary is a supply-chain hole.
@@ -87,9 +135,13 @@ func (p *Process) Close() error {
 }
 
 // Launch starts the plugin binary, verifies its handshake, dials its gRPC
-// server, and returns the running process with a generic Client.
-func Launch(ctx context.Context, path string) (*Process, error) {
+// server, and returns the running process with a generic Client. allowedEnv is
+// the operator's env-var allow-list (Policy.AllowedEnvVars): the plugin's
+// environment is confined to the essential set plus these names, so it does not
+// inherit the daemon's secrets. A "*" entry inherits the full environment.
+func Launch(ctx context.Context, path string, allowedEnv []string) (*Process, error) {
 	cmd := exec.CommandContext(ctx, path)
+	cmd.Env = buildPluginEnv(allowedEnv, os.Environ())
 	isolateProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -106,27 +158,40 @@ func Launch(ctx context.Context, path string) (*Process, error) {
 
 	hs, err := awaitHandshake(stdout)
 	if err != nil {
-		_ = stdin.Close()
-		_ = cmd.Process.Kill()
+		killLaunch(cmd, stdin)
 		return nil, err
 	}
 	if err := hs.Verify(); err != nil {
-		_ = stdin.Close()
-		_ = cmd.Process.Kill()
+		killLaunch(cmd, stdin)
 		return nil, err
 	}
 	go func() { _, _ = io.Copy(io.Discard, stdout) }()
 
 	conn, err := grpc.NewClient("unix://"+hs.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		_ = stdin.Close()
-		_ = cmd.Process.Kill()
+		killLaunch(cmd, stdin)
 		return nil, fmt.Errorf("plugin: dial %s: %w", hs.Addr, err)
 	}
 	return &Process{
 		Client: &Client{rpc: rollopspluginv1.NewPluginClient(conn)},
 		cmd:    cmd, stdin: stdin, conn: conn,
 	}, nil
+}
+
+// killLaunch tears down a plugin that failed to come up: it closes stdin (the
+// shutdown signal) and SIGKILLs the whole process group. Because Launch is
+// often called with context.Background(), ctx-cancel never reaps the child, so
+// a plugin that forked helpers before the handshake failed would otherwise leak
+// orphans — kill the group, not just the leader.
+func killLaunch(cmd *exec.Cmd, stdin io.Closer) {
+	if stdin != nil {
+		_ = stdin.Close()
+	}
+	if cmd.Process != nil {
+		pid := cmd.Process.Pid
+		_ = cmd.Process.Kill()
+		killProcessGroup(pid)
+	}
 }
 
 func awaitHandshake(r io.Reader) (pubplugin.Handshake, error) {

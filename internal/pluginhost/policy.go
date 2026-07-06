@@ -15,6 +15,13 @@ import (
 // its name is listed here.
 const ConfirmEnv = "ROLLOPS_PLUGIN_CONFIRM"
 
+// AllowedEnvEnv names the env var that allow-lists which host environment
+// variables a plugin subprocess may inherit: a comma-separated list of variable
+// names, or "*" to inherit the daemon's full environment. Unset means deny —
+// the plugin sees only a minimal essential env (see pluginhost.essentialEnvVars),
+// never the daemon's cloud credentials, tokens, or other secrets.
+const AllowedEnvEnv = "ROLLOPS_PLUGIN_ALLOWED_ENV"
+
 // Policy bounds what a plugin's declared safety requirements may demand. A
 // plugin whose manifest exceeds the policy is rejected before any tool runs —
 // capability-scoped trust rather than full daemon trust.
@@ -27,15 +34,18 @@ type Policy struct {
 	ConfirmedPlugins    []string      // names the operator confirmed; "*" confirms any
 }
 
-// DefaultPolicy is a conservative baseline: the local filesystem and process
-// environment are open (a plugin is a local binary the operator installed), but
-// network egress must be explicitly declared and allow-listed, and only active
-// risk is admitted. A plugin that declares needs_confirmation must additionally
+// DefaultPolicy is a conservative baseline: the local filesystem is open (a
+// plugin is a local binary the operator installed), but network egress and
+// environment inheritance must be explicitly declared and allow-listed, and only
+// active risk is admitted. The plugin's environment is confined to a minimal
+// essential set unless the operator names variables in ROLLOPS_PLUGIN_ALLOWED_ENV
+// (or "*" to inherit everything) — so the daemon's secrets are not handed to a
+// plugin by default. A plugin that declares needs_confirmation must additionally
 // be named in ROLLOPS_PLUGIN_CONFIRM. Operators tighten or loosen via config.
 func DefaultPolicy() Policy {
 	return Policy{
-		AllowedNetworkHosts: nil, // none by default — declare + allow-list to enable
-		AllowedEnvVars:      []string{"*"},
+		AllowedNetworkHosts: nil,                                 // none by default — declare + allow-list to enable
+		AllowedEnvVars:      splitList(os.Getenv(AllowedEnvEnv)), // deny by default — allow-list to enable
 		AllowedFilePaths:    []string{"*"},
 		MaxRiskClass:        pub.RiskActive,
 		AllowConfirmation:   true,
@@ -56,8 +66,29 @@ func splitList(v string) []string {
 
 var riskRank = map[pub.RiskClass]int{pub.RiskPassive: 0, pub.RiskActive: 1, pub.RiskInvasive: 2}
 
+// riskRankOf ranks a risk class for comparison. An unset class ranks below any
+// declared one; an unrecognised (unknown) class ranks above every known one, so
+// an unknown per-tool risk fails closed — it surfaces as the effective risk and
+// is rejected rather than silently admitted as passive.
+func riskRankOf(c pub.RiskClass) int {
+	switch c {
+	case "":
+		return -1
+	case pub.RiskPassive:
+		return 0
+	case pub.RiskActive:
+		return 1
+	case pub.RiskInvasive:
+		return 2
+	default:
+		return 3 // unknown declared class: above all known classes
+	}
+}
+
 // effectiveRisk is the plugin-wide risk class when declared, else the highest
-// risk class across the manifest's tools (unset when none declare one).
+// risk class across the manifest's tools (unset when none declare one). An
+// unknown per-tool class outranks the known ones so it is carried up to Validate
+// and rejected.
 func effectiveRisk(m pub.Manifest) pub.RiskClass {
 	if m.Safety.RiskClass != "" {
 		return m.Safety.RiskClass
@@ -65,7 +96,7 @@ func effectiveRisk(m pub.Manifest) pub.RiskClass {
 	best := pub.RiskClass("")
 	for _, c := range m.Capabilities {
 		for _, t := range c.Tools {
-			if t.RiskClass != "" && riskRank[t.RiskClass] > riskRank[best] {
+			if t.RiskClass != "" && riskRankOf(t.RiskClass) > riskRankOf(best) {
 				best = t.RiskClass
 			}
 		}
