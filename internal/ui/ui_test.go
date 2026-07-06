@@ -11,6 +11,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -21,10 +22,12 @@ type fakeBackend struct {
 	diff             string
 	resources        []pt.Resource
 	approved         string
+	approvedBy       rollout.Identity
 	rejected         string
 	promoted         string
 	rolledBackTarget string
 	frozen           bool
+	frozenBy         rollout.Identity
 	freezeReason     string
 }
 
@@ -43,8 +46,8 @@ func (f *fakeBackend) RollbackLast(_ context.Context, ref string, _ bool) (rollo
 	f.rolledBackTarget = ref
 	return rollout.Rollout{TargetRef: ref, Phase: rollout.PhaseRolledBack}, nil
 }
-func (f *fakeBackend) Approve(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
-	f.approved = id
+func (f *fakeBackend) Approve(_ context.Context, id string, by rollout.Identity) (rollout.Rollout, error) {
+	f.approved, f.approvedBy = id, by
 	return rollout.Rollout{ID: id, Phase: rollout.PhaseVerifying}, nil
 }
 func (f *fakeBackend) Reject(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
@@ -55,8 +58,8 @@ func (f *fakeBackend) Promote(_ context.Context, id string) (rollout.Rollout, er
 	f.promoted = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhasePromoted}, nil
 }
-func (f *fakeBackend) Freeze(_ context.Context, on bool, _ rollout.Identity, reason string) (bool, string, error) {
-	f.frozen, f.freezeReason = on, reason
+func (f *fakeBackend) Freeze(_ context.Context, on bool, by rollout.Identity, reason string) (bool, string, error) {
+	f.frozen, f.frozenBy, f.freezeReason = on, by, reason
 	if !on {
 		f.freezeReason = ""
 	}
@@ -64,12 +67,42 @@ func (f *fakeBackend) Freeze(_ context.Context, on bool, _ rollout.Identity, rea
 }
 func (f *fakeBackend) FreezeStatus() (bool, string) { return f.frozen, f.freezeReason }
 
-func srv(be Backend, opts ...Option) http.Handler {
-	return New(be, rollout.Identity{Kind: "human", Name: "felix"}, opts...).Handler()
+// privileged has every mutating permission; viewer has none. testPolicy binds
+// both so RBAC enforcement can be exercised end-to-end.
+var (
+	privileged = rollout.Identity{Kind: "human", Name: "felix"}
+	viewer     = rollout.Identity{Kind: "human", Name: "nobody"}
+)
+
+func testPolicy() *security.Policy {
+	p := security.NewPolicy()
+	p.DefineRole(security.Role{Name: "op", Grants: []security.Grant{
+		{Perm: security.PermApprove}, {Perm: security.PermPromote}, {Perm: security.PermRollback},
+		{Perm: security.PermFreeze}, {Perm: security.PermApply}, {Perm: security.PermStatus},
+	}})
+	p.DefineRole(security.Role{Name: "viewer", Grants: []security.Grant{{Perm: security.PermStatus}}})
+	p.Bind("human:felix", "op")
+	p.Bind("human:nobody", "viewer")
+	return p
 }
 
+func srv(be Backend, opts ...Option) http.Handler {
+	return New(be, rollout.Identity{Kind: "human", Name: "admin"}, opts...).Handler()
+}
+
+// do issues a request with no authenticated identity in context (read-only
+// endpoints ignore it; mutating ones must reject it).
 func do(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	return doAsCtx(h, method, path, body, context.Background())
+}
+
+// doAs issues a request as the given authenticated identity.
+func doAs(h http.Handler, id rollout.Identity, method, path, body string) *httptest.ResponseRecorder {
+	return doAsCtx(h, method, path, body, WithIdentity(context.Background(), id))
+}
+
+func doAsCtx(h http.Handler, method, path, body string, ctx context.Context) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -198,36 +231,100 @@ func TestAPI_TargetNotFound(t *testing.T) {
 	}
 }
 
+func actionsBackend() *fakeBackend {
+	return &fakeBackend{rollouts: []rollout.Rollout{
+		{ID: "ro-7", TargetRef: "a/prod/api"},
+		{ID: "ro-8", TargetRef: "a/prod/api"},
+		{ID: "ro-9", TargetRef: "a/prod/api"},
+	}}
+}
+
 func TestAPI_Actions(t *testing.T) {
-	be := &fakeBackend{}
-	h := srv(be)
-	if rr := do(h, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != 200 || be.approved != "ro-7" {
+	be := actionsBackend()
+	h := srv(be, WithPolicy(testPolicy()))
+	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != 200 || be.approved != "ro-7" {
 		t.Errorf("approve = %d approved=%q", rr.Code, be.approved)
 	}
-	if rr := do(h, "POST", "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
+	// The action is attributed to the real principal, not a static "admin".
+	if be.approvedBy.Kind != privileged.Kind || be.approvedBy.Name != privileged.Name {
+		t.Errorf("approve actor = %+v, want the authenticated identity %+v", be.approvedBy, privileged)
+	}
+	if rr := doAs(h, privileged, "POST", "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
 		t.Errorf("reject = %d rejected=%q", rr.Code, be.rejected)
 	}
-	if rr := do(h, "POST", "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
+	if rr := doAs(h, privileged, "POST", "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
 		t.Errorf("promote = %d promoted=%q", rr.Code, be.promoted)
 	}
-	if rr := do(h, "POST", "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
+	if rr := doAs(h, privileged, "POST", "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
 		t.Errorf("freeze = %d frozen=%v", rr.Code, be.frozen)
 	}
-	if rr := do(h, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
+	if be.frozenBy.Kind != privileged.Kind || be.frozenBy.Name != privileged.Name {
+		t.Errorf("freeze actor = %+v, want %+v", be.frozenBy, privileged)
+	}
+	if rr := doAs(h, privileged, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
 		t.Errorf("rollback = %d target=%q", rr.Code, be.rolledBackTarget)
 	}
-	if rr := do(h, "POST", "/ui/api/approve", `{}`); rr.Code != http.StatusBadRequest {
+	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{}`); rr.Code != http.StatusBadRequest {
 		t.Errorf("approve without id = %d, want 400", rr.Code)
 	}
 }
 
+// TestAPI_RBAC_DeniesUnprivileged proves a viewer (PermStatus only) is refused
+// every mutating action, and that the backend is never touched.
+func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
+	be := actionsBackend()
+	h := srv(be, WithPolicy(testPolicy()))
+	cases := []struct{ path, body string }{
+		{"/ui/api/approve", `{"id":"ro-7"}`},
+		{"/ui/api/reject", `{"id":"ro-8"}`},
+		{"/ui/api/promote", `{"id":"ro-9"}`},
+		{"/ui/api/freeze", `{"active":true,"reason":"x"}`},
+		{"/ui/api/rollback", `{"target":"a/prod/api"}`},
+		{"/ui/api/sync", `{}`},
+	}
+	for _, c := range cases {
+		if rr := doAs(h, viewer, "POST", c.path, c.body); rr.Code != http.StatusForbidden {
+			t.Errorf("%s as viewer = %d, want 403", c.path, rr.Code)
+		}
+	}
+	if be.approved != "" || be.rejected != "" || be.promoted != "" || be.frozen || be.rolledBackTarget != "" {
+		t.Errorf("unprivileged request reached the backend: %+v", be)
+	}
+}
+
+// TestAPI_RBAC_RequiresIdentity proves a request with no authenticated identity
+// in context is denied (401), never run as a static admin.
+func TestAPI_RBAC_RequiresIdentity(t *testing.T) {
+	be := actionsBackend()
+	h := srv(be, WithPolicy(testPolicy()))
+	for _, path := range []string{"/ui/api/approve", "/ui/api/reject", "/ui/api/promote", "/ui/api/freeze", "/ui/api/rollback", "/ui/api/sync"} {
+		if rr := do(h, "POST", path, `{"id":"ro-7","target":"a/prod/api"}`); rr.Code != http.StatusUnauthorized {
+			t.Errorf("%s without identity = %d, want 401", path, rr.Code)
+		}
+	}
+}
+
+// TestAPI_RBAC_FailsClosedWithoutPolicy proves that when no policy is wired the
+// console denies mutating actions rather than acting as an unchecked admin.
+func TestAPI_RBAC_FailsClosedWithoutPolicy(t *testing.T) {
+	be := actionsBackend()
+	h := srv(be) // no WithPolicy
+	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != http.StatusForbidden {
+		t.Errorf("approve with no policy = %d, want 403 (fail closed)", rr.Code)
+	}
+	if be.approved != "" {
+		t.Errorf("fail-closed handler still reached the backend: approved=%q", be.approved)
+	}
+}
+
 func TestAPI_Sync(t *testing.T) {
-	if rr := do(srv(&fakeBackend{}), "POST", "/ui/api/sync", "{}"); rr.Code != http.StatusNotImplemented {
+	pol := testPolicy()
+	if rr := doAs(srv(&fakeBackend{}, WithPolicy(pol)), privileged, "POST", "/ui/api/sync", "{}"); rr.Code != http.StatusNotImplemented {
 		t.Errorf("sync without wiring = %d, want 501", rr.Code)
 	}
 	called := false
-	h := srv(&fakeBackend{}, WithSync(func(context.Context) error { called = true; return nil }))
-	if rr := do(h, "POST", "/ui/api/sync", "{}"); rr.Code != 200 || !called {
+	h := srv(&fakeBackend{}, WithPolicy(pol), WithSync(func(context.Context) error { called = true; return nil }))
+	if rr := doAs(h, privileged, "POST", "/ui/api/sync", "{}"); rr.Code != 200 || !called {
 		t.Errorf("sync = %d called=%v", rr.Code, called)
 	}
 	// canSync reflected in dashboard.
