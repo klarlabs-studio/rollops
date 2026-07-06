@@ -103,6 +103,41 @@ func TestSource_CommitFile(t *testing.T) {
 	}
 }
 
+func TestVerifyHeadSignature_UnsignedFails(t *testing.T) {
+	// DESIGN (finding #6): an unsigned HEAD commit fails verification. (The signed
+	// happy path needs a GPG/SSH signing key, impractical in CI — the security
+	// assertion is that unsigned/unverifiable commits are rejected.)
+	upstream := makeUpstream(t)
+	dest := filepath.Join(t.TempDir(), "checkout")
+	src, err := Clone(context.Background(), "file://"+upstream, "main", dest, Auth{})
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if err := src.VerifyHeadSignature(context.Background()); err == nil {
+		t.Fatal("unsigned HEAD must fail signature verification")
+	}
+}
+
+func TestPull_RequireSignedCommits(t *testing.T) {
+	upstream := makeUpstream(t)
+	dest := filepath.Join(t.TempDir(), "checkout")
+	src, err := Clone(context.Background(), "file://"+upstream, "main", dest, Auth{})
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	// Default (env unset) → Pull ignores signatures and succeeds on unsigned HEAD.
+	if _, _, err := src.Pull(context.Background()); err != nil {
+		t.Fatalf("Pull (default off): %v", err)
+	}
+
+	// Enabled → Pull fails closed on the unsigned HEAD (non-fatal to other repos).
+	t.Setenv("ROLLOPS_REQUIRE_SIGNED_COMMITS", "1")
+	if _, _, err := src.Pull(context.Background()); err == nil {
+		t.Fatal("Pull must fail when signed commits are required and HEAD is unsigned")
+	}
+}
+
 func TestRedactArgs_MasksToken(t *testing.T) {
 	args := []string{"-c", "http.extraheader=Authorization: Basic c2VjcmV0VG9rZW4=", "clone", "--depth", "1", "https://github.com/acme/x"}
 	got := redactArgs(args)

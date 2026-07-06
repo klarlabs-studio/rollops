@@ -3,7 +3,6 @@ package imageupdate
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -43,11 +42,14 @@ func (p Policy) Validate(u Update) error {
 		}
 	}
 	if p.TagPattern != "" {
-		ok, err := regexp.MatchString(p.TagPattern, u.Tag)
+		// Anchor the operator's pattern so it matches the whole tag, not a
+		// substring (regexp.MatchString is a substring match): `2\.0` must not
+		// admit "12.0.5" or "2.0-evil".
+		re, err := compileTagPattern(p.TagPattern)
 		if err != nil {
 			return fmt.Errorf("imageupdate: tagPattern: %w", err)
 		}
-		if !ok {
+		if re != nil && !re.MatchString(u.Tag) {
 			return fmt.Errorf("imageupdate: tag %q does not match policy", u.Tag)
 		}
 	}

@@ -130,6 +130,12 @@ type ImagePolicy struct {
 	Mode             string `yaml:"mode" json:"mode"`                                             // none | major | minor | patch | any | digest
 	Pattern          string `yaml:"pattern,omitempty" json:"pattern,omitempty"`                   // optional tag regexp filter
 	AllowMutableTags bool   `yaml:"allowMutableTags,omitempty" json:"allowMutableTags,omitempty"` // permit latest/main/master
+	// AllowedRegistries restricts image automation to images hosted on these
+	// registry hosts (e.g. ghcr.io, docker.io). Empty means no restriction. When
+	// set, the daemon refuses to scan/bump an image whose registry host is not in
+	// the list — a supply-chain guard so a compromised or mistyped image ref can't
+	// pull automation toward an unexpected registry.
+	AllowedRegistries []string `yaml:"allowedRegistries,omitempty" json:"allowedRegistries,omitempty"`
 }
 
 // Target selects the deployment target plugin and its criticality weight.

@@ -76,6 +76,12 @@ func (s *Source) Head(ctx context.Context) (string, error) {
 // Pull fetches the branch and fast-forwards the working tree, reporting whether
 // HEAD moved. The poll loop calls this: a changed head triggers reconciliation,
 // and the call doubles as the drift heartbeat.
+//
+// When ROLLOPS_REQUIRE_SIGNED_COMMITS is enabled, the checked-out HEAD's commit
+// signature is verified after the reset; a failure returns an error so the
+// caller skips reconciling this repo (non-fatal to other repos) rather than
+// deploying an unverified commit. rollops follows a mutable branch via
+// reset --hard, so this is the opt-in equivalent of Flux/Argo GPG verification.
 func (s *Source) Pull(ctx context.Context) (changed bool, head string, err error) {
 	before, _ := s.Head(ctx)
 	if _, err := s.git(ctx, s.dir, "fetch", "origin", s.branch); err != nil {
@@ -88,7 +94,40 @@ func (s *Source) Pull(ctx context.Context) (changed bool, head string, err error
 	if err != nil {
 		return false, before, err
 	}
+	if requireSignedCommits() {
+		if verr := s.VerifyHeadSignature(ctx); verr != nil {
+			return before != after, after, verr
+		}
+	}
 	return before != after, after, nil
+}
+
+// VerifyHeadSignature runs `git verify-commit HEAD`, returning a non-nil error
+// when the HEAD commit is unsigned or its signature does not verify against the
+// local keyring (git's gpg.program / gpg.<fmt>.* config). It is the supply-chain
+// gate for following a mutable branch: without it, anyone able to push to the
+// tracked branch controls what rollops deploys.
+func (s *Source) VerifyHeadSignature(ctx context.Context) error {
+	if _, err := s.git(ctx, s.dir, "verify-commit", "HEAD"); err != nil {
+		return fmt.Errorf("git: HEAD commit signature verification failed: %w", err)
+	}
+	return nil
+}
+
+// requireSignedCommits reports whether commit-signature verification is enabled
+// via the ROLLOPS_REQUIRE_SIGNED_COMMITS env var. Default off for backward
+// compatibility. Read per-Pull so the setting can be toggled without a restart.
+//
+// This env gate lives here (rather than being threaded from the daemon through
+// the watcher) so the control stays self-contained in the git layer; wiring a
+// per-repo config field would additionally require changes in the reconcile
+// watcher, which owns Pull's call site.
+func requireSignedCommits() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ROLLOPS_REQUIRE_SIGNED_COMMITS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // CommitFile writes one file inside the working tree and commits it when it

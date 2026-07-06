@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -56,8 +57,8 @@ func (s Scanner) Tags(ctx context.Context, image string) ([]string, error) {
 	if host == "docker.io" {
 		base = "https://registry-1.docker.io"
 	}
-	url := fmt.Sprintf("%s/v2/%s/tags/list", base, repo)
-	body, err := s.get(ctx, url, repo)
+	endpoint := fmt.Sprintf("%s/v2/%s/tags/list", base, repo)
+	body, err := s.get(ctx, endpoint, repo, host)
 	if err != nil {
 		return nil, err
 	}
@@ -73,23 +74,25 @@ var bearerRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 // get performs an authenticated registry GET, handling the v2 bearer challenge:
 // an unauthenticated request returns 401 with a WWW-Authenticate header naming a
 // token endpoint; we fetch a token (with optional basic creds) and retry.
-func (s Scanner) get(ctx context.Context, url, repo string) ([]byte, error) {
-	resp, err := s.do(ctx, url, "")
+// registryHost is the host of the image being scanned; creds are bound to it so
+// they are never sent to an attacker-named token realm on a different host.
+func (s Scanner) get(ctx context.Context, endpoint, repo, registryHost string) ([]byte, error) {
+	resp, err := s.do(ctx, endpoint, "")
 	if err != nil {
 		return nil, err
 	}
 	if resp.status == http.StatusUnauthorized {
-		token, terr := s.token(ctx, resp.authenticate, repo)
+		token, terr := s.token(ctx, resp.authenticate, repo, registryHost)
 		if terr != nil {
 			return nil, terr
 		}
-		resp, err = s.do(ctx, url, token)
+		resp, err = s.do(ctx, endpoint, token)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if resp.status != http.StatusOK {
-		return nil, fmt.Errorf("imageupdate: registry %s: status %d", url, resp.status)
+		return nil, fmt.Errorf("imageupdate: registry %s: status %d", endpoint, resp.status)
 	}
 	return resp.body, nil
 }
@@ -157,22 +160,22 @@ func (s Scanner) Digest(ctx context.Context, image string) (string, error) {
 	if host == "docker.io" {
 		base = "https://registry-1.docker.io"
 	}
-	url := fmt.Sprintf("%s/v2/%s/manifests/%s", base, repo, tag)
-	resp, err := s.doMethod(ctx, http.MethodHead, url, "")
+	endpoint := fmt.Sprintf("%s/v2/%s/manifests/%s", base, repo, tag)
+	resp, err := s.doMethod(ctx, http.MethodHead, endpoint, "")
 	if err != nil {
 		return "", err
 	}
 	if resp.status == http.StatusUnauthorized {
-		token, terr := s.token(ctx, resp.authenticate, repo)
+		token, terr := s.token(ctx, resp.authenticate, repo, host)
 		if terr != nil {
 			return "", terr
 		}
-		if resp, err = s.doMethod(ctx, http.MethodHead, url, token); err != nil {
+		if resp, err = s.doMethod(ctx, http.MethodHead, endpoint, token); err != nil {
 			return "", err
 		}
 	}
 	if resp.status != http.StatusOK {
-		return "", fmt.Errorf("imageupdate: manifest %s: status %d", url, resp.status)
+		return "", fmt.Errorf("imageupdate: manifest %s: status %d", endpoint, resp.status)
 	}
 	if resp.digest == "" {
 		return "", fmt.Errorf("imageupdate: no Docker-Content-Digest for %s", image)
@@ -187,7 +190,15 @@ type tokenResponse struct {
 
 // token fulfils a Bearer challenge: parse realm/service/scope, GET the realm
 // with the scope (and basic creds when configured), and return the token.
-func (s Scanner) token(ctx context.Context, challenge, repo string) (string, error) {
+//
+// The realm comes from the registry's WWW-Authenticate header and is therefore
+// attacker-influenced: a repo naming `image: attacker.example/foo` can point the
+// challenge at any URL. Basic creds (a registry PAT) are attached ONLY when the
+// realm is on the same host as the image's registry AND served over https, so a
+// hostile realm on evil.com — or the same host over cleartext http — never
+// receives the credential. A cross-host realm is still followed, but
+// unauthenticated (public pulls keep working; a leak is what we prevent).
+func (s Scanner) token(ctx context.Context, challenge, repo, registryHost string) (string, error) {
 	params := map[string]string{}
 	for _, m := range bearerRe.FindAllStringSubmatch(challenge, -1) {
 		params[m[1]] = m[2]
@@ -200,12 +211,12 @@ func (s Scanner) token(ctx context.Context, challenge, repo string) (string, err
 	if scope == "" {
 		scope = "repository:" + repo + ":pull"
 	}
-	url := fmt.Sprintf("%s?service=%s&scope=%s", realm, params["service"], scope)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("%s?service=%s&scope=%s", realm, params["service"], scope)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err
 	}
-	if s.Username != "" || s.Password != "" {
+	if (s.Username != "" || s.Password != "") && realmTrusted(realm, registryHost) {
 		req.SetBasicAuth(s.Username, s.Password)
 	}
 	resp, err := s.client().Do(req)
@@ -224,4 +235,33 @@ func (s Scanner) token(ctx context.Context, challenge, repo string) (string, err
 		return tr.Token, nil
 	}
 	return tr.AccessToken, nil
+}
+
+// realmTrusted reports whether it is safe to attach the registry credential to a
+// bearer-token realm: the realm must be served over https and be on the same
+// host as the image's registry. Docker Hub is the one exception — its registry
+// (registry-1.docker.io / docker.io) delegates tokens to a dedicated first-party
+// auth host (auth.docker.io) — so its own hosts are treated as one trust domain.
+func realmTrusted(realm, registryHost string) bool {
+	u, err := url.Parse(realm)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return false
+	}
+	if u.Host == registryHost {
+		return true
+	}
+	if isDockerHub(u.Hostname()) && isDockerHub(registryHost) {
+		return true
+	}
+	return false
+}
+
+// isDockerHub reports whether host is one of Docker's own first-party hosts
+// (registry endpoints and the token auth host), which form a single trust domain.
+func isDockerHub(host string) bool {
+	switch host {
+	case "docker.io", "registry-1.docker.io", "index.docker.io", "auth.docker.io":
+		return true
+	}
+	return false
 }

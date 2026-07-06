@@ -21,12 +21,38 @@ func parseSemver(tag string) (semver, bool) {
 	if m == nil {
 		return semver{}, false
 	}
-	maj, _ := strconv.Atoi(m[1])
-	min, _ := strconv.Atoi(m[2])
-	pat, _ := strconv.Atoi(m[3])
+	// Atoi overflow clamps to MaxInt64 (with an error), so a bogus huge tag like
+	// "99999999999999999999.0.0" would otherwise silently beat every real version
+	// in major/any mode. Reject the tag as non-semver instead of comparing a
+	// clamped number.
+	maj, err1 := strconv.Atoi(m[1])
+	min, err2 := strconv.Atoi(m[2])
+	pat, err3 := strconv.Atoi(m[3])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return semver{}, false
+	}
 	suffix := m[4]
 	pre := strings.HasPrefix(suffix, "-")
 	return semver{major: maj, minor: min, patch: pat, pre: pre}, true
+}
+
+// compileTagPattern compiles an operator-supplied tag pattern, anchoring it so
+// an otherwise-unanchored pattern matches the whole tag rather than a substring.
+// regexp.MatchString is a substring match, so an operator writing `2\.0`
+// (intending the 2.0 line) would also match "12.0.5" or "2.0-evil" — far more
+// than intended. A pattern that already carries an anchor (^ at the start or $
+// at the end) is respected verbatim, so a deliberate prefix (`^v1\.`) or suffix
+// (`-stable$`) match still works; only a pattern with neither anchor is wrapped
+// as ^(?:…)$.
+func compileTagPattern(pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	expr := pattern
+	if !strings.HasPrefix(pattern, "^") && !strings.HasSuffix(pattern, "$") {
+		expr = "^(?:" + pattern + ")$"
+	}
+	return regexp.Compile(expr)
 }
 
 func (a semver) greater(b semver) bool {
@@ -55,12 +81,9 @@ func SelectTag(current string, available []string, mode, pattern string) (string
 	if !ok {
 		return "", false // current tag isn't semver — nothing to compare against
 	}
-	var re *regexp.Regexp
-	if pattern != "" {
-		var err error
-		if re, err = regexp.Compile(pattern); err != nil {
-			return "", false
-		}
+	re, err := compileTagPattern(pattern)
+	if err != nil {
+		return "", false
 	}
 	best := cur
 	bestTag := ""
@@ -100,12 +123,9 @@ func IsSemver(tag string) bool {
 // digest→semver migration to find the version a pinned digest corresponds to,
 // checking the most likely (newest) tags first so the highest matching tag wins.
 func SemverTagsDesc(available []string, pattern string) []string {
-	var re *regexp.Regexp
-	if pattern != "" {
-		var err error
-		if re, err = regexp.Compile(pattern); err != nil {
-			return nil
-		}
+	re, err := compileTagPattern(pattern)
+	if err != nil {
+		return nil
 	}
 	type tagged struct {
 		tag string

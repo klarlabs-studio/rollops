@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -11,6 +12,46 @@ const (
 	DefaultBranch = "main"
 	DefaultPath   = "rollops.yaml"
 )
+
+// maxConfigBytes caps how much of a config file we read. A watched repo is
+// attacker-influenced (anyone who can commit to it), so a config committed as a
+// symlink to /dev/zero or a multi-GB blob would OOM-crash the daemon on a plain
+// os.ReadFile — bypassing per-repo error handling because it's a memory
+// exhaustion, not an error return. 1 MiB is far larger than any real rollout
+// config yet small enough to never threaten the process.
+const maxConfigBytes = 1 << 20 // 1 MiB
+
+// readConfigFile reads a config file with two supply-chain safeguards: it
+// rejects symlinks (a repo must not redirect a read to an arbitrary host path or
+// device) and caps the read at maxConfigBytes (so an oversized blob cannot
+// exhaust memory). It returns an error rather than reading unboundedly.
+func readConfigFile(path string) ([]byte, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("config: %s is a symlink; refusing to follow", path)
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("config: %s is not a regular file", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	// Read one byte past the cap so an exactly-cap-plus-one file is still detected
+	// as too large rather than silently truncated.
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxConfigBytes {
+		return nil, fmt.Errorf("config: %s exceeds %d bytes", path, maxConfigBytes)
+	}
+	return data, nil
+}
 
 // RepoRef addresses one watched repo's config: the repo, the branch to track,
 // and the config path within it. Multi-tenancy is a property of this Git
@@ -38,7 +79,7 @@ func (r RepoRef) WithDefaults() RepoRef {
 func LoadFromDir(dir string, r RepoRef) (*Config, error) {
 	r = r.WithDefaults()
 	full := filepath.Join(dir, filepath.Clean("/" + r.Path)[1:]) // prevent path escape
-	data, err := os.ReadFile(full)
+	data, err := readConfigFile(full)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", r.Path, err)
 	}
@@ -69,7 +110,7 @@ func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 		return nil, fmt.Errorf("config: stat %s: %w", r.Path, err)
 	}
 	if !info.IsDir() {
-		data, err := os.ReadFile(full)
+		data, err := readConfigFile(full)
 		if err != nil {
 			return nil, fmt.Errorf("config: read %s: %w", r.Path, err)
 		}
@@ -92,7 +133,7 @@ func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 		if ext := filepath.Ext(name); ext != ".yaml" && ext != ".yml" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(full, name))
+		data, err := readConfigFile(filepath.Join(full, name))
 		if err != nil {
 			return nil, fmt.Errorf("config: read %s/%s: %w", r.Path, name, err)
 		}
