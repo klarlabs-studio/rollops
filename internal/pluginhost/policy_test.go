@@ -69,6 +69,28 @@ func TestPolicy_EffectiveRiskFromTools(t *testing.T) {
 	}
 }
 
+func TestPolicy_UnknownPerToolRiskFailsClosed(t *testing.T) {
+	// An unrecognised per-tool risk string must be rejected (fail closed), not
+	// silently admitted as passive.
+	m := pub.Manifest{
+		Name: "p",
+		Capabilities: []pub.Capability{{
+			Name: pub.CapabilityTarget,
+			Tools: []pub.Tool{
+				{Name: "observe", RiskClass: pub.RiskPassive},
+				{Name: "apply", Mutating: true, RiskClass: pub.RiskClass("superdangerous")},
+			},
+		}},
+	}
+	if err := DefaultPolicy().Validate(m); err == nil {
+		t.Error("unknown per-tool risk class must be rejected")
+	}
+	// Consistency check: a plugin-wide unknown class is likewise rejected.
+	if err := DefaultPolicy().Validate(pub.Manifest{Name: "p", Safety: pub.Safety{RiskClass: pub.RiskClass("bogus")}}); err == nil {
+		t.Error("unknown plugin-wide risk class must be rejected")
+	}
+}
+
 func TestPolicy_NeedsConfirmation(t *testing.T) {
 	man := pub.Manifest{Name: "acme/dangerous", Safety: pub.Safety{NeedsConfirmation: true}}
 

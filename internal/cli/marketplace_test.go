@@ -397,6 +397,88 @@ func TestPluginInstall_ByName_AutoCosignFailureBlocks(t *testing.T) {
 	}
 }
 
+func TestPluginInstall_RequireSignatureBlocksUnsigned(t *testing.T) {
+	content := "#!/bin/sh\necho fs\n"
+	h := sha256.Sum256([]byte(content))
+	sum := hex.EncodeToString(h[:])
+	hc, url := registryServer(t, sum) // registryServer publishes no cosign material
+	dir := t.TempDir()
+
+	bin := filepath.Join(t.TempDir(), "downloaded")
+	if err := os.WriteFile(bin, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return bin, func() {}, nil },
+	}
+	err := app.Run(context.Background(), []string{"plugin", "install", "flagsmith", "--dir", dir, "--registry", url, "--require-signature"})
+	if err == nil {
+		t.Fatal("unsigned plugin must be blocked when --require-signature is set")
+	}
+	if !strings.Contains(err.Error(), "no signature") {
+		t.Errorf("expected a missing-signature error, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "flagsmith")); statErr == nil {
+		t.Error("unsigned binary must not be installed under --require-signature")
+	}
+}
+
+func TestPluginInstall_RequireSignatureViaEnv(t *testing.T) {
+	content := "binary-bytes"
+	h := sha256.Sum256([]byte(content))
+	sum := hex.EncodeToString(h[:])
+	hc, url := registryServer(t, sum)
+	dir := t.TempDir()
+
+	bin := filepath.Join(t.TempDir(), "downloaded")
+	if err := os.WriteFile(bin, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ROLLOPS_PLUGIN_REQUIRE_SIGNATURE", "1")
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return bin, func() {}, nil },
+	}
+	err := app.Run(context.Background(), []string{"plugin", "install", "flagsmith", "--dir", dir, "--registry", url})
+	if err == nil {
+		t.Fatal("ROLLOPS_PLUGIN_REQUIRE_SIGNATURE=1 must block an unsigned install")
+	}
+}
+
+func TestPluginInstall_UnsignedWarnsButInstalls(t *testing.T) {
+	content := "#!/bin/sh\necho fs\n"
+	h := sha256.Sum256([]byte(content))
+	sum := hex.EncodeToString(h[:])
+	hc, url := registryServer(t, sum)
+	dir := t.TempDir()
+
+	bin := filepath.Join(t.TempDir(), "downloaded")
+	if err := os.WriteFile(bin, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := &App{
+		Out:           &buf,
+		HTTPClient:    hc,
+		PluginFetcher: func(_ context.Context, _ string) (string, func(), error) { return bin, func() {}, nil },
+	}
+	// Default (no flag): install proceeds on the pin alone but must warn loudly.
+	if err := app.Run(context.Background(), []string{"plugin", "install", "flagsmith", "--dir", dir, "--registry", url}); err != nil {
+		t.Fatalf("unsigned install without --require-signature should succeed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "unsigned") {
+		t.Errorf("expected an unsigned-plugin warning, got %q", buf.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "flagsmith")); err != nil {
+		t.Errorf("binary should have been installed: %v", err)
+	}
+}
+
 func TestPluginInstall_ByName_UnknownPlugin(t *testing.T) {
 	hc, url := registryServer(t, "deadbeef")
 	var buf bytes.Buffer

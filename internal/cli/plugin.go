@@ -203,6 +203,7 @@ func (a *App) pluginUpdate(ctx context.Context, args []string) error {
 	dir := fs.String("dir", defaultPluginDir(), "plugin directory to update")
 	regURL := fs.String("registry", registry.URL(), "plugin registry index URL")
 	apply := fs.Bool("apply", false, "actually upgrade outdated plugins (default: report only)")
+	requireSig := fs.Bool("require-signature", false, "refuse to upgrade to a release that has no signature to verify (fail closed)")
 	// An optional plugin file name limits the update to one installed plugin;
 	// flags may precede or follow it.
 	var only string
@@ -268,7 +269,7 @@ func (a *App) pluginUpdate(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
 		}
-		newSum, err := a.resolveAndInstall(ctx, name, art, cos, path)
+		newSum, err := a.resolveAndInstall(ctx, name, art, cos, path, requireSignature(*requireSig))
 		if err != nil {
 			return fmt.Errorf("plugin update: %s: %w", e.Name(), err)
 		}
@@ -296,6 +297,7 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 	sigPath := fs.String("signature", "", "detached cosign signature file")
 	certPath := fs.String("certificate", "", "cosign signing certificate (keyless)")
 	bundlePath := fs.String("bundle", "", "cosign sigstore bundle")
+	requireSig := fs.Bool("require-signature", false, "refuse to install a plugin that has no signature to verify (fail closed)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(a.Out, "rollops plugin install <path|https-url> [flags]\n\nFetch a plugin binary, verify it, install it, and print the sha256 to pin.")
 		fs.PrintDefaults()
@@ -336,7 +338,7 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 			target = source
 		}
 		dest := filepath.Join(*dir, target)
-		sum, err := a.resolveAndInstall(ctx, source, art, cos, dest)
+		sum, err := a.resolveAndInstall(ctx, source, art, cos, dest, requireSignature(*requireSig))
 		if err != nil {
 			return fmt.Errorf("plugin install: %w", err)
 		}
@@ -361,7 +363,8 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 		SignaturePath: *sigPath, CertificatePath: *certPath, BundlePath: *bundlePath,
 		Run: a.CosignRun,
 	}
-	if v.Configured() {
+	switch {
+	case v.Configured():
 		ok, reason, verr := v.VerifyBlob(ctx, local)
 		if verr != nil {
 			return fmt.Errorf("plugin install: cosign: %w", verr)
@@ -370,6 +373,10 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 			return fmt.Errorf("plugin install: cosign verification failed: %s", reason)
 		}
 		_, _ = fmt.Fprintln(a.Out, "cosign: verified")
+	case requireSignature(*requireSig):
+		return fmt.Errorf("plugin install: %s has no signature to verify and --require-signature is set (refusing to install unsigned plugin; pass cosign flags to verify it)", source)
+	default:
+		_, _ = fmt.Fprintf(a.Out, "warning: %s is unsigned — installing on its sha256 alone; pass --require-signature to refuse unsigned plugins\n", source)
 	}
 
 	sum, err := sha256File(local)
@@ -394,8 +401,10 @@ func (a *App) pluginInstall(ctx context.Context, args []string) error {
 // resolveAndInstall downloads a resolved marketplace artifact, auto-verifies its
 // cosign signature when the release is signed, enforces the index's sha256 pin,
 // and writes it to dest (0755). Shared by `plugin install <name>` and
-// `plugin update`, so both enforce identical trust checks.
-func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.Artifact, cos *registry.Cosign, dest string) (string, error) {
+// `plugin update`, so both enforce identical trust checks. When the release
+// carries no signature material, requireSig makes that a hard error (fail
+// closed); otherwise it installs on the sha256 pin alone with a clear warning.
+func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.Artifact, cos *registry.Cosign, dest string, requireSig bool) (string, error) {
 	var cleanups []func()
 	defer func() {
 		for _, c := range cleanups {
@@ -436,6 +445,15 @@ func (a *App) resolveAndInstall(ctx context.Context, name string, art registry.A
 			}
 		}
 		v = rv
+	}
+
+	// No signature material: fail closed when the operator requires a signature,
+	// otherwise install on the sha256 pin alone but say so loudly.
+	if v == nil {
+		if requireSig {
+			return "", fmt.Errorf("%s has no signature to verify and --require-signature is set (refusing to install unsigned plugin)", name)
+		}
+		_, _ = fmt.Fprintf(a.Out, "warning: %s is unsigned — installing on its sha256 pin alone; pass --require-signature to refuse unsigned plugins\n", name)
 	}
 
 	fetch := a.PluginFetcher
@@ -483,6 +501,19 @@ func (a *App) printInstalledPin(dest, sum string) {
 	// Pin it under the spec block matching the plugin's capability —
 	// featureFlags, trafficRouting, analysis, or a plugin target.
 	_, _ = fmt.Fprintf(a.Out, "pin it in the matching rollout spec block, e.g.:\n  <featureFlags|trafficRouting|analysis>:\n    plugin: %s\n    sha256: %s\n", dest, sum)
+}
+
+// requireSignature reports whether a missing plugin signature must be a hard
+// error, from the --require-signature flag or ROLLOPS_PLUGIN_REQUIRE_SIGNATURE.
+func requireSignature(flagSet bool) bool {
+	if flagSet {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ROLLOPS_PLUGIN_REQUIRE_SIGNATURE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func defaultPluginDir() string {

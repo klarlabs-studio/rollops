@@ -37,6 +37,9 @@ func TestBuildProvider_EndToEnd(t *testing.T) {
 	sum := sha256.Sum256(raw)
 	outfile := filepath.Join(t.TempDir(), "flags.log")
 	t.Setenv("ROLLOPS_FLAG_OUTFILE", outfile)
+	// The plugin subprocess is launched with a confined environment; allow-list
+	// the test-wiring variable so it reaches the plugin (see pluginhost.Launch).
+	t.Setenv("ROLLOPS_PLUGIN_ALLOWED_ENV", "ROLLOPS_FLAG_OUTFILE")
 
 	prov, err := BuildProvider(&config.FeatureFlags{Plugin: bin, SHA256: hex.EncodeToString(sum[:]), Flag: "checkout", Environment: "prod"})
 	if err != nil {

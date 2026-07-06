@@ -52,16 +52,19 @@ func BuildRouter(cfg *config.TrafficRouting) (Router, error) {
 	if err := pluginhost.VerifyArtifact(real, cfg.SHA256); err != nil {
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
-	proc, err := pluginhost.Launch(context.Background(), real)
+	policy := pluginhost.DefaultPolicy()
+	proc, err := pluginhost.Launch(context.Background(), real, policy.AllowedEnvVars)
 	if err != nil {
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
-	m, err := proc.Client.Manifest(context.Background())
+	mctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
+	m, err := proc.Client.Manifest(mctx)
+	cancel()
 	if err != nil {
 		_ = proc.Close()
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
-	if err := pluginhost.DefaultPolicy().Validate(m); err != nil {
+	if err := policy.Validate(m); err != nil {
 		_ = proc.Close()
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
