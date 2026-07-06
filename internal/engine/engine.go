@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/analysis"
@@ -304,10 +305,21 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	driftAlert := false // drift detected but intentionally not auto-corrected (detect)
 	if (ver == "detect" || ver == "full") && cur.Value == m.Checksum && m.Checksum != "" {
 		// Differ lives on the raw (unwrapped) target, not the fortify wrapper.
-		if raw, rerr := e.rawTarget(c.Spec.Target.Ref, m); rerr == nil {
+		raw, rerr := e.rawTarget(c.Spec.Target.Ref, m)
+		if rerr == nil {
 			defer closeTarget(raw)
 			if d, ok := raw.(pt.Differ); ok {
-				if diff, derr := d.Diff(ctx, m); derr == nil && strings.TrimSpace(diff) != "" {
+				diff, derr := d.Diff(ctx, m)
+				switch {
+				case derr != nil:
+					// Under full verification a diff we cannot compute is
+					// indistinguishable from drift: fail CLOSED so reconcile
+					// re-applies and self-heals rather than silently reporting
+					// "in sync". Detect mode stays alert-only (no auto-correct).
+					if ver == "full" {
+						deepDrift = true
+					}
+				case strings.TrimSpace(diff) != "":
 					if ver == "full" {
 						deepDrift = true
 					} else {
@@ -315,6 +327,10 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 					}
 				}
 			}
+		} else if ver == "full" {
+			// The target build for the live diff failed; treat as drift under full
+			// verification so a build error cannot masquerade as "in sync".
+			deepDrift = true
 		}
 	}
 	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
@@ -853,15 +869,19 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
 	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
 		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
-		if err == nil {
-			defer closeTarget(tgt)
-			if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
-				reason := "health check failed"
-				if hs.Reason != "" {
-					reason = "health check failed: " + hs.Reason
-				}
-				return true, reason, ""
+		if err != nil {
+			// Fail CLOSED: a health gate we cannot even build is not a pass. Letting
+			// a build error fall through would promote an unverified deploy, the
+			// same failure mode the step gate already guards against.
+			return true, "health gate unavailable: " + err.Error(), ""
+		}
+		defer closeTarget(tgt)
+		if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
+			reason := "health check failed"
+			if hs.Reason != "" {
+				reason = "health check failed: " + hs.Reason
 			}
+			return true, reason, ""
 		}
 	}
 	if st := c.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
@@ -938,6 +958,15 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
+	// Separation of duties (four-eyes): the approver must differ from the
+	// initiator, so one principal cannot both propose and approve a gated
+	// rollout. Exempt system/reconcile initiators (empty or "system" name) — they
+	// are not real approvers to collude with. Opt out for single-operator setups
+	// via ROLLOPS_ALLOW_SELF_APPROVE=1; defaults to ENFORCE.
+	if !allowSelfApprove() && realPrincipal(r.Initiator) && sameIdentity(by, r.Initiator) {
+		e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef, Actor: by, Detail: "approve rejected: four-eyes (approver == initiator)"})
+		return r, fmt.Errorf("engine: four-eyes: approver %q must differ from initiator %q (set ROLLOPS_ALLOW_SELF_APPROVE=1 to allow)", by.Name, r.Initiator.Name)
+	}
 	release, ok, err := e.acquireTarget(ctx, r.TargetRef)
 	if err != nil {
 		return r, err
@@ -946,6 +975,16 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 		return r, ErrTargetBusy
 	}
 	defer release()
+
+	// Re-check the guardrails at approve time: an emergency freeze engaged after
+	// the rollout was gated must block the approve-driven deploy too, otherwise
+	// approval is a freeze bypass.
+	if e.guardrails != nil {
+		if _, gErr := e.guardrails.CheckApply(ctx, by, security.FloorInput{TargetRef: r.TargetRef}); gErr != nil {
+			e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef, Actor: by, Detail: "approve blocked: " + gErr.Error()})
+			return r, gErr
+		}
+	}
 
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
 	if err != nil {
@@ -978,6 +1017,25 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 		return rollout.Rollout{}, err
 	}
 	return r, nil
+}
+
+// allowSelfApprove reports whether the four-eyes separation-of-duties check is
+// disabled via ROLLOPS_ALLOW_SELF_APPROVE=1 (single-operator setups). Read once
+// at first use so the policy is stable for the process lifetime.
+var allowSelfApprove = sync.OnceValue(func() bool {
+	return os.Getenv("ROLLOPS_ALLOW_SELF_APPROVE") == "1"
+})
+
+// realPrincipal reports whether an identity is a real, colludable approver.
+// System/reconcile initiators (empty kind/name, or the "system" name) are exempt
+// from four-eyes: they are not a human who could self-approve.
+func realPrincipal(id rollout.Identity) bool {
+	return id.Kind != "" && id.Name != "" && id.Name != "system"
+}
+
+// sameIdentity reports whether two identities are the same principal.
+func sameIdentity(a, b rollout.Identity) bool {
+	return a.Kind == b.Kind && a.Name == b.Name
 }
 
 // Reject resolves an awaiting-approval rollout by rolling it back without
@@ -1447,6 +1505,22 @@ func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout)
 		return rollout.Rollout{}, ErrTargetBusy
 	}
 	defer release()
+
+	// A scheduled apply must still clear the guardrails at FIRE time, not only at
+	// queue time: an emergency freeze engaged after queuing must block it, and a
+	// policy floor that demands human approval cannot be self-approved by a
+	// scheduler. Without this the queue is a freeze/gate bypass.
+	if e.guardrails != nil {
+		force, gErr := e.guardrails.CheckApply(ctx, s.Initiator, security.FloorInput{TargetRef: s.TargetRef})
+		if gErr != nil {
+			e.record(audit.Entry{Action: audit.ActionApply, TargetRef: s.TargetRef, Actor: s.Initiator, Detail: "scheduled apply blocked: " + gErr.Error()})
+			return rollout.Rollout{}, gErr
+		}
+		if force {
+			e.record(audit.Entry{Action: audit.ActionApply, TargetRef: s.TargetRef, Actor: s.Initiator, Detail: "scheduled apply blocked: policy floor requires approval"})
+			return rollout.Rollout{}, fmt.Errorf("engine: scheduled apply for %q requires approval and cannot self-approve", s.TargetRef)
+		}
+	}
 
 	tgt, err := e.buildTarget(s.TargetRef, s.Desired)
 	if err != nil {

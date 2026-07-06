@@ -79,6 +79,29 @@ func TestAnalyzer_ToleratesTransientWithinLimit(t *testing.T) {
 	}
 }
 
+func TestNew_RejectsImpossibleFailureLimit(t *testing.T) {
+	// FailureLimit >= Count can never trip (Run fails only when the streak
+	// EXCEEDS the limit), so the analysis could never fail — a canary that fails
+	// every sample would be reported Passed. Reject at construction (fail closed).
+	if _, err := New(&scriptProvider{}, tmpl("errorRate < 1", 3, 3)); err == nil {
+		t.Error("failureLimit == count must be rejected")
+	}
+	if _, err := New(&scriptProvider{}, tmpl("errorRate < 1", 2, 5)); err == nil {
+		t.Error("failureLimit > count must be rejected")
+	}
+	// Count defaults to 1 in Run, so a FailureLimit of 1 with an unset Count is
+	// also impossible-to-fail and must be rejected.
+	if _, err := New(&scriptProvider{}, Template{
+		Metrics: []Metric{{Name: "errorRate", Query: "err"}}, Condition: "errorRate < 1", FailureLimit: 1,
+	}); err == nil {
+		t.Error("failureLimit 1 with default count 1 must be rejected")
+	}
+	// The boundary just below the count is valid.
+	if _, err := New(&scriptProvider{}, tmpl("errorRate < 1", 3, 2)); err != nil {
+		t.Errorf("failureLimit < count must be accepted: %v", err)
+	}
+}
+
 func TestNew_RejectsBadCondition(t *testing.T) {
 	if _, err := New(&scriptProvider{}, Template{Metrics: []Metric{{Name: "x", Query: "q"}}, Condition: "x <"}); err == nil {
 		t.Error("malformed condition should error")
