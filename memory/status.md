@@ -1,32 +1,36 @@
 # Status — Rollops
 
-*Updated: 2026-06-14*
+*Updated: 2026-07-06*
 
 ## Current State
 
-Rollops is **released at v0.16.0** and **operating its creator's entire production
-cluster**: 28 first-party deployments under GitOps reconcile (config in each app's
-own `.rollops/` dir), registry-poll image automation (semver + digest), drift +
-health gates — one in-cluster `rollopsd` (ns `rollops-system`, image v0.16.0).
-keel is fully retired. Marketplace: 10 plugins across 3 capabilities
-(featureflag×7, trafficrouter, metricprovider). ArgoCD/Flux/Rollouts parity gaps
-closed (traffic routing, pluggable metrics, OCI+bucket sources, CRD health,
-multi-cluster). Commercial Studio (private) and the open-core boundary remain
-intact. ~8 live-dogfood bugs found+fixed this session.
+Rollops is **released at v0.20.0** (security-hardening release) and operating its
+creator's entire production cluster (28 first-party deployments under GitOps, one
+in-cluster `rollopsd`, ns `rollops-system`). **The v0.20.0 container image is NOT
+yet on ghcr** — the release's image-push job fails `permission_denied: write_package`
+(no `CR_PAT` secret + the ghcr `rollopsd` package is unlinked from the repo), same
+as v0.19.0, so the cluster is still on the v0.18.0 image. See Blocked/Waiting.
 
-**Last Session Summary (2026-06-14):** Built plugin marketplace + 6 more providers
-+ conformance; closed the ArgoCD-parity gaps as plugin capabilities; containerized
-rollopsd; dogfooded in-cluster; migrated the whole klarlabs cluster off keel onto
-Rollops (28 deployments); cut + released v0.16.0; moved the cluster to the official
-image. Found and fixed silent-watcher, image-auto-blocks-reconcile, one-bad-repo-
-crashes-daemon, token-in-logs, apply-not-self-healing bugs on live infra.
+**Last Session Summary (2026-07-06):** Two sessions. (1) mcp v1.15→v1.21 fleet bump
+(#36, WithBearerToken→WithHTTPHeader migration). (2) **Deep-review-and-harden →
+v0.20.0**: full crown-jewel security/correctness review (6 dimension agents) found
+~30 issues (3 CRITICAL, 12 HIGH); remediated via 6 merged PRs (#38–#43) — C1
+crashloop-never-rolled-back, C2 web-console-had-no-RBAC, C3 rollback-didn't-reset-
+traffic, plus fail-closed gates, supply-chain (digest-pin/realm/OOM), plugin-host
+env-scrub, opt-in multi-tenant confinement, JWKS/transport hardening, plaintext-
+refuse. Tagged v0.20.0 (GitHub release + binaries shipped; image push blocked).
+Full detail in sessions/2026-07-06.md (Session 2).
 
-**Next Session Should:** Confirm the operator revoked the leaked PAT (`ghp_76ied…`)
-and recreated `rollopsd-git`/`rollopsd-registry` privately (`read -rs`) — verify
-all 12 repos still clone (`kubectl -n rollops-system logs deploy/rollopsd | grep
-"watching\|skip repo"`). Then pick the next thrust: GitHub App / per-repo deploy
-keys for least-privilege multi-org auth (roady #34), or move the marketing sites
-digest→semver, or Studio billing.
+**Next Session Should:** (1) Unblock the ghcr image push — operator adds a
+`write:packages` PAT as repo secret `CR_PAT` OR links the ghcr `rollopsd` package
+to the repo with Write access, then re-run the failed image job (`gh run rerun
+28809739025 --failed -R klarlabs-studio/rollops`). (2) Once `rollopsd:v0.20.0`
+exists, apply the updated deploy manifest to upgrade the cluster (it now sets
+`ROLLOPS_ALLOW_PLAINTEXT=1` — required, since the daemon refuses non-loopback
+plaintext binds). (3) Follow-ups from the review: manual `Promote`/`Verify` still
+skip metric analysis (needs analysis config persisted on the rollout); MCP surface
+has no per-caller transport auth (bounded). Note: the leaked-PAT `ghp_76ied…`
+revocation from the 2026-06-14 note may still be open — confirm with operator.
 
 ## 🛠️ Distribution maturity (2026-06-11, unreleased, → v0.7.0)
 
