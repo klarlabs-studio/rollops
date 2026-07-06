@@ -26,12 +26,50 @@ metadata:
 # the manifest applies stand-alone. In production point the Certificate's
 # issuerRef at your real CA — Let's Encrypt (ACME), Vault, or an intermediate CA
 # Issuer — so client and server certs chain to a trust root you control.
+# SelfSigned issuer — bootstrap only, used once to sign the root CA below.
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: rollopsd-selfsigned
 spec:
   selfSigned: {}
+---
+# Root CA. BOTH the server cert AND every client cert are signed by this one CA,
+# so the daemon's ROLLOPS_TLS_CLIENT_CA (the rollopsd-tls Secret's ca.crt, which
+# is this CA) verifies client certs. NOTE: a bare SelfSigned issuer would make
+# each certificate its own root, and mTLS could never verify a client — the CA
+# issuer chain below is required for mutual TLS to work at all.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rollopsd-ca
+  namespace: rollops-system
+spec:
+  isCA: true
+  commonName: rollopsd-ca
+  secretName: rollopsd-ca
+  duration: 43800h # 5y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: rollopsd-selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# CA issuer — signs the server cert and all client certs from the root CA above.
+# SWAP FOR YOUR REAL CA: point this at Vault / an intermediate, or issue the
+# certs below directly from your org CA, to chain to a trust root you control.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: rollopsd-ca
+  namespace: rollops-system
+spec:
+  ca:
+    secretName: rollopsd-ca
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -46,13 +84,15 @@ spec:
     algorithm: ECDSA
     size: 256
     rotationPolicy: Always
+  usages:
+    - server auth
   # In-cluster DNS SANs so peers verify the server by its Service name.
   dnsNames:
     - rollopsd.rollops-system.svc
     - rollopsd.rollops-system.svc.cluster.local
   issuerRef:
-    name: rollopsd-selfsigned
-    kind: ClusterIssuer
+    name: rollopsd-ca
+    kind: Issuer
     group: cert-manager.io
 ---
 apiVersion: v1

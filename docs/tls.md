@@ -70,24 +70,33 @@ listener down.
 
 ## cert-manager setup (Kubernetes)
 
-`deploy/kubernetes/rollopsd.yaml` ships a working default: a self-signed
-`ClusterIssuer` and a `Certificate` that issues the server cert (with the
-in-cluster DNS SANs `rollopsd.rollops-system.svc` and
-`rollopsd.rollops-system.svc.cluster.local`) into the `rollopsd-tls` Secret. The
-Secret is mounted at `/etc/rollops/tls` and wired via `ROLLOPS_TLS_CERT`,
-`ROLLOPS_TLS_KEY`, and `ROLLOPS_TLS_CLIENT_CA` (`ca.crt` from the same Secret).
+`deploy/kubernetes/rollopsd.yaml` ships a working default **CA chain** (mTLS
+needs both the server cert and every client cert to chain to one shared CA — a
+bare self-signed leaf can't verify a separately-issued client cert):
+
+1. a self-signed `ClusterIssuer` (`rollopsd-selfsigned`) — bootstrap only;
+2. a root CA `Certificate` (`rollopsd-ca`, `isCA: true`) signed by it, into the
+   `rollopsd-ca` Secret;
+3. a CA `Issuer` (`rollopsd-ca`) backed by that Secret; and
+4. the server `Certificate` (`rollopsd-tls`, `usages: [server auth]`, with the
+   in-cluster DNS SANs `rollopsd.rollops-system.svc` and
+   `rollopsd.rollops-system.svc.cluster.local`) signed by the CA Issuer.
+
+The server Secret is mounted at `/etc/rollops/tls` and wired via `ROLLOPS_TLS_CERT`,
+`ROLLOPS_TLS_KEY`, and `ROLLOPS_TLS_CLIENT_CA` (`ca.crt` from the same Secret — the
+root CA, which therefore verifies client certs issued from the same CA Issuer).
 
 **Prerequisite:** cert-manager must be installed
-(<https://cert-manager.io/docs/installation/>). Without it the Issuer/Certificate
+(<https://cert-manager.io/docs/installation/>). Without it the Issuers/Certificates
 are inert and no `rollopsd-tls` Secret is created, so the pod won't start (the
 TLS mount stays unsatisfied). Either install cert-manager, supply your own
 `rollopsd-tls` Secret (keys `tls.crt`, `tls.key`, `ca.crt`), or use the mesh
 alternative below.
 
-**Swap for your real CA.** The self-signed issuer is only a stand-alone default.
-In production point the `Certificate`'s `issuerRef` at a real CA — Let's Encrypt
-(ACME), Vault, or an intermediate-CA Issuer — so client and server certs chain
-to a trust root you control.
+**Swap for your real CA.** The self-signed root is only a stand-alone default. In
+production point the `rollopsd-ca` `Issuer` at your real CA — Vault, an
+intermediate-CA Issuer, or step-ca — so server and client certs chain to a trust
+root you control.
 
 ## Issuing client certificates for CLIs and agents
 
@@ -95,7 +104,9 @@ With mTLS enabled, any client of the REST API / gRPC / MCP surfaces must present
 a certificate signed by the CA in `ROLLOPS_TLS_CLIENT_CA`. Two common paths:
 
 **cert-manager `Certificate` (in-cluster clients):** issue a client cert from the
-same issuer, requesting the client-auth usage, into a Secret the client mounts.
+**same CA `Issuer`** (`rollopsd-ca`) rollopsd's server cert uses, requesting the
+client-auth usage, into a Secret the client mounts. A ready-to-copy example ships
+at `deploy/kubernetes/rollops-client-cert.example.yaml`:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -110,9 +121,9 @@ spec:
   privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
   commonName: rollops-agent
   usages: [client auth]
-  issuerRef: # the SAME issuer/CA rollopsd trusts
-    name: rollopsd-selfsigned
-    kind: ClusterIssuer
+  issuerRef: # the SAME CA Issuer rollopsd's server cert chains to
+    name: rollopsd-ca
+    kind: Issuer
     group: cert-manager.io
 ```
 
