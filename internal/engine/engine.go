@@ -65,6 +65,7 @@ type Engine struct {
 	notifier     notify.Notifier
 	metrics      analysis.MetricsProvider // optional override; else built from config
 	analysis     bool
+	confinement  security.Confinement // multi-tenant confinement policy (default off)
 	dbRollback   DatabaseRollbackRunner
 	flagBuild    func(*config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
 	routerBuild  func(*config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
@@ -91,6 +92,19 @@ func WithPolicy(p step.Policy) Option { return func(e *Engine) { e.policy = p } 
 
 // WithSmokeRunner overrides the post-deploy smoke-test runner (tests).
 func WithSmokeRunner(s SmokeRunner) Option { return func(e *Engine) { e.smoke = s } }
+
+// WithConfinement installs the multi-tenant confinement policy. It also rebuilds
+// the default exec-backed smoke and database runners so config-sourced commands
+// are enforced against the command allowlist. Apply this before any runner
+// override (WithSmokeRunner / WithDatabaseRollbackRunner) that must stay in
+// effect for tests. Every control is opt-in; a zero-value Confinement is a no-op.
+func WithConfinement(c security.Confinement) Option {
+	return func(e *Engine) {
+		e.confinement = c
+		e.smoke = execSmoke{confinement: c}
+		e.dbRollback = execDBRollback{confinement: c}
+	}
+}
 
 // DatabaseRollbackRunner executes the optional rollback.database hook.
 type DatabaseRollbackRunner interface {

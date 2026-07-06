@@ -13,9 +13,11 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/security"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -44,13 +46,25 @@ type Target struct {
 	run cmdRunner // helm/kubectl renderer; injectable for tests
 }
 
-// New constructs the real kubectl-backed target from config.
+// New constructs the real kubectl-backed target from config, applying the
+// multi-tenant confinement policy resolved from the daemon environment.
 func New(cfg config.Target) (pt.Target, error) {
+	return newTarget(cfg, security.ConfinementFromEnv(os.Getenv))
+}
+
+// newTarget is the test seam: it takes an explicit confinement policy so the
+// namespace allowlist and cluster confinement can be exercised without mutating
+// the process environment.
+func newTarget(cfg config.Target, conf security.Confinement) (pt.Target, error) {
 	s := spec(cfg.Spec)
 	if s.str("resource") == "" {
 		return nil, fmt.Errorf("kubernetes: target %q: spec.resource is required (e.g. deployment/api)", cfg.Ref)
 	}
-	return &Target{cl: newKubectl(s, cfg.Ref), run: execRunner}, nil
+	cl, err := newKubectl(s, cfg.Ref, conf)
+	if err != nil {
+		return nil, err
+	}
+	return &Target{cl: cl, run: execRunner}, nil
 }
 
 func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }

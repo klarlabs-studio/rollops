@@ -3,6 +3,8 @@ package kubernetes
 import (
 	"strings"
 	"testing"
+
+	"go.klarlabs.de/rollops/internal/security"
 )
 
 func TestEvalConditions_CRDReady(t *testing.T) {
@@ -63,12 +65,16 @@ func TestEvalConditions_MissingRequestedType(t *testing.T) {
 }
 
 func TestBaseArgs_MultiCluster(t *testing.T) {
-	cl := newKubectl(spec{
+	cc, err := newKubectl(spec{
 		"kubeconfig": "/creds/prod-east.kubeconfig",
 		"context":    "prod-east",
 		"namespace":  "web",
 		"resource":   "deployment/api",
-	}, "team/prod/api").(*kubectlCluster)
+	}, "team/prod/api", security.Confinement{})
+	if err != nil {
+		t.Fatalf("newKubectl: %v", err)
+	}
+	cl := cc.(*kubectlCluster)
 	got := strings.Join(cl.baseArgs(), " ")
 	want := "--kubeconfig /creds/prod-east.kubeconfig --context prod-east -n web"
 	if got != want {
@@ -77,7 +83,11 @@ func TestBaseArgs_MultiCluster(t *testing.T) {
 }
 
 func TestBaseArgs_AmbientWhenUnset(t *testing.T) {
-	cl := newKubectl(spec{"resource": "deployment/api"}, "t/p/a").(*kubectlCluster)
+	cc, err := newKubectl(spec{"resource": "deployment/api"}, "t/p/a", security.Confinement{})
+	if err != nil {
+		t.Fatalf("newKubectl: %v", err)
+	}
+	cl := cc.(*kubectlCluster)
 	// No kubeconfig/context → ambient resolution; only the default namespace.
 	if got := strings.Join(cl.baseArgs(), " "); got != "-n default" {
 		t.Errorf("baseArgs = %q, want '-n default'", got)
