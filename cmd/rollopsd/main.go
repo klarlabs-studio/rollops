@@ -21,6 +21,8 @@ import (
 	"github.com/klarlabs-studio/auth-go/adapters/memory"
 	"github.com/klarlabs-studio/auth-go/domain"
 	mcpserver "go.klarlabs.de/mcp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"go.klarlabs.de/rollops/internal/api"
 	"go.klarlabs.de/rollops/internal/audit"
@@ -36,6 +38,7 @@ import (
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/secrets"
 	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/servertls"
 	"go.klarlabs.de/rollops/internal/store"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	"go.klarlabs.de/rollops/internal/target"
@@ -58,6 +61,15 @@ func run(args []string) error {
 
 	dbPath := envOr("ROLLOPS_DB", "rollops.db")
 	addr := envOr("ROLLOPS_ADDR", ":8080")
+
+	// Zero-trust transport: TLS 1.3 on every non-loopback listener, mTLS on the
+	// machine control plane when a client CA is configured. A nil tlsCfg means
+	// plaintext, which is only permitted on a loopback bind (see
+	// ensureTransportSecure).
+	tlsCfg, err := servertls.FromEnv()
+	if err != nil {
+		return err
+	}
 
 	db, err := sqlite.Open(dbPath)
 	if err != nil {
@@ -155,13 +167,17 @@ func run(args []string) error {
 		})).Handler(), oidcAuth)
 	top.Handle("/ui", uiHandler)
 	top.Handle("/ui/", uiHandler)
-	top.Handle("/", api.New(eng, httpAuth, policy).Handler())
+	// The programmatic REST API requires a verified client cert when mTLS is
+	// configured; the browser UI (above) shares this listener but is gated by
+	// server TLS + OIDC/session auth only, because browsers can't present client
+	// certs. See requireClientCertIfConfigured.
+	top.Handle("/", requireClientCertIfConfigured(api.New(eng, httpAuth, policy).Handler(), tlsCfg))
 
 	// Fail closed on plaintext exposure: a non-loopback bind ships bearer tokens
-	// and the UI password in cleartext. The intended production model terminates
-	// TLS at a reverse proxy and binds loopback; a direct non-loopback bind
-	// requires an explicit opt-out.
-	if err := ensurePlaintextAllowed(addr, "HTTP"); err != nil {
+	// and the UI password in cleartext. Native TLS is required for any
+	// non-loopback bind (no override); loopback binds may stay plaintext for a
+	// same-host reverse proxy / in-pod sidecar-mesh hop.
+	if err := ensureTransportSecure(addr, "HTTP", tlsCfg); err != nil {
 		return err
 	}
 
@@ -175,6 +191,16 @@ func run(args []string) error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+	}
+	if tlsCfg != nil {
+		// VerifyClientCertIfGiven: the UI must connect without a client cert, but
+		// a presented one is verified against the CA so the REST API middleware can
+		// require it (per-surface mTLS on a shared listener).
+		tc, err := tlsCfg.ServerTLS(false)
+		if err != nil {
+			return err
+		}
+		srv.TLSConfig = tc
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -221,32 +247,56 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "rollopsd: watching %d repo(s) every %s\n", len(specs), interval)
 	}
 
-	// MCP agent surface, embedded by default when an address is configured.
+	// MCP agent surface, embedded by default when an address is configured. It is
+	// a machine control-plane surface, so it gets TLS + mTLS (require client cert
+	// when a CA is set) exactly like gRPC.
 	if mcpAddr := os.Getenv("ROLLOPS_MCP_ADDR"); mcpAddr != "" {
+		if err := ensureTransportSecure(mcpAddr, "MCP", tlsCfg); err != nil {
+			return err
+		}
 		agent := rollout.Identity{Kind: "agent", Name: envOr("ROLLOPS_MCP_AGENT", "local")}
 		tools := mcp.NewTools(eng, policy, agent)
+		var mcpOpts []mcpserver.HTTPOption
+		if tlsCfg != nil {
+			tc, err := tlsCfg.ServerTLS(tlsCfg.HasClientCA())
+			if err != nil {
+				return err
+			}
+			mcpOpts = append(mcpOpts, mcpserver.WithTLSConfig(tc))
+		}
 		go func() {
-			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s as agent %q\n", mcpAddr, agent.Name)
-			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr)
+			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s as agent %q (TLS=%s mTLS=%s)\n",
+				mcpAddr, agent.Name, onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
+			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr, mcpOpts...)
 		}()
 	}
 
-	// Typed gRPC surface (CLI daemon mode + agents) on its own port.
+	// Typed gRPC surface (CLI daemon mode + agents) on its own port. Machine
+	// control plane: TLS + mTLS (require client cert when a CA is set).
 	if grpcAddr := os.Getenv("ROLLOPS_GRPC_ADDR"); grpcAddr != "" {
-		if err := ensurePlaintextAllowed(grpcAddr, "gRPC"); err != nil {
+		if err := ensureTransportSecure(grpcAddr, "gRPC", tlsCfg); err != nil {
 			return err
 		}
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
 			return err
 		}
-		gs := grpcapi.NewGRPCServer(grpcapi.New(eng, auth, policy))
+		var grpcOpts []grpc.ServerOption
+		if tlsCfg != nil {
+			tc, err := tlsCfg.ServerTLS(tlsCfg.HasClientCA())
+			if err != nil {
+				return err
+			}
+			grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tc)))
+		}
+		gs := grpcapi.NewGRPCServer(grpcapi.New(eng, auth, policy), grpcOpts...)
 		go func() {
 			<-ctx.Done()
 			gs.GracefulStop()
 		}()
 		go func() {
-			fmt.Fprintf(os.Stderr, "rollopsd: gRPC on %s\n", grpcAddr)
+			fmt.Fprintf(os.Stderr, "rollopsd: gRPC on %s (TLS=%s mTLS=%s)\n",
+				grpcAddr, onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
 			_ = gs.Serve(lis)
 		}()
 	}
@@ -258,9 +308,19 @@ func run(args []string) error {
 		_ = srv.Shutdown(shutdownCtx) // graceful drain on SIGTERM
 	}()
 
-	fmt.Fprintf(os.Stderr, "rollopsd: listening on %s (db %s)\n", addr, dbPath)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return err
+	fmt.Fprintf(os.Stderr, "rollopsd: listening on %s (db %s) HTTP TLS=%s mTLS(api)=%s\n",
+		addr, dbPath, onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
+
+	// certs come from the GetCertificate callback, so ListenAndServeTLS is called
+	// with empty cert/key paths.
+	var serveErr error
+	if tlsCfg != nil {
+		serveErr = srv.ListenAndServeTLS("", "")
+	} else {
+		serveErr = srv.ListenAndServe()
+	}
+	if serveErr != nil && serveErr != http.ErrServerClosed {
+		return serveErr
 	}
 	return nil
 }
@@ -305,20 +365,49 @@ func isLoopbackAddr(addr string) bool {
 	return ip.IsLoopback()
 }
 
-// ensurePlaintextAllowed refuses to serve on a non-loopback address without TLS
-// unless the operator explicitly opts out with ROLLOPS_ALLOW_PLAINTEXT=1 (a
-// loud, deliberate escape hatch). Loopback binds are always allowed.
-func ensurePlaintextAllowed(addr, surface string) error {
+// ensureTransportSecure refuses to serve a surface on a non-loopback address
+// without native TLS. There is no override: a routable bind ships bearer tokens
+// and the UI password, so it must be encrypted. Loopback binds may stay
+// plaintext for a same-host reverse proxy or an in-pod sidecar/mesh hop that
+// provides encryption at the network boundary.
+func ensureTransportSecure(addr, surface string, tlsCfg *servertls.Config) error {
 	if isLoopbackAddr(addr) {
 		return nil
 	}
-	if os.Getenv("ROLLOPS_ALLOW_PLAINTEXT") != "1" {
-		return fmt.Errorf("refusing to serve %s in plaintext on non-loopback address %q: "+
-			"terminate TLS at a reverse proxy and bind loopback, or set ROLLOPS_ALLOW_PLAINTEXT=1 to override", surface, addr)
+	if tlsCfg == nil {
+		return fmt.Errorf("refusing to serve %s on non-loopback address %q without TLS: "+
+			"set ROLLOPS_TLS_CERT and ROLLOPS_TLS_KEY (see docs/tls.md)", surface, addr)
 	}
-	fmt.Fprintf(os.Stderr, "rollopsd: WARNING %s serving plaintext on non-loopback %q; "+
-		"bearer tokens and UI credentials are exposed in cleartext (ROLLOPS_ALLOW_PLAINTEXT=1)\n", surface, addr)
 	return nil
+}
+
+// requireClientCertIfConfigured wraps the programmatic REST API with per-surface
+// mTLS: when a client CA is configured it rejects any request that did not
+// present a verified client certificate. The shared HTTP listener runs
+// ClientAuth=VerifyClientCertIfGiven, so a presented client cert is already
+// validated against the CA by the TLS stack (populating VerifiedChains); here we
+// only require that one is present. The browser UI is deliberately NOT wrapped —
+// browsers can't present client certs, so the UI relies on server TLS + OIDC/
+// session auth instead. When no CA is configured this is a pass-through.
+func requireClientCertIfConfigured(next http.Handler, tlsCfg *servertls.Config) http.Handler {
+	if !tlsCfg.HasClientCA() {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
+			http.Error(w, "client certificate required", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// onOff renders a boolean posture flag for startup logging.
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 // loadWatchSpecs reads the watched-repo list from a JSON file. Empty path → no
