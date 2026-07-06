@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
 
+	"go.klarlabs.de/rollops/internal/security"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -24,20 +26,40 @@ type kubectlCluster struct {
 	healthCond string // explicit status.conditions type to gate on (CRDs)
 }
 
-func newKubectl(s spec, ref string) Cluster {
+func newKubectl(s spec, ref string, conf security.Confinement) (Cluster, error) {
 	ns := s.str("namespace")
 	if ns == "" {
 		ns = "default"
 	}
+	// Namespace confinement: reject an out-of-scope namespace before any kubectl
+	// call so a tenant repo cannot act in another tenant's namespace. Surfaces as
+	// a target build error → per-target / rollout failure.
+	if err := conf.CheckNamespace(ns); err != nil {
+		return nil, fmt.Errorf("kubernetes: target %q: %w", ref, err)
+	}
+
+	kubeconfig := s.str("kubeconfig")
+	kctx := s.str("context")
+	// Cluster confinement: ignore repo-supplied kubeconfig/context so a tenant
+	// repo cannot select another cluster or credential file — the daemon uses its
+	// own ambient/in-cluster credentials only. Confinement wins over repo values.
+	if conf.ClusterConfined() {
+		if kubeconfig != "" || kctx != "" {
+			fmt.Fprintf(os.Stderr, "rollops: target %q: ROLLOPS_CONFINE_TARGET_CLUSTER set — ignoring repo-supplied kubeconfig/context\n", ref)
+		}
+		kubeconfig = ""
+		kctx = ""
+	}
+
 	return &kubectlCluster{
-		kubeconfig: s.str("kubeconfig"),
-		context:    s.str("context"),
+		kubeconfig: kubeconfig,
+		context:    kctx,
 		namespace:  ns,
 		resource:   s.str("resource"),
 		prune:      s.boolVal("prune"),
 		pruneVal:   labelValue(ref),
 		healthCond: s.str("healthCondition"),
-	}
+	}, nil
 }
 
 func (k *kubectlCluster) baseArgs() []string {
