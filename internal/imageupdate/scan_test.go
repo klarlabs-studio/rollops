@@ -2,6 +2,7 @@ package imageupdate
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,8 +26,9 @@ func TestParseRef(t *testing.T) {
 }
 
 func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
+	// An https registry whose token realm is on the SAME host: creds must be sent.
 	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/token"):
 			// Verify the scope was carried and (private) basic creds sent.
@@ -36,7 +38,7 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 			_, _ = w.Write([]byte(`{"token":"BEARER123"}`))
 		case strings.HasSuffix(r.URL.Path, "/tags/list"):
 			if r.Header.Get("Authorization") != "Bearer BEARER123" {
-				// First (unauth) hit: issue the challenge.
+				// First (unauth) hit: issue the challenge, realm on the same host.
 				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",service="reg",scope="repository:acme/app:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
@@ -48,11 +50,10 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	host := strings.TrimPrefix(srv.URL, "http://")
+	// The scanner builds https://<host>/v2/…; using the TLS server's host in the
+	// ref makes those requests reach it directly (srv.Client trusts the cert).
+	host := strings.TrimPrefix(srv.URL, "https://")
 	sc := Scanner{HTTP: srv.Client(), Username: "me", Password: "pat"}
-	// Point the scanner at the test server by using its host in the ref. The
-	// scanner builds https://<host>/v2/...; rewrite to the test transport.
-	sc.HTTP = rewriteClient(srv)
 	tags, err := sc.Tags(context.Background(), host+"/acme/app:v1.0.0")
 	if err != nil {
 		t.Fatalf("Tags: %v", err)
@@ -62,20 +63,63 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 	}
 }
 
-// rewriteClient sends every request to the httptest server regardless of host,
-// so the scanner's https URLs reach the test transport.
-func rewriteClient(srv *httptest.Server) *http.Client {
-	base := srv.Client().Transport
-	return &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
-		r.URL.Scheme = "http"
-		r.URL.Host = strings.TrimPrefix(srv.URL, "http://")
-		return base.RoundTrip(r)
-	})}
+// TestScanner_Token_RealmHostMismatch is the core of finding #3: when the
+// bearer challenge points the token realm at a DIFFERENT host than the image's
+// registry, the configured basic creds (a registry PAT) must NOT be attached —
+// otherwise a repo naming `image: attacker.example/foo` exfiltrates the global
+// credential to a host of its choosing.
+func TestScanner_Token_RealmHostMismatch(t *testing.T) {
+	var attackerGotCreds bool
+	// The "attacker" auth host records whether it received Authorization.
+	attacker := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := r.BasicAuth(); ok {
+			attackerGotCreds = true
+		}
+		_, _ = w.Write([]byte(`{"token":"LEAKED"}`))
+	}))
+	defer attacker.Close()
+
+	reg := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tags/list") {
+			// Point the realm at the attacker's host (cross-host).
+			w.Header().Set("WWW-Authenticate", `Bearer realm="`+attacker.URL+`/token",service="reg",scope="repository:acme/app:pull"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer reg.Close()
+
+	// One client that reaches both TLS test servers (test-only insecure transport).
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	host := strings.TrimPrefix(reg.URL, "https://")
+	sc := Scanner{HTTP: client, Username: "me", Password: "pat"}
+	_, _ = sc.Tags(context.Background(), host+"/acme/app:v1.0.0")
+	if attackerGotCreds {
+		t.Fatal("registry PAT was leaked to a cross-host token realm")
+	}
 }
 
-type roundTrip func(*http.Request) (*http.Response, error)
-
-func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+// TestScanner_Token_RealmSchemeHTTP verifies creds are withheld from a realm on
+// the correct host but served over cleartext http.
+func TestScanner_Token_RealmSchemeHTTP(t *testing.T) {
+	if !realmTrusted("https://ghcr.io/token", "ghcr.io") {
+		t.Error("same-host https realm should be trusted")
+	}
+	if realmTrusted("http://ghcr.io/token", "ghcr.io") {
+		t.Error("cleartext http realm must not be trusted")
+	}
+	if realmTrusted("https://evil.example/token", "ghcr.io") {
+		t.Error("cross-host realm must not be trusted")
+	}
+	// Docker Hub's first-party auth host is trusted for docker.io.
+	if !realmTrusted("https://auth.docker.io/token", "docker.io") {
+		t.Error("docker.io first-party auth host should be trusted")
+	}
+	if realmTrusted("https://auth.docker.io.evil.example/token", "docker.io") {
+		t.Error("look-alike auth host must not be trusted")
+	}
+}
 
 func TestSelectTag(t *testing.T) {
 	tags := []string{"v1.0.0", "v1.1.0", "v1.2.3", "v2.0.0", "v2.1.0-rc1", "latest"}

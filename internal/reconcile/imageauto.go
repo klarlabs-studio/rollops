@@ -82,6 +82,13 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 // returns newRef="" when nothing changed. from/to are the human-readable old/new
 // versions for the commit message.
 func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
+	// Bind automation to the allowed registries (when configured) before any
+	// network call: a compromised or mistyped image ref must never pull
+	// automation toward an unexpected registry.
+	if aerr := registryAllowed(image, pol.AllowedRegistries); aerr != nil {
+		return "", "", "", aerr
+	}
+
 	if pol.Mode == "digest" {
 		repo, tag, oldDigest := splitDigestRef(image)
 		mutable := repo + ":" + tag
@@ -94,15 +101,36 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 		}
 		return mutable + "@" + newDigest, shortDigest(oldDigest), shortDigest(newDigest), nil
 	}
-	// digest→semver migration: a digest-pinned ref under a semver policy can't be
-	// compared as a version (splitImage would choke on the @sha256: suffix). Once,
-	// convert it to the semver tag the pinned digest points at, so ordinary semver
-	// automation takes over from the next tick. Git stays the source of truth.
-	if strings.ContainsRune(image, '@') {
-		return ia.migrate(ctx, image, pol)
+
+	// semver modes. A ref may carry a deliberate digest pin
+	// (repo:v1.2.3@sha256:… or repo@sha256:…). That pin MUST survive a semver
+	// update — silently emitting an unpinned repo:tag would downgrade an
+	// immutable ref to a mutable one and re-open tag-mutation attacks. Parse the
+	// pin off and remember whether one was present.
+	repo, curTag, curDigest := splitDigestRef(image)
+	wasPinned := curDigest != ""
+
+	if imageupdate.IsSemver(curTag) {
+		// Ordinary semver selection, whether or not the ref was digest-pinned. The
+		// selected tag is re-pinned to its current digest (see selectSemver).
+		return ia.selectSemver(ctx, repo, curTag, wasPinned, pol)
 	}
-	// semver modes
-	repo, curTag := splitImage(image)
+	// Non-semver current tag (latest / none). When it is digest-pinned, this is
+	// the one-time digest→semver migration: adopt the semver tag the pinned
+	// digest corresponds to, keeping the pin.
+	if wasPinned {
+		return ia.migrate(ctx, repo, curDigest, pol)
+	}
+	// Unpinned, non-semver current (e.g. repo:latest under a semver policy): there
+	// is no version to compare. digest mode is the tool for tracking a mutable tag.
+	return "", "", "", nil
+}
+
+// selectSemver picks the highest qualifying semver tag for a semver-tagged
+// current ref and returns it digest-pinned, so all semver modes now emit an
+// immutable reference. wasPinned records whether the current ref carried a
+// digest so the pin can never be silently dropped (see pinnedRef).
+func (ia ImageAuto) selectSemver(ctx context.Context, repo, curTag string, wasPinned bool, pol *config.ImagePolicy) (newRef, from, to string, err error) {
 	tags, terr := ia.Scanner.Tags(ctx, repo)
 	if terr != nil {
 		return "", "", "", fmt.Errorf("imageauto: scan %s: %w", repo, terr)
@@ -113,30 +141,27 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 	}
 	newTag, ok := imageupdate.SelectTag(curTag, tags, mode, pol.Pattern)
 	if !ok {
-		return "", "", "", nil
+		return "", "", "", nil // already current — a pinned ref stays as-is
 	}
-	check := imageupdate.Policy{TagPattern: pol.Pattern, AllowMutableTags: pol.AllowMutableTags}
+	check := imageupdate.Policy{AllowedRegistries: pol.AllowedRegistries, TagPattern: pol.Pattern, AllowMutableTags: pol.AllowMutableTags}
 	if verr := check.Validate(imageupdate.Update{Image: repo, Tag: newTag}); verr != nil {
 		return "", "", "", verr
 	}
-	return repo + ":" + newTag, curTag, newTag, nil
+	ref, perr := ia.pinnedRef(ctx, repo, newTag, wasPinned)
+	if perr != nil {
+		return "", "", "", perr
+	}
+	return ref, curTag, newTag, nil
 }
 
-// migrate converts a digest-pinned image ref to a semver-tracked tag. If the ref
-// already carries a semver tag (repo:v1.2.3@sha256:…) it trusts that tag and just
-// strips the digest. Otherwise (repo@sha256:… or repo:latest@sha256:…) it
-// reverse-looks-up the registry for the highest semver tag whose manifest digest
-// equals the pinned one. A faithful conversion: the same image, now expressed as
-// a version. Returns an error when no semver tag points at the pinned digest —
-// best-effort, so the reconcile loop logs it and never blocks.
-func (ia ImageAuto) migrate(ctx context.Context, image string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
-	repo, tag, pinned := splitDigestRef(image)
-	if imageupdate.IsSemver(tag) {
-		return repo + ":" + tag, shortDigest(pinned), tag, nil
-	}
-	if pinned == "" {
-		return "", "", "", nil // nothing to migrate from
-	}
+// migrate performs the one-time digest→semver conversion for a ref that is
+// digest-pinned but not semver-tagged (repo@sha256:… or repo:latest@sha256:…):
+// it reverse-looks-up the highest semver tag whose manifest digest equals the
+// pinned one and adopts it, keeping the pin (the pinned digest IS that tag's
+// digest, so the result is immutable by construction). Fail-closed: when no
+// semver tag matches it returns an error rather than dropping or keeping an
+// unresolvable pin — best-effort, so the reconcile loop logs it and never blocks.
+func (ia ImageAuto) migrate(ctx context.Context, repo, pinned string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
 	tags, terr := ia.Scanner.Tags(ctx, repo)
 	if terr != nil {
 		return "", "", "", fmt.Errorf("imageauto: scan %s: %w", repo, terr)
@@ -145,7 +170,48 @@ func (ia ImageAuto) migrate(ctx context.Context, image string, pol *config.Image
 	if !ok {
 		return "", "", "", fmt.Errorf("imageauto: no semver tag for digest %s of %s", shortDigest(pinned), repo)
 	}
-	return repo + ":" + match, shortDigest(pinned), match, nil
+	check := imageupdate.Policy{AllowedRegistries: pol.AllowedRegistries, TagPattern: pol.Pattern, AllowMutableTags: pol.AllowMutableTags}
+	if verr := check.Validate(imageupdate.Update{Image: repo, Tag: match}); verr != nil {
+		return "", "", "", verr
+	}
+	// The pinned digest is exactly this tag's digest (we matched on it) → keep it.
+	return repo + ":" + match + "@" + pinned, shortDigest(pinned), match, nil
+}
+
+// pinnedRef resolves tag's current manifest digest and returns
+// repo:tag@sha256:digest, so a semver update stays immutable. When the current
+// ref was digest-pinned, a failed digest resolution is fatal (fail-closed):
+// rollops never downgrades an immutable pin to a mutable tag. When the current
+// ref was unpinned, pinning is best-effort — on failure it falls back to the
+// plain tag, which is no worse than the prior behaviour and never a downgrade.
+func (ia ImageAuto) pinnedRef(ctx context.Context, repo, tag string, wasPinned bool) (string, error) {
+	digest, derr := ia.Scanner.Digest(ctx, repo+":"+tag)
+	if derr == nil && digest != "" {
+		return repo + ":" + tag + "@" + digest, nil
+	}
+	if wasPinned {
+		if derr == nil {
+			derr = fmt.Errorf("registry returned no digest")
+		}
+		return "", fmt.Errorf("imageauto: refusing to unpin %s:%s across a semver update: %w", repo, tag, derr)
+	}
+	return repo + ":" + tag, nil
+}
+
+// registryAllowed enforces the optional per-config registry allowlist. An empty
+// list means no restriction. The image ref's registry host (via
+// imageupdate.ParseRef) must exactly match one of the allowed hosts.
+func registryAllowed(image string, allowed []string) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	host, _ := imageupdate.ParseRef(image)
+	for _, a := range allowed {
+		if host == a {
+			return nil
+		}
+	}
+	return fmt.Errorf("imageauto: image registry %q is not in allowedRegistries %v", host, allowed)
 }
 
 // semverForDigest finds the highest semver tag in tags whose manifest digest

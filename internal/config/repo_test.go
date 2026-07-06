@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,59 @@ func TestLoadAllFromDir_EmptyDirErrors(t *testing.T) {
 func TestLoadFromDir_MissingFile(t *testing.T) {
 	if _, err := LoadFromDir(t.TempDir(), RepoRef{}); err == nil {
 		t.Fatal("expected error for missing config file")
+	}
+}
+
+func TestLoadFromDir_RejectsSymlink(t *testing.T) {
+	// SECURITY (finding #2): a watched repo must not be able to redirect a config
+	// read to an arbitrary host path/device via a symlink (e.g. → /dev/zero).
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.yaml")
+	if err := os.WriteFile(target, []byte(validYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "rollops.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if _, err := LoadFromDir(dir, RepoRef{}); err == nil {
+		t.Fatal("expected symlink config to be rejected")
+	}
+	// The directory walk must reject a symlinked entry too.
+	if _, err := LoadAllFromDir(dir, RepoRef{Path: "."}); err == nil {
+		t.Fatal("expected symlinked config in a dir to be rejected")
+	}
+}
+
+func TestLoadFromDir_RejectsOversizeFile(t *testing.T) {
+	// SECURITY (finding #2): an oversized config blob must not be read into memory
+	// unbounded (OOM). The read is capped at maxConfigBytes.
+	dir := t.TempDir()
+	big := make([]byte, maxConfigBytes+1)
+	for i := range big {
+		big[i] = 'a'
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rollops.yaml"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadFromDir(dir, RepoRef{})
+	if err == nil {
+		t.Fatal("expected oversize config to be rejected")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("err = %v, want a size-cap error", err)
+	}
+}
+
+func TestReadConfigFile_ReadsRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ok.yaml")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := readConfigFile(path)
+	if err != nil || string(data) != "hello" {
+		t.Fatalf("readConfigFile: %q err %v", data, err)
 	}
 }
 

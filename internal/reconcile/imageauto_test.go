@@ -105,17 +105,18 @@ func TestImageAuto_BumpsAndCommits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
-	// minor mode → highest within major 1 = v1.2.0 (not v2.0.0).
-	if ref != "ghcr.io/acme/web:v1.2.0" {
-		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0", ref)
+	// minor mode → highest within major 1 = v1.2.0 (not v2.0.0), and all semver
+	// modes now pin the selected tag by digest (fakeTags.Digest → sha256:deadbeef).
+	if ref != "ghcr.io/acme/web:v1.2.0@sha256:deadbeef" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0@sha256:deadbeef", ref)
 	}
-	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.2.0" {
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.2.0@sha256:deadbeef" {
 		t.Errorf("bumped config image = %q", got)
 	}
-	// The file on disk was rewritten + committed.
+	// The file on disk was rewritten + committed, digest-pinned.
 	data, _ := os.ReadFile(filepath.Join(src.Dir(), "apps/web.yaml"))
-	if !strings.Contains(string(data), "ghcr.io/acme/web:v1.2.0") {
-		t.Errorf("committed file not bumped:\n%s", data)
+	if !strings.Contains(string(data), "ghcr.io/acme/web:v1.2.0@sha256:deadbeef") {
+		t.Errorf("committed file not bumped+pinned:\n%s", data)
 	}
 }
 
@@ -199,26 +200,112 @@ func TestImageAuto_MigrateDigestToSemver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
-	if ref != "ghcr.io/acme/web:v1.2.0" {
-		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0", ref)
+	// Migration keeps the pin: the matched semver tag's digest IS the pinned one.
+	if ref != "ghcr.io/acme/web:v1.2.0@sha256:abc123" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0@sha256:abc123", ref)
 	}
-	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.2.0" {
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.2.0@sha256:abc123" {
 		t.Errorf("migrated image = %q", got)
 	}
 }
 
-func TestImageAuto_MigrateEmbeddedSemverTagStripsDigest(t *testing.T) {
-	// repo:v1.1.0@sha256:… → trust the embedded semver tag, drop the digest. No
-	// registry calls needed (nil scanner would panic if it tried).
+func TestImageAuto_EmbeddedSemverPinPreserved(t *testing.T) {
+	// SECURITY (finding #1): a semver policy on a digest-pinned ref
+	// (repo:v1.1.0@sha256:GOOD) must NEVER be rewritten to the unpinned
+	// repo:v1.1.0 — that would re-enable tag-mutation attacks. With no newer tag
+	// available the ref is left untouched (still pinned).
 	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web:v1.1.0@sha256:abc123")
 	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
-	_, ref, err := ImageAuto{Scanner: fakeRegistry{}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	// Only the current version exists (as a semver tag) → no newer tag → no-op.
+	reg := fakeRegistry{tags: []string{"v1.1.0"}, digests: map[string]string{"v1.1.0": "sha256:abc123"}}
+	bumped, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
-	if ref != "ghcr.io/acme/web:v1.1.0" {
-		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.1.0 (digest stripped)", ref)
+	if ref != "" {
+		t.Errorf("ref = %q, want no-op (pin must not be stripped)", ref)
+	}
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:v1.1.0@sha256:abc123" {
+		t.Errorf("image must stay digest-pinned, got %q", got)
+	}
+	data, _ := os.ReadFile(filepath.Join(src.Dir(), "apps/web.yaml"))
+	if !strings.Contains(string(data), "ghcr.io/acme/web:v1.1.0@sha256:abc123") {
+		t.Errorf("committed file lost its pin:\n%s", data)
+	}
+}
+
+func TestImageAuto_EmbeddedSemverPinAdvancesPinned(t *testing.T) {
+	// A digest-pinned semver ref DOES advance to a newer qualifying tag — but the
+	// new ref is itself digest-pinned (never downgraded to a mutable tag).
+	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web:v1.1.0@sha256:old")
+	src := newGitRepo(t, cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	reg := fakeRegistry{
+		tags:    []string{"v1.1.0", "v1.2.0"},
+		digests: map[string]string{"v1.1.0": "sha256:old", "v1.2.0": "sha256:new"},
+	}
+	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "ghcr.io/acme/web:v1.2.0@sha256:new" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.2.0@sha256:new", ref)
+	}
+}
+
+func TestImageAuto_SemverPinFailClosed(t *testing.T) {
+	// SECURITY (finding #1, fail-closed): when the current ref is digest-pinned
+	// but the selected tag's digest cannot be resolved, the update is skipped with
+	// an error rather than emitting a mutable (unpinned) ref.
+	cfgYAML := strings.ReplaceAll(imgConfigYAML, "ghcr.io/acme/web:v1.0.0", "ghcr.io/acme/web:v1.1.0@sha256:old")
+	src := newGitRepo(t, cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	// v1.2.0 is offered as a newer tag, but its digest resolves to "" (unknown).
+	reg := fakeRegistry{tags: []string{"v1.1.0", "v1.2.0"}, digests: map[string]string{"v1.1.0": "sha256:old"}}
+	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err == nil {
+		t.Fatal("expected fail-closed error when a pinned ref's new digest is unresolvable")
+	}
+	if !strings.Contains(err.Error(), "refusing to unpin") {
+		t.Errorf("err = %v, want a refusing-to-unpin error", err)
+	}
+	if ref != "" {
+		t.Errorf("ref = %q, want empty on fail-closed", ref)
+	}
+}
+
+func TestImageAuto_RegistryAllowlist(t *testing.T) {
+	// SECURITY (finding #7): image automation is refused when the image's registry
+	// is not in the configured allowlist.
+	cfgYAML := strings.Replace(imgConfigYAML, "  imagePolicy:\n    mode: minor\n",
+		"  imagePolicy:\n    mode: minor\n    allowedRegistries: [docker.io]\n", 1)
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err == nil || !strings.Contains(err.Error(), "allowedRegistries") {
+		t.Fatalf("expected allowlist rejection for ghcr.io, got ref=%q err=%v", ref, err)
+	}
+}
+
+func TestImageAuto_RegistryAllowlistPermits(t *testing.T) {
+	// The same policy allows ghcr.io → the bump proceeds (digest-pinned).
+	cfgYAML := strings.Replace(imgConfigYAML, "  imagePolicy:\n    mode: minor\n",
+		"  imagePolicy:\n    mode: minor\n    allowedRegistries: [ghcr.io]\n", 1)
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.0.0", "v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "ghcr.io/acme/web:v1.1.0@sha256:deadbeef" {
+		t.Errorf("ref = %q, want ghcr.io/acme/web:v1.1.0@sha256:deadbeef", ref)
 	}
 }
 
