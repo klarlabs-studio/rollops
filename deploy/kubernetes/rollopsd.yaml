@@ -7,6 +7,54 @@ kind: Namespace
 metadata:
   name: rollops-system
 ---
+# --- TLS (cert-manager) -----------------------------------------------------
+# rollopsd terminates TLS 1.3 itself on :8443 and requires mTLS on the machine
+# control plane (REST API / gRPC / MCP). These two objects issue the server cert
+# into the `rollopsd-tls` Secret; the same Secret's `ca.crt` is mounted as the
+# client-CA bundle so agents/CLIs presenting a cert from this CA are accepted.
+#
+# PREREQUISITE: cert-manager must be installed
+# (https://cert-manager.io/docs/installation/). Without it the Issuer and
+# Certificate below are inert (no rollopsd-tls Secret is created) and the
+# Deployment will not start — the TLS volume mount stays unsatisfied. In that
+# case either install cert-manager, provide your own `rollopsd-tls` Secret
+# (keys: tls.crt, tls.key, ca.crt), OR use the mesh alternative: bind loopback
+# (ROLLOPS_ADDR=127.0.0.1:8080, drop the TLS env + volume + this whole block)
+# and let a sidecar mesh (Istio/Linkerd) provide mTLS at the network boundary.
+#
+# SWAP FOR YOUR REAL CA: this self-signed ClusterIssuer is a working default so
+# the manifest applies stand-alone. In production point the Certificate's
+# issuerRef at your real CA — Let's Encrypt (ACME), Vault, or an intermediate CA
+# Issuer — so client and server certs chain to a trust root you control.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: rollopsd-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rollopsd-tls
+  namespace: rollops-system
+spec:
+  secretName: rollopsd-tls
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d — cert-manager rotates the Secret; rollopsd hot-reloads it
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  # In-cluster DNS SANs so peers verify the server by its Service name.
+  dnsNames:
+    - rollopsd.rollops-system.svc
+    - rollopsd.rollops-system.svc.cluster.local
+  issuerRef:
+    name: rollopsd-selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -131,18 +179,23 @@ spec:
         fsGroup: 10001
       containers:
         - name: rollopsd
-          image: ghcr.io/klarlabs-studio/rollopsd:v0.20.0
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.21.0
           args: []
           ports:
-            - { name: http, containerPort: 8080 }
+            - { name: https, containerPort: 8443 }
           env:
             - { name: ROLLOPS_DB, value: /var/lib/rollops/rollops.db }
-            - { name: ROLLOPS_ADDR, value: ":8080" }
-            # rollopsd refuses a non-loopback plaintext bind unless this is set.
-            # TLS terminates at the ingress/service in front of this ClusterIP,
-            # so the in-cluster pod bind is intentionally plaintext. If you move
-            # TLS onto the pod, drop this and configure certs instead.
-            - { name: ROLLOPS_ALLOW_PLAINTEXT, value: "1" }
+            - { name: ROLLOPS_ADDR, value: ":8443" }
+            # Native TLS 1.3 on the pod. rollopsd refuses a non-loopback bind
+            # without these. The cert Secret (rollopsd-tls, issued above) is
+            # mounted read-only; cert-manager rotates it in place and rollopsd
+            # hot-reloads the new keypair without a restart.
+            - { name: ROLLOPS_TLS_CERT, value: /etc/rollops/tls/tls.crt }
+            - { name: ROLLOPS_TLS_KEY, value: /etc/rollops/tls/tls.key }
+            # Client-CA bundle → mTLS on the machine control plane (REST API,
+            # gRPC, MCP). The browser UI still connects with server TLS + OIDC/
+            # session auth only. Remove to run server-TLS-only (no mTLS).
+            - { name: ROLLOPS_TLS_CLIENT_CA, value: /etc/rollops/tls/ca.crt }
             - { name: ROLLOPS_WATCH, value: /etc/rollops/watch.json }
             - { name: ROLLOPS_RECONCILE_INTERVAL, value: "60s" }
             - name: ROLLOPS_ADMIN_TOKEN
@@ -159,15 +212,19 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /var/lib/rollops }
             - { name: watch, mountPath: /etc/rollops, readOnly: true }
+            # Server keypair + client-CA bundle (tls.crt, tls.key, ca.crt).
+            - { name: tls, mountPath: /etc/rollops/tls, readOnly: true }
             # Git credentials for private config repos: GitHub App private key(s),
             # deploy keys, and/or a token — referenced by path in watch.json.
             - { name: git, mountPath: /etc/rollops/git, readOnly: true }
+          # /readyz is unauthenticated and needs no client cert, but the listener
+          # is HTTPS — probe over TLS on 8443.
           readinessProbe:
-            httpGet: { path: /readyz, port: http }
+            httpGet: { path: /readyz, port: https, scheme: HTTPS }
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /readyz, port: http }
+            httpGet: { path: /readyz, port: https, scheme: HTTPS }
             initialDelaySeconds: 10
             periodSeconds: 20
           resources:
@@ -178,6 +235,8 @@ spec:
           persistentVolumeClaim: { claimName: rollopsd-data }
         - name: watch
           configMap: { name: rollopsd-watch }
+        - name: tls
+          secret: { secretName: rollopsd-tls }
         - name: git
           secret: { secretName: rollopsd-git, optional: true }
 ---
@@ -189,4 +248,4 @@ metadata:
 spec:
   selector: { app: rollopsd }
   ports:
-    - { name: http, port: 80, targetPort: http }
+    - { name: https, port: 443, targetPort: https }

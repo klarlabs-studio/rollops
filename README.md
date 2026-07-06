@@ -122,6 +122,7 @@ sudo scripts/install-systemd.sh
 
 See `docs/deploy-systemd.md` for the unit, env file, and first-start checklist.
 See `docs/security-rbac.md` for the bootstrap roles and permission taxonomy.
+See `docs/tls.md` for native TLS 1.3 + mTLS (zero-trust transport, cert-manager, client certs).
 See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.
 See `docs/target-plugins.md` for the plugin architecture (manifest, capabilities, safety policy).
 See `docs/feature-flags.md` for coupling a rollout to a feature-flag plugin.

@@ -11,6 +11,7 @@ import (
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/servertls"
 	"go.klarlabs.de/rollops/internal/ui"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
@@ -36,20 +37,19 @@ func TestIsLoopbackAddr(t *testing.T) {
 	}
 }
 
-func TestEnsurePlaintextAllowed(t *testing.T) {
-	// Loopback is always allowed regardless of the escape hatch.
-	t.Setenv("ROLLOPS_ALLOW_PLAINTEXT", "")
-	if err := ensurePlaintextAllowed("127.0.0.1:8080", "HTTP"); err != nil {
-		t.Errorf("loopback should be allowed: %v", err)
+func TestEnsureTransportSecure(t *testing.T) {
+	// Loopback is always allowed, TLS or not (same-host proxy / in-pod mesh hop).
+	if err := ensureTransportSecure("127.0.0.1:8080", "HTTP", nil); err != nil {
+		t.Errorf("loopback plaintext should be allowed: %v", err)
 	}
-	// Non-loopback without the escape hatch fails closed.
-	if err := ensurePlaintextAllowed(":8080", "HTTP"); err == nil {
-		t.Error("non-loopback plaintext must be refused without ROLLOPS_ALLOW_PLAINTEXT")
+	// Non-loopback without TLS fails closed — no override.
+	if err := ensureTransportSecure(":8080", "HTTP", nil); err == nil {
+		t.Error("non-loopback without TLS must be refused")
 	}
-	// Non-loopback with the escape hatch is allowed (with a warning).
-	t.Setenv("ROLLOPS_ALLOW_PLAINTEXT", "1")
-	if err := ensurePlaintextAllowed(":8080", "HTTP"); err != nil {
-		t.Errorf("escape hatch should allow plaintext: %v", err)
+	// Non-loopback WITH TLS configured is allowed.
+	tlsCfg := &servertls.Config{}
+	if err := ensureTransportSecure(":8080", "HTTP", tlsCfg); err != nil {
+		t.Errorf("non-loopback with TLS should be allowed: %v", err)
 	}
 }
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.21.0 - Native TLS + mTLS (zero-trust transport)
+
+rollopsd now terminates TLS itself on every network listener instead of relying
+on a plaintext bind behind a proxy. The posture is zero-trust by default.
+
+- **TLS 1.3 on every non-loopback listener** (HTTP, gRPC, MCP). Certs come from
+  `ROLLOPS_TLS_CERT` / `ROLLOPS_TLS_KEY` (server keypair, PEM).
+- **mTLS on the machine control plane.** With `ROLLOPS_TLS_CLIENT_CA` set, the
+  programmatic REST API, gRPC, and MCP require a verified client certificate.
+  The REST API and web console share one HTTPS listener
+  (`VerifyClientCertIfGiven`); the API handler rejects requests without a
+  verified client cert (`401`), giving per-surface mTLS on a single port.
+- **The web console (UI) stays server-TLS + OIDC/session auth** — it does not
+  require a client cert, because browsers can't present one.
+- **Certificate hot-reload.** The server cert is served through a
+  `GetCertificate` callback that re-reads the keypair when the file's mtime
+  changes, so cert-manager (or any) rotation is picked up without a restart; the
+  last-good keypair is kept in service across a transient bad rotation.
+- **Deploy:** the bundled Kubernetes manifest now issues the server cert via a
+  cert-manager `Certificate` (self-signed `ClusterIssuer` default — swap for your
+  real CA), mounts `rollopsd-tls`, binds `:8443`, and probes over HTTPS. See the
+  new `docs/tls.md` for env vars, per-surface behavior, client-cert issuance, and
+  the loopback+mesh alternative.
+- **BREAKING: `ROLLOPS_ALLOW_PLAINTEXT` is removed.** A non-loopback bind now
+  requires `ROLLOPS_TLS_CERT` / `ROLLOPS_TLS_KEY` — there is no override. **Action
+  required:** either provide a server keypair (and optionally a client CA for
+  mTLS), or bind loopback (`ROLLOPS_ADDR=127.0.0.1:...`) behind a reverse proxy /
+  sidecar mesh that provides encryption at the network boundary. A deployment
+  that previously set `ROLLOPS_ALLOW_PLAINTEXT=1` on a routable bind will now
+  refuse to start until TLS is configured.
+
 ## v0.20.0 - Security Hardening: Rollback Safety, Console RBAC, Supply Chain, Confinement
 
 A deep security-and-correctness review of the whole daemon — reconcile/apply,
