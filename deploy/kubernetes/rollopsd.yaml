@@ -131,13 +131,18 @@ spec:
         fsGroup: 10001
       containers:
         - name: rollopsd
-          image: ghcr.io/klarlabs-studio/rollopsd:v0.18.0
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.20.0
           args: []
           ports:
             - { name: http, containerPort: 8080 }
           env:
             - { name: ROLLOPS_DB, value: /var/lib/rollops/rollops.db }
             - { name: ROLLOPS_ADDR, value: ":8080" }
+            # rollopsd refuses a non-loopback plaintext bind unless this is set.
+            # TLS terminates at the ingress/service in front of this ClusterIP,
+            # so the in-cluster pod bind is intentionally plaintext. If you move
+            # TLS onto the pod, drop this and configure certs instead.
+            - { name: ROLLOPS_ALLOW_PLAINTEXT, value: "1" }
             - { name: ROLLOPS_WATCH, value: /etc/rollops/watch.json }
             - { name: ROLLOPS_RECONCILE_INTERVAL, value: "60s" }
             - name: ROLLOPS_ADMIN_TOKEN

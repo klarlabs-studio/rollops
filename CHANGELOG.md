@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.20.0 - Security Hardening: Rollback Safety, Console RBAC, Supply Chain, Confinement
+
+A deep security-and-correctness review of the whole daemon — reconcile/apply,
+progressive delivery, the plugin host, the git/image supply chain, secrets, and
+the control-plane APIs — surfaced and closed 3 critical, 12 high, and a batch of
+medium/low issues. All fixes ship with tests.
+
+### Rollback & progressive-delivery safety
+- **Crashloop-on-arrival now auto-rolls-back.** A health-gate failure *during* a
+  deploy previously marked the rollout `rolled-back` but left the broken version
+  live; it now reverts to the last-good manifest when `rollback.auto` is set.
+- **Rollback restores traffic and disables the flag.** Canary weight is reset to
+  stable and the coupled feature flag disabled on every rollback path — a failed
+  canary no longer keeps serving production traffic. The delivery descriptor is
+  persisted, so manual and agent rollbacks reset it too.
+- **Reconcile rolls back to the prior manifest**, not the just-applied one.
+- **Fail-closed gates.** A drift/deep-diff error under `verification: full` and a
+  post-deploy target-build error now count as failures instead of silently
+  passing; metric analysis rejects an impossible `failureLimit >= count` config
+  that could promote a canary which failed every check.
+- **Emergency freeze is honored** by scheduled applies and by approvals; approval
+  enforces four-eyes (approver != initiator; opt out with
+  `ROLLOPS_ALLOW_SELF_APPROVE=1`).
+
+### Access control & transport
+- **The web console now enforces RBAC.** Console actions run as the authenticated
+  principal (OIDC identity + groups, or the configured UI user) and are checked
+  against the same policy as the API — previously every console action ran as a
+  hardcoded `admin`. Audit is now correctly attributed.
+- **JWKS refresh hardened** against an unauthenticated DoS (client timeout,
+  off-lock fetch, single-flight, unknown-kid negative cache). Constant-time
+  bearer-token comparison; explicit HTTP server timeouts.
+- **Plaintext bind is fail-closed.** The daemon refuses a non-loopback HTTP/gRPC
+  bind without TLS unless `ROLLOPS_ALLOW_PLAINTEXT=1`. **Action required:** a
+  deployment that binds `:8080` behind a TLS-terminating proxy/ingress must set
+  `ROLLOPS_ALLOW_PLAINTEXT=1` — the bundled Kubernetes manifest now does.
+
+### Supply chain
+- **Digest pins are preserved** across semver image updates — no silent
+  immutable->mutable downgrade; semver updates re-pin to the resolved digest.
+  Optional `spec.imagePolicy.allowedRegistries`.
+- **Registry credentials are bound to the registry host** and no longer sent to
+  an attacker-controlled Bearer `realm` (or over cleartext).
+- **Poisoned-repo hardening:** config reads reject symlinks and are size-capped
+  (no OOM); optional `ROLLOPS_REQUIRE_SIGNED_COMMITS` commit-signature gate;
+  anchored tag-filter patterns; overflow-safe semver parsing.
+
+### Plugin host
+- **Plugins no longer inherit the daemon's environment.** An explicit allowlist
+  (`ROLLOPS_PLUGIN_ALLOWED_ENV`, deny-by-default) replaces full `os.Environ`
+  inheritance, so a plugin can't read the daemon's secrets. The manifest RPC is
+  deadline-bounded (a stalled plugin can't hang the daemon). Optional
+  `--require-signature` / `ROLLOPS_PLUGIN_REQUIRE_SIGNATURE`; unknown plugin risk
+  classes fail closed; orphaned plugin process groups are reaped on launch error.
+
+### Multi-tenant confinement (opt-in, default off)
+- `ROLLOPS_ALLOWED_COMMANDS` — allowlist config-sourced smoke/DB commands,
+  preventing arbitrary command execution from repo config.
+- `ROLLOPS_ALLOWED_NAMESPACES` — restrict applies to named Kubernetes namespaces.
+- `ROLLOPS_CONFINE_TARGET_CLUSTER` — ignore repo-supplied `kubeconfig`/`context`
+  so a tenant repo cannot target another cluster.
+
 ## v0.18.0 - Interface Completeness: Every Op on Every Surface
 
 Every rollout operation is now reachable from every interface (CLI, gRPC, REST,
