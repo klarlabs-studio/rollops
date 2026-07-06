@@ -10,14 +10,20 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/security"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
+
+// maxBodyBytes bounds a UI request body, mirroring the REST API, so a malicious
+// or buggy client can't force unbounded memory growth on a mutating call.
+const maxBodyBytes = 1 << 20
 
 //go:embed assets/*
 var assetsFS embed.FS
@@ -39,8 +45,13 @@ type Backend interface {
 
 // Server serves the SPA and the JSON API.
 type Server struct {
-	be     Backend
+	be Backend
+	// actor is retained only for backward compatibility with New's signature; it
+	// is NOT used for authorization or audit attribution. Every mutating handler
+	// acts as the per-request authenticated identity (see WithIdentity) so the
+	// audit trail records the real principal, not a static "admin".
 	actor  rollout.Identity
+	policy *security.Policy
 	sync   func(context.Context) error
 	static http.Handler
 }
@@ -54,6 +65,13 @@ func WithSync(fn func(context.Context) error) Option {
 	return func(s *Server) { s.sync = fn }
 }
 
+// WithPolicy wires the RBAC policy the console enforces on every state-changing
+// action — the same *security.Policy the REST API uses. When no policy is set,
+// mutating handlers fail closed (deny) rather than acting as an unchecked admin.
+func WithPolicy(p *security.Policy) Option {
+	return func(s *Server) { s.policy = p }
+}
+
 // New builds the console server.
 func New(be Backend, actor rollout.Identity, opts ...Option) *Server {
 	sub, _ := fs.Sub(assetsFS, "assets")
@@ -62,6 +80,47 @@ func New(be Backend, actor rollout.Identity, opts ...Option) *Server {
 		o(s)
 	}
 	return s
+}
+
+// identityCtxKey scopes the per-request authenticated identity in the context.
+type identityCtxKey struct{}
+
+// WithIdentity returns a context carrying the authenticated identity for a UI
+// request. The daemon's auth middleware sets it (with IdP groups for RBAC) after
+// verifying the caller; mutating handlers read it back via identityFrom.
+func WithIdentity(ctx context.Context, id rollout.Identity) context.Context {
+	return context.WithValue(ctx, identityCtxKey{}, id)
+}
+
+// identityFrom returns the authenticated identity attached by WithIdentity.
+func identityFrom(ctx context.Context) (rollout.Identity, bool) {
+	id, ok := ctx.Value(identityCtxKey{}).(rollout.Identity)
+	return id, ok
+}
+
+// authorize enforces RBAC for a mutating console action. It fails closed: with
+// no policy configured, every mutating action is denied rather than run as an
+// unchecked admin.
+func (s *Server) authorize(id rollout.Identity, perm security.Permission, scope security.Scope) error {
+	if s.policy == nil {
+		return errors.New("ui: no authorization policy configured")
+	}
+	return s.policy.Authorize(id, perm, scope)
+}
+
+// rolloutByID resolves a rollout's current target from its ID so an action can
+// be scoped to that target, mirroring the REST API's per-target authorization.
+func (s *Server) rolloutByID(ctx context.Context, id string) (rollout.Rollout, bool) {
+	rollouts, err := s.be.List(ctx, 200)
+	if err != nil {
+		return rollout.Rollout{}, false
+	}
+	for i := range rollouts {
+		if rollouts[i].ID == id {
+			return rollouts[i], true
+		}
+	}
+	return rollout.Rollout{}, false
 }
 
 // Handler returns the routed console handler.
@@ -174,15 +233,24 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 
 // apiFreeze toggles the emergency kill-switch from the console.
 func (s *Server) apiFreeze(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := s.authorize(id, security.PermFreeze, security.Scope{}); err != nil {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	var body struct {
 		Active bool   `json:"active"`
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if _, _, err := s.be.Freeze(r.Context(), body.Active, s.actor, body.Reason); err != nil {
+	if _, _, err := s.be.Freeze(r.Context(), body.Active, id, body.Reason); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -297,17 +365,36 @@ func (s *Server) apiTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) apiApprove(w http.ResponseWriter, r *http.Request) { s.actByID(w, r, s.be.Approve) }
-func (s *Server) apiReject(w http.ResponseWriter, r *http.Request)  { s.actByID(w, r, s.be.Reject) }
+func (s *Server) apiApprove(w http.ResponseWriter, r *http.Request) {
+	s.actByID(w, r, security.PermApprove, s.be.Approve)
+}
+func (s *Server) apiReject(w http.ResponseWriter, r *http.Request) {
+	s.actByID(w, r, security.PermApprove, s.be.Reject)
+}
 
 // apiPromote promotes a verified rollout. Promote takes no actor identity (it
-// completes an already-approved rollout), so it can't use actByID.
+// completes an already-approved rollout), but is still authorized against the
+// rollout's target under PermPromote.
 func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	var body struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&body); err != nil || body.ID == "" {
 		writeErr(w, http.StatusBadRequest, "id required")
+		return
+	}
+	rl, found := s.rolloutByID(r.Context(), body.ID)
+	if !found {
+		writeErr(w, http.StatusNotFound, "rollout not found")
+		return
+	}
+	if err := s.authorize(id, security.PermPromote, security.Scope{TargetRef: rl.TargetRef}); err != nil {
+		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if _, err := s.be.Promote(r.Context(), body.ID); err != nil {
@@ -317,15 +404,31 @@ func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) actByID(w http.ResponseWriter, r *http.Request, fn func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
+// actByID is the shared approve/reject flow: authenticate, decode {id}, scope
+// authorization to the rollout's target, then act as the real principal.
+func (s *Server) actByID(w http.ResponseWriter, r *http.Request, perm security.Permission, fn func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	var body struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&body); err != nil || body.ID == "" {
 		writeErr(w, http.StatusBadRequest, "id required")
 		return
 	}
-	if _, err := fn(r.Context(), body.ID, s.actor); err != nil {
+	rl, found := s.rolloutByID(r.Context(), body.ID)
+	if !found {
+		writeErr(w, http.StatusNotFound, "rollout not found")
+		return
+	}
+	if err := s.authorize(id, perm, security.Scope{TargetRef: rl.TargetRef}); err != nil {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if _, err := fn(r.Context(), body.ID, id); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -333,12 +436,21 @@ func (s *Server) actByID(w http.ResponseWriter, r *http.Request, fn func(context
 }
 
 func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	var body struct {
 		Target string `json:"target"`
 		Force  bool   `json:"force"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Target == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&body); err != nil || body.Target == "" {
 		writeErr(w, http.StatusBadRequest, "target required")
+		return
+	}
+	if err := s.authorize(id, security.PermRollback, security.Scope{TargetRef: body.Target}); err != nil {
+		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if _, err := s.be.RollbackLast(r.Context(), body.Target, body.Force); err != nil {
@@ -349,6 +461,15 @@ func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiSync(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := s.authorize(id, security.PermApply, security.Scope{}); err != nil {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	if s.sync == nil {
 		writeErr(w, http.StatusNotImplemented, "sync not available")
 		return

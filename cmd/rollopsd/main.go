@@ -132,7 +132,11 @@ func run(args []string) error {
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	// "Sync now" triggers an immediate reconcile of the watched repos.
 	var watcher *reconcile.Watcher
+	// The console enforces the same RBAC policy as the REST API (WithPolicy), and
+	// acts as the real per-request identity injected by uiAuth — never a static
+	// admin. The actor arg is legacy and unused for authorization.
 	uiHandler := uiAuth(ui.New(eng, rollout.Identity{Kind: "human", Name: "admin"},
+		ui.WithPolicy(policy),
 		ui.WithSync(func(ctx context.Context) error {
 			if watcher != nil {
 				watcher.Tick(ctx)
@@ -143,7 +147,25 @@ func run(args []string) error {
 	top.Handle("/ui/", uiHandler)
 	top.Handle("/", api.New(eng, httpAuth, policy).Handler())
 
-	srv := &http.Server{Addr: addr, Handler: top}
+	// Fail closed on plaintext exposure: a non-loopback bind ships bearer tokens
+	// and the UI password in cleartext. The intended production model terminates
+	// TLS at a reverse proxy and binds loopback; a direct non-loopback bind
+	// requires an explicit opt-out.
+	if err := ensurePlaintextAllowed(addr, "HTTP"); err != nil {
+		return err
+	}
+
+	// Timeouts bound slow/idle clients (pre-auth slowloris protection). The read
+	// header timeout is tight; overall read/write are generous enough for large
+	// config uploads and streamed responses.
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           top,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -201,6 +223,9 @@ func run(args []string) error {
 
 	// Typed gRPC surface (CLI daemon mode + agents) on its own port.
 	if grpcAddr := os.Getenv("ROLLOPS_GRPC_ADDR"); grpcAddr != "" {
+		if err := ensurePlaintextAllowed(grpcAddr, "gRPC"); err != nil {
+			return err
+		}
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
 			return err
@@ -238,9 +263,52 @@ func scheduleLoop(ctx context.Context, eng *engine.Engine) {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			_, _ = eng.FireDueSchedules(ctx, now.UTC())
+			// Surface fire failures: a schedule that silently fails to fire is an
+			// invisible missed deployment.
+			if fired, err := eng.FireDueSchedules(ctx, now.UTC()); err != nil {
+				fmt.Fprintf(os.Stderr, "rollopsd: fire due schedules failed (fired %d before error): %v\n", len(fired), err)
+			}
 		}
 	}
+}
+
+// isLoopbackAddr reports whether a listen address binds only the loopback
+// interface, in which case plaintext is safe behind a same-host reverse proxy.
+// A host of 127.0.0.1, ::1, or localhost is loopback; an empty host (":8080") or
+// 0.0.0.0 binds every interface and is NOT loopback. An unresolvable host is
+// treated conservatively as non-loopback.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr // no port present; treat the whole value as the host
+	}
+	switch host {
+	case "":
+		return false // ":8080" / bare port binds all interfaces
+	case "localhost":
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false // a hostname we can't classify → assume exposed
+	}
+	return ip.IsLoopback()
+}
+
+// ensurePlaintextAllowed refuses to serve on a non-loopback address without TLS
+// unless the operator explicitly opts out with ROLLOPS_ALLOW_PLAINTEXT=1 (a
+// loud, deliberate escape hatch). Loopback binds are always allowed.
+func ensurePlaintextAllowed(addr, surface string) error {
+	if isLoopbackAddr(addr) {
+		return nil
+	}
+	if os.Getenv("ROLLOPS_ALLOW_PLAINTEXT") != "1" {
+		return fmt.Errorf("refusing to serve %s in plaintext on non-loopback address %q: "+
+			"terminate TLS at a reverse proxy and bind loopback, or set ROLLOPS_ALLOW_PLAINTEXT=1 to override", surface, addr)
+	}
+	fmt.Fprintf(os.Stderr, "rollopsd: WARNING %s serving plaintext on non-loopback %q; "+
+		"bearer tokens and UI credentials are exposed in cleartext (ROLLOPS_ALLOW_PLAINTEXT=1)\n", surface, addr)
+	return nil
 }
 
 // loadWatchSpecs reads the watched-repo list from a JSON file. Empty path → no
@@ -327,8 +395,11 @@ func uiAuth(next http.Handler, oidc api.Authenticator) http.Handler {
 	}
 	fallback := basicAuth(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// On the OIDC path, carry the REAL identity (with IdP groups) into the
+		// request so the console authorizes and audits the actual principal rather
+		// than a static admin.
 		if id, ok := oidc.Identify(bearerToken(r)); ok && id.Name != "" {
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(ui.WithIdentity(r.Context(), id)))
 			return
 		}
 		fallback.ServeHTTP(w, r)
@@ -343,6 +414,10 @@ func basicAuth(next http.Handler) http.Handler {
 	sessions := domain.NewSessionService(memory.NewSessionRepo(), uiSessionTTL, domain.SystemClock)
 	uid, _ := domain.NewUserID(user)
 	tid, _ := domain.NewTenantID("rollops")
+	// The session/basic-auth path authenticates the configured UI operator; carry
+	// that identity so the console authorizes and audits it (the default user
+	// "admin" maps to human:admin in the bootstrap RBAC policy).
+	uiIdentity := rollout.Identity{Kind: "human", Name: user}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pass == "" {
 			http.Error(w, "ui disabled: set ROLLOPS_UI_PASSWORD", http.StatusForbidden)
@@ -352,7 +427,7 @@ func basicAuth(next http.Handler) http.Handler {
 		if c, err := r.Cookie(sessionCookie); err == nil {
 			if tok, terr := domain.TokenFromString(c.Value); terr == nil {
 				if _, verr := sessions.Validate(tok); verr == nil {
-					next.ServeHTTP(w, r)
+					next.ServeHTTP(w, r.WithContext(ui.WithIdentity(r.Context(), uiIdentity)))
 					return
 				}
 			}
@@ -375,7 +450,7 @@ func basicAuth(next http.Handler) http.Handler {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 		})
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ui.WithIdentity(r.Context(), uiIdentity)))
 	})
 }
 

@@ -9,9 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -151,6 +154,94 @@ func TestOIDC_RS256_RequiresKeySource(t *testing.T) {
 	auth := OIDCAuth{Config: OIDCConfig{Issuer: "https://idp.example", Audience: "rollops", HMACSecret: "s", Now: func() time.Time { return time.Unix(100, 0) }}}
 	if _, ok := auth.Identify(signRS256(t, key, "rsa1", oidcClaimsMap())); ok {
 		t.Error("RS256 without a JWKS key source must be rejected")
+	}
+}
+
+// TestJWKS_UnknownKidDoesNotRefetch proves the negative-cache / rate-limit: once
+// the key set is fetched, a flood of unknown kids does not trigger a network
+// fetch per lookup (the JWKS-refresh DoS).
+func TestJWKS_UnknownKidDoesNotRefetch(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	calls := 0
+	srv := jwksServer(t, &key.PublicKey, &ec.PublicKey, &calls)
+	defer srv.Close()
+
+	jwks := NewJWKS(srv.URL, WithJWKSHTTPClient(srv.Client()), withJWKSClock(func() time.Time { return time.Unix(100, 0) }))
+
+	// Prime the cache with a real fetch.
+	if _, err := jwks.Key("rsa1"); err != nil {
+		t.Fatalf("priming fetch: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("priming fetched %d times, want 1", calls)
+	}
+	// A burst of unknown (random) kids must not trigger further fetches while the
+	// cached set is still valid.
+	for i := 0; i < 50; i++ {
+		if _, err := jwks.Key(fmt.Sprintf("attacker-kid-%d", i)); err == nil {
+			t.Fatalf("unknown kid %d should not resolve", i)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("unknown-kid flood forced %d fetches, want 1 (negative cache broken)", calls)
+	}
+}
+
+// TestJWKS_FetchIsTimeBounded proves a slow/hung IdP cannot stall the caller: the
+// fetch is bounded by the HTTP client timeout, so Key returns an error promptly.
+func TestJWKS_FetchIsTimeBounded(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release // hang until the test ends
+	}))
+	// Defers run LIFO: unblock the handler (close release) BEFORE srv.Close, which
+	// blocks until in-flight handlers return.
+	defer srv.Close()
+	defer close(release)
+
+	client := srv.Client()
+	client.Timeout = 100 * time.Millisecond
+	jwks := NewJWKS(srv.URL, WithJWKSHTTPClient(client))
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { _, err := jwks.Key("any"); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected a timeout error from a hung JWKS endpoint")
+		}
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Errorf("fetch took %s, want time-bounded (~timeout)", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Key did not return; fetch is not time-bounded (mutex held across network call?)")
+	}
+}
+
+// TestJWKS_ConcurrentUnknownKidSingleFetch proves a burst of concurrent lookups
+// is deduplicated into a single in-flight fetch rather than N serialized ones.
+func TestJWKS_ConcurrentUnknownKidSingleFetch(t *testing.T) {
+	var calls int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&calls, 1)
+		time.Sleep(150 * time.Millisecond) // widen the race window
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]any{
+			{"kid": "rsa1", "kty": "RSA", "n": "AQAB", "e": "AQAB"},
+		}})
+	}))
+	defer srv.Close()
+
+	jwks := NewJWKS(srv.URL, WithJWKSHTTPClient(srv.Client()))
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = jwks.Key("nope") }()
+	}
+	wg.Wait()
+	if n := atomic.LoadInt64(&calls); n != 1 {
+		t.Errorf("concurrent unknown-kid lookups fetched %d times, want 1 (no singleflight)", n)
 	}
 }
 

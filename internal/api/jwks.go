@@ -21,19 +21,34 @@ type KeySource interface {
 	Key(kid string) (crypto.PublicKey, error)
 }
 
+// defaultJWKSTimeout bounds a single JWKS fetch so an unreachable or slow IdP
+// can't wedge an inbound request indefinitely (the fetch happens before
+// signature verification, so it is reachable pre-auth).
+const defaultJWKSTimeout = 10 * time.Second
+
+// defaultJWKSRefreshInterval rate-limits rotation-driven refetches. While the
+// cached key set is still valid, an unknown `kid` triggers at most one refetch
+// per interval, so a flood of unauthenticated tokens carrying random kids cannot
+// force a network fetch per request (a JWKS-refresh DoS).
+const defaultJWKSRefreshInterval = time.Minute
+
 // JWKS fetches and caches an OIDC provider's JSON Web Key Set, refreshing on a
 // TTL or whenever an unknown `kid` is seen (key rotation). It supports RSA and
 // EC keys with stdlib only — no JWT/JWKS dependency, keeping the single static
 // binary.
 type JWKS struct {
-	url  string
-	http *http.Client
-	now  func() time.Time
-	ttl  time.Duration
+	url        string
+	http       *http.Client
+	now        func() time.Time
+	ttl        time.Duration
+	minRefresh time.Duration // floor between rotation-driven refetches
 
-	mu   sync.Mutex
-	keys map[string]crypto.PublicKey
-	exp  time.Time
+	mu          sync.Mutex
+	keys        map[string]crypto.PublicKey
+	exp         time.Time
+	lastRefresh time.Time     // when the last fetch attempt completed
+	refreshing  bool          // a fetch is in flight (dedupes concurrent refresh)
+	done        chan struct{} // closed when the in-flight fetch completes
 }
 
 // JWKSOption configures a JWKS.
@@ -44,53 +59,99 @@ func WithJWKSHTTPClient(c *http.Client) JWKSOption { return func(j *JWKS) { j.ht
 
 func withJWKSClock(now func() time.Time) JWKSOption { return func(j *JWKS) { j.now = now } }
 
-// NewJWKS builds a key source backed by the JWKS endpoint at url.
+// NewJWKS builds a key source backed by the JWKS endpoint at url. The default
+// HTTP client carries a timeout so a hung IdP can't stall request handling; pass
+// WithJWKSHTTPClient to override it.
 func NewJWKS(url string, opts ...JWKSOption) *JWKS {
-	j := &JWKS{url: url, http: http.DefaultClient, now: time.Now, ttl: time.Hour, keys: map[string]crypto.PublicKey{}}
+	j := &JWKS{
+		url:        url,
+		http:       &http.Client{Timeout: defaultJWKSTimeout},
+		now:        time.Now,
+		ttl:        time.Hour,
+		minRefresh: defaultJWKSRefreshInterval,
+		keys:       map[string]crypto.PublicKey{},
+	}
 	for _, o := range opts {
 		o(j)
+	}
+	// A caller-supplied client with no timeout would reintroduce the pre-auth
+	// stall; give it a sane default rather than trusting the caller.
+	if j.http == nil {
+		j.http = &http.Client{Timeout: defaultJWKSTimeout}
+	} else if j.http.Timeout == 0 {
+		j.http.Timeout = defaultJWKSTimeout
 	}
 	return j
 }
 
 // Key returns the public key for kid, refreshing the cache when it is empty,
-// expired, or missing the requested kid (rotation).
+// expired, or missing the requested kid (rotation). The network fetch runs
+// without holding the mutex, and is both rate-limited (minRefresh) and
+// deduplicated (a single in-flight fetch) so a burst of tokens with unknown kids
+// cannot force one serialized, un-throttled fetch per request.
 func (j *JWKS) Key(kid string) (crypto.PublicKey, error) {
 	j.mu.Lock()
-	defer j.mu.Unlock()
-	if k, ok := j.keys[kid]; ok && j.now().Before(j.exp) {
+	for {
+		if k, ok := j.keys[kid]; ok && j.now().Before(j.exp) {
+			j.mu.Unlock()
+			return k, nil
+		}
+		// Cache still valid but missing this kid (possible rotation). Only refetch
+		// once per minRefresh so random/unknown kids can't force a fetch each time.
+		if j.now().Before(j.exp) && j.now().Before(j.lastRefresh.Add(j.minRefresh)) {
+			j.mu.Unlock()
+			return nil, fmt.Errorf("oidc: no JWKS key for kid %q", kid)
+		}
+		if j.refreshing {
+			// A fetch is already running: wait for it and re-evaluate rather than
+			// launching a second concurrent fetch.
+			done := j.done
+			j.mu.Unlock()
+			<-done
+			j.mu.Lock()
+			continue
+		}
+		break
+	}
+	j.refreshing = true
+	j.done = make(chan struct{})
+	client, url := j.http, j.url
+	j.mu.Unlock()
+
+	keys, ferr := fetchJWKS(client, url)
+	j.mu.Lock()
+	j.lastRefresh = j.now()
+	if ferr == nil {
+		j.keys = keys
+		j.exp = j.now().Add(j.ttl)
+	}
+	j.refreshing = false
+	close(j.done)
+	k, ok := j.keys[kid]
+	j.mu.Unlock()
+	if ok {
 		return k, nil
 	}
-	if err := j.refresh(); err != nil {
-		return nil, err
+	if ferr != nil {
+		return nil, ferr
 	}
-	k, ok := j.keys[kid]
-	if !ok {
-		return nil, fmt.Errorf("oidc: no JWKS key for kid %q", kid)
-	}
-	return k, nil
+	return nil, fmt.Errorf("oidc: no JWKS key for kid %q", kid)
 }
 
-func (j *JWKS) refresh() error {
-	resp, err := j.http.Get(j.url)
+func fetchJWKS(client *http.Client, url string) (map[string]crypto.PublicKey, error) {
+	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("oidc: fetch JWKS: %w", err)
+		return nil, fmt.Errorf("oidc: fetch JWKS: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("oidc: JWKS status %d", resp.StatusCode)
+		return nil, fmt.Errorf("oidc: JWKS status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("oidc: read JWKS: %w", err)
+		return nil, fmt.Errorf("oidc: read JWKS: %w", err)
 	}
-	keys, err := parseJWKS(body)
-	if err != nil {
-		return err
-	}
-	j.keys = keys
-	j.exp = j.now().Add(j.ttl)
-	return nil
+	return parseJWKS(body)
 }
 
 type jwk struct {
