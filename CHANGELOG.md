@@ -11,6 +11,13 @@
   `ROLLOPS_TLS_CLIENT_CA`. Added `deploy/kubernetes/rollops-client-cert.example.yaml`
   for issuing per-caller client certs, and corrected `docs/tls.md`. Deploy-only;
   no daemon code or image change.
+- **Deploy: make the manifest safe to re-apply.** The `rollopsd-watch` ConfigMap
+  (a repo's live reconcile list) is no longer defined in `rollopsd.yaml` — a
+  wholesale `kubectl apply` would have overwritten a running fleet's watch list
+  with the 2-repo example. Moved it to `deploy/kubernetes/rollopsd-watch.example.yaml`
+  (create once, manage separately). Flagged the `rollopsd-data` PVC and its
+  storageClass as environment-specific, since the Deployment's `claimName` must
+  match the PVC that actually holds the SQLite DB.
 
 ## v0.21.0 - Native TLS + mTLS (zero-trust transport)
 
