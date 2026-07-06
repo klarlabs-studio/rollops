@@ -28,7 +28,7 @@ func (b Briefkasten) call() func(context.Context, string, any) (bool, string, er
 	return func(ctx context.Context, name string, args any) (bool, string, error) {
 		var opts []mcpclient.HTTPTransportOption
 		if b.Token != "" {
-			opts = append(opts, mcpclient.WithBearerToken(b.Token))
+			opts = append(opts, mcpclient.WithHTTPHeader("Authorization", "Bearer "+b.Token))
 		}
 		transport, err := mcpclient.NewHTTPTransport(b.URL, opts...)
 		if err != nil {
