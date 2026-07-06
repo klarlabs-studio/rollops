@@ -1,16 +1,17 @@
-# Client certificate for a machine caller (CLI, agent, or CI) of the rollopsd
-# control plane. With mTLS enabled (ROLLOPS_TLS_CLIENT_CA set on the daemon),
-# the REST API, gRPC, and MCP surfaces REQUIRE a client cert signed by the same
-# CA as the server — this issues one from the `rollopsd-ca` Issuer created in
-# rollopsd.yaml, so it chains to the CA the daemon trusts.
+# Client certificates for machine callers of the rollopsd control plane. With
+# mTLS enabled (ROLLOPS_TLS_CLIENT_CA set on the daemon), the REST API, gRPC, and
+# MCP surfaces REQUIRE a client cert signed by the same CA as the server. These
+# Certificates are issued from the `rollopsd-ca` Issuer created in rollopsd.yaml,
+# so they chain to the CA the daemon trusts.
 #
-# Copy this per caller, giving each a distinct name/commonName so certs can be
-# rotated or revoked independently. commonName becomes the caller's cert identity
+# One cert per caller (distinct name + commonName) so any single caller can be
+# rotated or revoked independently. commonName is the caller's cert identity
 # (surfaced in logs); it is NOT the RBAC identity — that still comes from the
-# bearer token / OIDC presented over the mTLS channel.
+# bearer token / OIDC presented over the mTLS channel. Trim or rename these to
+# your actual callers.
 #
-# Apply, then extract the keypair for a caller that runs OUTSIDE the cluster
-# (a laptop CLI or a CI runner):
+# Extract a keypair for a caller that runs OUTSIDE the cluster (a laptop CLI or a
+# CI runner), e.g. for the `cli` cert:
 #
 #   kubectl -n rollops-system apply -f rollops-client-cert.example.yaml
 #   kubectl -n rollops-system get secret rollopsd-client-cli \
@@ -20,10 +21,12 @@
 #   kubectl -n rollops-system get secret rollopsd-client-cli \
 #     -o jsonpath='{.data.ca\.crt}'  | base64 -d > ca.crt
 #
-# Then point the caller at them, e.g.:
+# Then point the caller at them:
 #   grpcurl -cert client.crt -key client.key -cacert ca.crt rollopsd:8443 ...
 #   curl --cert client.crt --key client.key --cacert ca.crt https://rollopsd:8443/v1/status
-# See docs/tls.md for the CLI/agent env wiring.
+# In-cluster callers can instead mount the Secret directly. See docs/tls.md.
+---
+# Operator CLI (laptop / bastion).
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -31,9 +34,54 @@ metadata:
   namespace: rollops-system
 spec:
   secretName: rollopsd-client-cli
-  commonName: cli # the caller's cert identity — one per caller
+  commonName: cli
   duration: 2160h # 90d
   renewBefore: 360h # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - client auth
+  issuerRef:
+    name: rollopsd-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+# CI pipeline (e.g. a GitHub Actions runner driving rollouts).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rollopsd-client-ci
+  namespace: rollops-system
+spec:
+  secretName: rollopsd-client-ci
+  commonName: ci
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - client auth
+  issuerRef:
+    name: rollopsd-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+# In-cluster automation / agent (mounts the Secret directly; short-lived so a
+# compromised agent cert ages out quickly).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rollopsd-client-agent
+  namespace: rollops-system
+spec:
+  secretName: rollopsd-client-agent
+  commonName: agent
+  duration: 720h # 30d
+  renewBefore: 120h # 5d
   privateKey:
     algorithm: ECDSA
     size: 256
