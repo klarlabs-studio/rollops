@@ -97,8 +97,8 @@ func do(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 }
 
 // doAs issues a request as the given authenticated identity.
-func doAs(h http.Handler, id rollout.Identity, method, path, body string) *httptest.ResponseRecorder {
-	return doAsCtx(h, method, path, body, WithIdentity(context.Background(), id))
+func doAs(h http.Handler, id rollout.Identity, path, body string) *httptest.ResponseRecorder {
+	return doAsCtx(h, "POST", path, body, WithIdentity(context.Background(), id))
 }
 
 func doAsCtx(h http.Handler, method, path, body string, ctx context.Context) *httptest.ResponseRecorder {
@@ -242,29 +242,29 @@ func actionsBackend() *fakeBackend {
 func TestAPI_Actions(t *testing.T) {
 	be := actionsBackend()
 	h := srv(be, WithPolicy(testPolicy()))
-	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != 200 || be.approved != "ro-7" {
+	if rr := doAs(h, privileged, "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != 200 || be.approved != "ro-7" {
 		t.Errorf("approve = %d approved=%q", rr.Code, be.approved)
 	}
 	// The action is attributed to the real principal, not a static "admin".
 	if be.approvedBy.Kind != privileged.Kind || be.approvedBy.Name != privileged.Name {
 		t.Errorf("approve actor = %+v, want the authenticated identity %+v", be.approvedBy, privileged)
 	}
-	if rr := doAs(h, privileged, "POST", "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
+	if rr := doAs(h, privileged, "/ui/api/reject", `{"id":"ro-8"}`); rr.Code != 200 || be.rejected != "ro-8" {
 		t.Errorf("reject = %d rejected=%q", rr.Code, be.rejected)
 	}
-	if rr := doAs(h, privileged, "POST", "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
+	if rr := doAs(h, privileged, "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
 		t.Errorf("promote = %d promoted=%q", rr.Code, be.promoted)
 	}
-	if rr := doAs(h, privileged, "POST", "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
+	if rr := doAs(h, privileged, "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
 		t.Errorf("freeze = %d frozen=%v", rr.Code, be.frozen)
 	}
 	if be.frozenBy.Kind != privileged.Kind || be.frozenBy.Name != privileged.Name {
 		t.Errorf("freeze actor = %+v, want %+v", be.frozenBy, privileged)
 	}
-	if rr := doAs(h, privileged, "POST", "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
+	if rr := doAs(h, privileged, "/ui/api/rollback", `{"target":"a/prod/api"}`); rr.Code != 200 || be.rolledBackTarget != "a/prod/api" {
 		t.Errorf("rollback = %d target=%q", rr.Code, be.rolledBackTarget)
 	}
-	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{}`); rr.Code != http.StatusBadRequest {
+	if rr := doAs(h, privileged, "/ui/api/approve", `{}`); rr.Code != http.StatusBadRequest {
 		t.Errorf("approve without id = %d, want 400", rr.Code)
 	}
 }
@@ -283,7 +283,7 @@ func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
 		{"/ui/api/sync", `{}`},
 	}
 	for _, c := range cases {
-		if rr := doAs(h, viewer, "POST", c.path, c.body); rr.Code != http.StatusForbidden {
+		if rr := doAs(h, viewer, c.path, c.body); rr.Code != http.StatusForbidden {
 			t.Errorf("%s as viewer = %d, want 403", c.path, rr.Code)
 		}
 	}
@@ -309,7 +309,7 @@ func TestAPI_RBAC_RequiresIdentity(t *testing.T) {
 func TestAPI_RBAC_FailsClosedWithoutPolicy(t *testing.T) {
 	be := actionsBackend()
 	h := srv(be) // no WithPolicy
-	if rr := doAs(h, privileged, "POST", "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != http.StatusForbidden {
+	if rr := doAs(h, privileged, "/ui/api/approve", `{"id":"ro-7"}`); rr.Code != http.StatusForbidden {
 		t.Errorf("approve with no policy = %d, want 403 (fail closed)", rr.Code)
 	}
 	if be.approved != "" {
@@ -319,12 +319,12 @@ func TestAPI_RBAC_FailsClosedWithoutPolicy(t *testing.T) {
 
 func TestAPI_Sync(t *testing.T) {
 	pol := testPolicy()
-	if rr := doAs(srv(&fakeBackend{}, WithPolicy(pol)), privileged, "POST", "/ui/api/sync", "{}"); rr.Code != http.StatusNotImplemented {
+	if rr := doAs(srv(&fakeBackend{}, WithPolicy(pol)), privileged, "/ui/api/sync", "{}"); rr.Code != http.StatusNotImplemented {
 		t.Errorf("sync without wiring = %d, want 501", rr.Code)
 	}
 	called := false
 	h := srv(&fakeBackend{}, WithPolicy(pol), WithSync(func(context.Context) error { called = true; return nil }))
-	if rr := doAs(h, privileged, "POST", "/ui/api/sync", "{}"); rr.Code != 200 || !called {
+	if rr := doAs(h, privileged, "/ui/api/sync", "{}"); rr.Code != 200 || !called {
 		t.Errorf("sync = %d called=%v", rr.Code, called)
 	}
 	// canSync reflected in dashboard.
