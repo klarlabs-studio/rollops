@@ -91,8 +91,16 @@ type Rollout struct {
 	DBMigrateTimeout     string
 	DBMigrateWhen        string // pre-deploy (default) | post-promote
 	DBBackwardCompatible bool   // migration declared safe for the previous app version
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// Progressive-delivery descriptors captured at deploy time as opaque JSON
+	// (config.TrafficRouting / config.FeatureFlags), so a later rollback — auto,
+	// manual, or agent-driven — can reset the delivery plane (traffic → stable,
+	// flag disabled) without the config in hand. Empty means that delivery
+	// mechanism was not configured. Opaque bytes keep this model decoupled from
+	// the config package, mirroring the DB-hook capture above.
+	DeliveryTraffic []byte
+	DeliveryFlag    []byte
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —

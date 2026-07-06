@@ -67,6 +67,19 @@ func New(provider MetricsProvider, t Template) (*Analyzer, error) {
 	if len(t.Metrics) == 0 {
 		return nil, fmt.Errorf("analysis: at least one metric is required")
 	}
+	// Fail CLOSED at construction: Run fails the analysis only once the
+	// consecutive-failure streak EXCEEDS FailureLimit, so a FailureLimit at or
+	// above the measurement count can never trip — a canary that fails every
+	// sample (or whose provider errors every time) would be reported Passed.
+	// Reject that impossible-to-fail configuration outright. Count defaults to 1
+	// in Run, so mirror that default here.
+	count := t.Count
+	if count <= 0 {
+		count = 1
+	}
+	if t.FailureLimit >= count {
+		return nil, fmt.Errorf("analysis: failureLimit (%d) must be less than count (%d); otherwise the analysis can never fail", t.FailureLimit, count)
+	}
 	vars := make([]cel.EnvOption, 0, len(t.Metrics)+1)
 	for _, m := range t.Metrics {
 		vars = append(vars, cel.Variable(m.Name, cel.DoubleType))

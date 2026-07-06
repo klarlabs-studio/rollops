@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/analysis"
@@ -304,10 +305,21 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	driftAlert := false // drift detected but intentionally not auto-corrected (detect)
 	if (ver == "detect" || ver == "full") && cur.Value == m.Checksum && m.Checksum != "" {
 		// Differ lives on the raw (unwrapped) target, not the fortify wrapper.
-		if raw, rerr := e.rawTarget(c.Spec.Target.Ref, m); rerr == nil {
+		raw, rerr := e.rawTarget(c.Spec.Target.Ref, m)
+		if rerr == nil {
 			defer closeTarget(raw)
 			if d, ok := raw.(pt.Differ); ok {
-				if diff, derr := d.Diff(ctx, m); derr == nil && strings.TrimSpace(diff) != "" {
+				diff, derr := d.Diff(ctx, m)
+				switch {
+				case derr != nil:
+					// Under full verification a diff we cannot compute is
+					// indistinguishable from drift: fail CLOSED so reconcile
+					// re-applies and self-heals rather than silently reporting
+					// "in sync". Detect mode stays alert-only (no auto-correct).
+					if ver == "full" {
+						deepDrift = true
+					}
+				case strings.TrimSpace(diff) != "":
 					if ver == "full" {
 						deepDrift = true
 					} else {
@@ -315,6 +327,10 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 					}
 				}
 			}
+		} else if ver == "full" {
+			// The target build for the live diff failed; treat as drift under full
+			// verification so a build error cannot masquerade as "in sync".
+			deepDrift = true
 		}
 	}
 	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
@@ -675,6 +691,21 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		r.DBMigrateWhen = cfg.Spec.DatabaseMigrateWhen()
 	}
 	r.DBBackwardCompatible = cfg.Spec.DatabaseBackwardCompatible()
+	// Capture the progressive-delivery descriptors (traffic router + coupled
+	// feature flag) so a later rollback — auto, manual, or agent-driven — can
+	// reset delivery (traffic → stable, flag disabled) without the config in
+	// hand. Mirrors the DB-hook capture above; opaque JSON keeps this model
+	// decoupled from the config package.
+	if tr := cfg.Spec.TrafficRouting; tr != nil {
+		if b, mErr := json.Marshal(tr); mErr == nil {
+			r.DeliveryTraffic = b
+		}
+	}
+	if ff := cfg.Spec.FeatureFlags; ff != nil {
+		if b, mErr := json.Marshal(ff); mErr == nil {
+			r.DeliveryFlag = b
+		}
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -741,14 +772,39 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			}
 		},
 	}
-	if err := exec.Run(ctx, plan); err != nil {
+	if runErr := exec.Run(ctx, plan); runErr != nil {
+		// Crashloop-on-arrival: the new manifest is live but failed the health
+		// gate, and the shifted traffic/flag are pointed at the broken version.
+		// When auto-rollback is enabled and a prior good manifest exists, revert
+		// the delivery plane AND the manifest to it rather than merely marking the
+		// rollout rolled-back and leaving the broken version serving. The target
+		// lock is already held (defer release above), so applyRollback runs the
+		// lock-free rollback core directly — calling the lock-acquiring
+		// rollbackWithDatabase here would deadlock on ErrTargetBusy.
+		if cfg.Spec.Rollback.Auto {
+			if prior, ok := e.priorManifest(ctx, ref, m.Checksum); ok {
+				// r is still in `deploying`; applyRollback drives deploying →
+				// rolled-back via EventRollback (a legal transition) and resets
+				// delivery from the descriptors persisted above. Force past the
+				// backward-compat gate: the deploy already failed, so leaving the
+				// bad version up is worse.
+				rb, rbErr := e.applyRollback(ctx, &r, prior, "auto-rollback on deploy failure: "+runErr.Error(), cfg.Spec.DatabaseRollbackHook(), true)
+				if rbErr == nil {
+					e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: rb.ID, TargetRef: ref, Phase: string(rb.Phase), Actor: req.Initiator, Detail: "auto-rollback: " + runErr.Error()})
+					e.notifyEvent(ctx, notify.Event{Kind: notify.RolledBack, TargetRef: ref, RolloutID: rb.ID, Detail: runErr.Error()})
+					return &rb, fmt.Errorf("engine: apply: %w (auto-rolled back to prior manifest)", runErr)
+				}
+				// The rollback itself failed — fall through to the mark-rolled-back
+				// path so behaviour is never worse than before this fix.
+			}
+		}
 		_, _ = lc.Send(rollout.EventError)
 		r.Phase = lc.Phase()
 		r.UpdatedAt = e.now()
 		_ = e.store.SaveRollout(ctx, r)
-		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: err.Error()})
-		e.notifyEvent(ctx, notify.Event{Kind: notify.Failed, TargetRef: ref, RolloutID: r.ID, Detail: err.Error()})
-		return &r, fmt.Errorf("engine: apply: %w", err)
+		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: runErr.Error()})
+		e.notifyEvent(ctx, notify.Event{Kind: notify.Failed, TargetRef: ref, RolloutID: r.ID, Detail: runErr.Error()})
+		return &r, fmt.Errorf("engine: apply: %w", runErr)
 	}
 	if _, err := lc.Send(rollout.EventDeployed); err != nil {
 		return nil, err
@@ -813,15 +869,19 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
 	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
 		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
-		if err == nil {
-			defer closeTarget(tgt)
-			if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
-				reason := "health check failed"
-				if hs.Reason != "" {
-					reason = "health check failed: " + hs.Reason
-				}
-				return true, reason, ""
+		if err != nil {
+			// Fail CLOSED: a health gate we cannot even build is not a pass. Letting
+			// a build error fall through would promote an unverified deploy, the
+			// same failure mode the step gate already guards against.
+			return true, "health gate unavailable: " + err.Error(), ""
+		}
+		defer closeTarget(tgt)
+		if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
+			reason := "health check failed"
+			if hs.Reason != "" {
+				reason = "health check failed: " + hs.Reason
 			}
+			return true, reason, ""
 		}
 	}
 	if st := c.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
@@ -898,6 +958,15 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
+	// Separation of duties (four-eyes): the approver must differ from the
+	// initiator, so one principal cannot both propose and approve a gated
+	// rollout. Exempt system/reconcile initiators (empty or "system" name) — they
+	// are not real approvers to collude with. Opt out for single-operator setups
+	// via ROLLOPS_ALLOW_SELF_APPROVE=1; defaults to ENFORCE.
+	if !allowSelfApprove() && realPrincipal(r.Initiator) && sameIdentity(by, r.Initiator) {
+		e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef, Actor: by, Detail: "approve rejected: four-eyes (approver == initiator)"})
+		return r, fmt.Errorf("engine: four-eyes: approver %q must differ from initiator %q (set ROLLOPS_ALLOW_SELF_APPROVE=1 to allow)", by.Name, r.Initiator.Name)
+	}
 	release, ok, err := e.acquireTarget(ctx, r.TargetRef)
 	if err != nil {
 		return r, err
@@ -906,6 +975,16 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 		return r, ErrTargetBusy
 	}
 	defer release()
+
+	// Re-check the guardrails at approve time: an emergency freeze engaged after
+	// the rollout was gated must block the approve-driven deploy too, otherwise
+	// approval is a freeze bypass.
+	if e.guardrails != nil {
+		if _, gErr := e.guardrails.CheckApply(ctx, by, security.FloorInput{TargetRef: r.TargetRef}); gErr != nil {
+			e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef, Actor: by, Detail: "approve blocked: " + gErr.Error()})
+			return r, gErr
+		}
+	}
 
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
 	if err != nil {
@@ -938,6 +1017,25 @@ func (e *Engine) Approve(ctx context.Context, rolloutID string, by rollout.Ident
 		return rollout.Rollout{}, err
 	}
 	return r, nil
+}
+
+// allowSelfApprove reports whether the four-eyes separation-of-duties check is
+// disabled via ROLLOPS_ALLOW_SELF_APPROVE=1 (single-operator setups). Read once
+// at first use so the policy is stable for the process lifetime.
+var allowSelfApprove = sync.OnceValue(func() bool {
+	return os.Getenv("ROLLOPS_ALLOW_SELF_APPROVE") == "1"
+})
+
+// realPrincipal reports whether an identity is a real, colludable approver.
+// System/reconcile initiators (empty kind/name, or the "system" name) are exempt
+// from four-eyes: they are not a human who could self-approve.
+func realPrincipal(id rollout.Identity) bool {
+	return id.Kind != "" && id.Name != "" && id.Name != "system"
+}
+
+// sameIdentity reports whether two identities are the same principal.
+func sameIdentity(a, b rollout.Identity) bool {
+	return a.Kind == b.Kind && a.Name == b.Name
 }
 
 // Reject resolves an awaiting-approval rollout by rolling it back without
@@ -1104,7 +1202,20 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 		return r, ErrTargetBusy
 	}
 	defer release()
+	return e.applyRollback(ctx, &r, prior, note, db, force)
+}
 
+// applyRollback is the lock-free rollback core: the backward-compatibility gate,
+// the ROLLBACK lifecycle transition, re-applying the prior manifest, resetting
+// progressive delivery (traffic → stable, coupled flag disabled), the optional
+// reverse database command, and persistence.
+//
+// The caller MUST already hold the target lock: Apply's in-deploy failure path
+// holds it via `defer release()`, and rollbackWithDatabase acquires it first.
+// This helper never acquires the lock itself, so it can run from a path that
+// already holds it without re-entering acquireTarget and deadlocking on
+// ErrTargetBusy.
+func (e *Engine) applyRollback(ctx context.Context, r *rollout.Rollout, prior pt.Manifest, note string, db *config.DatabaseRollback, force bool) (rollout.Rollout, error) {
 	// When no explicit hook was passed (manual or agent rollback), fall back to
 	// the command captured on the rollout at deploy time, so every rollback path —
 	// not only auto — reverses the database.
@@ -1118,7 +1229,7 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 	// unsafe. Block it unless the caller forces. Auto-rollback passes force=true:
 	// the deploy already failed, so leaving the bad version up is worse.
 	if !force && len(r.DBMigrateCmd) > 0 && !r.DBBackwardCompatible && (db == nil || len(db.Command) == 0) {
-		return r, fmt.Errorf("engine: rollback blocked: release ran a database migration not declared backwardCompatible and has no database rollback command; force the rollback to override")
+		return *r, fmt.Errorf("engine: rollback blocked: release ran a database migration not declared backwardCompatible and has no database rollback command; force the rollback to override")
 	}
 
 	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
@@ -1126,33 +1237,81 @@ func (e *Engine) rollbackWithDatabase(ctx context.Context, rolloutID string, pri
 		return rollout.Rollout{}, err
 	}
 	if _, err := lc.Send(rollout.EventRollback); err != nil {
-		return r, err // not in a rollbackable phase
+		return *r, err // not in a rollbackable phase
 	}
 	tgt, err := e.buildTarget(r.TargetRef, prior)
 	if err != nil {
-		return r, err
+		return *r, err
 	}
 	defer closeTarget(tgt)
 	if _, err := tgt.Apply(ctx, prior); err != nil {
-		return r, fmt.Errorf("engine: rollback: re-apply: %w", err)
+		return *r, fmt.Errorf("engine: rollback: re-apply: %w", err)
 	}
 	r.Phase = lc.Phase()
 	r.Desired = prior
 	r.UpdatedAt = e.now()
+	// Reset the progressive-delivery plane so a rollback restores stable traffic
+	// and turns the coupled flag off — not just the manifest. Best-effort, driven
+	// from the descriptors persisted at deploy time (auto, manual, and agent
+	// rollback all funnel through here).
+	e.resetDelivery(ctx, r)
 	if db != nil && len(db.Command) > 0 {
 		if err := e.runDatabaseCommand(ctx, db); err != nil {
 			r.Note = appendNote(note, "database rollback: failed: "+err.Error())
-			_ = e.store.SaveRollout(ctx, r)
-			return r, fmt.Errorf("database rollback: %w", err)
+			_ = e.store.SaveRollout(ctx, *r)
+			return *r, fmt.Errorf("database rollback: %w", err)
 		}
 		r.Note = appendNote(note, "database rollback: succeeded")
 	} else {
 		r.Note = note
 	}
-	if err := e.store.SaveRollout(ctx, r); err != nil {
+	if err := e.store.SaveRollout(ctx, *r); err != nil {
 		return rollout.Rollout{}, err
 	}
-	return r, nil
+	return *r, nil
+}
+
+// resetDelivery reverts the progressive-delivery side effects of a rollout after
+// a rollback: it shifts all traffic back to the stable backend (canary 0%) and
+// disables the coupled feature flag. Best-effort, mirroring the forward drive —
+// a delivery hiccup is audited but never blocks recovery. The descriptors come
+// from the JSON captured on the rollout at deploy time, so manual and agent
+// rollbacks (which hold no config) restore delivery just like the auto path.
+func (e *Engine) resetDelivery(ctx context.Context, r *rollout.Rollout) {
+	if len(r.DeliveryTraffic) > 0 {
+		var tr config.TrafficRouting
+		if err := json.Unmarshal(r.DeliveryTraffic, &tr); err == nil {
+			e.driveTraffic(ctx, r.TargetRef, &tr, 0)
+		}
+	}
+	if len(r.DeliveryFlag) > 0 {
+		var ff config.FeatureFlags
+		if err := json.Unmarshal(r.DeliveryFlag, &ff); err == nil {
+			e.driveFlagDisable(ctx, r.TargetRef, &ff)
+		}
+	}
+}
+
+// driveFlagDisable turns the coupled flag off (Disabled=true) through a freshly
+// launched flag provider, then closes it — the rollback counterpart to
+// driveFlag. Best-effort: a flag failure is audited and never aborts recovery.
+// Disabling is unconditional (independent of the flag's `when`): a flag already
+// at 0% is safe to disable, and a partially rolled-out flag must be turned off.
+func (e *Engine) driveFlagDisable(ctx context.Context, ref string, ff *config.FeatureFlags) {
+	prov, err := e.flagBuild(ff)
+	if err != nil {
+		e.record(audit.Entry{Action: audit.ActionRollback, TargetRef: ref, Detail: "featureflag build failed: " + err.Error()})
+		return
+	}
+	if c, ok := prov.(interface{ Close() error }); ok {
+		defer func() { _ = c.Close() }()
+	}
+	hook := featureflags.Hook{Provider: prov}
+	if err := hook.Apply(ctx, featureflags.Change{Flag: ff.Flag, Environment: ff.Environment, Disabled: true}); err != nil {
+		e.record(audit.Entry{Action: audit.ActionRollback, TargetRef: ref, Detail: "featureflag disable failed: " + err.Error()})
+		return
+	}
+	e.record(audit.Entry{Action: audit.ActionRollback, TargetRef: ref, Detail: fmt.Sprintf("featureflag %q disabled (rollback)", ff.Flag)})
 }
 
 // runDatabaseCommand runs a database hook (forward migrate or reverse rollback)
@@ -1239,6 +1398,35 @@ func (e *Engine) Resources(ctx context.Context, rolloutID string) ([]pt.Resource
 	return insp.Resources(ctx)
 }
 
+// priorManifest returns the most recent rollout's manifest for targetRef whose
+// desired checksum differs from excludeChecksum — the "last known good" state to
+// roll back to. Shared by RollbackLast (manual/UI) and Apply's auto-rollback so
+// the prior-good selection is defined and tested in exactly one place.
+func (e *Engine) priorManifest(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool) {
+	rs, err := e.store.ListRollouts(ctx, 0) // newest first
+	if err != nil {
+		return pt.Manifest{}, false
+	}
+	for i := range rs {
+		if rs[i].TargetRef != targetRef {
+			continue
+		}
+		if rs[i].Desired.Checksum != "" && rs[i].Desired.Checksum != excludeChecksum {
+			return rs[i].Desired, true
+		}
+	}
+	return pt.Manifest{}, false
+}
+
+// PriorManifest exposes the last-known-good manifest for a target (the most
+// recent rollout whose desired checksum differs from excludeChecksum). The
+// reconcile loop uses it to hand VerifyOrRollback the correct prior to revert
+// to on a failed post-deploy gate, rather than the just-applied (broken)
+// manifest. Returns false when the target has no distinct prior state.
+func (e *Engine) PriorManifest(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool) {
+	return e.priorManifest(ctx, targetRef, excludeChecksum)
+}
+
 // RollbackLast rolls a target back to its previous distinct desired state by
 // re-applying the prior rollout's manifest — the UI "Rollback" action. force
 // overrides the backward-compatibility gate (see Rollback).
@@ -1248,27 +1436,20 @@ func (e *Engine) RollbackLast(ctx context.Context, targetRef string, force bool)
 		return rollout.Rollout{}, err
 	}
 	var current *rollout.Rollout
-	var prior *pt.Manifest
 	for i := range rs {
-		if rs[i].TargetRef != targetRef {
-			continue
-		}
-		if current == nil {
+		if rs[i].TargetRef == targetRef {
 			current = &rs[i]
-			continue
-		}
-		if rs[i].Desired.Checksum != current.Desired.Checksum {
-			prior = &rs[i].Desired
 			break
 		}
 	}
 	if current == nil {
 		return rollout.Rollout{}, fmt.Errorf("engine: no rollouts for target %q", targetRef)
 	}
-	if prior == nil {
+	prior, ok := e.priorManifest(ctx, targetRef, current.Desired.Checksum)
+	if !ok {
 		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
 	}
-	return e.Rollback(ctx, current.ID, *prior, force)
+	return e.Rollback(ctx, current.ID, prior, force)
 }
 
 // List returns the most recent rollouts, newest first.
@@ -1324,6 +1505,22 @@ func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout)
 		return rollout.Rollout{}, ErrTargetBusy
 	}
 	defer release()
+
+	// A scheduled apply must still clear the guardrails at FIRE time, not only at
+	// queue time: an emergency freeze engaged after queuing must block it, and a
+	// policy floor that demands human approval cannot be self-approved by a
+	// scheduler. Without this the queue is a freeze/gate bypass.
+	if e.guardrails != nil {
+		force, gErr := e.guardrails.CheckApply(ctx, s.Initiator, security.FloorInput{TargetRef: s.TargetRef})
+		if gErr != nil {
+			e.record(audit.Entry{Action: audit.ActionApply, TargetRef: s.TargetRef, Actor: s.Initiator, Detail: "scheduled apply blocked: " + gErr.Error()})
+			return rollout.Rollout{}, gErr
+		}
+		if force {
+			e.record(audit.Entry{Action: audit.ActionApply, TargetRef: s.TargetRef, Actor: s.Initiator, Detail: "scheduled apply blocked: policy floor requires approval"})
+			return rollout.Rollout{}, fmt.Errorf("engine: scheduled apply for %q requires approval and cannot self-approve", s.TargetRef)
+		}
+	}
 
 	tgt, err := e.buildTarget(s.TargetRef, s.Desired)
 	if err != nil {

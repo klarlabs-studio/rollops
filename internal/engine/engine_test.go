@@ -37,6 +37,7 @@ type fakeTarget struct {
 	fp       pt.Fingerprint
 	health   pt.HealthStatus
 	applyErr error
+	diffErr  error // when set, Diff returns this error (drives the drift fail-closed path)
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -49,6 +50,9 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) { return f.health, nil }
 func (f *fakeTarget) Diff(_ context.Context, m pt.Manifest) (string, error) {
+	if f.diffErr != nil {
+		return "", f.diffErr
+	}
 	return "diff for " + m.Checksum, nil
 }
 func (f *fakeTarget) Resources(context.Context) ([]pt.Resource, error) {
