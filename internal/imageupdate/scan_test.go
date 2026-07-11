@@ -69,8 +69,7 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 // on page 2. Without following pagination the scanner returned only page 1 and
 // image automation reported "current" forever, silently freezing deploys.
 func TestScanner_Tags_FollowsPagination(t *testing.T) {
-	var srv *httptest.Server
-	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
 			w.WriteHeader(404)
 			return
