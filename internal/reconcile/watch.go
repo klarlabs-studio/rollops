@@ -162,19 +162,27 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		deduped = append(deduped, nc)
 	}
 	configs = deduped
-	out := make([]RepoOutcome, 0, len(configs))
-	for _, nc := range configs {
+
+	// Two phases, deliberately DECOUPLED. Image automation for EVERY config first
+	// (a fast registry scan + git commit), then reconcile every config (a
+	// health-gated progressive rollout that can block for minutes). Interleaving
+	// them per config — bump→deploy, bump→deploy — let a slow or stuck rollout for
+	// one config STARVE the image bumps of the configs after it in the loop, so a
+	// freshly-published tag could sit undeployed indefinitely (observed: one app
+	// never auto-bumped while its siblings did, because a sibling's rollout kept
+	// blocking ahead of it). Detecting a new tag and committing it to Git must not
+	// depend on any other target's rollout finishing.
+	cfgs := make([]*config.Config, len(configs))
+	for i, nc := range configs {
 		cfg := nc.Config
-		// Image automation runs first: a bump is committed+pushed to Git, and the
-		// returned (bumped) config is what reconcile then deploys. Best-effort: a
-		// scan/push failure is logged but never blocks reconciling desired state
-		// (managing the app matters more than the image bump).
+		// Best-effort: a scan/push failure is logged but never blocks reconciling
+		// desired state (managing the app matters more than the image bump).
 		if w.imageAuto != nil {
 			bumped, ref, ierr := w.imageAuto.Process(ctx, r.src, nc)
 			switch {
 			case ierr != nil:
 				if w.logf != nil {
-					w.logf("image automation %s/%s: %v (continuing reconcile)", r.spec.Name, nc.Path, ierr)
+					w.logf("image automation %s/%s: %v (continuing)", r.spec.Name, nc.Path, ierr)
 				}
 			case ref != "":
 				cfg = bumped
@@ -183,7 +191,12 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 				}
 			}
 		}
-		o, rerr := w.rec.Reconcile(ctx, cfg, r.spec.Initiator)
+		cfgs[i] = cfg
+	}
+
+	out := make([]RepoOutcome, 0, len(configs))
+	for i, nc := range configs {
+		o, rerr := w.rec.Reconcile(ctx, cfgs[i], r.spec.Initiator)
 		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Outcome: o, Err: rerr})
 	}
 	return out
