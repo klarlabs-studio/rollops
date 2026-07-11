@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -157,5 +158,142 @@ func TestWatcher_PicksUpNewCommit(t *testing.T) {
 	}
 	if len(fake.applied) <= afterFirst {
 		t.Errorf("new desired state should trigger a reconcile: %d -> %d", afterFirst, len(fake.applied))
+	}
+}
+
+// orderLog records the interleaving of image scans and target applies across a
+// tick, so a test can assert image automation for EVERY config runs before ANY
+// reconcile (the decoupling that stops a blocked rollout starving another app's
+// bump). Guarded because a reconcile could, in principle, run concurrently.
+type orderLog struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (o *orderLog) add(e string) { o.mu.Lock(); o.events = append(o.events, e); o.mu.Unlock() }
+
+// fakeScanner is a TagLister offering one newer minor tag (v1.0.0 -> v1.1.0) and
+// recording each scan in the shared order log.
+type fakeScanner struct{ log *orderLog }
+
+func (f *fakeScanner) Tags(_ context.Context, _ string) ([]string, error) {
+	f.log.add("scan")
+	return []string{"v1.0.0", "v1.1.0"}, nil
+}
+func (f *fakeScanner) Digest(_ context.Context, _ string) (string, error) {
+	return "sha256:" + strings.Repeat("a", 64), nil
+}
+
+// orderTarget is a fakeTarget that records each apply in the shared order log.
+type orderTarget struct {
+	fakeTarget
+	log *orderLog
+}
+
+func (o *orderTarget) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
+	o.log.add("apply")
+	return o.fakeTarget.Apply(ctx, m)
+}
+
+func imgConfig(name, image string) string {
+	return `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: ` + name + `
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/` + name + `
+    criticality: low
+    spec:
+      x: 1
+      image: ` + image + `
+  strategy:
+    type: rolling
+  imagePolicy:
+    mode: minor
+`
+}
+
+func makeRepoFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "-b", "main")
+	// Let a push to the checked-out branch update the working tree, so image
+	// automation's commit+push to this file:// remote succeeds in the test.
+	gitRun(t, dir, "config", "receive.denyCurrentBranch", "updateInstead")
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-m", "init")
+	return dir
+}
+
+// TestWatcher_ImageAutoDecoupledFromReconcile guards the fix: image automation for
+// EVERY config must run before ANY reconcile in the same tick. Interleaving them
+// (bump→deploy per config) let a slow/blocked progressive rollout for one app
+// starve the image bumps of the apps after it in the loop — so a published tag
+// sat undeployed indefinitely (observed: one app never auto-bumped). The order log
+// makes the regression detectable even though the fake reconcile is instant: on the
+// old code the order is scan,apply,scan,apply; the assertion below requires both
+// scans before any apply.
+func TestWatcher_ImageAutoDecoupledFromReconcile(t *testing.T) {
+	upstream := makeRepoFiles(t, map[string]string{
+		"app-a.yaml": imgConfig("app-a", "ghcr.io/acme/app-a:v1.0.0"),
+		"app-b.yaml": imgConfig("app-b", "ghcr.io/acme/app-b:v1.0.0"),
+	})
+
+	log := &orderLog{}
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return &orderTarget{log: log}, nil })
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks(), imageAuto: &ImageAuto{Scanner: &fakeScanner{log: log}}}
+
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Branch: "main", Path: "."}}, src)
+
+	if out := w.Tick(context.Background()); len(out) != 2 {
+		t.Fatalf("want 2 config outcomes, got %d: %+v", len(out), out)
+	}
+
+	// Every scan must precede every apply (decoupled phases). On the interleaved
+	// code an apply appears before the second scan.
+	firstApply, lastScan := -1, -1
+	for i, e := range log.events {
+		if e == "apply" && firstApply == -1 {
+			firstApply = i
+		}
+		if e == "scan" {
+			lastScan = i
+		}
+	}
+	if got := len(log.events); got < 4 {
+		t.Fatalf("want >=4 events (2 scan, 2 apply), got %d: %v", got, log.events)
+	}
+	if firstApply != -1 && firstApply < lastScan {
+		t.Errorf("a reconcile ran before all image bumps — image automation is not decoupled: %v", log.events)
+	}
+	// And both configs really were bumped in Git.
+	for _, name := range []string{"app-a.yaml", "app-b.yaml"} {
+		data, _ := os.ReadFile(filepath.Join(src.Dir(), name))
+		if !strings.Contains(string(data), "v1.1.0") {
+			t.Errorf("%s not bumped to v1.1.0:\n%s", name, data)
+		}
 	}
 }
