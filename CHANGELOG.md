@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.24.0 - Image-automation coverage log
+
+- **Per-tick image-automation coverage summary.** Each reconcile now logs one line
+  per repo naming EVERY config and its image-automation decision, e.g.
+  `image automation senat: 3 config(s) [senat-api=current senat-runtime=bumped senat-web=current]`.
+  Previously only bumps and errors logged, so a config that was never considered
+  (or silently up-to-date) was indistinguishable from one that was — a skip was
+  invisible. Bumps and errors still get their own detailed line.
+
 ## v0.23.0 - Decouple image automation from reconcile
 
 - **Reconcile: image automation no longer starved by a blocked rollout.** In a

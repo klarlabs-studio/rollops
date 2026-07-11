@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -173,25 +174,42 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	// blocking ahead of it). Detecting a new tag and committing it to Git must not
 	// depend on any other target's rollout finishing.
 	cfgs := make([]*config.Config, len(configs))
+	// Per-config image-automation decisions for a coverage summary. Silence used to
+	// hide a starved config: an app that was never considered looked identical to
+	// one that was already current (both logged nothing). The summary names EVERY
+	// config and its outcome each tick, so a missing or stuck target is visible at
+	// a glance — while bumps/errors still get their own detailed line.
+	decisions := make([]string, 0, len(configs))
 	for i, nc := range configs {
 		cfg := nc.Config
+		name := nc.Config.Metadata.Name
+		if name == "" {
+			name = nc.Path
+		}
 		// Best-effort: a scan/push failure is logged but never blocks reconciling
 		// desired state (managing the app matters more than the image bump).
 		if w.imageAuto != nil {
 			bumped, ref, ierr := w.imageAuto.Process(ctx, r.src, nc)
 			switch {
 			case ierr != nil:
+				decisions = append(decisions, name+"=error")
 				if w.logf != nil {
 					w.logf("image automation %s/%s: %v (continuing)", r.spec.Name, nc.Path, ierr)
 				}
 			case ref != "":
 				cfg = bumped
+				decisions = append(decisions, name+"=bumped")
 				if w.logf != nil {
 					w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
 				}
+			default:
+				decisions = append(decisions, name+"=current")
 			}
 		}
 		cfgs[i] = cfg
+	}
+	if w.imageAuto != nil && w.logf != nil && len(decisions) > 0 {
+		w.logf("image automation %s: %d config(s) [%s]", r.spec.Name, len(decisions), strings.Join(decisions, " "))
 	}
 
 	out := make([]RepoOutcome, 0, len(configs))

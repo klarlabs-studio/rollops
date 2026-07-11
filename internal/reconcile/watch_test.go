@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -294,6 +295,57 @@ func TestWatcher_ImageAutoDecoupledFromReconcile(t *testing.T) {
 		data, _ := os.ReadFile(filepath.Join(src.Dir(), name))
 		if !strings.Contains(string(data), "v1.1.0") {
 			t.Errorf("%s not bumped to v1.1.0:\n%s", name, data)
+		}
+	}
+}
+
+// TestWatcher_ImageAutoLogsCoverageSummary asserts a per-tick summary names EVERY
+// config and its image-automation decision, so a starved/stuck target is visible
+// instead of silently indistinguishable from an up-to-date one.
+func TestWatcher_ImageAutoLogsCoverageSummary(t *testing.T) {
+	upstream := makeRepoFiles(t, map[string]string{
+		"app-a.yaml": imgConfig("app-a", "ghcr.io/acme/app-a:v1.0.0"),
+		"app-b.yaml": imgConfig("app-b", "ghcr.io/acme/app-b:v1.0.0"),
+	})
+
+	var logmu sync.Mutex
+	var logs []string
+	logf := func(f string, a ...any) { logmu.Lock(); logs = append(logs, fmt.Sprintf(f, a...)); logmu.Unlock() }
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil })
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks(), imageAuto: &ImageAuto{Scanner: &fakeScanner{log: &orderLog{}}}, logf: logf}
+
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Branch: "main", Path: "."}}, src)
+	w.Tick(context.Background())
+
+	var summary string
+	for _, l := range logs {
+		if strings.HasPrefix(l, "image automation demo:") && strings.Contains(l, "config(s)") {
+			summary = l
+		}
+	}
+	if summary == "" {
+		t.Fatalf("no image-automation coverage summary logged; logs: %v", logs)
+	}
+	if !strings.Contains(summary, "2 config(s)") {
+		t.Errorf("summary should count 2 configs: %q", summary)
+	}
+	for _, name := range []string{"app-a", "app-b"} {
+		if !strings.Contains(summary, name) {
+			t.Errorf("coverage summary must name %s (else a starved target is invisible): %q", name, summary)
 		}
 	}
 }
