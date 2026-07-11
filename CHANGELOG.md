@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.23.0 - Decouple image automation from reconcile
+
+- **Reconcile: image automation no longer starved by a blocked rollout.** In a
+  repo of many configs, `tickOne` interleaved the two phases per config — image
+  automation (registry scan + git bump) then reconcile (a health-gated progressive
+  rollout that BLOCKS while it advances). So a slow or stuck rollout for one config
+  starved the image bumps of every config after it in the loop, and a freshly
+  published tag could sit undeployed indefinitely. Split into two phases: image
+  automation for EVERY config first, then reconcile each — detecting a new tag and
+  committing it to Git no longer depends on any other target's rollout finishing.
+  Regression-tested (`TestWatcher_ImageAutoDecoupledFromReconcile`).
 
 - **Deploy: fix the mTLS CA chain.** The v0.21.0 Kubernetes manifest issued the
   server cert directly from a self-signed `ClusterIssuer`, so the mounted
