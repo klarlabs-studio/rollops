@@ -63,6 +63,73 @@ func TestScanner_Tags_WithBearerChallenge(t *testing.T) {
 	}
 }
 
+// TestScanner_Tags_FollowsPagination reproduces the prod stall: ghcr caps a
+// tags/list page at 100 tags and points to the rest via a `rel="next"` Link
+// header. The page is NOT version-sorted, so the newest release (v0.12.0) sits
+// on page 2. Without following pagination the scanner returned only page 1 and
+// image automation reported "current" forever, silently freezing deploys.
+func TestScanner_Tags_FollowsPagination(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
+			w.WriteHeader(404)
+			return
+		}
+		if r.URL.Query().Get("last") == "" {
+			// Page 1: oldest tags, and a Link to the next page (path-relative,
+			// exactly as ghcr emits it).
+			w.Header().Set("Link", `</v2/acme/app/tags/list?last=v0.11.88&n=100>; rel="next"`)
+			_, _ = w.Write([]byte(`{"name":"acme/app","tags":["v0.9.0","v0.11.88"]}`))
+			return
+		}
+		// Page 2: the newest tags, no further Link.
+		_, _ = w.Write([]byte(`{"name":"acme/app","tags":["v0.11.93","v0.12.0"]}`))
+	}))
+	defer srv.Close()
+
+	host := strings.TrimPrefix(srv.URL, "https://")
+	sc := Scanner{HTTP: srv.Client()}
+	tags, err := sc.Tags(context.Background(), host+"/acme/app:v0.11.93")
+	if err != nil {
+		t.Fatalf("Tags: %v", err)
+	}
+	if len(tags) != 4 {
+		t.Fatalf("tags = %v, want 4 across both pages", tags)
+	}
+	var sawNewest bool
+	for _, tg := range tags {
+		if tg == "v0.12.0" {
+			sawNewest = true
+		}
+	}
+	if !sawNewest {
+		t.Errorf("v0.12.0 (page 2) missing — pagination not followed: %v", tags)
+	}
+	// And the selection that was stuck must now advance past the pinned current.
+	if got, ok := SelectTag("v0.11.93", tags, "minor", ""); !ok || got != "v0.12.0" {
+		t.Errorf("SelectTag over paginated tags = %q,%v; want v0.12.0,true", got, ok)
+	}
+}
+
+func TestNextPageURL(t *testing.T) {
+	base := "https://ghcr.io"
+	cases := []struct {
+		name, link, want string
+	}{
+		{"empty", "", ""},
+		{"path-relative next", `</v2/acme/app/tags/list?last=v1&n=100>; rel="next"`, "https://ghcr.io/v2/acme/app/tags/list?last=v1&n=100"},
+		{"absolute next", `<https://reg.example/v2/x/tags/list?last=v1>; rel="next"`, "https://reg.example/v2/x/tags/list?last=v1"},
+		{"prev only (no next)", `</v2/acme/app/tags/list?first=v1>; rel="prev"`, ""},
+		{"multiple rels picks next", `</a>; rel="prev", </b?last=z>; rel="next"`, "https://ghcr.io/b?last=z"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := nextPageURL(c.link, base); got != c.want {
+				t.Errorf("nextPageURL(%q) = %q, want %q", c.link, got, c.want)
+			}
+		})
+	}
+}
+
 // TestScanner_Token_RealmHostMismatch is the core of finding #3: when the
 // bearer challenge points the token realm at a DIFFERENT host than the image's
 // registry, the configured basic creds (a registry PAT) must NOT be attached —
