@@ -58,15 +58,56 @@ func (s Scanner) Tags(ctx context.Context, image string) ([]string, error) {
 		base = "https://registry-1.docker.io"
 	}
 	endpoint := fmt.Sprintf("%s/v2/%s/tags/list", base, repo)
-	body, err := s.get(ctx, endpoint, repo, host)
-	if err != nil {
-		return nil, err
+
+	// The Docker Registry v2 tags/list endpoint is PAGINATED (ghcr.io caps a
+	// page at 100 tags) and advertises the next page via an RFC 5988 Link header
+	// (`<…?last=…>; rel="next"`). A repository with more than one page of tags —
+	// which any long-lived service accrues — would otherwise expose only its
+	// FIRST page, and since that page is not version-sorted the newest tags fall
+	// off it entirely. Image automation then never sees a newer release and
+	// silently reports "current" forever. Follow every `rel="next"` link and
+	// accumulate all pages so SelectTag compares against the complete tag set.
+	var all []string
+	// pageCap bounds a pathological/looping registry (defensive; real repos need
+	// far fewer). 1000 pages × 100 tags = 100k tags — orders beyond any real repo.
+	const pageCap = 1000
+	for i := 0; endpoint != "" && i < pageCap; i++ {
+		body, link, err := s.get(ctx, endpoint, repo, host)
+		if err != nil {
+			return nil, err
+		}
+		var tr tagsResponse
+		if err := json.Unmarshal(body, &tr); err != nil {
+			return nil, fmt.Errorf("imageupdate: parse tags: %w", err)
+		}
+		all = append(all, tr.Tags...)
+		endpoint = nextPageURL(link, base)
 	}
-	var tr tagsResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
-		return nil, fmt.Errorf("imageupdate: parse tags: %w", err)
+	return all, nil
+}
+
+// nextPageURL extracts the `rel="next"` target from a Docker Registry v2 Link
+// header and resolves it against base, or returns "" when there is no next page.
+// The registry emits the next link as an absolute path (`</v2/…/tags/list?last=…>`)
+// which must be joined to the registry host; an absolute URL is used verbatim.
+func nextPageURL(link, base string) string {
+	for _, part := range strings.Split(link, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, `rel="next"`) {
+			continue
+		}
+		openIdx := strings.IndexByte(part, '<')
+		closeIdx := strings.IndexByte(part, '>')
+		if openIdx < 0 || closeIdx <= openIdx {
+			continue
+		}
+		target := part[openIdx+1 : closeIdx]
+		if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+			return target
+		}
+		return base + target
 	}
-	return tr.Tags, nil
+	return ""
 }
 
 var bearerRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
@@ -76,31 +117,32 @@ var bearerRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 // token endpoint; we fetch a token (with optional basic creds) and retry.
 // registryHost is the host of the image being scanned; creds are bound to it so
 // they are never sent to an attacker-named token realm on a different host.
-func (s Scanner) get(ctx context.Context, endpoint, repo, registryHost string) ([]byte, error) {
+func (s Scanner) get(ctx context.Context, endpoint, repo, registryHost string) (body []byte, link string, err error) {
 	resp, err := s.do(ctx, endpoint, "")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if resp.status == http.StatusUnauthorized {
 		token, terr := s.token(ctx, resp.authenticate, repo, registryHost)
 		if terr != nil {
-			return nil, terr
+			return nil, "", terr
 		}
 		resp, err = s.do(ctx, endpoint, token)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	if resp.status != http.StatusOK {
-		return nil, fmt.Errorf("imageupdate: registry %s: status %d", endpoint, resp.status)
+		return nil, "", fmt.Errorf("imageupdate: registry %s: status %d", endpoint, resp.status)
 	}
-	return resp.body, nil
+	return resp.body, resp.link, nil
 }
 
 type regResp struct {
 	status       int
 	authenticate string
 	digest       string
+	link         string
 	body         []byte
 }
 
@@ -142,6 +184,7 @@ func (s Scanner) doMethod(ctx context.Context, method, url, bearer string) (regR
 		status:       resp.StatusCode,
 		authenticate: resp.Header.Get("WWW-Authenticate"),
 		digest:       resp.Header.Get("Docker-Content-Digest"),
+		link:         resp.Header.Get("Link"),
 		body:         body,
 	}, nil
 }
