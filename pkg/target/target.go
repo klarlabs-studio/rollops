@@ -42,6 +42,14 @@ type Manifest struct {
 	Spec     []byte            // target-specific desired state (already schema-valid)
 	Labels   map[string]string // operator metadata, used for audit attribution
 	Checksum string            // content hash stamped for dumb-target drift checks
+
+	// Root is the local filesystem directory that RELATIVE referenced sources
+	// resolve against — the directory of the config file this manifest came from
+	// (the Git checkout for the daemon, the config file's dir for the CLI). It is
+	// ambient execution context, not desired state: it is deliberately excluded
+	// from Checksum and never persisted or sent over the wire (json:"-"), so a
+	// prior manifest loaded from history re-roots against the current checkout.
+	Root string `json:"-"`
 }
 
 // Result reports what an Apply did, for audit and plan/diff surfacing.
@@ -78,6 +86,23 @@ type HealthStatus struct {
 // in the plan and the UI; targets that cannot diff simply do not implement it.
 type Differ interface {
 	Diff(ctx context.Context, desired Manifest) (string, error)
+}
+
+// Renderer is an OPTIONAL capability: a target whose desired manifest is
+// resolved (rendered) from its spec at plan/apply time — e.g. the Kubernetes
+// target rendering a Helm chart, a Kustomize overlay, or a referenced file.
+// The engine uses it to (1) surface the rendered result in the plan and (2),
+// when the manifest is Referenced (resolved from an external source rather than
+// an inline manifest), stamp the drift checksum over the RENDERED bytes — so
+// edits to the referenced files are detected as drift even under shallow
+// verification. Targets whose desired state is verbatim need not implement it.
+type Renderer interface {
+	// Render resolves desired to concrete manifest bytes.
+	Render(ctx context.Context, desired Manifest) ([]byte, error)
+	// Referenced reports whether desired resolves from an external source; when
+	// false the engine keeps the spec-derived checksum unchanged. Must be cheap
+	// (spec inspection, no rendering).
+	Referenced(desired Manifest) bool
 }
 
 // Inspector is an OPTIONAL capability: a target that can list the live resources

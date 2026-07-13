@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -125,28 +126,35 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) plan(ctx context.Context, args []string) error {
-	c, err := loadConfigArg(args)
+	c, root, err := loadConfigArg(args)
 	if err != nil {
 		return err
 	}
+	ctx = engine.WithRoot(ctx, root)
 	p, err := a.Ops.Plan(ctx, c)
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(a.Out, p.Summary)
+	// Surface the rendered manifest for a referenced source so the resolved
+	// result is reviewable before an apply.
+	if len(p.Rendered) > 0 {
+		_, _ = fmt.Fprintf(a.Out, "\n--- rendered manifest ---\n%s\n", p.Rendered)
+	}
 	return nil
 }
 
 func (a *App) apply(ctx context.Context, args []string) error {
-	c, err := loadConfigArg(args)
+	c, root, err := loadConfigArg(args)
 	if err != nil {
 		return err
 	}
+	ctx = engine.WithRoot(ctx, root)
 	// One-shot apply produces a plan first so it satisfies plan-before-apply.
 	if _, err := a.Ops.Plan(ctx, c); err != nil {
 		return err
 	}
-	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: a.Actor, Planned: true})
+	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true})
 	if err != nil {
 		return err
 	}
@@ -257,7 +265,7 @@ func (a *App) rollback(ctx context.Context, args []string) error {
 func (a *App) doctor(ctx context.Context, args []string) error {
 	var failed []string
 	if len(args) > 0 {
-		if _, err := loadConfigArg(args[:1]); err != nil {
+		if _, _, err := loadConfigArg(args[:1]); err != nil {
 			_, _ = fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
 			failed = append(failed, "config")
 		} else {
@@ -319,13 +327,21 @@ func (a *App) version() error {
 	return nil
 }
 
-func loadConfigArg(args []string) (*config.Config, error) {
+// loadConfigArg loads the config named by args[0] and returns it alongside the
+// directory it lives in — the root that relative referenced manifest sources
+// (manifestFrom) resolve against, so the one-shot CLI and the daemon behave
+// identically.
+func loadConfigArg(args []string) (*config.Config, string, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("config file path required")
+		return nil, "", fmt.Errorf("config file path required")
 	}
 	data, err := os.ReadFile(args[0])
 	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
+		return nil, "", fmt.Errorf("read config: %w", err)
 	}
-	return config.Load(data)
+	c, err := config.Load(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return c, filepath.Dir(args[0]), nil
 }

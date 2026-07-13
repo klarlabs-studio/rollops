@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/git"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store"
@@ -214,7 +215,11 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 
 	out := make([]RepoOutcome, 0, len(configs))
 	for i, nc := range configs {
-		o, rerr := w.rec.Reconcile(ctx, cfgs[i], r.spec.Initiator)
+		// Relative referenced manifest sources resolve against the config file's
+		// own directory within the checkout — not the daemon CWD — so a rendered
+		// kustomize/helm/path points at the polled desired state.
+		root := filepath.Join(r.src.Dir(), filepath.Dir(nc.Path))
+		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), cfgs[i], r.spec.Initiator)
 		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Outcome: o, Err: rerr})
 	}
 	return out
