@@ -75,7 +75,7 @@ func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
 // out-of-band field edit (e.g. `kubectl set image`) leaves the stamp intact, so
 // Apply re-applies when the diff shows drift, correcting it.
 func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
-	manifest, err := manifestFromSpec(ctx, m.Spec, m.Root, t.run)
+	manifest, err := desiredManifest(ctx, m, t.run)
 	if err != nil {
 		return pt.Result{}, err
 	}
@@ -104,11 +104,25 @@ func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
 
 // Diff implements target.Differ: the diff between desired and live cluster state.
 func (t *Target) Diff(ctx context.Context, desired pt.Manifest) (string, error) {
-	manifest, err := manifestFromSpec(ctx, desired.Spec, desired.Root, t.run)
+	manifest, err := desiredManifest(ctx, desired, t.run)
 	if err != nil {
 		return "", err
 	}
 	return t.cl.Diff(ctx, manifest)
+}
+
+// desiredManifest resolves the concrete manifest bytes for m. A referenced
+// source (manifestFrom) captures its rendered output on the manifest at apply
+// time (Manifest.Rendered); reusing those bytes means a rollback restores
+// exactly what was deployed and needs no checkout Root to re-render — the source
+// files may have changed since, and the manual CLI/UI/API rollback path has no
+// Root at all. Inline manifests and the legacy flat keys carry no Rendered and
+// resolve deterministically from Spec.
+func desiredManifest(ctx context.Context, m pt.Manifest, run cmdRunner) ([]byte, error) {
+	if len(m.Rendered) > 0 {
+		return m.Rendered, nil
+	}
+	return manifestFromSpec(ctx, m.Spec, m.Root, run)
 }
 
 // Render implements target.Renderer: it resolves the desired manifest to

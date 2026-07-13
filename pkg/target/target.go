@@ -50,6 +50,16 @@ type Manifest struct {
 	// from Checksum and never persisted or sent over the wire (json:"-"), so a
 	// prior manifest loaded from history re-roots against the current checkout.
 	Root string `json:"-"`
+
+	// Rendered holds the concrete manifest bytes produced from a referenced
+	// source (manifestFrom) at apply time. It is persisted with the rollout so a
+	// later rollback restores EXACTLY what was deployed instead of re-rendering
+	// the source — which could differ (or be unavailable) if the referenced
+	// Kustomize/Helm/path files changed since, or if the rollback runs where no
+	// checkout is at hand (the manual CLI/UI/API path has no Root). Empty for
+	// inline manifests and the legacy flat keys, which render deterministically
+	// from Spec; omitted from JSON when empty so those manifests are unchanged.
+	Rendered []byte `json:"rendered,omitempty"`
 }
 
 // Result reports what an Apply did, for audit and plan/diff surfacing.
