@@ -125,6 +125,76 @@ func TestRender_ManifestFrom_TakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestRender_ManifestFrom_HelmLocalChart(t *testing.T) {
+	root := t.TempDir()
+	c := &capturedRun{out: "kind: Deployment\n"}
+	spec := map[string]any{"manifestFrom": map[string]any{
+		"helm": map[string]any{
+			"chart":  "./charts/api",
+			"values": []any{"values-prod.yaml", "values-extra.yaml"},
+		},
+	}}
+	if _, err := render(context.Background(), spec, root, fakeRunner(c)); err != nil {
+		t.Fatalf("render helm: %v", err)
+	}
+	if c.name != "helm" {
+		t.Fatalf("ran %q, want helm", c.name)
+	}
+	joined := strings.Join(c.args, " ")
+	wantChart := filepath.Join(root, "charts/api")
+	if !strings.Contains(joined, "template rollops "+wantChart) {
+		t.Errorf("local chart must be rooted: %v", c.args)
+	}
+	for _, vf := range []string{"values-prod.yaml", "values-extra.yaml"} {
+		if !strings.Contains(joined, "-f "+filepath.Join(root, vf)) {
+			t.Errorf("values file %q must be rooted and passed with -f: %v", vf, c.args)
+		}
+	}
+}
+
+func TestRender_ManifestFrom_HelmRemoteChart(t *testing.T) {
+	root := t.TempDir()
+	c := &capturedRun{out: "kind: Service\n"}
+	spec := map[string]any{"manifestFrom": map[string]any{
+		"helm": map[string]any{
+			"chart":   "nginx",
+			"repo":    "https://charts.bitnami.com/bitnami",
+			"version": "15.0.0",
+		},
+	}}
+	if _, err := render(context.Background(), spec, root, fakeRunner(c)); err != nil {
+		t.Fatalf("render remote helm: %v", err)
+	}
+	joined := strings.Join(c.args, " ")
+	for _, want := range []string{"template rollops nginx", "--repo https://charts.bitnami.com/bitnami", "--version 15.0.0"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("remote helm args missing %q: %v", want, c.args)
+		}
+	}
+	// A remote chart name must NOT be rooted.
+	if strings.Contains(joined, root) {
+		t.Errorf("remote chart must not be rooted: %v", c.args)
+	}
+}
+
+func TestRender_ManifestFrom_HelmValuesConfinement(t *testing.T) {
+	root := t.TempDir()
+	spec := map[string]any{"manifestFrom": map[string]any{
+		"helm": map[string]any{"chart": "./charts/api", "values": []any{"../secrets.yaml"}},
+	}}
+	if _, err := render(context.Background(), spec, root, fakeRunner(&capturedRun{})); err == nil {
+		t.Error("a values file escaping the root must be rejected")
+	}
+}
+
+func TestRender_ManifestFrom_HelmChartRequired(t *testing.T) {
+	root := t.TempDir()
+	spec := map[string]any{"manifestFrom": map[string]any{"helm": map[string]any{"values": []any{"v.yaml"}}}}
+	if _, err := render(context.Background(), spec, root, fakeRunner(&capturedRun{})); err == nil {
+		t.Error("manifestFrom.helm without a chart must error")
+	}
+}
+
 func TestSpecReferencesSource(t *testing.T) {
 	if !specReferencesSource([]byte(`{"manifestFrom":{"path":"a.yaml"}}`)) {
 		t.Error("manifestFrom spec must be reported as referenced")

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -84,6 +85,42 @@ type Doctor struct {
 	Probe          DaemonProbe
 	Notifier       notify.Notifier // when set, doctor sends a test event
 	NotifyChannels []string        // channel names for display (email, webhook)
+	// ToolProbe reports a render tool's version (kubectl/helm), or an error when
+	// it is missing/unusable. Injectable for tests; defaults to execToolProbe.
+	ToolProbe ToolProbe
+}
+
+// ToolProbe returns a render tool's version line, or an error when the tool is
+// absent or fails to report a version.
+type ToolProbe func(ctx context.Context, name string, args ...string) (string, error)
+
+// execToolProbe locates a render tool and reads its version, so `doctor` can
+// confirm a Kubernetes target's kustomize/Helm rendering will work before a
+// rollout depends on it.
+func execToolProbe(ctx context.Context, name string, args ...string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s not found on PATH", name)
+	}
+	out, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
+	line := strings.TrimSpace(firstLine(string(out)))
+	if err != nil {
+		if line != "" {
+			return "", fmt.Errorf("%s: %s", err, line)
+		}
+		return "", err
+	}
+	if line == "" {
+		line = path
+	}
+	return line, nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // Run dispatches a command. Returns a non-nil error on failure; the caller maps
@@ -264,15 +301,25 @@ func (a *App) rollback(ctx context.Context, args []string) error {
 
 func (a *App) doctor(ctx context.Context, args []string) error {
 	var failed []string
+	var cfg *config.Config
 	if len(args) > 0 {
-		if _, _, err := loadConfigArg(args[:1]); err != nil {
+		c, _, err := loadConfigArg(args[:1])
+		if err != nil {
 			_, _ = fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
 			failed = append(failed, "config")
 		} else {
+			cfg = c
 			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
+	}
+
+	// Render-tool readiness: a Kubernetes target renders through kubectl (always)
+	// and helm (only when the spec uses a Helm source). Probe just what the config
+	// needs, so a kustomize-only user is not told to install helm.
+	if cfg != nil && cfg.Spec.Target.Kind == "kubernetes" {
+		failed = append(failed, a.probeRenderTools(ctx, cfg.Spec.Target.Spec)...)
 	}
 
 	if a.Doctor.DaemonAddr != "" {
@@ -315,6 +362,46 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		return fmt.Errorf("doctor failed: %s", strings.Join(failed, ", "))
 	}
 	return nil
+}
+
+// probeRenderTools checks the render tools a Kubernetes target needs and prints
+// an ok/fail line per tool, returning the names that failed. kubectl is always
+// required (cluster apply/diff + kustomize); helm only when the spec renders a
+// Helm chart.
+func (a *App) probeRenderTools(ctx context.Context, spec map[string]any) []string {
+	probe := a.Doctor.ToolProbe
+	if probe == nil {
+		probe = execToolProbe
+	}
+	var failed []string
+	check := func(name string, args ...string) {
+		ver, err := probe(ctx, name, args...)
+		if err != nil {
+			_, _ = fmt.Fprintf(a.Out, "%s: fail (%v)\n", name, err)
+			failed = append(failed, name)
+			return
+		}
+		_, _ = fmt.Fprintf(a.Out, "%s: ok (%s)\n", name, ver)
+	}
+	check("kubectl", "version", "--client")
+	if specUsesHelm(spec) {
+		check("helm", "version", "--short")
+	}
+	return failed
+}
+
+// specUsesHelm reports whether a Kubernetes target spec renders a Helm chart —
+// via the flat `helm` key or a `manifestFrom.helm` referenced source.
+func specUsesHelm(spec map[string]any) bool {
+	if _, ok := spec["helm"]; ok {
+		return true
+	}
+	if mf, ok := spec["manifestFrom"].(map[string]any); ok {
+		if _, ok := mf["helm"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) usage() error {
