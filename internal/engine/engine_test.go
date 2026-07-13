@@ -38,6 +38,11 @@ type fakeTarget struct {
 	health   pt.HealthStatus
 	applyErr error
 	diffErr  error // when set, Diff returns this error (drives the drift fail-closed path)
+	// referenced + rendered exercise the pt.Renderer capability: when referenced
+	// is true the engine stamps the checksum over rendered (default off, so
+	// existing tests are unaffected).
+	referenced bool
+	rendered   []byte
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -57,6 +62,10 @@ func (f *fakeTarget) Diff(_ context.Context, m pt.Manifest) (string, error) {
 }
 func (f *fakeTarget) Resources(context.Context) ([]pt.Resource, error) {
 	return []pt.Resource{{Kind: "Deployment", Name: "app", Status: "ready 1/1"}}, nil
+}
+func (f *fakeTarget) Referenced(pt.Manifest) bool { return f.referenced }
+func (f *fakeTarget) Render(context.Context, pt.Manifest) ([]byte, error) {
+	return f.rendered, nil
 }
 
 func newEngine(t *testing.T, fake *fakeTarget, extra ...Option) (*Engine, *sqlite.Store) {

@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -83,6 +85,42 @@ type Doctor struct {
 	Probe          DaemonProbe
 	Notifier       notify.Notifier // when set, doctor sends a test event
 	NotifyChannels []string        // channel names for display (email, webhook)
+	// ToolProbe reports a render tool's version (kubectl/helm), or an error when
+	// it is missing/unusable. Injectable for tests; defaults to execToolProbe.
+	ToolProbe ToolProbe
+}
+
+// ToolProbe returns a render tool's version line, or an error when the tool is
+// absent or fails to report a version.
+type ToolProbe func(ctx context.Context, name string, args ...string) (string, error)
+
+// execToolProbe locates a render tool and reads its version, so `doctor` can
+// confirm a Kubernetes target's kustomize/Helm rendering will work before a
+// rollout depends on it.
+func execToolProbe(ctx context.Context, name string, args ...string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s not found on PATH", name)
+	}
+	out, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
+	line := strings.TrimSpace(firstLine(string(out)))
+	if err != nil {
+		if line != "" {
+			return "", fmt.Errorf("%s: %s", err, line)
+		}
+		return "", err
+	}
+	if line == "" {
+		line = path
+	}
+	return line, nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // Run dispatches a command. Returns a non-nil error on failure; the caller maps
@@ -125,28 +163,35 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) plan(ctx context.Context, args []string) error {
-	c, err := loadConfigArg(args)
+	c, root, err := loadConfigArg(args)
 	if err != nil {
 		return err
 	}
+	ctx = engine.WithRoot(ctx, root)
 	p, err := a.Ops.Plan(ctx, c)
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(a.Out, p.Summary)
+	// Surface the rendered manifest for a referenced source so the resolved
+	// result is reviewable before an apply.
+	if len(p.Rendered) > 0 {
+		_, _ = fmt.Fprintf(a.Out, "\n--- rendered manifest ---\n%s\n", p.Rendered)
+	}
 	return nil
 }
 
 func (a *App) apply(ctx context.Context, args []string) error {
-	c, err := loadConfigArg(args)
+	c, root, err := loadConfigArg(args)
 	if err != nil {
 		return err
 	}
+	ctx = engine.WithRoot(ctx, root)
 	// One-shot apply produces a plan first so it satisfies plan-before-apply.
 	if _, err := a.Ops.Plan(ctx, c); err != nil {
 		return err
 	}
-	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: a.Actor, Planned: true})
+	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true})
 	if err != nil {
 		return err
 	}
@@ -256,15 +301,25 @@ func (a *App) rollback(ctx context.Context, args []string) error {
 
 func (a *App) doctor(ctx context.Context, args []string) error {
 	var failed []string
+	var cfg *config.Config
 	if len(args) > 0 {
-		if _, err := loadConfigArg(args[:1]); err != nil {
+		c, _, err := loadConfigArg(args[:1])
+		if err != nil {
 			_, _ = fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
 			failed = append(failed, "config")
 		} else {
+			cfg = c
 			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
+	}
+
+	// Render-tool readiness: a Kubernetes target renders through kubectl (always)
+	// and helm (only when the spec uses a Helm source). Probe just what the config
+	// needs, so a kustomize-only user is not told to install helm.
+	if cfg != nil && cfg.Spec.Target.Kind == "kubernetes" {
+		failed = append(failed, a.probeRenderTools(ctx, cfg.Spec.Target.Spec)...)
 	}
 
 	if a.Doctor.DaemonAddr != "" {
@@ -309,6 +364,46 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 	return nil
 }
 
+// probeRenderTools checks the render tools a Kubernetes target needs and prints
+// an ok/fail line per tool, returning the names that failed. kubectl is always
+// required (cluster apply/diff + kustomize); helm only when the spec renders a
+// Helm chart.
+func (a *App) probeRenderTools(ctx context.Context, spec map[string]any) []string {
+	probe := a.Doctor.ToolProbe
+	if probe == nil {
+		probe = execToolProbe
+	}
+	var failed []string
+	check := func(name string, args ...string) {
+		ver, err := probe(ctx, name, args...)
+		if err != nil {
+			_, _ = fmt.Fprintf(a.Out, "%s: fail (%v)\n", name, err)
+			failed = append(failed, name)
+			return
+		}
+		_, _ = fmt.Fprintf(a.Out, "%s: ok (%s)\n", name, ver)
+	}
+	check("kubectl", "version", "--client")
+	if specUsesHelm(spec) {
+		check("helm", "version", "--short")
+	}
+	return failed
+}
+
+// specUsesHelm reports whether a Kubernetes target spec renders a Helm chart —
+// via the flat `helm` key or a `manifestFrom.helm` referenced source.
+func specUsesHelm(spec map[string]any) bool {
+	if _, ok := spec["helm"]; ok {
+		return true
+	}
+	if mf, ok := spec["manifestFrom"].(map[string]any); ok {
+		if _, ok := mf["helm"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) usage() error {
 	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
@@ -319,13 +414,21 @@ func (a *App) version() error {
 	return nil
 }
 
-func loadConfigArg(args []string) (*config.Config, error) {
+// loadConfigArg loads the config named by args[0] and returns it alongside the
+// directory it lives in — the root that relative referenced manifest sources
+// (manifestFrom) resolve against, so the one-shot CLI and the daemon behave
+// identically.
+func loadConfigArg(args []string) (*config.Config, string, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("config file path required")
+		return nil, "", fmt.Errorf("config file path required")
 	}
 	data, err := os.ReadFile(args[0])
 	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
+		return nil, "", fmt.Errorf("read config: %w", err)
 	}
-	return config.Load(data)
+	c, err := config.Load(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return c, filepath.Dir(args[0]), nil
 }

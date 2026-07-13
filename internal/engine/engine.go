@@ -283,7 +283,14 @@ func defaultOwner() string {
 // manifest, the target's current fingerprint, and whether they differ. Drift =
 // current fingerprint != desired checksum.
 func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
-	m, err := manifestFromConfig(c)
+	m, err := manifestFromConfig(c, rootFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	// Referenced sources (manifestFrom) key drift off the rendered output, so an
+	// edit to a referenced file is detected even under shallow verification. The
+	// rendered bytes double as the plan preview.
+	rendered, err := e.stampReferencedChecksum(ctx, c.Spec.Target.Ref, &m)
 	if err != nil {
 		return nil, err
 	}
@@ -348,6 +355,7 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 		}
 	}
 	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
+	p.Rendered = rendered
 	if driftAlert {
 		p.DriftAlert = true
 		p.Summary = p.render()
@@ -425,6 +433,7 @@ type Plan struct {
 	DeepDrift  bool   // full-verification diff found live ≠ desired despite a matching stamp
 	DriftAlert bool   // detect-verification found live drift, but it is NOT auto-corrected (alert only)
 	Migration  string // pending database migration ("migrate (when): cmd"), empty when none
+	Rendered   []byte // rendered manifest when resolved from a referenced source (manifestFrom); nil otherwise
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
@@ -580,6 +589,11 @@ func (e *Engine) riskWeights(ctx context.Context, c *config.Config) (risk.Weight
 type ApplyRequest struct {
 	Config    *config.Config
 	Initiator rollout.Identity
+	// Root is the config-file directory that relative referenced manifest
+	// sources (manifestFrom) resolve against. In-process callers set it (the
+	// reconcile watcher, the one-shot CLI); when empty Apply falls back to the
+	// context (see WithRoot). Remote gRPC applies leave it empty.
+	Root string
 	// Planned records that a plan/diff was produced first. Agent-driven
 	// rollouts must set this — an agent cannot apply blind.
 	Planned bool
@@ -638,8 +652,18 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	}
 	defer release()
 
-	m, err := manifestFromConfig(cfg)
+	root := req.Root
+	if root == "" {
+		root = rootFromContext(ctx)
+	}
+	m, err := manifestFromConfig(cfg, root)
 	if err != nil {
+		return nil, err
+	}
+	// Referenced sources (manifestFrom) stamp the drift checksum over the rendered
+	// output — the annotation the target records and Observe reads back — so it
+	// must be computed before the manifest is applied.
+	if _, err := e.stampReferencedChecksum(ctx, ref, &m); err != nil {
 		return nil, err
 	}
 
@@ -797,6 +821,10 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		// rollbackWithDatabase here would deadlock on ErrTargetBusy.
 		if cfg.Spec.Rollback.Auto {
 			if prior, ok := e.priorManifest(ctx, ref, m.Checksum); ok {
+				// A prior loaded from history has no Root (it is never persisted);
+				// re-root it at the current checkout so a referenced-source rollback
+				// renders against the live files.
+				prior.Root = m.Root
 				// r is still in `deploying`; applyRollback drives deploying →
 				// rolled-back via EventRollback (a legal transition) and resets
 				// delivery from the descriptors persisted above. Force past the
@@ -849,6 +877,11 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return VerifyOutcome{}, err
+	}
+	// Re-root a prior loaded from history (Root is never persisted) at the current
+	// checkout so a referenced-source rollback renders against the live files.
+	if prior.Root == "" {
+		prior.Root = rootFromContext(ctx)
 	}
 	auto := c.Spec.Rollback.Auto
 
@@ -1615,7 +1648,12 @@ func (e *Engine) resolveSecrets(ctx context.Context, t config.Target) (config.Ta
 	return config.Target{Kind: t.Kind, Ref: t.Ref, Criticality: t.Criticality, Spec: out}, nil
 }
 
-func manifestFromConfig(c *config.Config) (pt.Manifest, error) {
+// manifestFromConfig builds the desired manifest from config. root is the
+// config-file directory relative referenced sources resolve against — ambient
+// execution context threaded through Plan/Apply, deliberately NOT folded into
+// the checksum (the checksum stays a pure function of the desired spec, so the
+// same config yields the same identity on every host and checkout dir).
+func manifestFromConfig(c *config.Config, root string) (pt.Manifest, error) {
 	spec, err := json.Marshal(c.Spec.Target.Spec)
 	if err != nil {
 		return pt.Manifest{}, fmt.Errorf("engine: marshal target spec: %w", err)
@@ -1626,7 +1664,57 @@ func manifestFromConfig(c *config.Config) (pt.Manifest, error) {
 		Spec:     spec,
 		Labels:   c.Metadata.Labels,
 		Checksum: hex.EncodeToString(sum[:]),
+		Root:     root,
 	}, nil
+}
+
+// rootContextKey carries the config-file root (see manifestFromConfig) through
+// Plan, whose signature is fixed by the Operations gRPC boundary. Apply takes it
+// explicitly via ApplyRequest.Root, falling back to the context.
+type rootContextKey struct{}
+
+// WithRoot returns a context carrying the config-file root that relative
+// referenced manifest sources resolve against. In-process callers (the reconcile
+// watcher, the one-shot CLI) set it; remote gRPC callers leave it empty (the
+// referenced files live on the client, not the daemon).
+func WithRoot(ctx context.Context, root string) context.Context {
+	if root == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, rootContextKey{}, root)
+}
+
+func rootFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(rootContextKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// stampReferencedChecksum re-keys a manifest's drift checksum over its RENDERED
+// output when the target resolves it from a referenced external source
+// (manifestFrom). This makes an edit to a referenced Kustomize/Helm/path file
+// surface as drift even under shallow verification, where the spec bytes — and
+// thus the spec-derived checksum — never change. Inline manifests and the legacy
+// flat keys keep their spec checksum. It returns the rendered bytes (for the
+// plan preview) or nil when the target does not render a referenced source.
+func (e *Engine) stampReferencedChecksum(ctx context.Context, ref string, m *pt.Manifest) ([]byte, error) {
+	raw, err := e.rawTarget(ref, *m)
+	if err != nil {
+		return nil, nil // best-effort: a target that will not build fails louder later
+	}
+	defer closeTarget(raw)
+	r, ok := raw.(pt.Renderer)
+	if !ok || !r.Referenced(*m) {
+		return nil, nil
+	}
+	out, err := r.Render(ctx, *m)
+	if err != nil {
+		return nil, fmt.Errorf("engine: render referenced manifest: %w", err)
+	}
+	sum := sha256.Sum256(out)
+	m.Checksum = hex.EncodeToString(sum[:])
+	return out, nil
 }
 
 func strategyFrom(c *config.Config) rollout.Strategy {

@@ -37,6 +37,43 @@ func TestValidate_AnalysisPluginRequiresPin(t *testing.T) {
 	}
 }
 
+func TestValidate_KubernetesManifestSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    map[string]any
+		wantErr bool
+	}{
+		{"inline manifest", map[string]any{"manifest": "kind: Pod\n"}, false},
+		{"flat kustomize", map[string]any{"kustomize": map[string]any{"path": "overlays"}}, false},
+		{"manifestFrom path", map[string]any{"manifestFrom": map[string]any{"path": "k8s/app.yaml"}}, false},
+		{"manifestFrom kustomize", map[string]any{"manifestFrom": map[string]any{"kustomize": "overlays/prod"}}, false},
+		{"manifestFrom helm", map[string]any{"manifestFrom": map[string]any{"helm": map[string]any{"chart": "./charts/api"}}}, false},
+
+		{"no source", map[string]any{"namespace": "x"}, true},
+		{"nil spec", nil, true},
+		{"inline + flat", map[string]any{"manifest": "kind: Pod\n", "helm": map[string]any{"chart": "c"}}, true},
+		{"two flat", map[string]any{"helm": map[string]any{"chart": "c"}, "kustomize": map[string]any{"path": "o"}}, true},
+		{"manifestFrom + inline", map[string]any{"manifestFrom": map[string]any{"path": "a.yaml"}, "manifest": "kind: Pod\n"}, true},
+		{"manifestFrom + flat", map[string]any{"manifestFrom": map[string]any{"path": "a.yaml"}, "kustomize": map[string]any{"path": "o"}}, true},
+		{"manifestFrom none", map[string]any{"manifestFrom": map[string]any{}}, true},
+		{"manifestFrom two", map[string]any{"manifestFrom": map[string]any{"path": "a.yaml", "kustomize": "o"}}, true},
+		{"manifestFrom empty path", map[string]any{"manifestFrom": map[string]any{"path": ""}}, true},
+		{"manifestFrom helm no chart", map[string]any{"manifestFrom": map[string]any{"helm": map[string]any{"values": []any{"v.yaml"}}}}, true},
+		{"manifestFrom not a map", map[string]any{"manifestFrom": "oops"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validateKubernetesManifestSource(tt.spec)
+			if tt.wantErr && len(errs) == 0 {
+				t.Errorf("spec %v must be rejected", tt.spec)
+			}
+			if !tt.wantErr && len(errs) != 0 {
+				t.Errorf("spec %v must validate, got %v", tt.spec, errs)
+			}
+		})
+	}
+}
+
 func TestValidate_TrafficRoutingRequiredFields(t *testing.T) {
 	errs := validateTrafficRouting(&TrafficRouting{})
 	if len(errs) < 5 {

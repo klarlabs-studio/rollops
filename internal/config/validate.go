@@ -138,6 +138,9 @@ func validateSemantics(c *Config) []error {
 	default:
 		errs = append(errs, fmt.Errorf("config: verification %q must be shallow | detect | full", c.Spec.Verification))
 	}
+	if c.Spec.Target.Kind == "kubernetes" {
+		errs = append(errs, validateKubernetesManifestSource(c.Spec.Target.Spec)...)
+	}
 	if c.Spec.ImagePolicy != nil {
 		switch c.Spec.ImagePolicy.Mode {
 		case "none", "major", "minor", "patch", "any", "digest":
@@ -146,6 +149,109 @@ func validateSemantics(c *Config) []error {
 		}
 		if img, _ := c.Spec.Target.Spec["image"].(string); img == "" {
 			errs = append(errs, fmt.Errorf("config: imagePolicy requires spec.target.spec.image (the tracked image)"))
+		}
+	}
+	return errs
+}
+
+// validateKubernetesManifestSource enforces the manifest-source rules the JSON
+// schema cannot express (the target spec is additionalProperties:true, deferred
+// to the plugin). A Kubernetes target must declare exactly one manifest source.
+// The referenced source `manifestFrom` is EXCLUSIVE — it may not be combined
+// with an inline `manifest` or the legacy flat keys (helm/kustomize/oci/bucket)
+// — and within it exactly one of path/kustomize/helm must be set. Flat keys keep
+// working unchanged when manifestFrom is absent (non-breaking).
+func validateKubernetesManifestSource(spec map[string]any) []error {
+	if spec == nil {
+		return []error{fmt.Errorf("config: kubernetes target must set a manifest source (manifest, manifestFrom, helm, kustomize, oci, or bucket)")}
+	}
+	var errs []error
+
+	inline, _ := spec["manifest"].(string)
+	hasInline := inline != ""
+	var flat []string
+	for _, k := range []string{"helm", "kustomize", "oci", "bucket"} {
+		if _, ok := spec[k]; ok {
+			flat = append(flat, k)
+		}
+	}
+
+	mf, hasMF := spec["manifestFrom"].(map[string]any)
+	if _, present := spec["manifestFrom"]; present && !hasMF {
+		errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom must be a mapping of path | kustomize | helm"))
+		return errs
+	}
+
+	if hasMF {
+		var conflicts []string
+		if hasInline {
+			conflicts = append(conflicts, "manifest")
+		}
+		conflicts = append(conflicts, flat...)
+		if len(conflicts) > 0 {
+			errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom is exclusive; remove the conflicting inline/flat source(s): %s", strings.Join(conflicts, ", ")))
+		}
+		errs = append(errs, validateManifestFrom(mf)...)
+		return errs
+	}
+
+	// No manifestFrom: fall back to inline or the flat keys; require exactly one
+	// source overall so a misconfigured target fails loudly at load time.
+	sources := len(flat)
+	if hasInline {
+		sources++
+	}
+	switch {
+	case sources == 0:
+		errs = append(errs, fmt.Errorf("config: kubernetes target must set a manifest source (manifest, manifestFrom, helm, kustomize, oci, or bucket)"))
+	case sources > 1:
+		set := flat
+		if hasInline {
+			set = append([]string{"manifest"}, flat...)
+		}
+		errs = append(errs, fmt.Errorf("config: kubernetes target must set exactly one manifest source, found: %s", strings.Join(set, ", ")))
+	}
+	return errs
+}
+
+// validateManifestFrom enforces exactly-one of path/kustomize/helm within a
+// manifestFrom block and that the chosen source is non-empty.
+func validateManifestFrom(mf map[string]any) []error {
+	var errs []error
+	var set []string
+	for _, k := range []string{"path", "kustomize", "helm"} {
+		if _, ok := mf[k]; ok {
+			set = append(set, k)
+		}
+	}
+	switch len(set) {
+	case 0:
+		errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom must set exactly one of path | kustomize | helm"))
+		return errs
+	case 1:
+		// ok
+	default:
+		errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom must set exactly one of path | kustomize | helm, found: %s", strings.Join(set, ", ")))
+		return errs
+	}
+
+	switch set[0] {
+	case "path":
+		if s, _ := mf["path"].(string); s == "" {
+			errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom.path must be a non-empty file path"))
+		}
+	case "kustomize":
+		if s, _ := mf["kustomize"].(string); s == "" {
+			errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom.kustomize must be a non-empty directory or URL"))
+		}
+	case "helm":
+		h, ok := mf["helm"].(map[string]any)
+		if !ok {
+			errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom.helm must be a mapping with a chart"))
+			return errs
+		}
+		if s, _ := h["chart"].(string); s == "" {
+			errs = append(errs, fmt.Errorf("config: spec.target.spec.manifestFrom.helm.chart is required"))
 		}
 	}
 	return errs

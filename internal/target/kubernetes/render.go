@@ -38,8 +38,8 @@ func execRunner(ctx context.Context, name string, stdin []byte, args ...string) 
 // flow). The Git source is the daemon's own desired-state poll; oci adds the
 // Flux OCIRepository model — pull a manifest/kustomize bundle from an OCI
 // registry instead of a checkout.
-func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, error) {
-	out, err := renderSource(ctx, spec, run)
+func render(ctx context.Context, spec map[string]any, root string, run cmdRunner) ([]byte, error) {
+	out, err := renderSource(ctx, spec, root, run)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,13 @@ func render(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, er
 	return out, nil
 }
 
-func renderSource(ctx context.Context, spec map[string]any, run cmdRunner) ([]byte, error) {
+func renderSource(ctx context.Context, spec map[string]any, root string, run cmdRunner) ([]byte, error) {
+	// A referenced source (manifestFrom) is exclusive: when present it is the
+	// only manifest source, resolved relative to the config-file root. Flat keys
+	// (oci/bucket/helm/kustomize/manifest) remain the non-breaking fallback.
+	if mf, ok := spec["manifestFrom"].(map[string]any); ok {
+		return renderManifestFrom(ctx, mf, root, run)
+	}
 	if o, ok := spec["oci"].(map[string]any); ok {
 		return renderOCI(ctx, o, run)
 	}
@@ -66,12 +72,12 @@ func renderSource(ctx context.Context, spec map[string]any, run cmdRunner) ([]by
 		return renderHelm(ctx, h, run)
 	}
 	if k, ok := spec["kustomize"].(map[string]any); ok {
-		return renderKustomize(ctx, k, run)
+		return renderKustomize(ctx, k, root, run)
 	}
 	if s, ok := spec["manifest"].(string); ok && s != "" {
 		return []byte(s), nil
 	}
-	return nil, fmt.Errorf("kubernetes: spec must set one of oci / bucket / helm / kustomize / manifest")
+	return nil, fmt.Errorf("kubernetes: spec must set one of manifestFrom / oci / bucket / helm / kustomize / manifest")
 }
 
 // imageRepo strips the :tag (and @digest) from an image ref, leaving the repo.
@@ -298,18 +304,187 @@ func renderHelm(ctx context.Context, h map[string]any, run cmdRunner) ([]byte, e
 	return []byte(out), nil
 }
 
-// renderKustomize runs `kubectl kustomize <path>`; path may be a local dir or a
-// remote (e.g. a github URL), so a checkout is optional.
-func renderKustomize(ctx context.Context, k map[string]any, run cmdRunner) ([]byte, error) {
+// renderHelmFrom renders a `manifestFrom.helm` referenced source: a local chart
+// dir (resolved against and confined to the config-file root) or a remote chart
+// (repo + chart name, passed through), templated with `helm template` and zero
+// or more values FILES resolved against the root. Rendering untrusted repo
+// content, it uses no --post-renderer and no plugin execution.
+func renderHelmFrom(ctx context.Context, h map[string]any, root string, run cmdRunner) ([]byte, error) {
+	chart := str(h, "chart")
+	if chart == "" {
+		return nil, fmt.Errorf("kubernetes: manifestFrom.helm.chart is required")
+	}
+	release := str(h, "releaseName")
+	if release == "" {
+		release = "rollops"
+	}
+	repo := str(h, "repo")
+	// A remote chart is a bare name resolved via --repo, or an explicit URL/OCI
+	// ref; only a local chart path is rooted and confined.
+	chartArg := chart
+	if repo == "" && !isRemoteSource(chart) {
+		resolved, err := resolveSourcePath(root, chart)
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: manifestFrom.helm.chart: %w", err)
+		}
+		chartArg = resolved
+	}
+	args := []string{"template", release, chartArg}
+	if repo != "" {
+		args = append(args, "--repo", repo)
+	}
+	if version := str(h, "version"); version != "" {
+		args = append(args, "--version", version)
+	}
+	if ns := str(h, "namespace"); ns != "" {
+		args = append(args, "--namespace", ns)
+	}
+	files, err := stringList(h["values"])
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: manifestFrom.helm.values: %w", err)
+	}
+	for _, f := range files {
+		vf, err := resolveSourcePath(root, f)
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: manifestFrom.helm.values: %w", err)
+		}
+		args = append(args, "-f", vf)
+	}
+	out, err := run(ctx, "helm", nil, args...)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: helm template: %w", err)
+	}
+	return []byte(out), nil
+}
+
+// stringList coerces a YAML/JSON list value into a []string.
+func stringList(v any) ([]string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("must be a list of file paths")
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		s, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("must be a list of file paths")
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// renderKustomize runs `kubectl kustomize <path>`; path may be a local dir
+// (resolved against the config-file root and confined to it) or a remote
+// (e.g. a github URL), which passes through untouched.
+func renderKustomize(ctx context.Context, k map[string]any, root string, run cmdRunner) ([]byte, error) {
 	path := str(k, "path")
 	if path == "" {
 		return nil, fmt.Errorf("kubernetes: kustomize.path is required")
 	}
-	out, err := run(ctx, "kubectl", nil, "kustomize", path)
+	return runKustomize(ctx, root, path, run)
+}
+
+// runKustomize resolves a kustomize target (remote passthrough, local rooted)
+// and runs `kubectl kustomize`. Shared by the flat `kustomize` key and the
+// `manifestFrom.kustomize` referenced source.
+func runKustomize(ctx context.Context, root, path string, run cmdRunner) ([]byte, error) {
+	target, err := resolveSourcePath(root, path)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: kustomize: %w", err)
+	}
+	out, err := run(ctx, "kubectl", nil, "kustomize", target)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: kustomize build: %w", err)
 	}
 	return []byte(out), nil
+}
+
+// isRemoteSource reports whether a referenced path is a remote source
+// (kustomize URL, git ref, OCI ref) that must NOT be rooted or confined —
+// kustomize/helm fetch it themselves. Local paths are everything else.
+func isRemoteSource(p string) bool {
+	if strings.Contains(p, "://") || strings.HasPrefix(p, "git@") {
+		return true
+	}
+	// kustomize's `repo//path` remote marker (e.g. github.com/acme/cfg//overlays).
+	if strings.Contains(p, "//") {
+		return true
+	}
+	for _, host := range []string{"github.com/", "gitlab.com/", "bitbucket.org/"} {
+		if strings.HasPrefix(p, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveSourcePath turns a referenced source path into the path handed to the
+// render tool. Remote sources pass through. Local sources are confined to the
+// config-file root: absolute paths and `..` escapes are rejected (the daemon
+// renders untrusted repo content), and the path is joined onto root. When no
+// root is threaded (e.g. a remote gRPC apply with no checkout), a local path is
+// passed through unchanged to preserve the pre-root behaviour.
+func resolveSourcePath(root, path string) (string, error) {
+	if isRemoteSource(path) {
+		return path, nil
+	}
+	if root == "" {
+		return path, nil // no checkout to root against — legacy CWD-relative behaviour
+	}
+	clean := filepath.Clean(path)
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes the config root", path)
+	}
+	return filepath.Join(root, clean), nil
+}
+
+// renderManifestFrom resolves a referenced manifest source (exactly one of
+// path / kustomize / helm) relative to the config-file root. It is exclusive:
+// when manifestFrom is set it is the sole manifest source (flat keys ignored).
+func renderManifestFrom(ctx context.Context, mf map[string]any, root string, run cmdRunner) ([]byte, error) {
+	n := 0
+	for _, k := range []string{"path", "kustomize", "helm"} {
+		if _, ok := mf[k]; ok {
+			n++
+		}
+	}
+	if n != 1 {
+		return nil, fmt.Errorf("kubernetes: manifestFrom must set exactly one of path / kustomize / helm")
+	}
+	if p, ok := mf["path"].(string); ok {
+		return renderPath(root, p)
+	}
+	if k, ok := mf["kustomize"].(string); ok {
+		if k == "" {
+			return nil, fmt.Errorf("kubernetes: manifestFrom.kustomize must not be empty")
+		}
+		return runKustomize(ctx, root, k, run)
+	}
+	if h, ok := mf["helm"].(map[string]any); ok {
+		return renderHelmFrom(ctx, h, root, run)
+	}
+	return nil, fmt.Errorf("kubernetes: manifestFrom must set exactly one of path / kustomize / helm")
+}
+
+// renderPath reads a single manifest file referenced relative to the
+// config-file root (confined to it).
+func renderPath(root, path string) ([]byte, error) {
+	if path == "" {
+		return nil, fmt.Errorf("kubernetes: manifestFrom.path must not be empty")
+	}
+	target, err := resolveSourcePath(root, path)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: manifestFrom.path: %w", err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: manifestFrom read %q: %w", path, err)
+	}
+	return data, nil
 }
 
 func str(m map[string]any, key string) string {
@@ -322,10 +497,23 @@ func str(m map[string]any, key string) string {
 // manifestFromSpec resolves the deployable manifest for a target manifest's
 // spec, supporting the config flow (JSON spec with helm/kustomize/manifest) and
 // the direct flow (raw manifest bytes).
-func manifestFromSpec(ctx context.Context, specJSON []byte, run cmdRunner) ([]byte, error) {
+func manifestFromSpec(ctx context.Context, specJSON []byte, root string, run cmdRunner) ([]byte, error) {
 	var spec map[string]any
 	if err := json.Unmarshal(specJSON, &spec); err == nil && spec != nil {
-		return render(ctx, spec, run)
+		return render(ctx, spec, root, run)
 	}
 	return specJSON, nil // raw manifest (direct flow / tests)
+}
+
+// specReferencesSource reports whether a target spec resolves its manifest from
+// a referenced external source (manifestFrom). The engine stamps the drift
+// checksum over the RENDERED bytes in that case, so edits to the referenced
+// files are detected even under shallow verification.
+func specReferencesSource(specJSON []byte) bool {
+	var spec map[string]any
+	if err := json.Unmarshal(specJSON, &spec); err != nil {
+		return false
+	}
+	_, ok := spec["manifestFrom"].(map[string]any)
+	return ok
 }

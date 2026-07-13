@@ -58,7 +58,7 @@ func TestPlan_FullVerification_DiffErrorIsDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Make the shallow stamp match, so the deep diff runs.
-	m, _ := manifestFromConfig(c)
+	m, _ := manifestFromConfig(c, "")
 	fake.fp = pt.Fingerprint{Value: m.Checksum}
 
 	p, err := e.Plan(context.Background(), c)
@@ -76,7 +76,7 @@ func TestPlan_DetectVerification_DiffErrorNotDrift(t *testing.T) {
 	fake := &fakeTarget{diffErr: errors.New("diff failed")}
 	e, _ := newEngine(t, fake)
 	c := loadConfig(t) // no verification set → defaults to detect
-	m, _ := manifestFromConfig(c)
+	m, _ := manifestFromConfig(c, "")
 	fake.fp = pt.Fingerprint{Value: m.Checksum}
 
 	p, err := e.Plan(context.Background(), c)

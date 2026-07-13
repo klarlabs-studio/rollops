@@ -35,7 +35,7 @@ func TestRender_Helm(t *testing.T) {
 			"values":      map[string]any{"replicaCount": 3},
 		},
 	}
-	out, err := render(context.Background(), spec, fakeRunner(c))
+	out, err := render(context.Background(), spec, "", fakeRunner(c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRender_Helm(t *testing.T) {
 func TestRender_Kustomize(t *testing.T) {
 	c := &capturedRun{out: "kind: Deployment\n"}
 	spec := map[string]any{"kustomize": map[string]any{"path": "github.com/acme/cfg//overlays/prod"}}
-	out, err := render(context.Background(), spec, fakeRunner(c))
+	out, err := render(context.Background(), spec, "", fakeRunner(c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestRender_Kustomize(t *testing.T) {
 }
 
 func TestRender_RawManifest(t *testing.T) {
-	out, err := render(context.Background(), map[string]any{"manifest": "kind: Pod\n"}, fakeRunner(&capturedRun{}))
+	out, err := render(context.Background(), map[string]any{"manifest": "kind: Pod\n"}, "", fakeRunner(&capturedRun{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestRender_RawManifest(t *testing.T) {
 }
 
 func TestRender_RequiresOneSource(t *testing.T) {
-	if _, err := render(context.Background(), map[string]any{"namespace": "x"}, fakeRunner(&capturedRun{})); err == nil {
+	if _, err := render(context.Background(), map[string]any{"namespace": "x"}, "", fakeRunner(&capturedRun{})); err == nil {
 		t.Error("spec with no helm/kustomize/manifest should error")
 	}
 }
@@ -123,7 +123,7 @@ func TestRender_OCI_ManifestMode(t *testing.T) {
 	spec := map[string]any{"oci": map[string]any{
 		"ref": "oci://ghcr.io/acme/app:v1", "path": "deploy", "render": "manifest", "file": "app.yaml",
 	}}
-	out, err := render(context.Background(), spec, run)
+	out, err := render(context.Background(), spec, "", run)
 	if err != nil {
 		t.Fatalf("render oci manifest: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestRender_OCI_ManifestMode(t *testing.T) {
 func TestRender_OCI_KustomizeMode(t *testing.T) {
 	run, c := ociRunner(t, map[string]string{"kustomization.yaml": "resources: [app.yaml]\n"}, "kind: Service\n")
 	spec := map[string]any{"oci": map[string]any{"ref": "oci://ghcr.io/acme/app:v1"}}
-	out, err := render(context.Background(), spec, run)
+	out, err := render(context.Background(), spec, "", run)
 	if err != nil {
 		t.Fatalf("render oci kustomize: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestRender_OCI_KustomizeMode(t *testing.T) {
 }
 
 func TestRender_OCI_RequiresRef(t *testing.T) {
-	if _, err := render(context.Background(), map[string]any{"oci": map[string]any{}}, fakeRunner(&capturedRun{})); err == nil {
+	if _, err := render(context.Background(), map[string]any{"oci": map[string]any{}}, "", fakeRunner(&capturedRun{})); err == nil {
 		t.Error("oci without ref must error")
 	}
 }
@@ -181,7 +181,7 @@ func bucketRunner(t *testing.T, syncCmd string, files map[string]string, kustomi
 func TestRender_Bucket_S3Kustomize(t *testing.T) {
 	run, c := bucketRunner(t, "aws", map[string]string{"kustomization.yaml": "resources: [app.yaml]\n"}, "kind: Service\n")
 	spec := map[string]any{"bucket": map[string]any{"url": "s3://acme-cfg/prod"}}
-	out, err := render(context.Background(), spec, run)
+	out, err := render(context.Background(), spec, "", run)
 	if err != nil {
 		t.Fatalf("render bucket s3: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestRender_Bucket_GCSManifest(t *testing.T) {
 	spec := map[string]any{"bucket": map[string]any{
 		"url": "gs://acme-cfg/prod", "path": "deploy", "render": "manifest", "file": "app.yaml",
 	}}
-	out, err := render(context.Background(), spec, run)
+	out, err := render(context.Background(), spec, "", run)
 	if err != nil {
 		t.Fatalf("render bucket gcs: %v", err)
 	}
@@ -221,7 +221,7 @@ spec:
           image: ghcr.io/acme/proxy:v2.0.0
 `
 	spec := map[string]any{"manifest": manifest, "image": "ghcr.io/acme/web:v1.3.0"}
-	out, err := render(context.Background(), spec, fakeRunner(&capturedRun{}))
+	out, err := render(context.Background(), spec, "", fakeRunner(&capturedRun{}))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestRender_ImageOverride_NoRepoMatchSetsAll(t *testing.T) {
 	// Single-image workload where only the registry differs → still applied.
 	manifest := "apiVersion: apps/v1\nkind: Deployment\nmetadata: {name: web}\nspec:\n  template:\n    spec:\n      containers:\n        - name: web\n          image: old.registry/acme/web:v1\n"
 	spec := map[string]any{"manifest": manifest, "image": "ghcr.io/acme/web:v2"}
-	out, err := render(context.Background(), spec, fakeRunner(&capturedRun{}))
+	out, err := render(context.Background(), spec, "", fakeRunner(&capturedRun{}))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -248,14 +248,14 @@ func TestRender_ImageOverride_NoRepoMatchSetsAll(t *testing.T) {
 }
 
 func TestRender_Bucket_RequiresURL(t *testing.T) {
-	if _, err := render(context.Background(), map[string]any{"bucket": map[string]any{}}, fakeRunner(&capturedRun{})); err == nil {
+	if _, err := render(context.Background(), map[string]any{"bucket": map[string]any{}}, "", fakeRunner(&capturedRun{})); err == nil {
 		t.Error("bucket without url must error")
 	}
 }
 
 func TestRender_Bucket_UnsupportedScheme(t *testing.T) {
 	spec := map[string]any{"bucket": map[string]any{"url": "ftp://nope/x"}}
-	if _, err := render(context.Background(), spec, fakeRunner(&capturedRun{})); err == nil {
+	if _, err := render(context.Background(), spec, "", fakeRunner(&capturedRun{})); err == nil {
 		t.Error("non-s3/gs bucket url must error")
 	}
 }
@@ -263,7 +263,7 @@ func TestRender_Bucket_UnsupportedScheme(t *testing.T) {
 func TestManifestFromSpec_RawFallback(t *testing.T) {
 	// Direct flow: m.Spec is raw YAML, not a JSON object.
 	raw := []byte("apiVersion: apps/v1\nkind: Deployment\n")
-	out, err := manifestFromSpec(context.Background(), raw, fakeRunner(&capturedRun{}))
+	out, err := manifestFromSpec(context.Background(), raw, "", fakeRunner(&capturedRun{}))
 	if err != nil {
 		t.Fatal(err)
 	}

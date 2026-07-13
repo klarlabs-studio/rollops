@@ -257,6 +257,91 @@ func (f *fakeNotifier) Notify(_ context.Context, e notify.Event) error {
 	return f.err
 }
 
+// k8sCfgYAML builds a Kubernetes rollout config with the given target spec body
+// (indented under spec.target.spec) for doctor render-tool probing tests.
+func writeK8sConfig(t *testing.T, specBody string) string {
+	t.Helper()
+	yaml := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: k8s
+spec:
+  target:
+    kind: kubernetes
+    ref: shop/prod/api
+    criticality: medium
+    spec:
+      namespace: shop
+      resource: deployment/api
+` + specBody + `
+  strategy:
+    type: rolling
+`
+	p := filepath.Join(t.TempDir(), "rollops.yaml")
+	if err := os.WriteFile(p, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCLI_DoctorProbesKubectlOnly(t *testing.T) {
+	app, buf, _ := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	var probed []string
+	app.Doctor.ToolProbe = func(_ context.Context, name string, _ ...string) (string, error) {
+		probed = append(probed, name)
+		return name + " v1.0", nil
+	}
+	cfg := writeK8sConfig(t, "      manifestFrom:\n        kustomize: k8s/overlays/prod")
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "kubectl: ok (kubectl v1.0)") {
+		t.Errorf("kubectl not probed: %q", out)
+	}
+	for _, p := range probed {
+		if p == "helm" {
+			t.Errorf("helm must not be probed for a kustomize-only config: %v", probed)
+		}
+	}
+}
+
+func TestCLI_DoctorProbesHelmWhenUsed(t *testing.T) {
+	app, buf, _ := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	app.Doctor.ToolProbe = func(_ context.Context, name string, _ ...string) (string, error) {
+		return name + " ok", nil
+	}
+	cfg := writeK8sConfig(t, "      manifestFrom:\n        helm:\n          chart: ./charts/api")
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "kubectl: ok") || !strings.Contains(out, "helm: ok") {
+		t.Errorf("both kubectl and helm must be probed for a helm config: %q", out)
+	}
+}
+
+func TestCLI_DoctorFailsMissingRenderTool(t *testing.T) {
+	app, buf, _ := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	app.Doctor.ToolProbe = func(_ context.Context, name string, _ ...string) (string, error) {
+		if name == "helm" {
+			return "", errors.New("helm not found on PATH")
+		}
+		return name + " ok", nil
+	}
+	cfg := writeK8sConfig(t, "      helm:\n        chart: nginx\n        repo: https://charts.bitnami.com/bitnami")
+	if err := app.Run(context.Background(), []string{"doctor", cfg}); err == nil {
+		t.Fatal("doctor must fail when a required render tool is missing")
+	}
+	if !strings.Contains(buf.String(), "helm: fail") {
+		t.Errorf("doctor output = %q", buf.String())
+	}
+}
+
 func TestCLI_DoctorNotify(t *testing.T) {
 	app, buf, cfg := newApp(t)
 	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")

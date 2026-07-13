@@ -1,4 +1,8 @@
 # Deploy a Helm chart (or Kustomize overlay) — Argo/Flux-style rendering.
+# This uses the flat `helm` key (an inline source). To reference a chart, overlay,
+# or file tracked in the repo instead — resolved against this config file's own
+# directory, with drift keyed off the rendered output — use `manifestFrom` (see
+# manifest-from.example.yaml and docs/kubernetes-sources.md).
 apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
