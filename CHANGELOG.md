@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.26.0 - Referenced manifest sources (Kustomize / Helm / file)
+
+- **`manifestFrom`: reference manifests instead of inlining them.** The Kubernetes
+  target can now resolve its desired manifest from a referenced source rendered at
+  plan/apply time — `manifestFrom: { path | kustomize | helm }` — instead of
+  requiring the full Deployment inlined under `spec.target.spec.manifest`. Teams
+  that manage manifests with Kustomize overlays or Helm no longer keep a second,
+  drift-prone inline copy. Relative paths resolve against the config file's own
+  directory; Kustomize/Helm are rendered by shelling out to `kubectl kustomize` /
+  `helm template` (no Kubernetes SDK pulled into the core). `manifestFrom` is
+  exclusive, but the existing inline `manifest` and legacy flat keys keep working
+  unchanged. `rollops plan` now prints the rendered manifest and `rollops doctor`
+  probes for `kubectl`/`helm`. Referenced sources key drift off the **rendered
+  output**, so an edit to a referenced Kustomize/Helm/path file is detected even
+  under shallow verification. (#57, #58)
+- **Rollback restores exactly what was deployed.** For referenced sources the
+  rendered manifest bytes are captured at apply time and persisted with the
+  rollout, so a rollback re-applies the exact deployed manifest instead of
+  re-rendering the source — which could differ if the referenced files changed
+  since, or be unavailable where no checkout is at hand (the manual CLI / web UI /
+  MCP / HTTP API / gRPC rollback path). (#59)
+- **Path confinement + safe rendering.** Referenced paths are confined to the
+  config-file root (absolute paths and `..` escapes rejected); Kustomize/Helm run
+  at safe defaults (no exec plugins, no post-renderer). Remote Kustomize/Helm URLs
+  pass through unchanged.
+
+## v0.25.0 - Image tag pagination
+
+- **Image automation follows tags/list pagination.** The registry tag scan now
+  follows pagination on the OCI `tags/list` endpoint, so the newest tags on
+  registries that paginate are no longer missed and a freshly published tag is
+  reliably detected. (#55)
+
 ## v0.24.0 - Image-automation coverage log
 
 - **Per-tick image-automation coverage summary.** Each reconcile now logs one line
