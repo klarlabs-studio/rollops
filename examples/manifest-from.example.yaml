@@ -1,0 +1,39 @@
+# Referenced manifest source (manifestFrom) — render the desired manifest from a
+# file, a Kustomize overlay, or a Helm chart tracked in the repo, instead of
+# inlining (and drifting) a copy under spec.target.spec.manifest.
+#
+# Relative paths resolve against THIS config file's own directory (the Git
+# checkout for the daemon, the config dir for the CLI) — never the daemon CWD.
+# `..` escapes and absolute paths are rejected; remote Kustomize/Helm sources
+# pass through untouched.
+#
+# Drift keys off the RENDERED output for a referenced source, so editing the
+# referenced files triggers a reconcile even under shallow verification. Preview
+# the resolved manifest with `rollops plan manifest-from.example.yaml`.
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: api
+spec:
+  target:
+    kind: kubernetes
+    ref: shop/prod/api
+    criticality: high
+    spec:
+      context: prod
+      namespace: myapp
+      resource: deployment/api
+      # Exactly one of `manifest` (inline) or `manifestFrom`. Within
+      # manifestFrom, exactly one of path / kustomize / helm.
+      manifestFrom:
+        # A single manifest file:
+        path: k8s/api.deployment.yaml
+        # ...or a Kustomize overlay (a local dir or a remote URL):
+        # kustomize: k8s/overlays/prod
+        # ...or a Helm chart with values files:
+        # helm:
+        #   chart: ./charts/api
+        #   values: [values-prod.yaml]
+  strategy:
+    type: canary
+    steps: [{weight: 25, pause: 2m}, {weight: 100}]
