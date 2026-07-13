@@ -69,6 +69,51 @@ func TestApply_RichObserveIdempotent(t *testing.T) {
 	}
 }
 
+// TestApply_ReferencedSource_UsesRenderedBytesWithoutRoot proves the rollback
+// fix: when a manifest carries captured Rendered bytes (a referenced
+// manifestFrom source deployed earlier), Apply uses them verbatim and never
+// re-renders — so a rollback works with no checkout Root, even if the referenced
+// source would no longer resolve.
+func TestApply_ReferencedSource_UsesRenderedBytesWithoutRoot(t *testing.T) {
+	cl := &fakeCluster{}
+	tgt := newWith(cl)
+	rendered := []byte("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api\n")
+	m := pt.Manifest{
+		Kind:     "kubernetes",
+		Spec:     []byte(`{"manifestFrom":{"path":"does/not/exist.yaml"}}`),
+		Root:     "", // no checkout — as on a manual CLI/UI/API rollback
+		Rendered: rendered,
+		Checksum: "sum-rendered",
+	}
+
+	res, err := tgt.Apply(context.Background(), m)
+	if err != nil {
+		t.Fatalf("apply must reuse captured Rendered, not re-render: %v", err)
+	}
+	if !res.Changed || len(cl.applied) != 1 {
+		t.Fatalf("expected one apply, changed=%v applied=%d", res.Changed, len(cl.applied))
+	}
+	if string(cl.applied[0]) != string(rendered) {
+		t.Errorf("applied %q, want the stored rendered bytes %q", cl.applied[0], rendered)
+	}
+}
+
+// TestApply_ReferencedSource_NoRendered_NoRoot_Errors guards the fallback: the
+// same unresolvable referenced source with NO captured Rendered and no Root
+// fails to render — proving it is the stored Rendered bytes that make rollback
+// root-independent, not a lenient renderer silently applying nothing.
+func TestApply_ReferencedSource_NoRendered_NoRoot_Errors(t *testing.T) {
+	tgt := newWith(&fakeCluster{})
+	m := pt.Manifest{
+		Kind: "kubernetes",
+		Spec: []byte(`{"manifestFrom":{"path":"does/not/exist.yaml"}}`),
+		Root: "",
+	}
+	if _, err := tgt.Apply(context.Background(), m); err == nil {
+		t.Fatal("expected an error rendering an unresolvable referenced source with no captured Rendered")
+	}
+}
+
 func TestApply_ReappliesOnDriftDespiteMatchingStamp(t *testing.T) {
 	// Stamp already matches desired (out-of-band edit preserved it), but the
 	// cluster has drifted — Apply must re-apply to correct it.

@@ -40,6 +40,31 @@ func sampleRollout(id string, phase rollout.Phase) rollout.Rollout {
 	}
 }
 
+// TestSaveLoadRollout_RenderedRoundTrip proves a referenced source's captured
+// Rendered bytes survive JSON persistence of the desired manifest, so a rollback
+// loaded from the store restores exactly what was deployed.
+func TestSaveLoadRollout_RenderedRoundTrip(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+	in := sampleRollout("r-rendered", rollout.PhaseDeploying)
+	in.Desired = target.Manifest{
+		Kind:     "kubernetes",
+		Spec:     []byte(`{"manifestFrom":{"kustomize":"overlays/prod"}}`),
+		Checksum: "sha:rendered",
+		Rendered: []byte("kind: Deployment\nmetadata: {name: api}\n"),
+	}
+	if err := db.SaveRollout(ctx, in); err != nil {
+		t.Fatalf("SaveRollout: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, "r-rendered")
+	if err != nil {
+		t.Fatalf("LoadRollout: %v", err)
+	}
+	if string(got.Desired.Rendered) != string(in.Desired.Rendered) {
+		t.Errorf("Rendered round-trip = %q, want %q", got.Desired.Rendered, in.Desired.Rendered)
+	}
+}
+
 func TestOpen_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "r.db")

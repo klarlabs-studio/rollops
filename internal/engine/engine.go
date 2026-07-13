@@ -821,9 +821,11 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		// rollbackWithDatabase here would deadlock on ErrTargetBusy.
 		if cfg.Spec.Rollback.Auto {
 			if prior, ok := e.priorManifest(ctx, ref, m.Checksum); ok {
-				// A prior loaded from history has no Root (it is never persisted);
-				// re-root it at the current checkout so a referenced-source rollback
-				// renders against the live files.
+				// A prior loaded from history has no Root (never persisted).
+				// Referenced sources carry their captured Rendered bytes and
+				// restore those verbatim (no re-render, no Root needed); the
+				// re-root here only helps inline/flat sources and legacy history
+				// entries that predate captured Rendered.
 				prior.Root = m.Root
 				// r is still in `deploying`; applyRollback drives deploying →
 				// rolled-back via EventRollback (a legal transition) and resets
@@ -878,8 +880,10 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	if err != nil {
 		return VerifyOutcome{}, err
 	}
-	// Re-root a prior loaded from history (Root is never persisted) at the current
-	// checkout so a referenced-source rollback renders against the live files.
+	// A prior loaded from history has no Root (never persisted). Referenced
+	// sources restore their captured Rendered bytes verbatim (no re-render, no
+	// Root); the re-root here only helps inline/flat sources and legacy history
+	// entries that predate captured Rendered.
 	if prior.Root == "" {
 		prior.Root = rootFromContext(ctx)
 	}
@@ -1714,6 +1718,11 @@ func (e *Engine) stampReferencedChecksum(ctx context.Context, ref string, m *pt.
 	}
 	sum := sha256.Sum256(out)
 	m.Checksum = hex.EncodeToString(sum[:])
+	// Capture the rendered bytes so they are persisted with the rollout: a later
+	// rollback restores exactly what was deployed rather than re-rendering the
+	// referenced source (which may have changed, or be unreachable where no
+	// checkout is at hand — the manual CLI/UI/API rollback path).
+	m.Rendered = out
 	return out, nil
 }
 

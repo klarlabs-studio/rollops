@@ -109,3 +109,39 @@ func TestApply_ReferencedSource_StampsRenderedChecksum(t *testing.T) {
 		t.Errorf("applied checksum = %q, want sha256(rendered) %q", fake.applied[0].Checksum, want)
 	}
 }
+
+// TestApply_ReferencedSource_PersistsRenderedForRollback proves the rollback
+// fix at the engine level: Apply captures the rendered bytes onto the manifest
+// it applies AND persists, so a prior manifest loaded from history carries them
+// and a rollback restores exactly what was deployed — no re-render, no Root.
+func TestApply_ReferencedSource_PersistsRenderedForRollback(t *testing.T) {
+	rendered := []byte("kind: Deployment\nmetadata: {name: rendered}\n")
+	fake := &fakeTarget{referenced: true, rendered: rendered}
+	e, _ := newEngine(t, fake)
+
+	rl, err := e.Apply(context.Background(), ApplyRequest{Config: loadConfig(t), Initiator: rollout.Identity{Kind: "human", Name: "x"}})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	// The manifest handed to the target carries the rendered bytes.
+	if len(fake.applied) != 1 || string(fake.applied[0].Rendered) != string(rendered) {
+		t.Fatalf("applied manifest must carry rendered bytes for persistence, got %q", func() string {
+			if len(fake.applied) == 1 {
+				return string(fake.applied[0].Rendered)
+			}
+			return "<none>"
+		}())
+	}
+	// And they survive on the persisted rollout's desired state, so a prior
+	// manifest from history restores them verbatim on rollback (no Root needed).
+	prior, ok := e.PriorManifest(context.Background(), rl.TargetRef, "")
+	if !ok {
+		t.Fatal("expected a prior manifest for the target")
+	}
+	if string(prior.Rendered) != string(rendered) {
+		t.Errorf("persisted prior.Rendered = %q, want %q", prior.Rendered, rendered)
+	}
+	if prior.Root != "" {
+		t.Errorf("Root must not be persisted, got %q", prior.Root)
+	}
+}
