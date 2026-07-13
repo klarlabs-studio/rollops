@@ -5,7 +5,63 @@ existing Helm / Kustomize / OCI users adopt Rollops unchanged. The Git source is
 the daemon's own desired-state poll; these sources describe *what* a target
 renders once a sync fires. Set exactly one in the target spec.
 
-Precedence: `oci` > `helm` > `kustomize` > `manifest`.
+Two ways to declare the source:
+
+- **`manifestFrom`** (recommended) — a *referenced* source: a file, Kustomize
+  overlay, or Helm chart tracked in the repo, resolved relative to the config
+  file's own directory. Preferred for Kustomize/Helm users: no drifting inline
+  copy, and drift keys off the rendered output (see below). See
+  [manifestFrom](#manifestfrom).
+- **Flat keys** (`helm` / `kustomize` / `oci` / `bucket` / `manifest`) — the
+  original inline form, still fully supported. Precedence when no `manifestFrom`
+  is set: `oci` > `helm` > `kustomize` > `manifest`.
+
+`manifestFrom` is exclusive: it may not be combined with an inline `manifest` or
+any flat key. Config load rejects a target that sets more than one source, or a
+`manifestFrom` with more than one of `path` / `kustomize` / `helm`.
+
+## manifestFrom
+
+Render the desired manifest from a source **referenced** in the repo instead of
+inlining a copy. Exactly one of `path`, `kustomize`, or `helm`:
+
+```yaml
+target:
+  kind: kubernetes
+  spec:
+    namespace: myapp
+    resource: deployment/api
+    manifestFrom:
+      path: k8s/api.deployment.yaml        # a single file
+      # kustomize: k8s/overlays/prod        # a kustomize dir (or remote URL)
+      # helm: { chart: ./charts/api, values: [values-prod.yaml] }
+```
+
+**Path resolution.** Relative paths resolve against the directory of the config
+file this target came from — the Git checkout for the daemon, the config file's
+directory for the CLI — *never* the daemon's working directory. The daemon and
+one-shot CLI behave identically. Absolute paths and `..` escapes are rejected;
+remote Kustomize/Helm sources (a URL, an `oci://` ref, a `git@` ref, or a
+`repo//path` marker) pass through untouched. Rendering runs at safe defaults:
+kustomize with no alpha/exec plugins, `helm template` with no post-renderer.
+
+- **path** — read a single manifest file, applied verbatim.
+- **kustomize** — a string: a local overlay directory (rooted + confined) or a
+  remote URL, built with `kubectl kustomize`.
+- **helm** — a mapping: `chart` (a local dir, rooted + confined, or a remote
+  chart name with `repo`, or an `oci://` ref), optional `repo` / `version` /
+  `namespace` / `releaseName`, and `values` as a list of values **files**
+  (each resolved against the root). Rendered with `helm template`.
+
+**Drift.** For a referenced source the drift checksum is computed over the
+**rendered output**, so an edit to a referenced Kustomize/Helm/path file is
+detected as drift and reconciled even under `shallow` verification. Inline
+`manifest` and the flat keys keep their spec-derived checksum. Preview the
+resolved manifest with `rollops plan <config.yaml>` — it prints the rendered
+result under `--- rendered manifest ---`.
+
+Run `rollops doctor <config.yaml>` to confirm the render tools a target needs
+(`kubectl` always; `helm` when a Helm source is used) are present.
 
 ## helm
 
