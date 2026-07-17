@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -41,7 +42,11 @@ func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
 	return pt.HealthStatus{State: pt.HealthHealthy}, nil
 }
 
-func newTools(t *testing.T, id rollout.Identity) *Tools {
+// newTools builds a Tools bound to a fresh engine and a policy that grants the
+// "nomi" agent the full operator role and the "weak" agent read-only. Callers
+// pick the identity per request via asAgent(name), mirroring how the transport
+// injects a per-caller identity into the handler context.
+func newTools(t *testing.T) *Tools {
 	t.Helper()
 	db, err := sqlite.Open(t.TempDir() + "/m.db")
 	if err != nil {
@@ -66,12 +71,18 @@ func newTools(t *testing.T, id rollout.Identity) *Tools {
 	pol.DefineRole(security.Role{Name: "readonly", Grants: []security.Grant{{Perm: security.PermStatus}}})
 	pol.Bind("agent:nomi", "agent")
 	pol.Bind("agent:weak", "readonly")
-	return NewTools(eng, pol, id)
+	return NewTools(eng, pol)
+}
+
+// asAgent returns a context carrying the named agent identity, as the transport
+// auth hook would after resolving that caller's bearer token.
+func asAgent(name string) context.Context {
+	return WithIdentity(context.Background(), rollout.Identity{Kind: "agent", Name: name})
 }
 
 func TestTools_PlanApplyStatus(t *testing.T) {
-	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
-	ctx := context.Background()
+	tl := newTools(t)
+	ctx := asAgent("nomi")
 
 	p, err := tl.Plan(ctx, PlanInput{Config: cfgYAML})
 	if err != nil {
@@ -97,8 +108,8 @@ func TestTools_PlanApplyStatus(t *testing.T) {
 }
 
 func TestTools_Promote(t *testing.T) {
-	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
-	ctx := context.Background()
+	tl := newTools(t)
+	ctx := asAgent("nomi")
 	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -112,33 +123,61 @@ func TestTools_Promote(t *testing.T) {
 }
 
 func TestTools_PromoteDeniedForReadonly(t *testing.T) {
-	// Seed a rollout as nomi, then a readonly agent must not promote it.
-	nomi := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
-	if _, err := nomi.Apply(context.Background(), ApplyInput{Config: cfgYAML}); err != nil {
+	// Per-caller RBAC on one shared engine+policy: nomi (operator) seeds a rollout,
+	// then the readonly "weak" caller — same Tools, different context identity —
+	// must not promote it.
+	tl := newTools(t)
+	if _, err := tl.Apply(asAgent("nomi"), ApplyInput{Config: cfgYAML}); err != nil {
 		t.Fatal(err)
 	}
-	// Share the engine+policy by acting through the same Tools but a weak identity.
-	weak := &Tools{eng: nomi.eng, policy: nomi.policy, identity: rollout.Identity{Kind: "agent", Name: "weak"}}
-	if _, err := weak.Promote(context.Background(), ActionInput{RolloutID: "ro-mcp-1"}); err == nil {
+	if _, err := tl.Promote(asAgent("weak"), ActionInput{RolloutID: "ro-mcp-1"}); err == nil {
 		t.Fatal("readonly agent must not promote")
 	}
 }
 
 func TestTools_RBACDeniesApply(t *testing.T) {
-	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "weak"}) // readonly
-	if _, err := tl.Apply(context.Background(), ApplyInput{Config: cfgYAML}); err == nil {
+	tl := newTools(t)
+	ctx := asAgent("weak") // readonly
+	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); err == nil {
 		t.Fatal("readonly agent must not apply")
 	}
 	// but may read status
-	if _, err := tl.Status(context.Background(), StatusInput{RolloutID: "missing"}); err == nil {
+	if _, err := tl.Status(ctx, StatusInput{RolloutID: "missing"}); err == nil {
 		// not found is fine; RBAC must allow the call through to the lookup
 		t.Skip()
 	}
 }
 
+// TestTools_FailClosedWithoutIdentity proves the surface is fail-closed: a call
+// whose context carries no authenticated caller is rejected with
+// ErrUnauthenticated and never reaches the engine — no fixed fallback identity.
+func TestTools_FailClosedWithoutIdentity(t *testing.T) {
+	tl := newTools(t)
+	ctx := context.Background() // no identity injected
+
+	if _, err := tl.Plan(ctx, PlanInput{Config: cfgYAML}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Plan without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Apply without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Status(ctx, StatusInput{RolloutID: "ro-mcp-1"}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Status without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Rollback(ctx, RollbackInput{TargetRef: "demo/staging/app"}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Rollback without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Promote(ctx, ActionInput{RolloutID: "ro-mcp-1"}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Promote without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Freeze(ctx, FreezeInput{Active: true}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Freeze without identity = %v, want ErrUnauthenticated", err)
+	}
+}
+
 func TestTools_Rollback(t *testing.T) {
-	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
-	ctx := context.Background()
+	tl := newTools(t)
+	ctx := asAgent("nomi")
 	c1, err := config.Load([]byte(cfgYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +218,7 @@ spec:
 }
 
 func TestNewServer_RegistersTools(t *testing.T) {
-	tl := newTools(t, rollout.Identity{Kind: "agent", Name: "nomi"})
+	tl := newTools(t)
 	srv := NewServer(tl)
 	for _, name := range []string{"rollouts.plan", "rollouts.apply", "rollouts.rollback", "rollouts.status"} {
 		if _, ok := srv.GetTool(name); !ok {
