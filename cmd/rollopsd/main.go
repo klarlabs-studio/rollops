@@ -254,9 +254,15 @@ func run(args []string) error {
 		if err := ensureTransportSecure(mcpAddr, "MCP", tlsCfg); err != nil {
 			return err
 		}
-		agent := rollout.Identity{Kind: "agent", Name: envOr("ROLLOPS_MCP_AGENT", "local")}
-		tools := mcp.NewTools(eng, policy, agent)
-		var mcpOpts []mcpserver.HTTPOption
+		// Per-caller bearer auth: each MCP caller presents a token that resolves to
+		// a distinct identity, so RBAC applies per caller instead of authorizing
+		// every connection as one fixed agent. mTLS (below) still proves a trusted
+		// client at the transport; the bearer token proves WHICH caller. Fail-closed:
+		// with no token map or an unresolved token the request is rejected before any
+		// tool runs.
+		mcpAuth := mcpTokenAuth()
+		tools := mcp.NewTools(eng, policy)
+		mcpOpts := mcp.AuthServeOptions(mcpAuth)
 		if tlsCfg != nil {
 			tc, err := tlsCfg.ServerTLS(tlsCfg.HasClientCA())
 			if err != nil {
@@ -265,8 +271,8 @@ func run(args []string) error {
 			mcpOpts = append(mcpOpts, mcpserver.WithTLSConfig(tc))
 		}
 		go func() {
-			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s as agent %q (TLS=%s mTLS=%s)\n",
-				mcpAddr, agent.Name, onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
+			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s (per-caller bearer auth, %d token(s), TLS=%s mTLS=%s)\n",
+				mcpAddr, len(mcpAuth), onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
 			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr, mcpOpts...)
 		}()
 	}
@@ -614,6 +620,37 @@ func buildOIDCAuth() api.Authenticator {
 		return nil
 	}
 	return api.OIDCAuth{Config: cfg}
+}
+
+// mcpTokenAuth builds the MCP bearer-token→identity map from ROLLOPS_MCP_TOKENS,
+// a JSON object mapping each token to an agent name, e.g.
+//
+//	ROLLOPS_MCP_TOKENS={"<token-a>":"nomi","<token-b>":"deploy-bot"}
+//
+// Each entry authenticates as rollout.Identity{Kind:"agent", Name:<value>}, so
+// RBAC authorizes each MCP caller as itself. It reuses api.TokenAuth — the same
+// Authenticator model as the HTTP and gRPC surfaces — so there is one token
+// format across the daemon. An unset or malformed value yields an empty map,
+// which is fail-closed: every MCP call is rejected until the operator configures
+// tokens. Entries with an empty token or empty name are skipped.
+func mcpTokenAuth() api.TokenAuth {
+	auth := api.TokenAuth{}
+	raw := os.Getenv("ROLLOPS_MCP_TOKENS")
+	if raw == "" {
+		return auth
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		fmt.Fprintf(os.Stderr, "rollopsd: ROLLOPS_MCP_TOKENS is not valid JSON, ignoring (MCP will reject all callers): %v\n", err)
+		return auth
+	}
+	for tok, name := range m {
+		if tok == "" || name == "" {
+			continue
+		}
+		auth[tok] = rollout.Identity{Kind: "agent", Name: name}
+	}
+	return auth
 }
 
 func envOr(key, def string) string {
