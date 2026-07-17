@@ -60,11 +60,15 @@
 - **Flat-key deprecation decided:** keep the flat keys (`spec.helm`/`kustomize`/`manifest`/`oci`/`bucket`) working for back-compat, **not** slated for removal; new configs prefer `manifestFrom`. Documented in `docs/kubernetes-sources.md`.
 - **Docs-PR merge gotcha fixed (#63):** dropped `paths-ignore` on the `pull_request` trigger so markdown/`memory/`-only PRs run CI and satisfy the required checks (no more BLOCKED/admin-only merges). `push`-to-main keeps its `paths-ignore`.
 
-### [WAITING] operator
-- None.
+### Resolved (continued — features closed this session)
+- **Metric analysis on manual Verify/Promote (#65):** analysis config persisted on the rollout (opaque JSON `rollout.Analysis`, migration 0008 threaded through the store); manual `Verify` + public `Promote` run the same metric gate as the auto path. `Promote` gated on the PUBLIC method (not `promoteWithNote`) so the auto path doesn't run analysis twice.
+- **MCP per-caller transport auth (#66):** bearer-token→identity reusing `api.Authenticator`; fail-closed via mcp-go `WithAuthorize` (403) + `WithRequestContextFn`; `Tools` derive the caller per-request (defense-in-depth handler-level fail-close). **BREAKING on deploy — see WAITING.**
 
-### [OPEN] — remaining features (not one-pass; tackle individually)
-- **roady #34** — least-privilege multi-org git auth (per-repo deploy keys / GitHub App) to replace the broad classic PAT. Substantial; touches production git auth across the fleet.
-- **Manual `Promote`/`Verify` skip metric analysis** — engine feature: persist analysis config on the rollout so a manual promote/verify runs the same gate as auto.
+### [WAITING] operator
+- **Before the next MCP-serving deploy: set `ROLLOPS_MCP_TOKENS`** (JSON `{"<token>":"<agent>"}`) and give every MCP caller an `Authorization: Bearer <token>`. #66 made the MCP surface **fail-closed** (no fallback agent) — it rejects all calls until tokens are configured. Merged to main but NOT deployed (cluster still on v0.26.0, which predates #66).
+
+### [OPEN] — remaining features (need a design pass / operator specifics)
+- **roady #34** — least-privilege multi-org git auth (per-repo deploy keys / GitHub App) to replace the broad classic PAT. Substantial; rewrites production git auth fleet-wide → **design-first with the operator** before any code.
 - **Marketing-sites digest→semver flip** — per-app `.rollops` imagePolicy edits in the app repos, gated on each having cut a semver release; operator's call per-app.
-- **MCP per-caller transport auth** (bounded) and **hermes/mnemos shared-service config ownership** pattern.
+- **hermes/mnemos shared-service config ownership** pattern — a decision, not yet scoped.
+- Follow-up: **manual `Verify` also skips the smoke test** (only metric analysis was added in #65) — small engine add if wanted.
