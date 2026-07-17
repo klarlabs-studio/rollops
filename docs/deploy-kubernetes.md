@@ -86,3 +86,4 @@ kubectl -n rollops-system port-forward svc/rollopsd 8080:80   # open http://loca
 | `ROLLOPS_UI_PASSWORD` | — | UI login password |
 | `ROLLOPS_GRPC_ADDR` | — | optional gRPC listen address |
 | `ROLLOPS_MCP_ADDR` | — | optional MCP (agent) listen address |
+| `ROLLOPS_MCP_TOKENS` | — | JSON `{token: agent-name}` map for per-caller MCP bearer auth; required for MCP (fail-closed) |
