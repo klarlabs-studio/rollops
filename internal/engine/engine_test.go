@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -268,6 +269,56 @@ func TestPlan_DetectsChangeByChecksum(t *testing.T) {
 	}
 	if p2.Changed {
 		t.Error("expected Changed=false when observed matches desired checksum")
+	}
+}
+
+// TestApply_CapturesAnalysisConfig proves the deploy path persists the
+// spec.analysis descriptor on the rollout as opaque JSON, so a later manual
+// Verify/Promote can run the same metric-analysis gate as the auto path.
+func TestApply_CapturesAnalysisConfig(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("load rollout: %v", err)
+	}
+	if len(got.Analysis) == 0 {
+		t.Fatal("Apply should capture spec.analysis on the rollout, got none")
+	}
+	var a config.Analysis
+	if err := json.Unmarshal(got.Analysis, &a); err != nil {
+		t.Fatalf("captured analysis is not valid JSON: %v", err)
+	}
+	if a.Provider != "prometheus" || a.Condition != "errorRate < 0.05" {
+		t.Errorf("captured analysis = %+v, want prometheus provider + errorRate condition", a)
+	}
+}
+
+// TestApply_NoAnalysisLeavesEmpty proves a config without spec.analysis leaves
+// the captured descriptor empty, so the len==0 guard in the manual gate holds.
+func TestApply_NoAnalysisLeavesEmpty(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("load rollout: %v", err)
+	}
+	if len(got.Analysis) != 0 {
+		t.Errorf("no spec.analysis should leave Analysis empty, got %q", got.Analysis)
 	}
 }
 

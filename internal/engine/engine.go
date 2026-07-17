@@ -744,6 +744,16 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.DeliveryFlag = b
 		}
 	}
+	// Capture the metric-analysis descriptor so a later manual Verify — and the
+	// Promote that follows — can run the same analysis gate as the auto path,
+	// which still holds the config. Empty means no analysis was configured.
+	// Mirrors the delivery-descriptor capture above; opaque JSON keeps this model
+	// decoupled from the config package.
+	if an := cfg.Spec.Analysis; an != nil {
+		if b, mErr := json.Marshal(an); mErr == nil {
+			r.Analysis = b
+		}
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
