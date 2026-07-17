@@ -25,15 +25,17 @@ the missing v0.25.0 changelog; #61 admin-merged past the docs-PR CI path-skip),
 rolled the cluster to v0.26.0, and synced the in-repo deploy manifest (#62). Full
 detail in sessions/2026-07-17.md.
 
-**Next Session Should:** Housekeeping threads all closed this session — flat-key
-decision (legacy-but-retained, documented), docs-PR merge gotcha (fixed in #63,
-dropped `pull_request` `paths-ignore`), and the leaked-PAT revocation (operator did
-it 2026-07-17). Remaining work is the real-feature backlog, each its own effort:
-(1) **roady #34** — least-privilege multi-org git auth (deploy keys / GitHub App)
-to replace the broad classic PAT; (2) manual `Promote`/`Verify` skip metric analysis
-(persist analysis config on the rollout); (3) marketing-sites digest→semver flip
-(per-app `.rollops`, gated on a semver release); (4) MCP per-caller transport auth
-(bounded) + hermes/mnemos shared-service config ownership.
+**Next Session Should:** Most open threads closed this session — housekeeping
+(flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
+metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth
+(#66, fail-closed, BREAKING)**. FIRST: **before the next MCP-serving deploy, set
+`ROLLOPS_MCP_TOKENS` and give every MCP caller a bearer token** — #66 is merged but
+undeployed (cluster still v0.26.0); deploying without tokens dark-fails the MCP
+surface. Remaining backlog, each its own effort: (1) **roady #34** — least-privilege
+multi-org git auth (deploy keys / GitHub App) to replace the classic PAT — DESIGN
+first with the operator; (2) marketing-sites digest→semver flip (per-app `.rollops`,
+gated on a semver release); (3) hermes/mnemos shared-service config ownership;
+(4) small follow-up: manual `Verify` still skips the smoke test.
 
 ## 🛠️ Distribution maturity (2026-06-11, unreleased, → v0.7.0)
 
