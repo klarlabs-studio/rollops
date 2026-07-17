@@ -192,7 +192,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: rollopsd
-          image: ghcr.io/klarlabs-studio/rollopsd:v0.24.0
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.26.0
           args: []
           ports:
             - { name: https, containerPort: 8443 }
