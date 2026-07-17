@@ -13,8 +13,11 @@ Two ways to declare the source:
   copy, and drift keys off the rendered output (see below). See
   [manifestFrom](#manifestfrom).
 - **Flat keys** (`helm` / `kustomize` / `oci` / `bucket` / `manifest`) — the
-  original inline form, still fully supported. Precedence when no `manifestFrom`
-  is set: `oci` > `helm` > `kustomize` > `manifest`.
+  original form. **Legacy but retained**: kept working for backward compatibility
+  and not slated for removal, but new configs should prefer `manifestFrom` (it
+  resolves relative to the config dir and keys drift off the rendered output).
+  Precedence when no `manifestFrom` is set: `oci` > `helm` > `kustomize` >
+  `manifest`.
 
 `manifestFrom` is exclusive: it may not be combined with an inline `manifest` or
 any flat key. Config load rejects a target that sets more than one source, or a
