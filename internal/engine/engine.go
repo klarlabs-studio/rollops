@@ -1166,6 +1166,19 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 	if hs.State != pt.HealthHealthy {
 		return r, fmt.Errorf("engine: verify: target unhealthy (%s)", hs.Reason)
 	}
+	// After health passes, run the same metric-analysis gate as the auto path
+	// (VerifyOrRollback), reading the analysis config captured on the rollout at
+	// deploy time. Opt-in via WithMetricAnalysis (off by default), and a no-op
+	// when no analysis was configured — so the health-only behaviour is
+	// unchanged in both cases.
+	if e.analysis && len(r.Analysis) > 0 {
+		var a config.Analysis
+		if err := json.Unmarshal(r.Analysis, &a); err == nil {
+			if ok, note := e.runAnalysis(ctx, &a); !ok {
+				return r, fmt.Errorf("engine: verify: %s", note)
+			}
+		}
+	}
 	return r, nil
 }
 

@@ -337,6 +337,81 @@ func TestVerify_HealthGate(t *testing.T) {
 	}
 }
 
+// TestVerify_RunsMetricAnalysisFails proves a manual Verify runs the same
+// metric-analysis gate as the auto path: a healthy target still fails Verify
+// when the injected metrics provider breaches the analysis condition.
+func TestVerify_RunsMetricAnalysisFails(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	// fixedMetrics(0.2) breaches "errorRate < 0.05".
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	_, err = e.Verify(ctx, r.ID)
+	if err == nil {
+		t.Fatal("manual verify should fail when metric analysis breaches, even with a healthy target")
+	}
+	if !strings.Contains(err.Error(), "analysis") {
+		t.Errorf("verify error = %q, want an analysis failure", err)
+	}
+}
+
+// TestVerify_RunsMetricAnalysisPasses proves a healthy target plus a passing
+// analysis clears Verify.
+func TestVerify_RunsMetricAnalysisPasses(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.01)))
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := e.Verify(ctx, r.ID); err != nil {
+		t.Fatalf("healthy target + passing analysis should verify: %v", err)
+	}
+}
+
+// TestVerify_AnalysisNoopWhenDisabled proves the manual analysis gate stays
+// opt-in: with analysis disabled (no WithMetricAnalysis) a breaching provider
+// is ignored and Verify remains health-only.
+func TestVerify_AnalysisNoopWhenDisabled(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake) // analysis off by default
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := e.Verify(ctx, r.ID); err != nil {
+		t.Fatalf("analysis disabled: verify should be health-only: %v", err)
+	}
+}
+
+// TestVerify_AnalysisNoopWhenAbsent proves that even with analysis enabled and a
+// breaching provider, a rollout with no captured analysis config verifies on
+// health alone — the len(r.Analysis)==0 guard holds.
+func TestVerify_AnalysisNoopWhenAbsent(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	// fakeYAML carries no spec.analysis, so r.Analysis stays empty.
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := e.Verify(ctx, r.ID); err != nil {
+		t.Fatalf("no captured analysis: verify should be health-only: %v", err)
+	}
+}
+
 func TestPromote(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	e, db := newEngine(t, fake)
