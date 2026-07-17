@@ -55,8 +55,21 @@ The active posture is logged at startup, e.g.:
 ```
 rollopsd: listening on :8443 (db ...) HTTP TLS=on mTLS(api)=on
 rollopsd: gRPC on :8443 (TLS=on mTLS=on)
-rollopsd: MCP serving on :8444 as agent "local" (TLS=on mTLS=on)
+rollopsd: MCP serving on :8444 (per-caller bearer auth, 2 token(s), TLS=on mTLS=on)
 ```
+
+The MCP surface authenticates each caller by a bearer token on top of mTLS: mTLS
+proves a trusted client, and the token proves *which* caller (resolving to a
+distinct `rollout.Identity` so RBAC applies per caller). Configure the tokens via
+`ROLLOPS_MCP_TOKENS`, a JSON object mapping each token to an agent name:
+
+```
+ROLLOPS_MCP_TOKENS={"<token-a>":"nomi","<token-b>":"deploy-bot"}
+```
+
+Callers pass `Authorization: Bearer <token>`. The surface is **fail-closed**: with
+no token map configured, or a token that does not resolve, the request is rejected
+(`403`) before any tool runs — there is no fallback identity.
 
 ## Certificate rotation (hot-reload)
 
