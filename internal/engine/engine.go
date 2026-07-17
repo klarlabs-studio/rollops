@@ -744,6 +744,16 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.DeliveryFlag = b
 		}
 	}
+	// Capture the metric-analysis descriptor so a later manual Verify — and the
+	// Promote that follows — can run the same analysis gate as the auto path,
+	// which still holds the config. Empty means no analysis was configured.
+	// Mirrors the delivery-descriptor capture above; opaque JSON keeps this model
+	// decoupled from the config package.
+	if an := cfg.Spec.Analysis; an != nil {
+		if b, mErr := json.Marshal(an); mErr == nil {
+			r.Analysis = b
+		}
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -1156,11 +1166,45 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 	if hs.State != pt.HealthHealthy {
 		return r, fmt.Errorf("engine: verify: target unhealthy (%s)", hs.Reason)
 	}
+	// After health passes, run the same metric-analysis gate as the auto path
+	// (VerifyOrRollback), reading the analysis config captured on the rollout at
+	// deploy time. Opt-in via WithMetricAnalysis (off by default), and a no-op
+	// when no analysis was configured — so the health-only behaviour is
+	// unchanged in both cases.
+	if e.analysis && len(r.Analysis) > 0 {
+		var a config.Analysis
+		if err := json.Unmarshal(r.Analysis, &a); err == nil {
+			if ok, note := e.runAnalysis(ctx, &a); !ok {
+				return r, fmt.Errorf("engine: verify: %s", note)
+			}
+		}
+	}
 	return r, nil
 }
 
-// Promote marks a verified rollout as promoted.
+// Promote marks a verified rollout as promoted. Because a freshly-deployed
+// rollout sits in `verifying` and the lifecycle does not force a prior Verify,
+// a direct Promote could otherwise skip the post-deploy gate — so it runs the
+// same metric-analysis gate as manual Verify before advancing. The gate lives
+// here (not in promoteWithNote) so the auto path (VerifyOrRollback), which has
+// already run analysis before calling promoteWithNote, does not run it twice.
+// Opt-in via WithMetricAnalysis and a no-op when no analysis was configured, so
+// the prior behaviour is unchanged in both cases.
 func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
+	if e.analysis {
+		r, err := e.store.LoadRollout(ctx, rolloutID)
+		if err != nil {
+			return rollout.Rollout{}, err
+		}
+		if len(r.Analysis) > 0 {
+			var a config.Analysis
+			if err := json.Unmarshal(r.Analysis, &a); err == nil {
+				if ok, note := e.runAnalysis(ctx, &a); !ok {
+					return r, fmt.Errorf("engine: promote: %s", note)
+				}
+			}
+		}
+	}
 	return e.promoteWithNote(ctx, rolloutID, "")
 }
 

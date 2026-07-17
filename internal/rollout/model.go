@@ -99,8 +99,15 @@ type Rollout struct {
 	// the config package, mirroring the DB-hook capture above.
 	DeliveryTraffic []byte
 	DeliveryFlag    []byte
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Metric-analysis descriptor captured at deploy time as opaque JSON
+	// (config.Analysis), so a later manual Verify — and the Promote that follows
+	// it — can run the same metric-analysis gate as the auto path, which still
+	// holds the config. Empty means no analysis was configured. Opaque bytes
+	// keep this model decoupled from the config package, mirroring the
+	// delivery-descriptor capture above.
+	Analysis  []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —
