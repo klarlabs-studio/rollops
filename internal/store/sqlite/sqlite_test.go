@@ -89,6 +89,9 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	in := sampleRollout("r1", rollout.PhaseDeploying)
 	in.Note = "database rollback: succeeded"
+	in.DeliveryTraffic = []byte(`{"provider":"gateway"}`)
+	in.DeliveryFlag = []byte(`{"flag":"api"}`)
+	in.Analysis = []byte(`{"provider":"prometheus","condition":"errorRate < 0.05"}`)
 	if err := db.SaveRollout(ctx, in); err != nil {
 		t.Fatalf("SaveRollout: %v", err)
 	}
@@ -116,6 +119,50 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	}
 	if got.Note != "database rollback: succeeded" {
 		t.Errorf("note = %q, want it persisted on the row", got.Note)
+	}
+	if string(got.DeliveryTraffic) != string(in.DeliveryTraffic) || string(got.DeliveryFlag) != string(in.DeliveryFlag) {
+		t.Errorf("delivery descriptors not round-tripped: traffic=%q flag=%q", got.DeliveryTraffic, got.DeliveryFlag)
+	}
+	if string(got.Analysis) != string(in.Analysis) {
+		t.Errorf("analysis = %q, want %q round-tripped", got.Analysis, in.Analysis)
+	}
+}
+
+// TestOpen_MigratesExistingDBForAnalysis proves the 0008 migration is
+// re-runnable: a database opened before the analysis column existed (simulated
+// by a second Open on the same file) upgrades cleanly and round-trips a rollout
+// carrying an Analysis descriptor.
+func TestOpen_MigratesExistingDBForAnalysis(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.db")
+	ctx := context.Background()
+
+	db1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := db1.SaveRollout(ctx, sampleRollout("r0", rollout.PhaseDeploying)); err != nil {
+		t.Fatalf("save before reopen: %v", err)
+	}
+	_ = db1.Close()
+
+	db2, err := Open(path) // re-runs migrations (incl. 0008) on the existing db
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	in := sampleRollout("r1", rollout.PhaseVerifying)
+	in.Analysis = []byte(`{"provider":"prometheus"}`)
+	if err := db2.SaveRollout(ctx, in); err != nil {
+		t.Fatalf("save after reopen: %v", err)
+	}
+	got, err := db2.LoadRollout(ctx, "r1")
+	if err != nil {
+		t.Fatalf("load after reopen: %v", err)
+	}
+	if string(got.Analysis) != string(in.Analysis) {
+		t.Errorf("analysis after migration = %q, want %q", got.Analysis, in.Analysis)
 	}
 }
 
