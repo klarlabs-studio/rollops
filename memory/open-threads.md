@@ -48,3 +48,23 @@
 - **roady #34** — per-repo deploy keys / GitHub App for least-privilege multi-org git auth (replaces the broad classic PAT).
 - Marketing sites (armada/brotwerk/kraftsport-coach/klarlabs) digest→semver: their CI now supports `site-v*`/`marketing-v*` tags; flip `.rollops` imagePolicy to minor after first semver release. Or stay continuous-deploy (digest).
 - hermes/mnemos config lives in klarlabs-studio/mnemos repo (done); shared-service config ownership pattern may need revisiting.
+
+## 2026-07-17 update
+
+### Resolved
+- **`manifestFrom` referenced manifest sources** (issue #57) — path/kustomize/helm shipped in **v0.26.0** (#58), non-breaking vs inline/flat keys, path-confined, drift keyed off rendered output, `plan`/`doctor` preview.
+- **Rollback of referenced sources** (#59) — restores the captured rendered bytes (root-independent across CLI/UI/MCP/API/gRPC; fixes the latent daemon "referenced files changed since deploy" case).
+- **ghcr image-push blockage (v0.19/v0.20 era) — GONE.** v0.26.0's goreleaser + Docker image jobs both passed; `rollopsd:v0.26.0` is on ghcr, and the cluster was rolled to it (Running/Ready).
+- **Cluster upgraded to v0.26.0**; in-repo `deploy/kubernetes/rollopsd.yaml` re-synced from stale v0.24.0 (#62).
+- **Leaked PAT `ghp_76ied…` REVOKED by operator (2026-07-17).** The lingering 2026-06-14 security thread is closed.
+- **Flat-key deprecation decided:** keep the flat keys (`spec.helm`/`kustomize`/`manifest`/`oci`/`bucket`) working for back-compat, **not** slated for removal; new configs prefer `manifestFrom`. Documented in `docs/kubernetes-sources.md`.
+- **Docs-PR merge gotcha fixed (#63):** dropped `paths-ignore` on the `pull_request` trigger so markdown/`memory/`-only PRs run CI and satisfy the required checks (no more BLOCKED/admin-only merges). `push`-to-main keeps its `paths-ignore`.
+
+### [WAITING] operator
+- None.
+
+### [OPEN] — remaining features (not one-pass; tackle individually)
+- **roady #34** — least-privilege multi-org git auth (per-repo deploy keys / GitHub App) to replace the broad classic PAT. Substantial; touches production git auth across the fleet.
+- **Manual `Promote`/`Verify` skip metric analysis** — engine feature: persist analysis config on the rollout so a manual promote/verify runs the same gate as auto.
+- **Marketing-sites digest→semver flip** — per-app `.rollops` imagePolicy edits in the app repos, gated on each having cut a semver release; operator's call per-app.
+- **MCP per-caller transport auth** (bounded) and **hermes/mnemos shared-service config ownership** pattern.
