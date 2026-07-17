@@ -1182,8 +1182,29 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 	return r, nil
 }
 
-// Promote marks a verified rollout as promoted.
+// Promote marks a verified rollout as promoted. Because a freshly-deployed
+// rollout sits in `verifying` and the lifecycle does not force a prior Verify,
+// a direct Promote could otherwise skip the post-deploy gate — so it runs the
+// same metric-analysis gate as manual Verify before advancing. The gate lives
+// here (not in promoteWithNote) so the auto path (VerifyOrRollback), which has
+// already run analysis before calling promoteWithNote, does not run it twice.
+// Opt-in via WithMetricAnalysis and a no-op when no analysis was configured, so
+// the prior behaviour is unchanged in both cases.
 func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
+	if e.analysis {
+		r, err := e.store.LoadRollout(ctx, rolloutID)
+		if err != nil {
+			return rollout.Rollout{}, err
+		}
+		if len(r.Analysis) > 0 {
+			var a config.Analysis
+			if err := json.Unmarshal(r.Analysis, &a); err == nil {
+				if ok, note := e.runAnalysis(ctx, &a); !ok {
+					return r, fmt.Errorf("engine: promote: %s", note)
+				}
+			}
+		}
+	}
 	return e.promoteWithNote(ctx, rolloutID, "")
 }
 

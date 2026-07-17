@@ -412,6 +412,58 @@ func TestVerify_AnalysisNoopWhenAbsent(t *testing.T) {
 	}
 }
 
+// TestPromote_RunsMetricAnalysisFails proves a direct manual Promote — which
+// can be issued on a freshly-deployed rollout without a prior Verify (the phase
+// is already `verifying` after Apply) — cannot skip the metric-analysis gate: a
+// breaching provider fails the promote and the rollout stays in verifying.
+func TestPromote_RunsMetricAnalysisFails(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	_, err = e.Promote(ctx, r.ID)
+	if err == nil {
+		t.Fatal("direct promote must not bypass a breaching metric-analysis gate")
+	}
+	if !strings.Contains(err.Error(), "analysis") {
+		t.Errorf("promote error = %q, want an analysis failure", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want it held at verifying (not promoted)", got.Phase)
+	}
+}
+
+// TestPromote_RunsMetricAnalysisPasses proves the promote gate lets a passing
+// analysis through to promoted.
+func TestPromote_RunsMetricAnalysisPasses(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.01)))
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	pr, err := e.Promote(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("passing analysis should promote: %v", err)
+	}
+	if pr.Phase != rollout.PhasePromoted {
+		t.Errorf("phase = %q, want promoted", pr.Phase)
+	}
+}
+
 func TestPromote(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	e, db := newEngine(t, fake)
