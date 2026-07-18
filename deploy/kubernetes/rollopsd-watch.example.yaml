@@ -15,6 +15,13 @@
 #   - deployKeyPath : per-repo SSH key (git+ssh url), naturally single-repo.
 #   - tokenFile / token : a (broad) PAT. Simplest, least scoped — avoid sharing
 #     one across repos/orgs.
+#
+# RECOMMENDED (see docs/git-auth-migration.md): a SEPARATE GitHub App per org so
+# a compromised/revoked key is contained to one org. Every klarlabs-studio repo
+# uses the klarlabs App ID + key (github-app-klarlabs.pem); every felixgeelhaar
+# repo uses the felixgeelhaar App ID + key (github-app-fg.pem). Both keys live in
+# the `rollopsd-git` Secret, mounted at /etc/rollops/git (see
+# rollopsd-git.example.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,19 +31,21 @@ data:
   watch.json: |
     [
       {
-        "name": "armada",
-        "url": "https://github.com/klarlabs-studio/armada",
+        "name": "brotwerk",
+        "url": "https://github.com/klarlabs-studio/brotwerk",
         "branch": "main",
         "path": ".rollops",
-        "githubAppId": "123456",
-        "githubInstallationId": "78901234",
-        "githubAppPrivateKeyFile": "/etc/rollops/git/armada-app.pem"
+        "githubAppId": "<klarlabs-studio-app-id>",
+        "githubInstallationId": "<klarlabs-studio-installation-id>",
+        "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-klarlabs.pem"
       },
       {
-        "name": "vorhut",
-        "url": "https://github.com/klarlabs-studio/vorhut",
+        "name": "personal-app",
+        "url": "https://github.com/felixgeelhaar/some-app",
         "branch": "main",
         "path": ".rollops",
-        "tokenFile": "/etc/rollops/git/token"
+        "githubAppId": "<felixgeelhaar-app-id>",
+        "githubInstallationId": "<felixgeelhaar-installation-id>",
+        "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-fg.pem"
       }
     ]
