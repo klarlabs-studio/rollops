@@ -116,10 +116,23 @@
   forge CLI app needing separate care). `armada-marketing` still runs in-cluster
   (1/1) but rollops no longer reconciles it: no image bumps, no drift correction.
   Reversible — backup at `watch-pre-armada-removal.json`, or re-add the entry.
-- **PAT decommission — REMAINING.** Now unblocked: no repo uses the PAT. Steps:
-  strip `tokenFile` from all 10 entries, drop the `token` key from `rollopsd-git`,
-  then revoke the classic PAT on GitHub. Deliberately NOT done in the same sitting
-  as the cutover so the migration can soak.
+- **PAT decommission — DONE for git auth (2026-07-18), revocation BLOCKED.**
+  `tokenFile` stripped from all 10 watch entries and the `token` key removed from
+  `rollopsd-git` (which now holds only the two App keys); all 10 verified
+  reconciling after each step; local `.pem` copies deleted from `~/Downloads`.
+  **The PAT itself is NOT revoked, and must not be yet:** a hash comparison across
+  all cluster Secrets showed the identical value also in
+  `rollops-system/rollopsd-registry:token` — i.e. `ROLLOPS_REGISTRY_TOKEN`, which
+  image automation uses to scan ghcr. Revoking would silently stop every image
+  bump fleet-wide (nothing crashes; bumps just stop). `docs/git-auth-migration.md`
+  step 4 now carries this caveat plus the hash-compare snippet.
+  **To finish:** mint a dedicated `read:packages` token → put it in
+  `rollopsd-registry` → verify a scan still resolves tags → revoke the old PAT.
+  Operator must create the token (agent does not create credentials).
+- **Ordering constraint when stripping the PAT:** remove `tokenFile` from the
+  ConfigMap BEFORE deleting the Secret key. `buildWatchSpecs` reads `tokenFile` at
+  startup and a read failure is fatal — doing it the other way round crash-loops
+  the daemon and stops all reconciliation.
 - ~~Set MCP tokens before the next deploy~~ — **NOT a blocker for THIS cluster
   (verified 2026-07-18).** `ROLLOPS_MCP_ADDR` is **not set** on the rollopsd
   Deployment, and `main.go` only serves MCP when it is — so the daemon does not
