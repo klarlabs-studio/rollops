@@ -78,8 +78,17 @@
   marketing release first — a future operator decision, not a config edit. Staying
   on digest (continuous-deploy) is a valid end state.
 
-### [OPEN] — remaining (need operator specifics)
-- **hermes/mnemos shared-service config ownership** pattern — a decision, not yet scoped.
+- **hermes/mnemos config ownership — DECIDED (2026-07-18): per-product ISOLATED.**
+  Org memory never crosses products; each product owns+pins its own mnemos (the
+  fleet already conforms — pet-medical's own instance, senat's own PVC, devatlas
+  optional-off, mnemos-repo config = hermes's instance). No config change needed;
+  recorded in decisions.md. Not a shared pool.
+
+### [OPEN] — remaining
 - Future/optional: flip a marketing-site to semver *after* its CI publishes a
   `site-v*`/`marketing-v*` tagged image (see verified note above).
+- **Operator-execution items** (not code): (1) set `ROLLOPS_MCP_TOKENS` before the
+  next MCP-serving deploy (#66 fail-closed); (2) execute the git-auth migration
+  per `docs/git-auth-migration.md` (create the two Apps + keys, cut the watch
+  ConfigMap over, decommission the PAT).
 - Follow-up: **manual `Verify` also skips the smoke test** (only metric analysis was added in #65) — small engine add if wanted.
