@@ -23,10 +23,16 @@ import (
 //	ROLLOPS_ALLOWED_COMMANDS       comma-separated command allowlist (basename or absolute path)
 //	ROLLOPS_ALLOWED_NAMESPACES     comma-separated Kubernetes namespace allowlist
 //	ROLLOPS_CONFINE_TARGET_CLUSTER "1"/"true"/"yes"/"on" ignores repo kubeconfig/context
+//	ROLLOPS_ALLOWED_ENV            comma-separated env vars a config-sourced command may inherit
+//
+// The environment control (see CommandEnv, confine_env.go) is the one exception
+// to default-off: config-sourced commands never inherit the daemon environment,
+// because that environment holds every daemon secret.
 type Confinement struct {
 	commands       allowSet // config-sourced command allowlist
 	namespaces     allowSet // Kubernetes namespace allowlist
 	confineCluster bool     // ignore repo-supplied kubeconfig/context
+	allowedEnv     []string // extra env vars a config-sourced command may inherit
 }
 
 // allowSet is an allowlist of permitted values. When enabled is false the set is
@@ -44,6 +50,7 @@ func ConfinementFromEnv(getenv func(string) string) Confinement {
 		commands:       parseAllowSet(getenv("ROLLOPS_ALLOWED_COMMANDS")),
 		namespaces:     parseAllowSet(getenv("ROLLOPS_ALLOWED_NAMESPACES")),
 		confineCluster: truthy(getenv("ROLLOPS_CONFINE_TARGET_CLUSTER")),
+		allowedEnv:     parseList(getenv("ROLLOPS_ALLOWED_ENV")),
 	}
 }
 
@@ -60,6 +67,17 @@ func parseAllowSet(raw string) allowSet {
 		}
 	}
 	return allowSet{enabled: true, values: values}
+}
+
+// parseList splits a comma-separated setting into trimmed, non-empty entries.
+func parseList(raw string) []string {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func truthy(v string) bool {
@@ -88,8 +106,8 @@ func (c Confinement) Active() bool {
 // LogSummary renders the policy for a startup log line, e.g.
 // "commands=on namespaces=off cluster=off".
 func (c Confinement) LogSummary() string {
-	return fmt.Sprintf("commands=%s namespaces=%s cluster=%s",
-		onOff(c.commands.enabled), onOff(c.namespaces.enabled), onOff(c.confineCluster))
+	return fmt.Sprintf("commands=%s namespaces=%s cluster=%s env=confined(+%d)",
+		onOff(c.commands.enabled), onOff(c.namespaces.enabled), onOff(c.confineCluster), len(c.allowedEnv))
 }
 
 func onOff(b bool) string {
