@@ -105,7 +105,13 @@ type Rollout struct {
 	// holds the config. Empty means no analysis was configured. Opaque bytes
 	// keep this model decoupled from the config package, mirroring the
 	// delivery-descriptor capture above.
-	Analysis  []byte
+	Analysis []byte
+	// Smoke-test descriptor captured at deploy time as opaque JSON
+	// (config.SmokeTest), so a later manual Verify — and the Promote that follows
+	// it — can run the same smoke gate as the auto path, which still holds the
+	// config. Empty means no smoke test was configured. Mirrors the analysis
+	// capture above.
+	SmokeTest []byte
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

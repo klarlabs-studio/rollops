@@ -166,6 +166,50 @@ func TestOpen_MigratesExistingDBForAnalysis(t *testing.T) {
 	}
 }
 
+func TestOpen_MigratesExistingDBForSmokeTest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.db")
+	ctx := context.Background()
+
+	db1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := db1.SaveRollout(ctx, sampleRollout("r0", rollout.PhaseDeploying)); err != nil {
+		t.Fatalf("save before reopen: %v", err)
+	}
+	_ = db1.Close()
+
+	db2, err := Open(path) // re-runs migrations (incl. 0009) on the existing db
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	// A row written before 0009 reads back with no captured smoke test, so the
+	// len()==0 guard in the manual gate holds for pre-upgrade rollouts.
+	old, err := db2.LoadRollout(ctx, "r0")
+	if err != nil {
+		t.Fatalf("load pre-migration row: %v", err)
+	}
+	if len(old.SmokeTest) != 0 {
+		t.Errorf("pre-migration rollout SmokeTest = %q, want empty", old.SmokeTest)
+	}
+
+	in := sampleRollout("r1", rollout.PhaseVerifying)
+	in.SmokeTest = []byte(`{"command":["./smoke.sh"],"expectExit":0}`)
+	if err := db2.SaveRollout(ctx, in); err != nil {
+		t.Fatalf("save after reopen: %v", err)
+	}
+	got, err := db2.LoadRollout(ctx, "r1")
+	if err != nil {
+		t.Fatalf("load after reopen: %v", err)
+	}
+	if string(got.SmokeTest) != string(in.SmokeTest) {
+		t.Errorf("smoke test after migration = %q, want %q", got.SmokeTest, in.SmokeTest)
+	}
+}
+
 func TestLoadRollout_NotFound(t *testing.T) {
 	db := openTemp(t)
 	_, err := db.LoadRollout(context.Background(), "nope")
