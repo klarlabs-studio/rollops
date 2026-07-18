@@ -87,9 +87,39 @@
 ### [OPEN] — remaining
 - Future/optional: flip a marketing-site to semver *after* its CI publishes a
   `site-v*`/`marketing-v*` tagged image (see verified note above).
-- **Operator-execution item** (not code): execute the git-auth migration per
-  `docs/git-auth-migration.md` (create the two Apps + keys, cut the watch
-  ConfigMap over, decommission the PAT).
+- **git-auth migration (roady #34) — EXECUTED 2026-07-18, fleet fully on GitHub
+  App auth.** All 10 watched repos verified reconciling via App tokens, zero auth
+  errors. Remaining: strip the now-inert `tokenFile` keys and revoke the PAT (see
+  "PAT decommission" below).
+  - **klarlabs-studio**: app_id `4330526` (`rollopsd-klarlabs-studio`), install
+    `147370730`, key `github-app-klarlabs.pem` — 8 repos (klarlabs, brotwerk,
+    kraftsport-coach, vorhut, pet-medical, pet-medical-www, mnemos, senat).
+  - **felixgeelhaar** (a USER account, not an org — `/orgs/...` 404s, use
+    `/settings/installations/<id>`): app_id `4330615` (`rollopsd-felixgeelhaar`),
+    install `147373546`, key `github-app-fg.pem` — 2 repos (website, glossa).
+  - Both keys live in the `rollopsd-git` Secret alongside the legacy `token`;
+    mounted at `/etc/rollops/git`. The original `.pem`s are in `~/Downloads`
+    (chmod 600'd) — delete once satisfied.
+- **GOTCHA THAT NEARLY BROKE THE FLEET (both Apps!):** the install scope did NOT
+  match the watch list. klarlabs-studio was missing **armada, klarlabs, mnemos**;
+  felixgeelhaar was missing **felixgeelhaar.com**. Cutting over without checking
+  would have killed git access for those repos. **Always diff installation scope
+  against watch.json before any cutover** — the batch script now does this with a
+  hard assert. Scope can only be widened via the GitHub UI (an App cannot expand
+  its own scope), so this step needs the browser + sudo-mode (passkey).
+- **The `tokenFile` "fallback" is NOT a runtime failover.** `git.Auth.resolve`
+  returns `TokenSource`'s error when a GitHub App is configured — it never falls
+  back to `Token`. Keeping `tokenFile` alongside the App keys only buys an easy
+  revert (delete the 3 App keys → PAT resumes). Corollary: a clean reconcile with
+  App keys set genuinely proves App auth, not a silent PAT fallback.
+- **armada was REMOVED from the watch list entirely** (operator decision — it is a
+  forge CLI app needing separate care). `armada-marketing` still runs in-cluster
+  (1/1) but rollops no longer reconciles it: no image bumps, no drift correction.
+  Reversible — backup at `watch-pre-armada-removal.json`, or re-add the entry.
+- **PAT decommission — REMAINING.** Now unblocked: no repo uses the PAT. Steps:
+  strip `tokenFile` from all 10 entries, drop the `token` key from `rollopsd-git`,
+  then revoke the classic PAT on GitHub. Deliberately NOT done in the same sitting
+  as the cutover so the migration can soak.
 - ~~Set MCP tokens before the next deploy~~ — **NOT a blocker for THIS cluster
   (verified 2026-07-18).** `ROLLOPS_MCP_ADDR` is **not set** on the rollopsd
   Deployment, and `main.go` only serves MCP when it is — so the daemon does not

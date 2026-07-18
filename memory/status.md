@@ -50,6 +50,15 @@ against exactly this; the smoke path never was. Both now share one implementatio
 verified end-to-end against real infrastructure (SSH target via Docker; a live
 rollopsd for token rotation), not just unit tests.
 
+**Also 2026-07-18 (later):** cut **v0.27.0** (GitHub release + ghcr image, both
+jobs green; cluster deliberately left on v0.26.0 since rollopsd is applied by
+hand). Then **executed the git-auth migration end to end** — the whole fleet now
+authenticates with GitHub Apps instead of the classic PAT, verified live in the
+daemon logs. Two Apps already existed (created earlier that morning); the work was
+fixing their install scope, loading the keys, and cutting over. Both Apps' scopes
+were missing watched repos — that check is the load-bearing step, see
+open-threads. armada was dropped from the watch list on operator instruction.
+
 **Next Session Should:** Most open threads closed this session — housekeeping
 (flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
 metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth
