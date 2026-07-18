@@ -754,6 +754,13 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.Analysis = b
 		}
 	}
+	// Same for the smoke test, so manual Verify/Promote run the same gate as the
+	// auto path. Empty means no smoke test was configured.
+	if st := cfg.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
+		if b, mErr := json.Marshal(st); mErr == nil {
+			r.SmokeTest = b
+		}
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -1166,11 +1173,17 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 	if hs.State != pt.HealthHealthy {
 		return r, fmt.Errorf("engine: verify: target unhealthy (%s)", hs.Reason)
 	}
-	// After health passes, run the same metric-analysis gate as the auto path
-	// (VerifyOrRollback), reading the analysis config captured on the rollout at
-	// deploy time. Opt-in via WithMetricAnalysis (off by default), and a no-op
-	// when no analysis was configured — so the health-only behaviour is
-	// unchanged in both cases.
+	// After health passes, run the smoke gate — same signal, same order as the
+	// auto path (health → smoke → analysis), reading the smoke config captured
+	// on the rollout at deploy time. A no-op when no smoke test was configured,
+	// so the health-only behaviour of those rollouts is unchanged.
+	if err := e.runCapturedSmoke(ctx, r); err != nil {
+		return r, fmt.Errorf("engine: verify: %w", err)
+	}
+	// Then the same metric-analysis gate as the auto path (VerifyOrRollback),
+	// reading the analysis config captured on the rollout at deploy time. Opt-in
+	// via WithMetricAnalysis (off by default), and a no-op when no analysis was
+	// configured — so the health-only behaviour is unchanged in both cases.
 	if e.analysis && len(r.Analysis) > 0 {
 		var a config.Analysis
 		if err := json.Unmarshal(r.Analysis, &a); err == nil {
@@ -1191,21 +1204,47 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout,
 // Opt-in via WithMetricAnalysis and a no-op when no analysis was configured, so
 // the prior behaviour is unchanged in both cases.
 func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
-	if e.analysis {
-		r, err := e.store.LoadRollout(ctx, rolloutID)
-		if err != nil {
-			return rollout.Rollout{}, err
-		}
-		if len(r.Analysis) > 0 {
-			var a config.Analysis
-			if err := json.Unmarshal(r.Analysis, &a); err == nil {
-				if ok, note := e.runAnalysis(ctx, &a); !ok {
-					return r, fmt.Errorf("engine: promote: %s", note)
-				}
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	if err := e.runCapturedSmoke(ctx, r); err != nil {
+		return r, fmt.Errorf("engine: promote: %w", err)
+	}
+	if e.analysis && len(r.Analysis) > 0 {
+		var a config.Analysis
+		if err := json.Unmarshal(r.Analysis, &a); err == nil {
+			if ok, note := e.runAnalysis(ctx, &a); !ok {
+				return r, fmt.Errorf("engine: promote: %s", note)
 			}
 		}
 	}
 	return e.promoteWithNote(ctx, rolloutID, "")
+}
+
+// runCapturedSmoke runs the smoke test captured on the rollout at deploy time,
+// the manual counterpart to the smoke leg of runPostDeployChecks. It is a no-op
+// when no smoke test was configured (the common case), and fails CLOSED on an
+// undecodable descriptor: a gate we cannot read is not a pass.
+func (e *Engine) runCapturedSmoke(ctx context.Context, r rollout.Rollout) error {
+	if len(r.SmokeTest) == 0 {
+		return nil
+	}
+	var st config.SmokeTest
+	if err := json.Unmarshal(r.SmokeTest, &st); err != nil {
+		return fmt.Errorf("smoke test descriptor unreadable: %w", err)
+	}
+	if len(st.Command) == 0 {
+		return nil
+	}
+	code, err := e.smoke.Run(ctx, st.Command)
+	if err != nil {
+		return fmt.Errorf("smoke test error: %w", err)
+	}
+	if code != st.ExpectExit {
+		return fmt.Errorf("smoke test exit %d (expected %d)", code, st.ExpectExit)
+	}
+	return nil
 }
 
 // Freeze engages or lifts the emergency kill-switch: while engaged, every apply
