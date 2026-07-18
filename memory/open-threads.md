@@ -192,7 +192,7 @@ PATs, only one is safely deletable.**
 
 | Classic PAT | Depended on by | Status |
 | --- | --- | --- |
-| `Senat Access GHRC` | senat-os `CR_PAT` → `images.yml` | keep until packages linked |
+| ~~`Senat Access GHRC`~~ | nothing — packages now grant senat-os Actions Write | **DELETED 2026-07-18** |
 | `RollOps` | `rollopsd-registry` (registry auth) | **scopes reduced to `read:packages` 2026-07-18** |
 | ~~`pet-medical-www packages read`~~ | nothing | **DELETED 2026-07-18** |
 | `k3s-ghcr-pull` | the 10 cluster `ghcr-pull` secrets | keep — expires 2026-08-29, see below |
@@ -202,7 +202,16 @@ PATs, only one is safely deletable.**
 value preserved, so `rollopsd-registry` needed no re-paste and there was no
 downtime. Verified after: `x-oauth-scopes: read:packages`, ghcr tag list readable
 (`v0.24.0`…`v0.27.0`), and the daemon reconciling all repos with no auth errors.
-Three classic PATs remain: `Senat Access GHRC`, `RollOps`, `k3s-ghcr-pull`.
+**Two classic PATs remain, both `read:packages` — no `repo` or `write:packages`
+scope exists in the account any more:** `RollOps` (rollopsd registry, expires
+2026-10-16) and `k3s-ghcr-pull` (expires **2026-08-29**, the remaining risk).
+
+**What retiring ONE token actually took** (the runbook says "revoke the PAT" as a
+single step): audit what depends on it → discover the senat-* packages were never
+linked to their repo → grant Actions Write on 4 packages → hit a 6-day billing
+outage that blocked all private CI → fix billing → discover the `||` fallback made
+the first green build meaningless → delete the secret → re-run → only then delete.
+The dependency was three layers away from where the runbook was looking.
 
 - **`k3s-ghcr-pull` — DATED TIME BOMB, expires 2026-08-29.** All ten
   `<ns>/ghcr-pull` secrets hold the **same** credential (sha256 prefix
@@ -212,7 +221,12 @@ Three classic PATs remain: `Senat Access GHRC`, `RollOps`, `k3s-ghcr-pull`.
   `ImagePullBackOff`; running pods are unaffected, so it surfaces during a deploy
   or a node reschedule, not at expiry. Same shared-credential pattern as the git
   PAT, one layer down. Rotate deliberately before end of Aug 2026.
-- **The `CR_PAT` test is STILL inconclusive — do not delete the token yet.** The
+- ~~**The `CR_PAT` test is inconclusive**~~ — **RESOLVED 2026-07-18: `Senat Access
+  GHRC` DELETED.** Proven properly: with the `CR_PAT` secret removed, a dispatch
+  build pushed all four senat images on `GITHUB_TOKEN` alone (fresh versions at
+  20:34–20:36). The package Write grants carry it. Original inconclusive note
+  kept below for the reasoning.
+- (historical) **The `CR_PAT` test was inconclusive at first.** The
   four senat-* packages now grant `senat-os` **Actions access: Write** (done
   2026-07-18), and a build succeeds — but `images.yml` uses
   `${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}`, so while the `CR_PAT` secret
