@@ -169,12 +169,19 @@ Swept every repo in `klarlabs-studio` + `felixgeelhaar` for Actions secrets and
 their workflow usage, and every cluster Secret. **Of the 4 remaining classic
 PATs, only one is safely deletable.**
 
-| Classic PAT | Depended on by | Deletable |
+| Classic PAT | Depended on by | Status |
 | --- | --- | --- |
-| `Senat Access GHRC` | senat-os `CR_PAT` → `images.yml` | NO |
-| `RollOps` | `rollopsd-registry` (registry auth) | NO |
-| `pet-medical-www packages read` | `PACKAGE_READ_TOKEN` — referenced by NO workflow | probably yes |
-| `k3s-ghcr-pull` | the 10 cluster `ghcr-pull` secrets | NO |
+| `Senat Access GHRC` | senat-os `CR_PAT` → `images.yml` | keep until packages linked |
+| `RollOps` | `rollopsd-registry` (registry auth) | **scopes reduced to `read:packages` 2026-07-18** |
+| ~~`pet-medical-www packages read`~~ | nothing | **DELETED 2026-07-18** |
+| `k3s-ghcr-pull` | the 10 cluster `ghcr-pull` secrets | keep — expires 2026-08-29, see below |
+
+**Progress 2026-07-18:** `pet-medical-www packages read` deleted (unreferenced).
+`RollOps` scopes reduced **in place** `repo, write:packages` → `read:packages`;
+value preserved, so `rollopsd-registry` needed no re-paste and there was no
+downtime. Verified after: `x-oauth-scopes: read:packages`, ghcr tag list readable
+(`v0.24.0`…`v0.27.0`), and the daemon reconciling all repos with no auth errors.
+Three classic PATs remain: `Senat Access GHRC`, `RollOps`, `k3s-ghcr-pull`.
 
 - **`k3s-ghcr-pull` — DATED TIME BOMB, expires 2026-08-29.** All ten
   `<ns>/ghcr-pull` secrets hold the **same** credential (sha256 prefix
