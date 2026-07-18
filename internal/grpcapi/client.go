@@ -80,9 +80,33 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	}, nil
 }
 
-// Promote marks a verified rollout promoted over gRPC.
-func (c *Client) Promote(ctx context.Context, id string) (rollout.Rollout, error) {
-	return c.rolloutAction(ctx, c.rpc.Promote, id)
+// Promote marks a verified rollout promoted over gRPC, gated on the post-deploy
+// checks. force overrides a failing gate.
+func (c *Client) Promote(ctx context.Context, id string, force bool) (rollout.Rollout, error) {
+	r, err := c.rpc.Promote(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id, Force: force})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	return rollout.Rollout{
+		ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Note: r.GetNote(),
+	}, nil
+}
+
+// Verify dry-runs the post-deploy gate over gRPC and returns the report. A
+// failing gate comes back as a report with OK=false, not an error.
+func (c *Client) Verify(ctx context.Context, id string) (engine.VerifyReport, error) {
+	r, err := c.rpc.Verify(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id})
+	if err != nil {
+		return engine.VerifyReport{}, err
+	}
+	gates := make([]engine.GateResult, 0, len(r.GetGates()))
+	for _, g := range r.GetGates() {
+		gates = append(gates, engine.GateResult{Gate: g.GetGate(), Status: g.GetStatus(), Detail: g.GetDetail()})
+	}
+	return engine.VerifyReport{
+		RolloutID: r.GetId(), TargetRef: r.GetTarget(), Phase: r.GetPhase(),
+		OK: r.GetOk(), Reason: r.GetReason(), Gates: gates,
+	}, nil
 }
 
 // Approve approves a rollout awaiting approval over gRPC.

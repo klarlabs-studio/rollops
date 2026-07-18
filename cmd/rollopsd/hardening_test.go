@@ -77,7 +77,7 @@ func (b *stubBackend) Approve(_ context.Context, id string, by rollout.Identity)
 func (b *stubBackend) Reject(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
 	return rollout.Rollout{ID: id}, nil
 }
-func (b *stubBackend) Promote(_ context.Context, id string) (rollout.Rollout, error) {
+func (b *stubBackend) Promote(_ context.Context, id string, _ rollout.Identity, _ bool) (rollout.Rollout, error) {
 	return rollout.Rollout{ID: id}, nil
 }
 func (b *stubBackend) RollbackLast(_ context.Context, ref string, _ bool) (rollout.Rollout, error) {

@@ -28,7 +28,8 @@ type Operations interface {
 	Plan(ctx context.Context, c *config.Config) (*engine.Plan, error)
 	Apply(ctx context.Context, req engine.ApplyRequest) (*rollout.Rollout, error)
 	Status(ctx context.Context, id string) (rollout.Rollout, error)
-	Promote(ctx context.Context, id string) (rollout.Rollout, error)
+	Promote(ctx context.Context, id string, force bool) (rollout.Rollout, error)
+	Verify(ctx context.Context, id string) (engine.VerifyReport, error)
 	Approve(ctx context.Context, id string) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
@@ -42,6 +43,12 @@ type Operations interface {
 type EngineOps struct {
 	*engine.Engine
 	Actor rollout.Identity
+}
+
+// Promote promotes a rollout, attributed to the local actor. force overrides
+// the post-deploy gates.
+func (o EngineOps) Promote(ctx context.Context, id string, force bool) (rollout.Rollout, error) {
+	return o.Engine.Promote(ctx, id, o.Actor, force)
 }
 
 // Approve approves a rollout, attributed to the local actor.
@@ -139,6 +146,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.status(ctx, rest)
 	case "promote":
 		return a.promote(ctx, rest)
+	case "verify":
+		return a.verify(ctx, rest)
 	case "approve":
 		return a.approve(ctx, rest)
 	case "reject":
@@ -225,14 +234,54 @@ func (a *App) status(ctx context.Context, args []string) error {
 }
 
 func (a *App) promote(ctx context.Context, args []string) error {
-	if len(args) < 1 {
+	// --force overrides the post-deploy gates (health, smoke, metric analysis)
+	// that promote otherwise enforces. Accept it in any position, like rollback.
+	force := false
+	var rest []string
+	for _, arg := range args {
+		if arg == "--force" || arg == "-f" {
+			force = true
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	if len(rest) < 1 {
 		return fmt.Errorf("promote: rollout id required")
 	}
-	r, err := a.Ops.Promote(ctx, args[0])
+	r, err := a.Ops.Promote(ctx, rest[0], force)
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	return nil
+}
+
+// verify dry-runs the post-deploy gate and prints one line per gate. It exits
+// non-zero when a gate fails, so it composes in a script:
+//
+//	rollops verify ro-123 && rollops promote ro-123
+func (a *App) verify(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("verify: rollout id required")
+	}
+	rep, err := a.Ops.Verify(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", rep.RolloutID, rep.Phase)
+	for _, g := range rep.Gates {
+		if g.Detail != "" {
+			_, _ = fmt.Fprintf(a.Out, "%s\t%s\t%s\n", g.Gate, g.Status, g.Detail)
+			continue
+		}
+		_, _ = fmt.Fprintf(a.Out, "%s\t%s\n", g.Gate, g.Status)
+	}
+	if !rep.OK {
+		// A failing gate is a verdict, not a crash: report it as the command's
+		// exit status without a stack of wrapping.
+		return fmt.Errorf("verify: %s", rep.Reason)
+	}
+	_, _ = fmt.Fprintln(a.Out, "verify: ok (nothing changed)")
 	return nil
 }
 
@@ -405,7 +454,7 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a verified rollout\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 

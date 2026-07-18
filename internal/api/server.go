@@ -74,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/approve", s.handleApprove)
 	mux.HandleFunc("POST /v1/reject", s.handleReject)
 	mux.HandleFunc("POST /v1/promote", s.handlePromote)
+	mux.HandleFunc("POST /v1/verify", s.handleVerify)
 	mux.HandleFunc("POST /v1/freeze", s.handleFreeze)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -169,29 +170,65 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
-	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error) {
+	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity, _ bool) (rollout.Rollout, error) {
 		return s.eng.Approve(ctx, id, by)
 	})
 }
 
 func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
-	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error) {
+	s.rolloutAction(w, r, security.PermApprove, func(ctx context.Context, id string, by rollout.Identity, _ bool) (rollout.Rollout, error) {
 		return s.eng.Reject(ctx, id, by)
 	})
 }
 
+// handlePromote promotes a verified rollout, gated on the post-deploy checks
+// (health, smoke, analysis). `{"force": true}` overrides a failing gate; the
+// bypass is recorded in the audit trail.
 func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
-	s.rolloutAction(w, r, security.PermPromote, func(ctx context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
-		return s.eng.Promote(ctx, id)
+	s.rolloutAction(w, r, security.PermPromote, func(ctx context.Context, id string, by rollout.Identity, force bool) (rollout.Rollout, error) {
+		return s.eng.Promote(ctx, id, by, force)
 	})
 }
 
-// rolloutAction is the shared approve/reject/promote flow: decode {id}, scope
-// authorization to the rollout's target, run the engine op, return its outcome.
-func (s *Server) rolloutAction(w http.ResponseWriter, r *http.Request, perm security.Permission, op func(context.Context, string, rollout.Identity) (rollout.Rollout, error)) {
+// handleVerify dry-runs the post-deploy gate and returns the report. Nothing is
+// changed, but the gates really run (a smoke test executes a command on the
+// daemon host), so it is authorized as PermPromote rather than a read
+// permission. A failing gate is a 200 with ok=false — not an HTTP error; only
+// operational failures (unknown rollout, unreadable descriptor) are errors.
+func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	actor := identityFrom(r)
 	var body struct {
 		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.ID == "" {
+		writeErr(w, http.StatusBadRequest, "id required")
+		return
+	}
+	cur, err := s.eng.Status(r.Context(), body.ID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := s.policy.Authorize(actor, security.PermPromote, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	rep, err := s.eng.Verify(r.Context(), body.ID)
+	if err != nil {
+		writeErr(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
+// rolloutAction is the shared approve/reject/promote flow: decode {id, force},
+// scope authorization to the rollout's target, run the engine op, return its
+// outcome. force is meaningful only for promote; approve/reject ignore it.
+func (s *Server) rolloutAction(w http.ResponseWriter, r *http.Request, perm security.Permission, op func(context.Context, string, rollout.Identity, bool) (rollout.Rollout, error)) {
+	actor := identityFrom(r)
+	var body struct {
+		ID    string `json:"id"`
+		Force bool   `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.ID == "" {
 		writeErr(w, http.StatusBadRequest, "id required")
@@ -206,7 +243,7 @@ func (s *Server) rolloutAction(w http.ResponseWriter, r *http.Request, perm secu
 		writeErr(w, http.StatusForbidden, err.Error())
 		return
 	}
-	rl, err := op(r.Context(), body.ID, actor)
+	rl, err := op(r.Context(), body.ID, actor, body.Force)
 	if err != nil {
 		writeErr(w, http.StatusPreconditionFailed, err.Error())
 		return

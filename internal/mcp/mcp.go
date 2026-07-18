@@ -194,11 +194,68 @@ func (t *Tools) Reject(ctx context.Context, in ActionInput) (ActionOutput, error
 	})
 }
 
-// Promote implements rollouts.promote.
-func (t *Tools) Promote(ctx context.Context, in ActionInput) (ActionOutput, error) {
-	return t.action(ctx, in.RolloutID, security.PermPromote, func(rid string, _ rollout.Identity) (rollout.Rollout, error) {
-		return t.eng.Promote(ctx, rid)
+// PromoteInput identifies a rollout to promote, with the gate override.
+type PromoteInput struct {
+	RolloutID string `json:"rollout_id" jsonschema:"the rollout id to promote"`
+	Force     bool   `json:"force,omitempty" jsonschema:"override the post-deploy gates (health, smoke, metric analysis) and promote anyway; the bypass is audited"`
+}
+
+// Promote implements rollouts.promote, gated on the post-deploy checks. Prefer
+// rollouts.verify first to see which gate would fail; force only when the gate
+// itself is known to be wrong.
+func (t *Tools) Promote(ctx context.Context, in PromoteInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermPromote, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Promote(ctx, rid, by, in.Force)
 	})
+}
+
+// GateOutput is one post-deploy gate's outcome in a dry-run verification.
+type GateOutput struct {
+	Gate   string `json:"gate"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// VerifyOutput is the result of rollouts.verify: every gate, and whether the
+// rollout would pass. Nothing was changed to produce it.
+type VerifyOutput struct {
+	RolloutID string       `json:"rollout_id"`
+	Phase     string       `json:"phase"`
+	Target    string       `json:"target"`
+	OK        bool         `json:"ok"`
+	Reason    string       `json:"reason,omitempty"`
+	Gates     []GateOutput `json:"gates"`
+}
+
+// Verify implements rollouts.verify: a dry run of the post-deploy gate. It
+// changes nothing, so an agent can check "would this promote?" before calling
+// rollouts.promote. Authorized as PermPromote rather than a read permission
+// because the gates really run — a configured smoke test executes a command on
+// the daemon host. A failing gate returns ok=false, not an error.
+func (t *Tools) Verify(ctx context.Context, in ActionInput) (VerifyOutput, error) {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	cur, err := t.eng.Status(ctx, in.RolloutID)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	if err := t.policy.Authorize(id, security.PermPromote, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return VerifyOutput{}, err
+	}
+	rep, err := t.eng.Verify(ctx, in.RolloutID)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	gates := make([]GateOutput, 0, len(rep.Gates))
+	for _, g := range rep.Gates {
+		gates = append(gates, GateOutput{Gate: g.Gate, Status: g.Status, Detail: g.Detail})
+	}
+	return VerifyOutput{
+		RolloutID: rep.RolloutID, Phase: rep.Phase, Target: rep.TargetRef,
+		OK: rep.OK, Reason: rep.Reason, Gates: gates,
+	}, nil
 }
 
 // FreezeInput toggles the emergency kill-switch.
@@ -270,7 +327,8 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.rollback").Description("Roll back a target to its previous desired state").Handler(t.Rollback)
 	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
 	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
-	srv.Tool("rollouts.promote").Description("Promote a verified rollout to complete").Handler(t.Promote)
+	srv.Tool("rollouts.promote").Description("Promote a rollout past its post-deploy gate (health, smoke, metric analysis). Set force to override a failing gate").Handler(t.Promote)
+	srv.Tool("rollouts.verify").Description("Dry-run a rollout's post-deploy gate (health, smoke, metric analysis) and report each one. Changes nothing — use before rollouts.promote").Handler(t.Verify)
 	srv.Tool("rollouts.freeze").Description("Engage or lift the emergency freeze that blocks all applies").Handler(t.Freeze)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)
 }
