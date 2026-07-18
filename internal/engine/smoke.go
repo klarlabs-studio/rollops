@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"os"
 	"os/exec"
 
 	"go.klarlabs.de/rollops/internal/security"
@@ -29,6 +30,9 @@ func (e execSmoke) Run(ctx context.Context, command []string) (int, error) {
 		return -1, err
 	}
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	// The command comes from repo config, which is untrusted: confine its
+	// environment so it cannot read the daemon's secrets out of its own env.
+	cmd.Env = e.confinement.CommandEnv(os.Environ())
 	err := cmd.Run()
 	if err == nil {
 		return 0, nil
@@ -52,5 +56,7 @@ func (e execDBRollback) Run(ctx context.Context, command []string) error {
 	if err := e.confinement.CheckCommand(command); err != nil {
 		return err
 	}
-	return exec.CommandContext(ctx, command[0], command[1:]...).Run()
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.Env = e.confinement.CommandEnv(os.Environ()) // untrusted config-sourced command
+	return cmd.Run()
 }

@@ -18,7 +18,7 @@ const ConfirmEnv = "ROLLOPS_PLUGIN_CONFIRM"
 // AllowedEnvEnv names the env var that allow-lists which host environment
 // variables a plugin subprocess may inherit: a comma-separated list of variable
 // names, or "*" to inherit the daemon's full environment. Unset means deny —
-// the plugin sees only a minimal essential env (see pluginhost.essentialEnvVars),
+// the plugin sees only a minimal essential env (see security.EssentialEnvVars),
 // never the daemon's cloud credentials, tokens, or other secrets.
 const AllowedEnvEnv = "ROLLOPS_PLUGIN_ALLOWED_ENV"
 

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"go.klarlabs.de/rollops/internal/security"
 	pubplugin "go.klarlabs.de/rollops/pkg/plugin"
 	"go.klarlabs.de/rollops/pkg/plugin/rollopspluginv1"
 )
@@ -37,47 +38,20 @@ const (
 	maxStderrBytes   = 1 << 20 // 1 MiB
 )
 
-// essentialEnvVars are always forwarded to a plugin subprocess: a normal
-// program needs them to find its tools/interpreter, temp dir, and home, and
-// none carry daemon secrets. Everything else is withheld unless the operator
-// explicitly allow-lists it, so a plugin never inherits the daemon's cloud
-// credentials, Kubernetes tokens, registry PAT, or webhook/SMTP secrets.
-var essentialEnvVars = []string{"PATH", "HOME", "TMPDIR"}
-
 // buildPluginEnv computes the confined environment for a plugin subprocess from
-// an allow-list of variable names (Policy.AllowedEnvVars). The essential set is
-// always included. A single "*" entry inherits the full parent environment —
-// the explicit, only way to hand a plugin the daemon's secrets. Otherwise only
-// the essentials plus the named variables that are actually present are
-// forwarded; the default (empty allow-list) is deny.
+// an allow-list of variable names (Policy.AllowedEnvVars). The essential set
+// (security.EssentialEnvVars) is always included: a normal program needs those
+// to find its tools/interpreter, temp dir, and home, and none carry daemon
+// secrets. A single "*" entry inherits the full parent environment — the
+// explicit, only way to hand a plugin the daemon's secrets. Otherwise only the
+// essentials plus the named variables that are actually present are forwarded;
+// the default (empty allow-list) is deny.
+//
+// The implementation is shared with config-sourced commands (smoke tests,
+// database hooks) via security.ConfineEnv, so both confined-subprocess paths
+// cannot drift apart.
 func buildPluginEnv(allowed, parentEnv []string) []string {
-	for _, a := range allowed {
-		if a == "*" {
-			out := make([]string, len(parentEnv))
-			copy(out, parentEnv)
-			return out
-		}
-	}
-	want := make(map[string]struct{}, len(essentialEnvVars)+len(allowed))
-	for _, k := range essentialEnvVars {
-		want[k] = struct{}{}
-	}
-	for _, k := range allowed {
-		if k = strings.TrimSpace(k); k != "" {
-			want[k] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(want))
-	for _, kv := range parentEnv {
-		i := strings.IndexByte(kv, '=')
-		if i < 0 {
-			continue
-		}
-		if _, ok := want[kv[:i]]; ok {
-			out = append(out, kv)
-		}
-	}
-	return out
+	return security.ConfineEnv(allowed, parentEnv)
 }
 
 // VerifyBinary compares the file's sha256 against the pinned hex digest. The
