@@ -91,4 +91,27 @@
   next MCP-serving deploy (#66 fail-closed); (2) execute the git-auth migration
   per `docs/git-auth-migration.md` (create the two Apps + keys, cut the watch
   ConfigMap over, decommission the PAT).
-- Follow-up: **manual `Verify` also skips the smoke test** (only metric analysis was added in #65) — small engine add if wanted.
+- **Dead-code question: `Engine.Verify` has NO production callers.** Found while
+  building #72: CLI/UI/MCP/HTTP-API/gRPC all call `Promote`; the reconciler uses
+  `VerifyOrRollback`. So the "manual Verify skips a gate" framing (#65, #72) only
+  ever bit on the **`Promote`** side — `Verify` is reachable from tests alone.
+  Decide: remove it, or expose it as a real operator surface (a `verify` verb that
+  runs the gates without advancing phase is defensible — it's a dry-run).
+- **CHANGELOG is unwritten for #65, #66 and #72.** The repo writes changelog entries
+  at release time; batch these three at the next cut.
+
+## Resolved 2026-07-18
+
+- **Manual `Verify`/`Promote` now run the smoke gate (#72, MERGED).** Closes the
+  #65 follow-up. `spec.rollback.smokeTest` is captured on the rollout at deploy
+  time as opaque JSON (migration **0009**, mirroring 0008/analysis); manual
+  `Verify` and `Promote` run it in the auto path's order (health → smoke →
+  analysis). No-op when unconfigured, so pre-0009 rows and health-only rollouts
+  are unchanged; **fails CLOSED** on an undecodable descriptor. The auto path is
+  untouched — it promotes via `promoteWithNote` (below the manual gate), so smoke
+  still runs exactly once (regression test). Upgrade path verified against an
+  existing db (`TestOpen_MigratesExistingDBForSmokeTest`).
+  **BEHAVIOUR CHANGE on deploy:** manually promoting a rollout whose config has a
+  `smokeTest` now actually executes that command on the daemon host (same
+  confinement policy as the auto path); a non-zero exit blocks the promote.
+  Not yet deployed — cluster is still on v0.26.0.
