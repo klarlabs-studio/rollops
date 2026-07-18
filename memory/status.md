@@ -1,6 +1,6 @@
 # Status — Rollops
 
-*Updated: 2026-07-17*
+*Updated: 2026-07-18*
 
 ## Current State
 
@@ -24,6 +24,16 @@ daemon "referenced files changed since deploy" case). Released **v0.26.0** (back
 the missing v0.25.0 changelog; #61 admin-merged past the docs-PR CI path-skip),
 rolled the cluster to v0.26.0, and synced the in-repo deploy manifest (#62). Full
 detail in sessions/2026-07-17.md.
+
+**Last Session Summary (2026-07-18):** Closed the #65 follow-up — **#72**, manual
+`Verify`/`Promote` now run the **smoke gate**, not just metric analysis. Smoke
+config is captured on the rollout at deploy time (migration **0009**, mirroring
+0008/analysis) and the manual paths gate in the auto path's order (health → smoke
+→ analysis); no-op when unconfigured, fails closed on an unreadable descriptor,
+auto path unchanged (still exactly one smoke run). Merged, CI green, cluster NOT
+yet rolled. Two threads opened in the process: **`Engine.Verify` has no production
+callers** (remove it, or expose a real `verify` dry-run verb — every operator
+surface calls `Promote`), and the **CHANGELOG is unwritten for #65/#66/#72**.
 
 **Next Session Should:** Most open threads closed this session — housekeeping
 (flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
