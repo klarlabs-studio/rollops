@@ -35,6 +35,21 @@ yet rolled. Two threads opened in the process: **`Engine.Verify` has no producti
 callers** (remove it, or expose a real `verify` dry-run verb — every operator
 surface calls `Promote`), and the **CHANGELOG is unwritten for #65/#66/#72**.
 
+**Last Session Summary (2026-07-18):** Four PRs merged (#73 memory, #74, #75, #76),
+`main` green. Started from the #65 follow-up and pulled a thread: **#72** brought
+the smoke gate to manual Verify/Promote; **#74** made `verify` a real dry-run verb
+(per-gate `VerifyReport`, changes nothing) and made `promote` enforce exactly what
+it dry-runs, with an audited `--force` — both paths now share ONE gate runner, the
+structural fix for the drift. Auditing a forced promote surfaced that promotion was
+never audited at all. Asking whether MCP tokens belonged in a file rather than an
+env var surfaced a **real security bug (#75)**: smoke tests and DB hooks — commands
+named by untrusted repo config — inherited the daemon's whole environment, so a
+watched repo could read every daemon secret. The plugin host had been hardened
+against exactly this; the smoke path never was. Both now share one implementation.
+**#76** then moved MCP tokens to a file with SIGHUP rotation. #74/#75/#76 were each
+verified end-to-end against real infrastructure (SSH target via Docker; a live
+rollopsd for token rotation), not just unit tests.
+
 **Next Session Should:** Most open threads closed this session — housekeeping
 (flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
 metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth
