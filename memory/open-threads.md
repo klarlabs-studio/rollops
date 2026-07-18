@@ -87,21 +87,67 @@
 ### [OPEN] — remaining
 - Future/optional: flip a marketing-site to semver *after* its CI publishes a
   `site-v*`/`marketing-v*` tagged image (see verified note above).
-- **Operator-execution items** (not code): (1) set `ROLLOPS_MCP_TOKENS` before the
-  next MCP-serving deploy (#66 fail-closed); (2) execute the git-auth migration
-  per `docs/git-auth-migration.md` (create the two Apps + keys, cut the watch
-  ConfigMap over, decommission the PAT).
-- **Dead-code question: `Engine.Verify` has NO production callers.** Found while
-  building #72: CLI/UI/MCP/HTTP-API/gRPC all call `Promote`; the reconciler uses
-  `VerifyOrRollback`. So the "manual Verify skips a gate" framing (#65, #72) only
-  ever bit on the **`Promote`** side — `Verify` is reachable from tests alone.
-  Decide: remove it, or expose it as a real operator surface (a `verify` verb that
-  runs the gates without advancing phase is defensible — it's a dry-run).
-- **CHANGELOG is unwritten for #65, #66 and #72.** The repo writes changelog entries
-  at release time; batch these three at the next cut.
+- **Operator-execution items** (not code): (1) set the MCP tokens before the
+  next MCP-serving deploy (#66 fail-closed) — now preferably
+  `ROLLOPS_MCP_TOKENS_FILE` as a mounted Secret, see `docs/mcp-tokens.md`;
+  (2) execute the git-auth migration per `docs/git-auth-migration.md` (create the
+  two Apps + keys, cut the watch ConfigMap over, decommission the PAT).
+- **CHANGELOG is unwritten for #65, #66, #72, #74, #75 and #76.** The repo writes
+  changelog entries at release time; batch all six at the next cut.
+- **THE NEXT DEPLOY CARRIES FOUR BEHAVIOUR CHANGES** (cluster still on v0.26.0).
+  Do it deliberately, in this order:
+  1. **Set MCP tokens first** — #66 made the MCP surface fail-closed; deploying
+     without tokens dark-fails every agent call.
+  2. **Env scrub (#75)** — smoke tests and DB hooks no longer inherit the daemon
+     environment. **Grep your hooks for env-var reads before deploying**; the fix
+     is to name them in `ROLLOPS_ALLOWED_ENV` (`*` restores the old behaviour).
+  3. **Smoke-on-promote (#72)** and **health-on-promote (#74)** — a manual
+     promote now runs the full post-deploy gate and can be refused;
+     `promote --force` is the override.
 
 ## Resolved 2026-07-18
 
+- **`verify` is now a real dry-run verb, and `promote` enforces what it dry-runs
+  (#74, MERGED).** Closes the `Engine.Verify` dead-code question: it had no
+  production callers (every surface called `Promote`; the reconciler uses
+  `VerifyOrRollback`), so rather than delete it, it became the verb it was shaped
+  like. `Verify` returns a `VerifyReport` (per-gate pass/fail/skipped/not-run +
+  verdict) and changes nothing; a failing gate is a RESULT, errors are reserved
+  for operational failures, which fail closed. **`gatesFromConfig` (auto) and
+  `gatesFromRollout` (manual) now feed ONE `runGates`** — the structural fix for
+  the drift #72 patched by hand; tests assert the dry run's verdict matches both
+  `VerifyOrRollback`'s decision and whether `Promote` succeeds.
+  `promote` gates on health+smoke+analysis with **`--force`** as the audited
+  break-glass (mirrors `rollback --force`; bypass recorded on the rollout note
+  AND in the audit trail). Promotion is now audited at all — `audit.ActionPromote`
+  existed but was never emitted, so `Promote` takes the actor identity like
+  Approve/Reject. Exposed on CLI (`rollops verify`, non-zero exit so
+  `verify && promote` composes), HTTP, gRPC, MCP. **The web console never
+  forces.** Docs: `docs/verify.md`.
+- **Config-sourced commands no longer inherit the daemon env (#75, MERGED).**
+  SECURITY. `confine.go` documents repo config as untrusted and able to name
+  commands to run on the daemon host — but `execSmoke`/`execDBRollback` set no
+  `cmd.Env`, so a smoke test from a watched repo could read `ROLLOPS_MCP_TOKENS`,
+  `ROLLOPS_ADMIN_TOKEN`, `ROLLOPS_UI_PASSWORD`, `ROLLOPS_REGISTRY_TOKEN`, OIDC
+  settings and cloud creds (`env | curl`). The **plugin host already did this
+  right** (`buildPluginEnv`); the smoke/DB path never got the treatment. Both now
+  share `security.ConfineEnv`. Default-**ON** (unlike the other opt-in
+  confinement controls) — withholding secrets shouldn't need configuration.
+  `ROLLOPS_ALLOWED_ENV` names extras, `*` restores inheritance. Tests spawn a
+  real command and read its actual env; verified they fail without the fix.
+  Docs: `docs/command-confinement.md` (also documents the three previously
+  undocumented confinement controls).
+- **MCP tokens load from a file, reloadable on SIGHUP (#76, MERGED).**
+  `ROLLOPS_MCP_TOKENS_FILE` (mounted Secret) preferred over the env var, which
+  still works; file wins when both are set. `api.SwappableTokenAuth` does an
+  atomic swap so an in-flight request never sees a half-applied rotation.
+  **Startup fails closed** (no known-good state to keep); **reload keeps current**
+  on failure, so a typo can't lock every agent out mid-flight — hence the loader
+  distinguishes "failed to load" from "loaded, and empty". Tokens stay
+  credentials; roles stay in `ROLLOPS_POLICY_FILE`. Verified live against a
+  running daemon: rotate file + SIGHUP swapped credentials with no restart (old
+  token 403, new 200), and a malformed edit kept the working token serving.
+  Docs: `docs/mcp-tokens.md`.
 - **Manual `Verify`/`Promote` now run the smoke gate (#72, MERGED).** Closes the
   #65 follow-up. `spec.rollback.smokeTest` is captured on the rollout at deploy
   time as opaque JSON (migration **0009**, mirroring 0008/analysis); manual
