@@ -69,7 +69,17 @@
 - **Before the next MCP-serving deploy: set `ROLLOPS_MCP_TOKENS`** (JSON `{"<token>":"<agent>"}`) and give every MCP caller an `Authorization: Bearer <token>`. #66 made the MCP surface **fail-closed** (no fallback agent) — it rejects all calls until tokens are configured. Merged to main but NOT deployed (cluster still on v0.26.0, which predates #66).
 - **Execute the git-auth migration (roady #34)** per `docs/git-auth-migration.md`: create the two GitHub Apps (one per org) + keys, populate the `rollopsd-git` Secret, cut the `rollopsd-watch` ConfigMap over to App auth repo-by-repo, then delete the PAT. Optionally flag any watch-only repos to split read-only vs write scope (else uniform `contents: write`). Design + templates are merged; this is GitHub/cluster operator work.
 
+- **Marketing-sites digest→semver — VERIFIED, no change (2026-07-18).** All three
+  marketing-site configs (`armada-marketing`, `brotwerk-site`, `kraftsport-coach-site`)
+  are correctly on `imagePolicy: mode: digest` tracking `:latest@sha`. Their ghcr
+  images still publish only `latest` + `sha-<commit>` — **no `site-v*`/`marketing-v*`
+  semver tags exist yet**, so digest is the only viable mode; flipping to semver now
+  would break auto-deploy. The flip is gated on the operator cutting a semver
+  marketing release first — a future operator decision, not a config edit. Staying
+  on digest (continuous-deploy) is a valid end state.
+
 ### [OPEN] — remaining (need operator specifics)
-- **Marketing-sites digest→semver flip** — per-app `.rollops` imagePolicy edits in the app repos, gated on each having cut a semver release; operator's call per-app.
 - **hermes/mnemos shared-service config ownership** pattern — a decision, not yet scoped.
+- Future/optional: flip a marketing-site to semver *after* its CI publishes a
+  `site-v*`/`marketing-v*` tagged image (see verified note above).
 - Follow-up: **manual `Verify` also skips the smoke test** (only metric analysis was added in #65) — small engine add if wanted.
