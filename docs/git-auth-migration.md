@@ -101,9 +101,33 @@ keys with the App keys, picking the installation for that repo's org:
    (see `deploy/kubernetes/rollopsd.yaml`), so a migration is a **ConfigMap edit
    + pod restart** — no image rebuild.
 4. Once **all** repos run on the App: remove `token`/`tokenFile` from every
-   entry, delete the `rollopsd-git` PAT secret, and **revoke the classic PAT** on
-   GitHub. (The leaked PAT was already revoked 2026-07-17; this decommissions its
-   replacement.)
+   entry (config first — `tokenFile` is read at startup and a missing file is
+   fatal), then drop the `token` key from the `rollopsd-git` Secret.
+
+   **Before revoking the PAT on GitHub, check what else uses it.** The same PAT
+   value may back other credentials — on this cluster it was also
+   `rollopsd-registry:token`, i.e. `ROLLOPS_REGISTRY_TOKEN`, which image
+   automation uses to scan ghcr tags. Revoking it would have silently stopped
+   every image bump: nothing crashes, bumps just stop happening. Compare hashes
+   rather than eyeballing:
+
+   ```sh
+   kubectl get secrets -A -o json | python3 -c '
+   import sys,json,hashlib,base64
+   d=json.load(sys.stdin); tgt=None
+   for s in d["items"]:
+       if (s["metadata"]["namespace"],s["metadata"]["name"])==("rollops-system","rollopsd-git"):
+           t=(s.get("data") or {}).get("token"); tgt=t and hashlib.sha256(base64.b64decode(t)).hexdigest()
+   for s in d["items"]:
+       for k,v in (s.get("data") or {}).items():
+           try: h=hashlib.sha256(base64.b64decode(v)).hexdigest()
+           except Exception: continue
+           if tgt and h==tgt: print(s["metadata"]["namespace"]+"/"+s["metadata"]["name"]+":"+k)'
+   ```
+
+   Give every other consumer its own credential first (the registry needs only
+   `read:packages`), verify it works, and only then revoke. (The leaked PAT was
+   already revoked 2026-07-17; this decommissions its replacement.)
 
 ## Secret rotation (App private key)
 
