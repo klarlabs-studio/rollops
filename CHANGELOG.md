@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - One post-deploy gate, and secrets that stay in the daemon
+## v0.27.0 - One post-deploy gate, and secrets that stay in the daemon
 
 This release closes a class of bug rather than a single one: the automatic and
 manual paths through the post-deploy gate had drifted apart, gate by gate, and
