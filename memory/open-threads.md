@@ -163,6 +163,27 @@
   hand. **Cutting a release therefore cannot auto-roll the daemon** — image
   automation only drives the watched apps.
 
+## GitHub Actions billing outage — 2026-07-12 → 2026-07-18 (RESOLVED)
+
+**All private-repo CI was blocked for ~6 days and nothing surfaced it.** Triggering
+a senat build to test package permissions surfaced it by accident:
+
+> "The job was not started because recent account payments have failed or your
+> spending limit needs to be increased."
+
+- Affected: **every private repo** — senat-os (last success 2026-07-12),
+  pet-medical (2026-07-11), brotwerk, kraftsport-coach, vorhut (all failing since
+  2026-07-13). Jobs failed in ~4s, before any step ran.
+- **Public repos were unaffected** (free minutes), so rollops CI stayed green all
+  day — which is exactly why this was invisible.
+- **Why nothing alarmed:** rollops keeps deploying the last-published digests and
+  reports every config `=current`. That is TRUE and also means the fleet silently
+  froze on 2026-07-12 artifacts. **A healthy-looking CD dashboard does not imply a
+  working CI feed** — the pipeline's input was dry while its output looked fine.
+  Worth a monitor: alert if no new image version appears across the fleet for N days.
+- Operator fixed billing 2026-07-18; a dispatch build of senat-os then succeeded,
+  pushing all four images (`sha-7831b7c`, `latest`).
+
 ## Credential topology — audited 2026-07-18 (124 repos + cluster)
 
 Swept every repo in `klarlabs-studio` + `felixgeelhaar` for Actions secrets and
@@ -191,6 +212,16 @@ Three classic PATs remain: `Senat Access GHRC`, `RollOps`, `k3s-ghcr-pull`.
   `ImagePullBackOff`; running pods are unaffected, so it surfaces during a deploy
   or a node reschedule, not at expiry. Same shared-credential pattern as the git
   PAT, one layer down. Rotate deliberately before end of Aug 2026.
+- **The `CR_PAT` test is STILL inconclusive — do not delete the token yet.** The
+  four senat-* packages now grant `senat-os` **Actions access: Write** (done
+  2026-07-18), and a build succeeds — but `images.yml` uses
+  `${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}`, so while the `CR_PAT` secret
+  exists it is ALWAYS used and `GITHUB_TOKEN` is never exercised. A green build
+  proves nothing about the fallback. **Real test:** delete the `CR_PAT` repo
+  secret, re-run `gh workflow run images.yml -R klarlabs-studio/senat-os`, and
+  only if it pushes is `Senat Access GHRC` safe to delete. Recovery if it fails:
+  the secret value cannot be read back, so restoring means regenerating the token
+  and re-adding the secret.
 - **`Senat Access GHRC` is not redundant.** `senat-os/.github/workflows/images.yml`
   line 48: `password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}`. The comment
   above it explains the senat-* packages were created by a manual PAT push and are
