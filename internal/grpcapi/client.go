@@ -85,6 +85,23 @@ func (c *Client) Promote(ctx context.Context, id string) (rollout.Rollout, error
 	return c.rolloutAction(ctx, c.rpc.Promote, id)
 }
 
+// Verify dry-runs the post-deploy gate over gRPC and returns the report. A
+// failing gate comes back as a report with OK=false, not an error.
+func (c *Client) Verify(ctx context.Context, id string) (engine.VerifyReport, error) {
+	r, err := c.rpc.Verify(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id})
+	if err != nil {
+		return engine.VerifyReport{}, err
+	}
+	gates := make([]engine.GateResult, 0, len(r.GetGates()))
+	for _, g := range r.GetGates() {
+		gates = append(gates, engine.GateResult{Gate: g.GetGate(), Status: g.GetStatus(), Detail: g.GetDetail()})
+	}
+	return engine.VerifyReport{
+		RolloutID: r.GetId(), TargetRef: r.GetTarget(), Phase: r.GetPhase(),
+		OK: r.GetOk(), Reason: r.GetReason(), Gates: gates,
+	}, nil
+}
+
 // Approve approves a rollout awaiting approval over gRPC.
 func (c *Client) Approve(ctx context.Context, id string) (rollout.Rollout, error) {
 	return c.rolloutAction(ctx, c.rpc.Approve, id)

@@ -180,6 +180,38 @@ func (s *Server) Promote(ctx context.Context, req *rollopsv1.RolloutActionReques
 	})
 }
 
+// Verify implements the Verify RPC: a dry run of the post-deploy gate that
+// changes nothing. Authorized as PermPromote, not a read permission — the gates
+// really run, and a configured smoke test executes a command on the daemon
+// host, so this is not something a view-only caller may trigger.
+func (s *Server) Verify(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.VerifyResponse, error) {
+	actor := identityFrom(ctx)
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id required")
+	}
+	cur, err := s.eng.Status(ctx, req.GetId())
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if err := s.policy.Authorize(actor, security.PermPromote, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	rep, err := s.eng.Verify(ctx, req.GetId())
+	if err != nil {
+		// Operational failure (e.g. an unreadable captured descriptor). A failing
+		// GATE is not an error — it comes back in the report with ok=false.
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	gates := make([]*rollopsv1.GateResult, 0, len(rep.Gates))
+	for _, g := range rep.Gates {
+		gates = append(gates, &rollopsv1.GateResult{Gate: g.Gate, Status: g.Status, Detail: g.Detail})
+	}
+	return &rollopsv1.VerifyResponse{
+		Id: rep.RolloutID, Phase: rep.Phase, Target: rep.TargetRef,
+		Ok: rep.OK, Reason: rep.Reason, Gates: gates,
+	}, nil
+}
+
 // rolloutAction is the shared approve/reject/promote flow: validate id, scope
 // authorization to the rollout's target, run the engine op, return its outcome.
 func (s *Server) rolloutAction(ctx context.Context, id string, perm security.Permission, op func(rollout.Identity) (rollout.Rollout, error)) (*rollopsv1.RolloutActionResponse, error) {

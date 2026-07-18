@@ -74,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/approve", s.handleApprove)
 	mux.HandleFunc("POST /v1/reject", s.handleReject)
 	mux.HandleFunc("POST /v1/promote", s.handlePromote)
+	mux.HandleFunc("POST /v1/verify", s.handleVerify)
 	mux.HandleFunc("POST /v1/freeze", s.handleFreeze)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -184,6 +185,37 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 	s.rolloutAction(w, r, security.PermPromote, func(ctx context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
 		return s.eng.Promote(ctx, id)
 	})
+}
+
+// handleVerify dry-runs the post-deploy gate and returns the report. Nothing is
+// changed, but the gates really run (a smoke test executes a command on the
+// daemon host), so it is authorized as PermPromote rather than a read
+// permission. A failing gate is a 200 with ok=false — not an HTTP error; only
+// operational failures (unknown rollout, unreadable descriptor) are errors.
+func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
+	actor := identityFrom(r)
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.ID == "" {
+		writeErr(w, http.StatusBadRequest, "id required")
+		return
+	}
+	cur, err := s.eng.Status(r.Context(), body.ID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := s.policy.Authorize(actor, security.PermPromote, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	rep, err := s.eng.Verify(r.Context(), body.ID)
+	if err != nil {
+		writeErr(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 // rolloutAction is the shared approve/reject/promote flow: decode {id}, scope

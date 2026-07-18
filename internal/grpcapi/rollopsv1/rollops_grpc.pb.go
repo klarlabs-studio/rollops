@@ -26,6 +26,7 @@ const (
 	RolloutService_Approve_FullMethodName  = "/rollops.v1.RolloutService/Approve"
 	RolloutService_Reject_FullMethodName   = "/rollops.v1.RolloutService/Reject"
 	RolloutService_Promote_FullMethodName  = "/rollops.v1.RolloutService/Promote"
+	RolloutService_Verify_FullMethodName   = "/rollops.v1.RolloutService/Verify"
 	RolloutService_Freeze_FullMethodName   = "/rollops.v1.RolloutService/Freeze"
 )
 
@@ -53,6 +54,11 @@ type RolloutServiceClient interface {
 	Reject(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 	// Promote marks a verified rollout promoted.
 	Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
+	// reports each one. It changes nothing: no phase transition, no promotion,
+	// no rollback. The gates themselves do run — a configured smoke test executes
+	// its command on the daemon host.
+	Verify(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*VerifyResponse, error)
 	// Freeze engages or lifts the emergency kill-switch that blocks all applies.
 	Freeze(ctx context.Context, in *FreezeRequest, opts ...grpc.CallOption) (*FreezeResponse, error)
 }
@@ -135,6 +141,16 @@ func (c *rolloutServiceClient) Promote(ctx context.Context, in *RolloutActionReq
 	return out, nil
 }
 
+func (c *rolloutServiceClient) Verify(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*VerifyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Verify_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *rolloutServiceClient) Freeze(ctx context.Context, in *FreezeRequest, opts ...grpc.CallOption) (*FreezeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FreezeResponse)
@@ -169,6 +185,11 @@ type RolloutServiceServer interface {
 	Reject(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	// Promote marks a verified rollout promoted.
 	Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
+	// reports each one. It changes nothing: no phase transition, no promotion,
+	// no rollback. The gates themselves do run — a configured smoke test executes
+	// its command on the daemon host.
+	Verify(context.Context, *RolloutActionRequest) (*VerifyResponse, error)
 	// Freeze engages or lifts the emergency kill-switch that blocks all applies.
 	Freeze(context.Context, *FreezeRequest) (*FreezeResponse, error)
 	mustEmbedUnimplementedRolloutServiceServer()
@@ -201,6 +222,9 @@ func (UnimplementedRolloutServiceServer) Reject(context.Context, *RolloutActionR
 }
 func (UnimplementedRolloutServiceServer) Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Promote not implemented")
+}
+func (UnimplementedRolloutServiceServer) Verify(context.Context, *RolloutActionRequest) (*VerifyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Verify not implemented")
 }
 func (UnimplementedRolloutServiceServer) Freeze(context.Context, *FreezeRequest) (*FreezeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Freeze not implemented")
@@ -352,6 +376,24 @@ func _RolloutService_Promote_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RolloutService_Verify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Verify(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Verify_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Verify(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _RolloutService_Freeze_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FreezeRequest)
 	if err := dec(in); err != nil {
@@ -404,6 +446,10 @@ var RolloutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Promote",
 			Handler:    _RolloutService_Promote_Handler,
+		},
+		{
+			MethodName: "Verify",
+			Handler:    _RolloutService_Verify_Handler,
 		},
 		{
 			MethodName: "Freeze",

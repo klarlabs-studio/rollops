@@ -138,6 +138,9 @@ func (statusNoteOps) Status(context.Context, string) (rollout.Rollout, error) {
 func (statusNoteOps) Promote(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
+func (statusNoteOps) Verify(context.Context, string) (engine.VerifyReport, error) {
+	return engine.VerifyReport{}, nil
+}
 func (statusNoteOps) Approve(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }

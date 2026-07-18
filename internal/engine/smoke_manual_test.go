@@ -95,10 +95,18 @@ func TestVerify_RunsSmokeTestFails(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	smoke.calls = 0 // ignore any deploy-path runs; count the Verify gate only
-	if _, err := e.Verify(ctx, r.ID); err == nil {
-		t.Fatal("manual verify should fail when the smoke test exits non-zero, even with a healthy target")
-	} else if !strings.Contains(err.Error(), "smoke") {
-		t.Errorf("verify error = %q, want a smoke-test failure", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("a failing gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("manual verify should not pass when the smoke test exits non-zero, even with a healthy target")
+	}
+	if !strings.Contains(rep.Reason, "smoke") {
+		t.Errorf("reason = %q, want a smoke-test failure", rep.Reason)
+	}
+	if g := gateByName(t, rep, GateSmoke); g.Status != GateFail {
+		t.Errorf("smoke gate = %+v, want fail", g)
 	}
 	if smoke.calls != 1 {
 		t.Errorf("smoke ran %d times during Verify, want exactly 1", smoke.calls)
@@ -115,8 +123,12 @@ func TestVerify_RunsSmokeTestPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("healthy target + passing smoke should verify: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("healthy target + passing smoke should verify: %+v", rep.Gates)
 	}
 }
 
@@ -133,8 +145,15 @@ func TestVerify_SmokeNoopWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("no captured smoke test: verify should be health-only: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("no captured smoke test: verify should be health-only: %+v", rep.Gates)
+	}
+	if g := gateByName(t, rep, GateSmoke); g.Status != GateSkipped {
+		t.Errorf("smoke gate = %+v, want skipped when nothing was captured", g)
 	}
 	if smoke.calls != 0 {
 		t.Errorf("smoke ran %d times with no captured smoke test, want 0", smoke.calls)
@@ -159,13 +178,23 @@ func TestVerify_SmokeRunsBeforeAnalysis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err == nil {
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if rep.OK {
 		t.Fatal("failing smoke should fail verify")
-	} else if !strings.Contains(err.Error(), "smoke") {
-		t.Errorf("verify error = %q, want the smoke failure to win", err)
+	}
+	if !strings.Contains(rep.Reason, "smoke") {
+		t.Errorf("reason = %q, want the smoke failure to win", rep.Reason)
 	}
 	if metrics.calls != 0 {
 		t.Errorf("analysis ran %d times after a failing smoke gate, want 0 (smoke short-circuits)", metrics.calls)
+	}
+	// The short-circuited gate is reported as not-run, not silently omitted, so
+	// the report never implies a gate passed when it never executed.
+	if g := gateByName(t, rep, GateAnalysis); g.Status != GateNotRun {
+		t.Errorf("analysis gate = %+v, want not-run behind the failing smoke gate", g)
 	}
 }
 

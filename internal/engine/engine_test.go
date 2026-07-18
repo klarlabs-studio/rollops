@@ -328,12 +328,28 @@ func TestVerify_HealthGate(t *testing.T) {
 	ctx := context.Background()
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("healthy verify should pass: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("healthy verify should not error: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("healthy verify should pass: %+v", rep.Gates)
 	}
 	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"}
-	if _, err := e.Verify(ctx, r.ID); err == nil {
-		t.Fatal("unhealthy verify should fail")
+	// A failing gate is a RESULT, not an error: the report says not-OK.
+	rep, err = e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("a failing gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("unhealthy verify should report OK=false")
+	}
+	if !strings.Contains(rep.Reason, "health check failed") {
+		t.Errorf("reason = %q, want the health failure", rep.Reason)
+	}
+	// The dry run must not advance (or otherwise touch) the phase.
+	if rep.Rollout.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want it untouched at verifying", rep.Rollout.Phase)
 	}
 }
 
@@ -353,12 +369,15 @@ func TestVerify_RunsMetricAnalysisFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	_, err = e.Verify(ctx, r.ID)
-	if err == nil {
-		t.Fatal("manual verify should fail when metric analysis breaches, even with a healthy target")
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("a breaching gate must not be an operational error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "analysis") {
-		t.Errorf("verify error = %q, want an analysis failure", err)
+	if rep.OK {
+		t.Fatal("manual verify should not pass when metric analysis breaches, even with a healthy target")
+	}
+	if !strings.Contains(rep.Reason, "analysis") {
+		t.Errorf("reason = %q, want an analysis failure", rep.Reason)
 	}
 }
 
@@ -373,8 +392,12 @@ func TestVerify_RunsMetricAnalysisPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("healthy target + passing analysis should verify: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("healthy target + passing analysis should verify: %+v", rep.Gates)
 	}
 }
 
@@ -390,8 +413,15 @@ func TestVerify_AnalysisNoopWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("analysis disabled: verify should be health-only: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("analysis disabled: verify should be health-only: %+v", rep.Gates)
+	}
+	if g := gateByName(t, rep, GateAnalysis); g.Status != GateSkipped {
+		t.Errorf("analysis gate = %+v, want skipped when analysis is disabled", g)
 	}
 }
 
@@ -407,8 +437,15 @@ func TestVerify_AnalysisNoopWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("no captured analysis: verify should be health-only: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("no captured analysis: verify should be health-only: %+v", rep.Gates)
+	}
+	if g := gateByName(t, rep, GateAnalysis); g.Status != GateSkipped {
+		t.Errorf("analysis gate = %+v, want skipped when nothing was captured", g)
 	}
 }
 

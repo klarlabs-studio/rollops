@@ -492,7 +492,8 @@ func (x *RollbackResponse) GetTarget() string {
 	return ""
 }
 
-// RolloutActionRequest identifies a rollout by id for approve/reject/promote.
+// RolloutActionRequest identifies a rollout by id for
+// approve/reject/promote/verify.
 type RolloutActionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -605,6 +606,158 @@ func (x *RolloutActionResponse) GetNote() string {
 	return ""
 }
 
+// GateResult is one post-deploy gate's outcome in a dry-run verification.
+type GateResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// gate is "health", "smoke" or "analysis".
+	Gate string `protobuf:"bytes,1,opt,name=gate,proto3" json:"gate,omitempty"`
+	// status is "pass", "fail", "skipped" (not configured) or "not-run"
+	// (short-circuited by an earlier failure).
+	Status        string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Detail        string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GateResult) Reset() {
+	*x = GateResult{}
+	mi := &file_rollops_v1_rollops_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GateResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GateResult) ProtoMessage() {}
+
+func (x *GateResult) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_v1_rollops_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GateResult.ProtoReflect.Descriptor instead.
+func (*GateResult) Descriptor() ([]byte, []int) {
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GateResult) GetGate() string {
+	if x != nil {
+		return x.Gate
+	}
+	return ""
+}
+
+func (x *GateResult) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *GateResult) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+// VerifyResponse is the outcome of a dry-run verification. The phase is
+// reported, never changed.
+type VerifyResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Phase  string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Target string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	// ok is true when no gate failed.
+	Ok bool `protobuf:"varint,4,opt,name=ok,proto3" json:"ok,omitempty"`
+	// reason is the first failing gate's detail; empty when ok.
+	Reason        string        `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	Gates         []*GateResult `protobuf:"bytes,6,rep,name=gates,proto3" json:"gates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyResponse) Reset() {
+	*x = VerifyResponse{}
+	mi := &file_rollops_v1_rollops_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyResponse) ProtoMessage() {}
+
+func (x *VerifyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_v1_rollops_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyResponse.ProtoReflect.Descriptor instead.
+func (*VerifyResponse) Descriptor() ([]byte, []int) {
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *VerifyResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *VerifyResponse) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *VerifyResponse) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *VerifyResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *VerifyResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *VerifyResponse) GetGates() []*GateResult {
+	if x != nil {
+		return x.Gates
+	}
+	return nil
+}
+
 type FreezeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Active        bool                   `protobuf:"varint,1,opt,name=active,proto3" json:"active,omitempty"` // true engages the freeze, false lifts it
@@ -615,7 +768,7 @@ type FreezeRequest struct {
 
 func (x *FreezeRequest) Reset() {
 	*x = FreezeRequest{}
-	mi := &file_rollops_v1_rollops_proto_msgTypes[10]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -627,7 +780,7 @@ func (x *FreezeRequest) String() string {
 func (*FreezeRequest) ProtoMessage() {}
 
 func (x *FreezeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_v1_rollops_proto_msgTypes[10]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -640,7 +793,7 @@ func (x *FreezeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FreezeRequest.ProtoReflect.Descriptor instead.
 func (*FreezeRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{10}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FreezeRequest) GetActive() bool {
@@ -667,7 +820,7 @@ type FreezeResponse struct {
 
 func (x *FreezeResponse) Reset() {
 	*x = FreezeResponse{}
-	mi := &file_rollops_v1_rollops_proto_msgTypes[11]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -679,7 +832,7 @@ func (x *FreezeResponse) String() string {
 func (*FreezeResponse) ProtoMessage() {}
 
 func (x *FreezeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_v1_rollops_proto_msgTypes[11]
+	mi := &file_rollops_v1_rollops_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -692,7 +845,7 @@ func (x *FreezeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FreezeResponse.ProtoReflect.Descriptor instead.
 func (*FreezeResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{11}
+	return file_rollops_v1_rollops_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FreezeResponse) GetActive() bool {
@@ -754,13 +907,25 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"?\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"P\n" +
+	"\n" +
+	"GateResult\x12\x12\n" +
+	"\x04gate\x18\x01 \x01(\tR\x04gate\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xa4\x01\n" +
+	"\x0eVerifyResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x0e\n" +
+	"\x02ok\x18\x04 \x01(\bR\x02ok\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12,\n" +
+	"\x05gates\x18\x06 \x03(\v2\x16.rollops.v1.GateResultR\x05gates\"?\n" +
 	"\rFreezeRequest\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"@\n" +
 	"\x0eFreezeResponse\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason2\xc1\x04\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason2\x89\x05\n" +
 	"\x0eRolloutService\x129\n" +
 	"\x04Plan\x12\x17.rollops.v1.PlanRequest\x1a\x18.rollops.v1.PlanResponse\x12<\n" +
 	"\x05Apply\x12\x18.rollops.v1.ApplyRequest\x1a\x19.rollops.v1.ApplyResponse\x12?\n" +
@@ -768,7 +933,8 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\bRollback\x12\x1b.rollops.v1.RollbackRequest\x1a\x1c.rollops.v1.RollbackResponse\x12N\n" +
 	"\aApprove\x12 .rollops.v1.RolloutActionRequest\x1a!.rollops.v1.RolloutActionResponse\x12M\n" +
 	"\x06Reject\x12 .rollops.v1.RolloutActionRequest\x1a!.rollops.v1.RolloutActionResponse\x12N\n" +
-	"\aPromote\x12 .rollops.v1.RolloutActionRequest\x1a!.rollops.v1.RolloutActionResponse\x12?\n" +
+	"\aPromote\x12 .rollops.v1.RolloutActionRequest\x1a!.rollops.v1.RolloutActionResponse\x12F\n" +
+	"\x06Verify\x12 .rollops.v1.RolloutActionRequest\x1a\x1a.rollops.v1.VerifyResponse\x12?\n" +
 	"\x06Freeze\x12\x19.rollops.v1.FreezeRequest\x1a\x1a.rollops.v1.FreezeResponseB=Z;go.klarlabs.de/rollops/internal/grpcapi/rollopsv1;rollopsv1b\x06proto3"
 
 var (
@@ -783,7 +949,7 @@ func file_rollops_v1_rollops_proto_rawDescGZIP() []byte {
 	return file_rollops_v1_rollops_proto_rawDescData
 }
 
-var file_rollops_v1_rollops_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_rollops_v1_rollops_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_rollops_v1_rollops_proto_goTypes = []any{
 	(*PlanRequest)(nil),           // 0: rollops.v1.PlanRequest
 	(*PlanResponse)(nil),          // 1: rollops.v1.PlanResponse
@@ -795,31 +961,36 @@ var file_rollops_v1_rollops_proto_goTypes = []any{
 	(*RollbackResponse)(nil),      // 7: rollops.v1.RollbackResponse
 	(*RolloutActionRequest)(nil),  // 8: rollops.v1.RolloutActionRequest
 	(*RolloutActionResponse)(nil), // 9: rollops.v1.RolloutActionResponse
-	(*FreezeRequest)(nil),         // 10: rollops.v1.FreezeRequest
-	(*FreezeResponse)(nil),        // 11: rollops.v1.FreezeResponse
+	(*GateResult)(nil),            // 10: rollops.v1.GateResult
+	(*VerifyResponse)(nil),        // 11: rollops.v1.VerifyResponse
+	(*FreezeRequest)(nil),         // 12: rollops.v1.FreezeRequest
+	(*FreezeResponse)(nil),        // 13: rollops.v1.FreezeResponse
 }
 var file_rollops_v1_rollops_proto_depIdxs = []int32{
-	0,  // 0: rollops.v1.RolloutService.Plan:input_type -> rollops.v1.PlanRequest
-	2,  // 1: rollops.v1.RolloutService.Apply:input_type -> rollops.v1.ApplyRequest
-	4,  // 2: rollops.v1.RolloutService.Status:input_type -> rollops.v1.StatusRequest
-	6,  // 3: rollops.v1.RolloutService.Rollback:input_type -> rollops.v1.RollbackRequest
-	8,  // 4: rollops.v1.RolloutService.Approve:input_type -> rollops.v1.RolloutActionRequest
-	8,  // 5: rollops.v1.RolloutService.Reject:input_type -> rollops.v1.RolloutActionRequest
-	8,  // 6: rollops.v1.RolloutService.Promote:input_type -> rollops.v1.RolloutActionRequest
-	10, // 7: rollops.v1.RolloutService.Freeze:input_type -> rollops.v1.FreezeRequest
-	1,  // 8: rollops.v1.RolloutService.Plan:output_type -> rollops.v1.PlanResponse
-	3,  // 9: rollops.v1.RolloutService.Apply:output_type -> rollops.v1.ApplyResponse
-	5,  // 10: rollops.v1.RolloutService.Status:output_type -> rollops.v1.StatusResponse
-	7,  // 11: rollops.v1.RolloutService.Rollback:output_type -> rollops.v1.RollbackResponse
-	9,  // 12: rollops.v1.RolloutService.Approve:output_type -> rollops.v1.RolloutActionResponse
-	9,  // 13: rollops.v1.RolloutService.Reject:output_type -> rollops.v1.RolloutActionResponse
-	9,  // 14: rollops.v1.RolloutService.Promote:output_type -> rollops.v1.RolloutActionResponse
-	11, // 15: rollops.v1.RolloutService.Freeze:output_type -> rollops.v1.FreezeResponse
-	8,  // [8:16] is the sub-list for method output_type
-	0,  // [0:8] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	10, // 0: rollops.v1.VerifyResponse.gates:type_name -> rollops.v1.GateResult
+	0,  // 1: rollops.v1.RolloutService.Plan:input_type -> rollops.v1.PlanRequest
+	2,  // 2: rollops.v1.RolloutService.Apply:input_type -> rollops.v1.ApplyRequest
+	4,  // 3: rollops.v1.RolloutService.Status:input_type -> rollops.v1.StatusRequest
+	6,  // 4: rollops.v1.RolloutService.Rollback:input_type -> rollops.v1.RollbackRequest
+	8,  // 5: rollops.v1.RolloutService.Approve:input_type -> rollops.v1.RolloutActionRequest
+	8,  // 6: rollops.v1.RolloutService.Reject:input_type -> rollops.v1.RolloutActionRequest
+	8,  // 7: rollops.v1.RolloutService.Promote:input_type -> rollops.v1.RolloutActionRequest
+	8,  // 8: rollops.v1.RolloutService.Verify:input_type -> rollops.v1.RolloutActionRequest
+	12, // 9: rollops.v1.RolloutService.Freeze:input_type -> rollops.v1.FreezeRequest
+	1,  // 10: rollops.v1.RolloutService.Plan:output_type -> rollops.v1.PlanResponse
+	3,  // 11: rollops.v1.RolloutService.Apply:output_type -> rollops.v1.ApplyResponse
+	5,  // 12: rollops.v1.RolloutService.Status:output_type -> rollops.v1.StatusResponse
+	7,  // 13: rollops.v1.RolloutService.Rollback:output_type -> rollops.v1.RollbackResponse
+	9,  // 14: rollops.v1.RolloutService.Approve:output_type -> rollops.v1.RolloutActionResponse
+	9,  // 15: rollops.v1.RolloutService.Reject:output_type -> rollops.v1.RolloutActionResponse
+	9,  // 16: rollops.v1.RolloutService.Promote:output_type -> rollops.v1.RolloutActionResponse
+	11, // 17: rollops.v1.RolloutService.Verify:output_type -> rollops.v1.VerifyResponse
+	13, // 18: rollops.v1.RolloutService.Freeze:output_type -> rollops.v1.FreezeResponse
+	10, // [10:19] is the sub-list for method output_type
+	1,  // [1:10] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_rollops_v1_rollops_proto_init() }
@@ -833,7 +1004,7 @@ func file_rollops_v1_rollops_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rollops_v1_rollops_proto_rawDesc), len(file_rollops_v1_rollops_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
