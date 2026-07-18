@@ -194,10 +194,18 @@ func (t *Tools) Reject(ctx context.Context, in ActionInput) (ActionOutput, error
 	})
 }
 
-// Promote implements rollouts.promote.
-func (t *Tools) Promote(ctx context.Context, in ActionInput) (ActionOutput, error) {
-	return t.action(ctx, in.RolloutID, security.PermPromote, func(rid string, _ rollout.Identity) (rollout.Rollout, error) {
-		return t.eng.Promote(ctx, rid)
+// PromoteInput identifies a rollout to promote, with the gate override.
+type PromoteInput struct {
+	RolloutID string `json:"rollout_id" jsonschema:"the rollout id to promote"`
+	Force     bool   `json:"force,omitempty" jsonschema:"override the post-deploy gates (health, smoke, metric analysis) and promote anyway; the bypass is audited"`
+}
+
+// Promote implements rollouts.promote, gated on the post-deploy checks. Prefer
+// rollouts.verify first to see which gate would fail; force only when the gate
+// itself is known to be wrong.
+func (t *Tools) Promote(ctx context.Context, in PromoteInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermPromote, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Promote(ctx, rid, by, in.Force)
 	})
 }
 
@@ -319,7 +327,7 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.rollback").Description("Roll back a target to its previous desired state").Handler(t.Rollback)
 	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
 	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
-	srv.Tool("rollouts.promote").Description("Promote a verified rollout to complete").Handler(t.Promote)
+	srv.Tool("rollouts.promote").Description("Promote a rollout past its post-deploy gate (health, smoke, metric analysis). Set force to override a failing gate").Handler(t.Promote)
 	srv.Tool("rollouts.verify").Description("Dry-run a rollout's post-deploy gate (health, smoke, metric analysis) and report each one. Changes nothing — use before rollouts.promote").Handler(t.Verify)
 	srv.Tool("rollouts.freeze").Description("Engage or lift the emergency freeze that blocks all applies").Handler(t.Freeze)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)

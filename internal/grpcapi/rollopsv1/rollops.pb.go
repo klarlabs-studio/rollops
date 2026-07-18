@@ -495,8 +495,12 @@ func (x *RollbackResponse) GetTarget() string {
 // RolloutActionRequest identifies a rollout by id for
 // approve/reject/promote/verify.
 type RolloutActionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// force applies to Promote only: override the post-deploy gates (health,
+	// smoke, metric analysis) and promote anyway. The bypass is audited.
+	// Approve/Reject/Verify ignore it.
+	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -536,6 +540,13 @@ func (x *RolloutActionRequest) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *RolloutActionRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 type RolloutActionResponse struct {
@@ -900,9 +911,10 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x10RollbackResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
-	"\x06target\x18\x03 \x01(\tR\x06target\"&\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\"<\n" +
 	"\x14RolloutActionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"i\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"i\n" +
 	"\x15RolloutActionResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +

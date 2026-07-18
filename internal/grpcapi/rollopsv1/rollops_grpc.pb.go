@@ -52,7 +52,8 @@ type RolloutServiceClient interface {
 	Approve(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 	// Reject rejects a rollout awaiting approval.
 	Reject(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
-	// Promote marks a verified rollout promoted.
+	// Promote marks a verified rollout promoted, gated on the post-deploy checks
+	// (health, smoke, metric analysis). Set force to override a failing gate.
 	Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
 	// reports each one. It changes nothing: no phase transition, no promotion,
@@ -183,7 +184,8 @@ type RolloutServiceServer interface {
 	Approve(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	// Reject rejects a rollout awaiting approval.
 	Reject(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
-	// Promote marks a verified rollout promoted.
+	// Promote marks a verified rollout promoted, gated on the post-deploy checks
+	// (health, smoke, metric analysis). Set force to override a failing gate.
 	Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
 	// reports each one. It changes nothing: no phase transition, no promotion,

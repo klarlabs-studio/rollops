@@ -173,10 +173,11 @@ func (s *Server) Reject(ctx context.Context, req *rollopsv1.RolloutActionRequest
 	})
 }
 
-// Promote implements the Promote RPC.
+// Promote implements the Promote RPC, gated on the post-deploy checks.
+// req.Force overrides a failing gate; the bypass is audited.
 func (s *Server) Promote(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
-	return s.rolloutAction(ctx, req.GetId(), security.PermPromote, func(rollout.Identity) (rollout.Rollout, error) {
-		return s.eng.Promote(ctx, req.GetId())
+	return s.rolloutAction(ctx, req.GetId(), security.PermPromote, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Promote(ctx, req.GetId(), by, req.GetForce())
 	})
 }
 

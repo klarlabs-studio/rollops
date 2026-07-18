@@ -1358,30 +1358,51 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (VerifyReport, er
 	}, nil
 }
 
-// Promote marks a verified rollout as promoted. Because a freshly-deployed
-// rollout sits in `verifying` and the lifecycle does not force a prior Verify,
-// a direct Promote could otherwise skip the post-deploy gate — so it runs the
-// captured smoke and metric-analysis gates before advancing. The gates live
-// here (not in promoteWithNote) so the auto path (VerifyOrRollback), which has
-// already run them before calling promoteWithNote, does not run them twice.
+// Promote marks a verified rollout as promoted, gated on the SAME post-deploy
+// checks Verify dry-runs: health, smoke, and metric analysis, in that order.
+// Because a freshly-deployed rollout sits in `verifying` and the lifecycle does
+// not force a prior Verify, an ungated Promote would be a way to skip the gate
+// entirely. The gates live here (not in promoteWithNote) so the auto path
+// (VerifyOrRollback), which has already run them before calling promoteWithNote,
+// does not run them twice.
 //
-// Unlike Verify, this does NOT run the health gate: promotion has always been
-// callable on a rollout whose target is momentarily unhealthy, and widening it
-// here would change a live operator path. Verify is the full dry run.
-func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
+// force overrides the gates — the break-glass path for when the gates are
+// themselves wrong (a flaky probe, a metrics backend that is down). It mirrors
+// rollback's force flag, and is recorded in the audit trail and on the rollout's
+// note so the bypass is never silent.
+//
+// Verify is the dry run of exactly this: `verify` passing means `promote`
+// passes.
+func (e *Engine) Promote(ctx context.Context, rolloutID string, by rollout.Identity, force bool) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	gs, err := e.gatesFromRollout(r)
+	note := ""
+	if force {
+		note = "promote: post-deploy gates bypassed (forced)"
+	} else {
+		gs, gErr := e.gatesFromRollout(r)
+		if gErr != nil {
+			return r, fmt.Errorf("engine: promote: %w", gErr)
+		}
+		if reason := firstFailure(e.runGates(ctx, r, gs)); reason != "" {
+			return r, fmt.Errorf("engine: promote: %s; force the promote to override", reason)
+		}
+	}
+	promoted, err := e.promoteWithNote(ctx, rolloutID, note)
 	if err != nil {
-		return r, fmt.Errorf("engine: promote: %w", err)
+		return promoted, err
 	}
-	gs.health = false // see doc comment: promote gates on smoke + analysis only
-	if reason := firstFailure(e.runGates(ctx, r, gs)); reason != "" {
-		return r, fmt.Errorf("engine: promote: %s", reason)
+	detail := "promoted"
+	if force {
+		detail = "promoted (post-deploy gates bypassed: forced)"
 	}
-	return e.promoteWithNote(ctx, rolloutID, "")
+	e.record(audit.Entry{
+		Action: audit.ActionPromote, RolloutID: promoted.ID, TargetRef: promoted.TargetRef,
+		Phase: string(promoted.Phase), Actor: by, Detail: detail,
+	})
+	return promoted, nil
 }
 
 // Freeze engages or lifts the emergency kill-switch: while engaged, every apply

@@ -171,3 +171,34 @@ func TestAPI_VerifyFailingGateIsNotAnHTTPError(t *testing.T) {
 		t.Errorf("reason = %q, want the health failure", got.Reason)
 	}
 }
+
+// TestAPI_PromoteGatedAndForce proves the HTTP surface enforces the post-deploy
+// gate on promote, and that {"force":true} is the documented override.
+func TestAPI_PromoteGatedAndForce(t *testing.T) {
+	h := newServerUnhealthyAfterDeploy(t)
+	if rr := do(h, "POST", "/v1/apply", "tok-felix", cfgYAML); rr.Code != http.StatusAccepted {
+		t.Fatalf("apply = %d: %s", rr.Code, rr.Body)
+	}
+	// Unforced: the failing health gate blocks it.
+	rr := do(h, "POST", "/v1/promote", "tok-felix", `{"id":"ro-api"}`)
+	if rr.Code != http.StatusPreconditionFailed {
+		t.Fatalf("gated promote = %d, want 412: %s", rr.Code, rr.Body)
+	}
+	if !strings.Contains(rr.Body.String(), "force") {
+		t.Errorf("error body should point at the override: %s", rr.Body)
+	}
+	if st := do(h, "GET", "/v1/rollouts/ro-api", "tok-felix", ""); !strings.Contains(st.Body.String(), "verifying") {
+		t.Errorf("phase should be held at verifying: %s", st.Body)
+	}
+	// Forced: promotes, and the bypass is recorded on the rollout.
+	if rr := do(h, "POST", "/v1/promote", "tok-felix", `{"id":"ro-api","force":true}`); rr.Code != http.StatusOK {
+		t.Fatalf("forced promote = %d, want 200: %s", rr.Code, rr.Body)
+	}
+	st := do(h, "GET", "/v1/rollouts/ro-api", "tok-felix", "")
+	if !strings.Contains(st.Body.String(), "promoted") {
+		t.Errorf("phase = %s, want promoted", st.Body)
+	}
+	if !strings.Contains(st.Body.String(), "bypassed") {
+		t.Errorf("note should record the bypass: %s", st.Body)
+	}
+}

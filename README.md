@@ -81,6 +81,7 @@ bin/rollops plan   examples/rollout-config.example.yaml
 bin/rollops apply  examples/rollout-config.example.yaml
 bin/rollops status <rollout-id>
 bin/rollops verify <rollout-id>   # dry-run the post-deploy gate; changes nothing
+bin/rollops promote <rollout-id>  # promote past the gate (--force to override)
 bin/rollops rollback <target-ref>
 
 # Daemon (HTTP :8080, gRPC :8090, UI behind basic auth):

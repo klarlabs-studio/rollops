@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	itarget "go.klarlabs.de/rollops/internal/target"
 	pt "go.klarlabs.de/rollops/pkg/target"
@@ -64,12 +65,12 @@ func TestRollbackLast_RevertsToPrior(t *testing.T) {
 
 	c1 := loadConfig(t) // spec x:1
 	r1, _ := e.Apply(ctx, ApplyRequest{Config: c1})
-	_, _ = e.Promote(ctx, r1.ID)
+	_, _ = e.Promote(ctx, r1.ID, rollout.Identity{}, false)
 
 	c2 := loadConfig(t)
 	c2.Spec.Target.Spec = map[string]any{"x": 2} // new checksum
 	r2, _ := e.Apply(ctx, ApplyRequest{Config: c2})
-	_, _ = e.Promote(ctx, r2.ID)
+	_, _ = e.Promote(ctx, r2.ID, rollout.Identity{}, false)
 
 	if r1.Desired.Checksum == r2.Desired.Checksum {
 		t.Fatal("precondition: the two deploys must differ")

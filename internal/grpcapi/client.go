@@ -80,9 +80,16 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	}, nil
 }
 
-// Promote marks a verified rollout promoted over gRPC.
-func (c *Client) Promote(ctx context.Context, id string) (rollout.Rollout, error) {
-	return c.rolloutAction(ctx, c.rpc.Promote, id)
+// Promote marks a verified rollout promoted over gRPC, gated on the post-deploy
+// checks. force overrides a failing gate.
+func (c *Client) Promote(ctx context.Context, id string, force bool) (rollout.Rollout, error) {
+	r, err := c.rpc.Promote(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id, Force: force})
+	if err != nil {
+		return rollout.Rollout{}, err
+	}
+	return rollout.Rollout{
+		ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Note: r.GetNote(),
+	}, nil
 }
 
 // Verify dry-runs the post-deploy gate over gRPC and returns the report. A

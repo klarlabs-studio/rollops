@@ -208,7 +208,7 @@ func TestPromote_RunsSmokeTestFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Promote(ctx, r.ID); err == nil {
+	if _, err := e.Promote(ctx, r.ID, rollout.Identity{}, false); err == nil {
 		t.Fatal("direct promote must not bypass a failing smoke gate")
 	} else if !strings.Contains(err.Error(), "smoke") {
 		t.Errorf("promote error = %q, want a smoke-test failure", err)
@@ -232,7 +232,7 @@ func TestPromote_RunsSmokeTestPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	pr, err := e.Promote(ctx, r.ID)
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("passing smoke should promote: %v", err)
 	}

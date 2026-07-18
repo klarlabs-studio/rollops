@@ -1,8 +1,12 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
+
+	"go.klarlabs.de/rollops/internal/audit"
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -123,7 +127,7 @@ func TestVerify_RepeatableOnAPromotedRollout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if _, err := e.Promote(ctx, r.ID); err != nil {
+	if _, err := e.Promote(ctx, r.ID, rollout.Identity{}, false); err != nil {
 		t.Fatalf("promote: %v", err)
 	}
 	rep, err := e.Verify(ctx, r.ID)
@@ -167,7 +171,7 @@ func TestVerify_UnreadableDescriptorFailsClosed(t *testing.T) {
 		t.Fatal("an unreadable smoke descriptor must fail closed, not verify clean")
 	}
 	// Promote must refuse it too.
-	if _, err := e.Promote(ctx, r.ID); err == nil {
+	if _, err := e.Promote(ctx, r.ID, rollout.Identity{}, false); err == nil {
 		t.Fatal("an unreadable smoke descriptor must block promote")
 	}
 }
@@ -194,10 +198,9 @@ func TestVerify_DegradedTargetStillPasses(t *testing.T) {
 	}
 }
 
-// TestPromote_SkipsHealthGate documents the deliberate asymmetry: Verify is the
-// full dry run (health + smoke + analysis), while Promote gates on smoke and
-// analysis only, so an unhealthy target does not block a manual promotion.
-func TestPromote_SkipsHealthGate(t *testing.T) {
+// TestPromote_GatesOnHealth proves promote enforces the SAME gates verify
+// dry-runs — including health. Verify is promote's dry run, not a superset.
+func TestPromote_GatesOnHealth(t *testing.T) {
 	// Deploy healthy (the deploy path has its own health gate), then degrade the
 	// target so only the post-deploy gates see it unhealthy.
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
@@ -208,7 +211,8 @@ func TestPromote_SkipsHealthGate(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"}
-	// Verify sees the unhealthy target...
+
+	// Verify reports the unhealthy target...
 	rep, err := e.Verify(ctx, r.ID)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
@@ -216,13 +220,118 @@ func TestPromote_SkipsHealthGate(t *testing.T) {
 	if rep.OK {
 		t.Fatal("verify should report the unhealthy target")
 	}
-	// ...but Promote does not gate on health.
-	pr, err := e.Promote(ctx, r.ID)
+	// ...and promote refuses it for the same reason, pointing at the override.
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{Kind: "human", Name: "felix"}, false)
+	if err == nil {
+		t.Fatal("promote must not advance past a failing health gate")
+	}
+	if !strings.Contains(err.Error(), "health") || !strings.Contains(err.Error(), "force") {
+		t.Errorf("error = %q, want the health failure and how to override", err)
+	}
+	if pr.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want it held at verifying", pr.Phase)
+	}
+}
+
+// TestPromote_ForceOverridesFailingGate proves the break-glass path: force
+// promotes past a failing gate, and the bypass is recorded — on the rollout's
+// note and in the audit trail — so it is never silent.
+func TestPromote_ForceOverridesFailingGate(t *testing.T) {
+	var auditLog bytes.Buffer
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 1}), WithAudit(audit.New(&auditLog)))
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadAutoRollback(t)})
 	if err != nil {
-		t.Fatalf("promote must not gate on health: %v", err)
+		t.Fatalf("apply: %v", err)
+	}
+	// Unforced: blocked by the failing smoke gate.
+	if _, err := e.Promote(ctx, r.ID, rollout.Identity{Kind: "human", Name: "felix"}, false); err == nil {
+		t.Fatal("unforced promote should be blocked by the failing smoke gate")
+	}
+	// Forced: promotes anyway.
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{Kind: "human", Name: "felix"}, true)
+	if err != nil {
+		t.Fatalf("forced promote should succeed: %v", err)
 	}
 	if pr.Phase != rollout.PhasePromoted {
-		t.Errorf("phase = %q, want promoted", pr.Phase)
+		t.Fatalf("phase = %q, want promoted", pr.Phase)
+	}
+	if !strings.Contains(pr.Note, "bypassed") {
+		t.Errorf("note = %q, want the bypass recorded on the rollout", pr.Note)
+	}
+	stored, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Note, "bypassed") {
+		t.Errorf("persisted note = %q, want the bypass durable", stored.Note)
+	}
+	// The audit trail names the action, the actor, and the bypass.
+	entry := auditLog.String()
+	for _, want := range []string{"promote", "felix", "bypassed"} {
+		if !strings.Contains(entry, want) {
+			t.Errorf("audit log missing %q:\n%s", want, entry)
+		}
+	}
+}
+
+// TestPromote_AuditsUnforcedPromotion proves ordinary promotions are audited
+// too — the trail records who completed a rollout, not only who overrode a gate.
+func TestPromote_AuditsUnforcedPromotion(t *testing.T) {
+	var auditLog bytes.Buffer
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: 0}), WithAudit(audit.New(&auditLog)))
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadAutoRollback(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := e.Promote(ctx, r.ID, rollout.Identity{Kind: "human", Name: "felix"}, false); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	entry := auditLog.String()
+	if !strings.Contains(entry, "promote") || !strings.Contains(entry, "felix") {
+		t.Errorf("audit log should record the promotion and its actor:\n%s", entry)
+	}
+	if strings.Contains(entry, "bypassed") {
+		t.Errorf("an unforced promote must not be logged as a bypass:\n%s", entry)
+	}
+}
+
+// TestVerifyThenPromote_Agree is the contract the whole design rests on: verify
+// is promote's dry run. Whatever verify says, promote does — for every gate
+// outcome, not just the happy path.
+func TestVerifyThenPromote_Agree(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		smokeCode int
+		unhealthy bool
+	}{
+		{"all gates pass", 0, false},
+		{"smoke fails", 1, false},
+		{"health fails", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+			e, _ := newEngine(t, fake, WithSmokeRunner(fakeSmoke{code: tc.smokeCode}))
+			ctx := context.Background()
+			r, err := e.Apply(ctx, ApplyRequest{Config: loadAutoRollback(t)})
+			if err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+			if tc.unhealthy {
+				fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"}
+			}
+			rep, err := e.Verify(ctx, r.ID)
+			if err != nil {
+				t.Fatalf("verify: %v", err)
+			}
+			_, promoteErr := e.Promote(ctx, r.ID, rollout.Identity{}, false)
+			if rep.OK != (promoteErr == nil) {
+				t.Errorf("verify said OK=%v but promote err=%v — the dry run must predict the real thing", rep.OK, promoteErr)
+			}
+		})
 	}
 }
 

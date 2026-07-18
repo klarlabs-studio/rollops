@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -89,5 +90,59 @@ func TestCLI_UsageListsVerify(t *testing.T) {
 	_ = app.Run(context.Background(), nil)
 	if !strings.Contains(buf.String(), "verify <rollout-id>") {
 		t.Errorf("usage should document verify:\n%s", buf.String())
+	}
+}
+
+// promoteOps records what the CLI passed through for promote.
+type promoteOps struct {
+	statusNoteOps
+	gotForce bool
+	err      error
+}
+
+func (p *promoteOps) Promote(_ context.Context, _ string, force bool) (rollout.Rollout, error) {
+	p.gotForce = force
+	if p.err != nil {
+		return rollout.Rollout{}, p.err
+	}
+	return rollout.Rollout{ID: "ro-cli", Phase: rollout.PhasePromoted}, nil
+}
+
+// TestCLI_PromoteForceFlag proves --force/-f reaches the engine, and that the
+// default is a gated promote. It mirrors `rollback --force`.
+func TestCLI_PromoteForceFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"default is gated", []string{"promote", "ro-cli"}, false},
+		{"--force overrides", []string{"promote", "ro-cli", "--force"}, true},
+		{"-f overrides", []string{"promote", "-f", "ro-cli"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ops := &promoteOps{}
+			app := &App{Out: &bytes.Buffer{}, Ops: ops}
+			if err := app.Run(context.Background(), tc.args); err != nil {
+				t.Fatalf("promote: %v", err)
+			}
+			if ops.gotForce != tc.want {
+				t.Errorf("force = %v, want %v", ops.gotForce, tc.want)
+			}
+		})
+	}
+}
+
+// TestCLI_PromoteBlockedByGateExitsNonZero proves a gate failure surfaces as a
+// non-zero exit rather than a silent no-op.
+func TestCLI_PromoteBlockedByGateExitsNonZero(t *testing.T) {
+	ops := &promoteOps{err: errors.New("engine: promote: health check failed: 503; force the promote to override")}
+	app := &App{Out: &bytes.Buffer{}, Ops: ops}
+	err := app.Run(context.Background(), []string{"promote", "ro-cli"})
+	if err == nil {
+		t.Fatal("a blocked promote must exit non-zero")
+	}
+	if !strings.Contains(err.Error(), "force") {
+		t.Errorf("error = %q, should tell the operator how to override", err)
 	}
 }

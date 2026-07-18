@@ -135,7 +135,7 @@ func (statusNoteOps) Apply(context.Context, engine.ApplyRequest) (*rollout.Rollo
 func (statusNoteOps) Status(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{ID: "ro-cli", TargetRef: "demo/prod/app", Phase: rollout.PhaseRolledBack, Strategy: rollout.StrategyRolling}, nil
 }
-func (statusNoteOps) Promote(context.Context, string) (rollout.Rollout, error) {
+func (statusNoteOps) Promote(context.Context, string, bool) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
 func (statusNoteOps) Verify(context.Context, string) (engine.VerifyReport, error) {

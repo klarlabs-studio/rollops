@@ -113,7 +113,7 @@ func TestTools_Promote(t *testing.T) {
 	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	out, err := tl.Promote(ctx, ActionInput{RolloutID: "ro-mcp-1"})
+	out, err := tl.Promote(ctx, PromoteInput{RolloutID: "ro-mcp-1"})
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestTools_PromoteDeniedForReadonly(t *testing.T) {
 	if _, err := tl.Apply(asAgent("nomi"), ApplyInput{Config: cfgYAML}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tl.Promote(asAgent("weak"), ActionInput{RolloutID: "ro-mcp-1"}); err == nil {
+	if _, err := tl.Promote(asAgent("weak"), PromoteInput{RolloutID: "ro-mcp-1"}); err == nil {
 		t.Fatal("readonly agent must not promote")
 	}
 }
@@ -167,7 +167,7 @@ func TestTools_FailClosedWithoutIdentity(t *testing.T) {
 	if _, err := tl.Rollback(ctx, RollbackInput{TargetRef: "demo/staging/app"}); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("Rollback without identity = %v, want ErrUnauthenticated", err)
 	}
-	if _, err := tl.Promote(ctx, ActionInput{RolloutID: "ro-mcp-1"}); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := tl.Promote(ctx, PromoteInput{RolloutID: "ro-mcp-1"}); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("Promote without identity = %v, want ErrUnauthenticated", err)
 	}
 	if _, err := tl.Freeze(ctx, FreezeInput{Active: true}); !errors.Is(err, ErrUnauthenticated) {

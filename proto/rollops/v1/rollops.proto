@@ -22,7 +22,8 @@ service RolloutService {
   rpc Approve(RolloutActionRequest) returns (RolloutActionResponse);
   // Reject rejects a rollout awaiting approval.
   rpc Reject(RolloutActionRequest) returns (RolloutActionResponse);
-  // Promote marks a verified rollout promoted.
+  // Promote marks a verified rollout promoted, gated on the post-deploy checks
+  // (health, smoke, metric analysis). Set force to override a failing gate.
   rpc Promote(RolloutActionRequest) returns (RolloutActionResponse);
   // Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
   // reports each one. It changes nothing: no phase transition, no promotion,
@@ -90,6 +91,10 @@ message RollbackResponse {
 // approve/reject/promote/verify.
 message RolloutActionRequest {
   string id = 1;
+  // force applies to Promote only: override the post-deploy gates (health,
+  // smoke, metric analysis) and promote anyway. The bypass is audited.
+  // Approve/Reject/Verify ignore it.
+  bool force = 2;
 }
 
 message RolloutActionResponse {

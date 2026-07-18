@@ -465,7 +465,7 @@ func TestPromote_RunsMetricAnalysisFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	_, err = e.Promote(ctx, r.ID)
+	_, err = e.Promote(ctx, r.ID, rollout.Identity{}, false)
 	if err == nil {
 		t.Fatal("direct promote must not bypass a breaching metric-analysis gate")
 	}
@@ -492,7 +492,7 @@ func TestPromote_RunsMetricAnalysisPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	pr, err := e.Promote(ctx, r.ID)
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("passing analysis should promote: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestPromote(t *testing.T) {
 	ctx := context.Background()
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
-	pr, err := e.Promote(ctx, r.ID)
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}

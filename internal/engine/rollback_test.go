@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -178,7 +179,7 @@ func TestPromote_PostPromoteMigrationRunsAtPromoteNotDeploy(t *testing.T) {
 	if len(db.calls) != 0 {
 		t.Fatalf("post-promote migration must not run at deploy, got %v", db.calls)
 	}
-	out, err := e.Promote(context.Background(), r.ID)
+	out, err := e.Promote(context.Background(), r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}

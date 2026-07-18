@@ -2,9 +2,10 @@
 
 `verify` answers one question: **would this rollout promote right now?**
 
-It runs the same post-deploy gate the automatic path runs — target health, the
-smoke test, and (when enabled) metric analysis — reports each gate, and changes
-nothing. No phase transition, no promotion, no rollback, no history entry.
+It runs the same post-deploy gate the automatic path and `promote` run — target
+health, the smoke test, and (when enabled) metric analysis — reports each gate,
+and changes nothing. No phase transition, no promotion, no rollback, no history
+entry.
 
 ```sh
 rollops verify ro-7f31c2
@@ -83,13 +84,49 @@ error status).
 | gRPC     | `RolloutService.Verify`                     |
 | MCP      | `rollouts.verify`                           |
 
-All five run the identical engine code path.
+All four run the identical engine code path.
 
 ## Relationship to `promote`
 
-`promote` gates on **smoke and analysis**, but not health — promotion has always
-been callable on a target that is momentarily unhealthy, and narrowing that
-would change a live operator path. `verify` is the full picture, which is why
-`verify` can report a failure that `promote` would still let through. If you
-want promotion to be strictly health-gated, run `verify` first and let its exit
-status decide.
+**`verify` is `promote`'s dry run.** They enforce the same gates, in the same
+order, from the same captured descriptors — one code path, two entry points. If
+`verify` passes, `promote` passes; if `verify` fails, `promote` refuses.
+
+```sh
+rollops promote ro-7f31c2
+```
+
+```
+Error: engine: promote: health check failed: 503; force the promote to override
+```
+
+The rollout stays in `verifying`. Nothing partial happened.
+
+### Forcing past a gate
+
+When the gate itself is wrong — a flaky probe, a metrics backend that is down,
+a smoke test broken by something unrelated — override it:
+
+```sh
+rollops promote ro-7f31c2 --force
+```
+
+The bypass is **never silent**. It is recorded twice:
+
+- on the rollout's note: `promote: post-deploy gates bypassed (forced)`
+- in the audit trail: `promote … promoted (post-deploy gates bypassed: forced)`,
+  attributed to the identity that forced it
+
+| Surface  | Override                                       |
+| -------- | ---------------------------------------------- |
+| CLI      | `rollops promote <id> --force` (or `-f`)       |
+| HTTP API | `POST /v1/promote` `{"id": "...", "force": true}` |
+| gRPC     | `RolloutService.Promote` with `force: true`    |
+| MCP      | `rollouts.promote` with `force: true`          |
+
+This mirrors `rollback --force`, which overrides the migration
+backward-compatibility gate the same way.
+
+**The web console never forces.** It always promotes with the gates enforced.
+Overriding is deliberate break-glass work, and it stays somewhere you have to
+type a flag rather than click a button.
