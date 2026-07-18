@@ -54,11 +54,15 @@ Do this **twice**, once per org (`klarlabs-studio`, `felixgeelhaar`):
 2. **Install the App** on its org, scoped to *Only select repositories* = the
    repos rollopsd watches in that org. Record the **Installation ID**
    (`…/installations/<id>` in the install URL, or via the API).
-3. **Store each private key as its own k8s Secret** in `rollops-system`, mounted
-   into the `rollopsd` pod at a stable per-org path, e.g.
-   `/etc/rollops/github-app-klarlabs.pem` and `/etc/rollops/github-app-fg.pem`.
-   Two secrets replace the single `rollopsd-git` PAT secret — separate keys are
-   the whole point of separate Apps; don't share one key between the two.
+3. **Store both private keys in the `rollopsd-git` Secret** (`rollops-system`),
+   which is already mounted read-only at `/etc/rollops/git` (see the `git` volume
+   in `deploy/kubernetes/rollopsd.yaml`). Two data keys — `github-app-klarlabs.pem`
+   and `github-app-fg.pem` — become the two files referenced below. This reuses
+   the existing mount (no `rollopsd.yaml` change) and replaces the old PAT that
+   lived in the same Secret. See `deploy/kubernetes/rollopsd-git.example.yaml` for
+   the `kubectl create secret` recipe. (If you want stricter per-org RBAC on the
+   Secret objects, split into two Secrets + two mounts instead — separate Apps
+   already contain the blast radius at the GitHub side regardless.)
 
 You end up with two triples: `(klarlabsAppId, klarlabsInstallationId,
 github-app-klarlabs.pem)` and the `felixgeelhaar` equivalent.
@@ -78,7 +82,7 @@ keys with the App keys, picking the installation for that repo's org:
   "branch": "main", "path": ".rollops",
   "githubAppId": "<klarlabs-studio-app-id>",
   "githubInstallationId": "<klarlabs-studio-installation-id>",
-  "githubAppPrivateKeyFile": "/etc/rollops/github-app-klarlabs.pem" }
+  "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-klarlabs.pem" }
 ```
 
 - `felixgeelhaar`-org repos use the **felixgeelhaar App** — its own App ID,
