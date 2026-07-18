@@ -59,6 +59,13 @@ fixing their install scope, loading the keys, and cutting over. Both Apps' scope
 were missing watched repos — that check is the load-bearing step, see
 open-threads. armada was dropped from the watch list on operator instruction.
 
+**Credential topology audited (2026-07-18):** after the git-auth migration, swept
+124 repos + the cluster to find what still depends on the 4 remaining classic
+PATs. Only `pet-medical-www packages read` is unreferenced; the rest are
+load-bearing. Headline risk is **`k3s-ghcr-pull`, expiring 2026-08-29** — one
+credential shared by all ten `ghcr-pull` Secrets, 39 pods, fleet-wide
+`ImagePullBackOff` when it lapses. Detail + verification recipes in open-threads.
+
 **Next Session Should:** Most open threads closed this session — housekeeping
 (flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
 metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth

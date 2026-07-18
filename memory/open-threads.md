@@ -163,6 +163,53 @@
   hand. **Cutting a release therefore cannot auto-roll the daemon** — image
   automation only drives the watched apps.
 
+## Credential topology — audited 2026-07-18 (124 repos + cluster)
+
+Swept every repo in `klarlabs-studio` + `felixgeelhaar` for Actions secrets and
+their workflow usage, and every cluster Secret. **Of the 4 remaining classic
+PATs, only one is safely deletable.**
+
+| Classic PAT | Depended on by | Deletable |
+| --- | --- | --- |
+| `Senat Access GHRC` | senat-os `CR_PAT` → `images.yml` | NO |
+| `RollOps` | `rollopsd-registry` (registry auth) | NO |
+| `pet-medical-www packages read` | `PACKAGE_READ_TOKEN` — referenced by NO workflow | probably yes |
+| `k3s-ghcr-pull` | the 10 cluster `ghcr-pull` secrets | NO |
+
+- **`k3s-ghcr-pull` — DATED TIME BOMB, expires 2026-08-29.** All ten
+  `<ns>/ghcr-pull` secrets hold the **same** credential (sha256 prefix
+  `397a2130`): armada, brotwerk, hermes, klarlabs, kraftsport-coach, pet-medical,
+  proctor, senat, vorhut, website — **39 pods**. Only `rollops-system/ghcr` is a
+  different value. When it expires, every pod needing a fresh pull goes
+  `ImagePullBackOff`; running pods are unaffected, so it surfaces during a deploy
+  or a node reschedule, not at expiry. Same shared-credential pattern as the git
+  PAT, one layer down. Rotate deliberately before end of Aug 2026.
+- **`Senat Access GHRC` is not redundant.** `senat-os/.github/workflows/images.yml`
+  line 48: `password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}`. The comment
+  above it explains the senat-* packages were created by a manual PAT push and are
+  NOT linked to the repo, so `GITHUB_TOKEN` gets `denied: write_package`. Deleting
+  the token fails **silently** via the `||`. Prerequisite: Package settings →
+  Manage Actions access → add `senat-os` (Write) for each senat-* package, run one
+  build, THEN drop `CR_PAT`.
+- **`klarlabs-studio/vorhut` uses `GHCR_PAT`** in `supply-chain.yml` (lines 59,
+  211) with **no fallback**. Which PAT backs it is unknown (secret values are not
+  readable) — if it is one of the four above, deleting that one breaks vorhut's
+  supply chain immediately.
+- **`RollOps` is over-scoped**: `repo, write:packages` where rollopsd only reads
+  ghcr tags. Reduce scopes **in place** (edit the token, uncheck `repo` +
+  `write:packages`, check `read:packages`, Update token) — a classic PAT keeps its
+  value on a scope edit, so `rollopsd-registry` needs no re-paste and there is no
+  downtime. **Regenerating** would issue a new value and silently break registry
+  scanning until the Secret is updated.
+- **Caveat on the sweep:** it covered `.github/workflows` and cluster Secrets. A
+  token used from a laptop, a cron host, or a non-Actions CI would not show up.
+
+**Useful verification recipes (no secret values printed):**
+- Which token is in a Secret? `curl -sS -I -H "Authorization: token $TOK"
+  https://api.github.com/user | grep -i x-oauth-scopes` — scopes identify it.
+- Is a credential shared? sha256 the decoded values across all Secrets and group
+  (see the snippet in `docs/git-auth-migration.md` step 4).
+
 ## Resolved 2026-07-18
 
 - **`verify` is now a real dry-run verb, and `promote` enforces what it dry-runs
