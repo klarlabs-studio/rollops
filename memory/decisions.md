@@ -49,3 +49,18 @@ Append-only. Superseded entries get `→ superseded [date]`, never deleted.
 - **Keep shelling out to `kubectl kustomize` / `helm template`; do NOT vendor a Go kustomize/Helm SDK.** Those pull `client-go` / `k8s.io/api`, violating the no-Kubernetes-in-core constraint (AGENTS.md, `kubernetes.go` pkg doc). The target already shells out via the injectable `cmdRunner` seam; kept it, at safe defaults (no exec plugins, no `--post-renderer`, `..`/abs path confinement).
 - **Rollback restores the captured rendered bytes, not a re-render** (issue #59). Re-rendering the prior spec against the current checkout fails on the manual CLI/UI/MCP/API/gRPC path (no checkout → empty Root) AND is semantically wrong on the daemon if referenced files changed since deploy. Persist `pt.Manifest.Rendered` (JSON `omitempty`, rides the existing desired-manifest blob — no store schema change); `Apply`/`Diff` prefer it; a rollback re-applies exactly what was deployed, root-independent. Inline/flat unchanged (deterministic from Spec).
 - **v0.26.0 released; the v0.20-era ghcr image-push blockage is gone** — goreleaser + Docker image both green, `rollopsd:v0.26.0` on ghcr, cluster upgraded. `deploy/kubernetes/rollopsd.yaml` re-synced (was stale at v0.24.0). Release/version comes from the git tag via ldflags (no version file to bump).
+
+## 2026-07-18 — mnemos (org memory) topology
+
+- **mnemos is per-product ISOLATED, not a shared pool** (decided 2026-07-18).
+  Org memory must not cross products, so each consuming product owns and pins its
+  **own** mnemos deployment in its own `.rollops/` — never a single shared brain
+  everyone points at. Current fleet already conforms: `pet-medical` runs its own
+  `pet-medical/prod/mnemos`; `senat-os` runtime carries its own mnemos PVC;
+  `devatlas` only optionally *clients* mnemos (empty endpoint = disabled in prod);
+  the `mnemos` repo's `.rollops/hermes-mnemos.yaml` is **hermes's** instance
+  (`hermes/prod/mnemos`), not "the shared mnemos." The apparent digest "drift"
+  between `hermes/prod/mnemos` and `pet-medical/prod/mnemos` is expected — they are
+  independent instances with independent lifecycles, not one service configured
+  twice. Going forward: any new mnemos-using product deploys+pins its own instance;
+  do not introduce a shared mnemos endpoint.
