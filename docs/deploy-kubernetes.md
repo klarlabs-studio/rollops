@@ -87,3 +87,7 @@ kubectl -n rollops-system port-forward svc/rollopsd 8080:80   # open http://loca
 | `ROLLOPS_GRPC_ADDR` | — | optional gRPC listen address |
 | `ROLLOPS_MCP_ADDR` | — | optional MCP (agent) listen address |
 | `ROLLOPS_MCP_TOKENS` | — | JSON `{token: agent-name}` map for per-caller MCP bearer auth; required for MCP (fail-closed) |
+| `ROLLOPS_ALLOWED_ENV` | — | extra env vars a config-sourced command (smoke test, database hook) may inherit — see [command confinement](command-confinement.md) |
+| `ROLLOPS_ALLOWED_COMMANDS` | — | command allowlist for config-sourced commands (opt-in) |
+| `ROLLOPS_ALLOWED_NAMESPACES` | — | Kubernetes namespace allowlist (opt-in) |
+| `ROLLOPS_CONFINE_TARGET_CLUSTER` | — | ignore repo-supplied kubeconfig/context (opt-in) |
