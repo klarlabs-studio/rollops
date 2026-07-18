@@ -60,12 +60,23 @@ rollopsd: MCP serving on :8444 (per-caller bearer auth, 2 token(s), TLS=on mTLS=
 
 The MCP surface authenticates each caller by a bearer token on top of mTLS: mTLS
 proves a trusted client, and the token proves *which* caller (resolving to a
-distinct `rollout.Identity` so RBAC applies per caller). Configure the tokens via
-`ROLLOPS_MCP_TOKENS`, a JSON object mapping each token to an agent name:
+distinct `rollout.Identity` so RBAC applies per caller).
+
+Configure the tokens with **`ROLLOPS_MCP_TOKENS_FILE`**, a path to a JSON object
+mapping each token to an agent name:
+
+```json
+{"<token-a>": "nomi", "<token-b>": "deploy-bot"}
+```
 
 ```
-ROLLOPS_MCP_TOKENS={"<token-a>":"nomi","<token-b>":"deploy-bot"}
+ROLLOPS_MCP_TOKENS_FILE=/etc/rollops/mcp-tokens.json
 ```
+
+The same JSON can be supplied inline as `ROLLOPS_MCP_TOKENS`, but a file is
+preferred — see [MCP tokens](mcp-tokens.md) for why, and for the rotation
+procedure. When both are set the file wins and the env var is ignored (logged at
+startup).
 
 Callers pass `Authorization: Bearer <token>`. The surface is **fail-closed**: with
 no token map configured, or a token that does not resolve, the request is rejected
