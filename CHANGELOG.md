@@ -1,5 +1,137 @@
 # Changelog
 
+## Unreleased - One post-deploy gate, and secrets that stay in the daemon
+
+This release closes a class of bug rather than a single one: the automatic and
+manual paths through the post-deploy gate had drifted apart, gate by gate, and
+now share a single implementation. It also fixes a secret-exposure bug found
+while auditing where MCP tokens live. **Four behaviour changes — see Upgrading.**
+
+- **Config-sourced commands no longer inherit the daemon environment.** Rollops
+  runs commands the repo config names (smoke tests, database migrate/rollback
+  hooks), and the confinement policy treats that config as untrusted. Those
+  commands were spawned with no `cmd.Env`, so they inherited the daemon's whole
+  environment — `ROLLOPS_MCP_TOKENS`, `ROLLOPS_ADMIN_TOKEN`, `ROLLOPS_UI_PASSWORD`,
+  `ROLLOPS_REGISTRY_TOKEN`, the OIDC settings, and any platform-injected cloud
+  credentials. A poisoned or simply careless repo could read every daemon secret.
+  The plugin host already confined its subprocess environment; both paths now
+  share one implementation. A confined command gets `PATH`/`HOME`/`TMPDIR` plus
+  whatever `ROLLOPS_ALLOWED_ENV` names, and `*` restores full inheritance. Unlike
+  the other confinement controls this one is **default-on** — withholding secrets
+  should not require configuration. See `docs/command-confinement.md`, which also
+  documents the three previously undocumented confinement controls. (#75)
+
+- **`rollops verify`: dry-run the post-deploy gate.** A new verb that answers
+  "would this promote?" It runs the same health, smoke and metric-analysis gates
+  as the automatic path, reports each one (`pass` / `fail` / `skipped` /
+  `not-run`), and **changes nothing** — no phase transition, no promotion, no
+  rollback, no history entry. A failing gate is a result, not an error; errors
+  are reserved for operational failures, which fail closed. The CLI exits
+  non-zero on a failed gate, so `rollops verify <id> && rollops promote <id>`
+  composes. Available on the CLI, `POST /v1/verify`, `RolloutService.Verify`, and
+  the `rollouts.verify` MCP tool. Authorized as **promote** permission, not a read
+  permission: the gates really run, and a smoke test executes a command on the
+  daemon host. See `docs/verify.md`. (#74)
+
+- **`promote` enforces exactly what `verify` dry-runs.** Manual promotion had
+  accumulated gates piecemeal — metric analysis in #65, the smoke test in #72,
+  health never — which left `verify` able to report a failure `promote` would
+  shrug off. Promotion now gates on health, smoke and analysis, in that order,
+  from descriptors captured on the rollout at deploy time. `promote --force`
+  (`-f`, and `force: true` on the HTTP/gRPC/MCP surfaces) is the break-glass
+  override for when a gate is itself wrong — a flaky probe, a metrics backend
+  that is down. The bypass is never silent: it is recorded on the rollout's note
+  and in the audit trail, attributed to the caller. The web console never forces.
+  (#65, #72, #74)
+
+- **Promotions are audited.** `audit.ActionPromote` was defined but never
+  emitted, so nothing recorded who completed a rollout. `Promote` now takes the
+  actor identity, as `Approve`/`Reject` already did, and every promotion —
+  forced or not — lands in the audit trail. (#74)
+
+- **One gate runner behind both paths.** The automatic path (`VerifyOrRollback`)
+  and the manual paths now resolve the same gate set and execute it through one
+  runner, with one ordering and one short-circuit rule. Tests assert that a dry
+  run's verdict matches both what `VerifyOrRollback` decides and whether
+  `Promote` succeeds — so the two can no longer disagree silently, which is how
+  the missing gates went unnoticed in the first place. (#74)
+
+- **MCP bearer tokens can be loaded from a file, and rotated without a restart.**
+  `ROLLOPS_MCP_TOKENS_FILE` points at the same JSON as `ROLLOPS_MCP_TOKENS`,
+  typically a mounted Secret. Token material no longer has to sit in the daemon
+  environment, where it is inherited by subprocesses and visible in
+  `/proc/<pid>/environ`, `docker inspect` and crash dumps. `SIGHUP` now reloads
+  the tokens alongside the RBAC policy, through an atomic swap, so an in-flight
+  request never sees a half-applied rotation. Startup fails closed when the token
+  source is unreadable (there is no known-good state to keep); a failed **reload**
+  keeps the current tokens, so a typo cannot lock every agent out mid-flight. The
+  env var still works, and the file wins when both are set. See
+  `docs/mcp-tokens.md`. (#76)
+
+- **Per-caller MCP authentication.** Each MCP caller presents a bearer token
+  resolving to a distinct agent identity, so RBAC authorizes each caller as
+  itself instead of treating every connection as one fixed agent. The surface is
+  **fail-closed**: with no tokens configured, or a token that does not resolve,
+  the request is rejected before any tool runs — there is no fallback identity.
+  (#66)
+
+- **Docs and CI.** A git-auth migration runbook for moving off the classic PAT to
+  per-org GitHub Apps, with copy-paste templates (#68). Markdown- and
+  `memory/`-only pull requests now run CI, so they can satisfy the required
+  checks instead of needing an admin merge (#63).
+
+### Upgrading
+
+1. **Configure MCP tokens before deploying** if you serve MCP. The surface is
+   fail-closed, so a deploy without tokens rejects every agent call. Prefer
+   `ROLLOPS_MCP_TOKENS_FILE`.
+2. **Check your smoke tests and database hooks for environment reads.** They no
+   longer inherit the daemon's environment. Name what they need in
+   `ROLLOPS_ALLOWED_ENV`, or set `ROLLOPS_ALLOWED_ENV=*` to keep the old
+   behaviour while you migrate.
+3. **A manual promote can now be refused.** If a rollout's config declares a
+   smoke test or metric analysis, or its target is unhealthy, `promote` runs
+   those gates and stops on failure. Use `rollops verify <id>` to see which gate
+   would fail, and `promote --force` to override.
+4. **Rollouts deployed before this release** report their smoke and analysis
+   gates as `skipped`. Both descriptors are captured on the rollout at deploy
+   time (migrations `0008` and `0009`, applied idempotently on an existing
+   database), so rollouts that predate them carry none. The health gate always
+   runs.
+
+## v0.26.0 - Referenced manifest sources (Kustomize / Helm / file)
+
+- **`manifestFrom`: reference manifests instead of inlining them.** The Kubernetes
+  target can now resolve its desired manifest from a referenced source rendered at
+  plan/apply time — `manifestFrom: { path | kustomize | helm }` — instead of
+  requiring the full Deployment inlined under `spec.target.spec.manifest`. Teams
+  that manage manifests with Kustomize overlays or Helm no longer keep a second,
+  drift-prone inline copy. Relative paths resolve against the config file's own
+  directory; Kustomize/Helm are rendered by shelling out to `kubectl kustomize` /
+  `helm template` (no Kubernetes SDK pulled into the core). `manifestFrom` is
+  exclusive, but the existing inline `manifest` and legacy flat keys keep working
+  unchanged. `rollops plan` now prints the rendered manifest and `rollops doctor`
+  probes for `kubectl`/`helm`. Referenced sources key drift off the **rendered
+  output**, so an edit to a referenced Kustomize/Helm/path file is detected even
+  under shallow verification. (#57, #58)
+- **Rollback restores exactly what was deployed.** For referenced sources the
+  rendered manifest bytes are captured at apply time and persisted with the
+  rollout, so a rollback re-applies the exact deployed manifest instead of
+  re-rendering the source — which could differ if the referenced files changed
+  since, or be unavailable where no checkout is at hand (the manual CLI / web UI /
+  MCP / HTTP API / gRPC rollback path). (#59)
+- **Path confinement + safe rendering.** Referenced paths are confined to the
+  config-file root (absolute paths and `..` escapes rejected); Kustomize/Helm run
+  at safe defaults (no exec plugins, no post-renderer). Remote Kustomize/Helm URLs
+  pass through unchanged.
+
+## v0.25.0 - Image tag pagination
+
+- **Image automation follows tags/list pagination.** The registry tag scan now
+  follows pagination on the OCI `tags/list` endpoint, so the newest tags on
+  registries that paginate are no longer missed and a freshly published tag is
+  reliably detected. (#55)
+
 ## v0.24.0 - Image-automation coverage log
 
 - **Per-tick image-automation coverage summary.** Each reconcile now logs one line

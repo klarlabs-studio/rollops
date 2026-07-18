@@ -62,7 +62,10 @@ ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=<admin-token> rollops doctor
 - SQLite lives at `/var/lib/rollops/rollops.db`.
 - Watched repo checkouts live under `/var/lib/rollops/repos`.
 - `/ui` is disabled until `ROLLOPS_UI_PASSWORD` is set.
-- MCP is disabled until `ROLLOPS_MCP_ADDR` is set.
+- MCP is disabled until `ROLLOPS_MCP_ADDR` is set, and is fail-closed once
+  enabled: it rejects every call until `ROLLOPS_MCP_TOKENS` (a JSON
+  `{token: agent-name}` map) is set and callers present `Authorization: Bearer
+  <token>`. Each token resolves to a distinct identity for per-caller RBAC.
 
 Put TLS, mTLS, SSO, or public routing at the reverse proxy/host boundary. The
 daemon itself still requires tokens/basic auth for its interfaces.

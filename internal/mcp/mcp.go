@@ -17,17 +17,20 @@ import (
 	"go.klarlabs.de/rollops/internal/security"
 )
 
-// Tools holds the engine surface plus the authenticated agent identity and the
-// RBAC policy. Tool handlers are methods on it.
+// Tools holds the engine surface and the RBAC policy. The caller identity is not
+// a field: it is resolved per request from the context the transport auth hook
+// populates (see auth.go), so RBAC authorizes each MCP caller as itself rather
+// than as one fixed identity shared by every connection. Tool handlers are
+// methods on it.
 type Tools struct {
-	eng      *engine.Engine
-	policy   *security.Policy
-	identity rollout.Identity
+	eng    *engine.Engine
+	policy *security.Policy
 }
 
-// NewTools binds the engine, policy, and the identity the MCP connection runs as.
-func NewTools(eng *engine.Engine, policy *security.Policy, id rollout.Identity) *Tools {
-	return &Tools{eng: eng, policy: policy, identity: id}
+// NewTools binds the engine and policy. Every handler derives its caller from
+// the request context and is fail-closed when none is present.
+func NewTools(eng *engine.Engine, policy *security.Policy) *Tools {
+	return &Tools{eng: eng, policy: policy}
 }
 
 // --- tool I/O ---
@@ -86,11 +89,15 @@ type RollbackOutput struct {
 
 // Plan implements rollouts.plan.
 func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return PlanOutput{}, err
+	}
 	c, err := config.Load([]byte(in.Config))
 	if err != nil {
 		return PlanOutput{}, err
 	}
-	if err := t.authz(security.PermPlan, c); err != nil {
+	if err := t.authz(id, security.PermPlan, c); err != nil {
 		return PlanOutput{}, err
 	}
 	p, err := t.eng.Plan(ctx, c)
@@ -103,17 +110,21 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 // Apply implements rollouts.apply. The agent must have planned first; the engine
 // produces a plan here so the plan-before-apply guard holds.
 func (t *Tools) Apply(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return ApplyOutput{}, err
+	}
 	c, err := config.Load([]byte(in.Config))
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	if err := t.authz(security.PermApply, c); err != nil {
+	if err := t.authz(id, security.PermApply, c); err != nil {
 		return ApplyOutput{}, err
 	}
 	if _, err := t.eng.Plan(ctx, c); err != nil {
 		return ApplyOutput{}, err
 	}
-	r, err := t.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: t.identity, Planned: true})
+	r, err := t.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true})
 	if err != nil {
 		return ApplyOutput{}, err
 	}
@@ -122,7 +133,11 @@ func (t *Tools) Apply(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
 
 // Status implements rollouts.status.
 func (t *Tools) Status(ctx context.Context, in StatusInput) (StatusOutput, error) {
-	if err := t.policy.Authorize(t.identity, security.PermStatus, security.Scope{}); err != nil {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return StatusOutput{}, err
+	}
+	if err := t.policy.Authorize(id, security.PermStatus, security.Scope{}); err != nil {
 		return StatusOutput{}, err
 	}
 	r, err := t.eng.Status(ctx, in.RolloutID)
@@ -134,7 +149,11 @@ func (t *Tools) Status(ctx context.Context, in StatusInput) (StatusOutput, error
 
 // Rollback implements rollouts.rollback.
 func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput, error) {
-	if err := t.policy.Authorize(t.identity, security.PermRollback, security.Scope{TargetRef: in.TargetRef}); err != nil {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return RollbackOutput{}, err
+	}
+	if err := t.policy.Authorize(id, security.PermRollback, security.Scope{TargetRef: in.TargetRef}); err != nil {
 		return RollbackOutput{}, err
 	}
 	r, err := t.eng.RollbackLast(ctx, in.TargetRef, in.Force)
@@ -144,8 +163,8 @@ func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput,
 	return RollbackOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef}, nil
 }
 
-func (t *Tools) authz(perm security.Permission, c *config.Config) error {
-	return t.policy.Authorize(t.identity, perm, security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref})
+func (t *Tools) authz(id rollout.Identity, perm security.Permission, c *config.Config) error {
+	return t.policy.Authorize(id, perm, security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref})
 }
 
 // ActionInput identifies a rollout by id for approve/reject/promote.
@@ -163,23 +182,80 @@ type ActionOutput struct {
 
 // Approve implements rollouts.approve.
 func (t *Tools) Approve(ctx context.Context, in ActionInput) (ActionOutput, error) {
-	return t.action(ctx, in.RolloutID, security.PermApprove, func(id string) (rollout.Rollout, error) {
-		return t.eng.Approve(ctx, id, t.identity)
+	return t.action(ctx, in.RolloutID, security.PermApprove, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Approve(ctx, rid, by)
 	})
 }
 
 // Reject implements rollouts.reject.
 func (t *Tools) Reject(ctx context.Context, in ActionInput) (ActionOutput, error) {
-	return t.action(ctx, in.RolloutID, security.PermApprove, func(id string) (rollout.Rollout, error) {
-		return t.eng.Reject(ctx, id, t.identity)
+	return t.action(ctx, in.RolloutID, security.PermApprove, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Reject(ctx, rid, by)
 	})
 }
 
-// Promote implements rollouts.promote.
-func (t *Tools) Promote(ctx context.Context, in ActionInput) (ActionOutput, error) {
-	return t.action(ctx, in.RolloutID, security.PermPromote, func(id string) (rollout.Rollout, error) {
-		return t.eng.Promote(ctx, id)
+// PromoteInput identifies a rollout to promote, with the gate override.
+type PromoteInput struct {
+	RolloutID string `json:"rollout_id" jsonschema:"the rollout id to promote"`
+	Force     bool   `json:"force,omitempty" jsonschema:"override the post-deploy gates (health, smoke, metric analysis) and promote anyway; the bypass is audited"`
+}
+
+// Promote implements rollouts.promote, gated on the post-deploy checks. Prefer
+// rollouts.verify first to see which gate would fail; force only when the gate
+// itself is known to be wrong.
+func (t *Tools) Promote(ctx context.Context, in PromoteInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermPromote, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Promote(ctx, rid, by, in.Force)
 	})
+}
+
+// GateOutput is one post-deploy gate's outcome in a dry-run verification.
+type GateOutput struct {
+	Gate   string `json:"gate"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// VerifyOutput is the result of rollouts.verify: every gate, and whether the
+// rollout would pass. Nothing was changed to produce it.
+type VerifyOutput struct {
+	RolloutID string       `json:"rollout_id"`
+	Phase     string       `json:"phase"`
+	Target    string       `json:"target"`
+	OK        bool         `json:"ok"`
+	Reason    string       `json:"reason,omitempty"`
+	Gates     []GateOutput `json:"gates"`
+}
+
+// Verify implements rollouts.verify: a dry run of the post-deploy gate. It
+// changes nothing, so an agent can check "would this promote?" before calling
+// rollouts.promote. Authorized as PermPromote rather than a read permission
+// because the gates really run — a configured smoke test executes a command on
+// the daemon host. A failing gate returns ok=false, not an error.
+func (t *Tools) Verify(ctx context.Context, in ActionInput) (VerifyOutput, error) {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	cur, err := t.eng.Status(ctx, in.RolloutID)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	if err := t.policy.Authorize(id, security.PermPromote, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return VerifyOutput{}, err
+	}
+	rep, err := t.eng.Verify(ctx, in.RolloutID)
+	if err != nil {
+		return VerifyOutput{}, err
+	}
+	gates := make([]GateOutput, 0, len(rep.Gates))
+	for _, g := range rep.Gates {
+		gates = append(gates, GateOutput{Gate: g.Gate, Status: g.Status, Detail: g.Detail})
+	}
+	return VerifyOutput{
+		RolloutID: rep.RolloutID, Phase: rep.Phase, Target: rep.TargetRef,
+		OK: rep.OK, Reason: rep.Reason, Gates: gates,
+	}, nil
 }
 
 // FreezeInput toggles the emergency kill-switch.
@@ -196,27 +272,36 @@ type FreezeOutput struct {
 
 // Freeze implements rollouts.freeze.
 func (t *Tools) Freeze(ctx context.Context, in FreezeInput) (FreezeOutput, error) {
-	if err := t.policy.Authorize(t.identity, security.PermFreeze, security.Scope{}); err != nil {
+	id, err := t.caller(ctx)
+	if err != nil {
 		return FreezeOutput{}, err
 	}
-	active, reason, err := t.eng.Freeze(ctx, in.Active, t.identity, in.Reason)
+	if err := t.policy.Authorize(id, security.PermFreeze, security.Scope{}); err != nil {
+		return FreezeOutput{}, err
+	}
+	active, reason, err := t.eng.Freeze(ctx, in.Active, id, in.Reason)
 	if err != nil {
 		return FreezeOutput{}, err
 	}
 	return FreezeOutput{Active: active, Reason: reason}, nil
 }
 
-// action is the shared approve/reject/promote flow: scope authorization to the
-// rollout's target, run the engine op, return its outcome.
-func (t *Tools) action(ctx context.Context, id string, perm security.Permission, op func(string) (rollout.Rollout, error)) (ActionOutput, error) {
-	cur, err := t.eng.Status(ctx, id)
+// action is the shared approve/reject/promote flow: resolve the caller
+// (fail-closed), scope authorization to the rollout's target, run the engine op
+// as that caller, return its outcome.
+func (t *Tools) action(ctx context.Context, rolloutID string, perm security.Permission, op func(string, rollout.Identity) (rollout.Rollout, error)) (ActionOutput, error) {
+	id, err := t.caller(ctx)
 	if err != nil {
 		return ActionOutput{}, err
 	}
-	if err := t.policy.Authorize(t.identity, perm, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+	cur, err := t.eng.Status(ctx, rolloutID)
+	if err != nil {
 		return ActionOutput{}, err
 	}
-	r, err := op(id)
+	if err := t.policy.Authorize(id, perm, security.Scope{TargetRef: cur.TargetRef}); err != nil {
+		return ActionOutput{}, err
+	}
+	r, err := op(rolloutID, id)
 	if err != nil {
 		return ActionOutput{}, err
 	}
@@ -242,7 +327,8 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.rollback").Description("Roll back a target to its previous desired state").Handler(t.Rollback)
 	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
 	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
-	srv.Tool("rollouts.promote").Description("Promote a verified rollout to complete").Handler(t.Promote)
+	srv.Tool("rollouts.promote").Description("Promote a rollout past its post-deploy gate (health, smoke, metric analysis). Set force to override a failing gate").Handler(t.Promote)
+	srv.Tool("rollouts.verify").Description("Dry-run a rollout's post-deploy gate (health, smoke, metric analysis) and report each one. Changes nothing — use before rollouts.promote").Handler(t.Verify)
 	srv.Tool("rollouts.freeze").Description("Engage or lift the emergency freeze that blocks all applies").Handler(t.Freeze)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)
 }

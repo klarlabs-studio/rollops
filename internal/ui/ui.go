@@ -37,7 +37,7 @@ type Backend interface {
 	Resources(ctx context.Context, rolloutID string) ([]pt.Resource, error)
 	Approve(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
-	Promote(ctx context.Context, id string) (rollout.Rollout, error)
+	Promote(ctx context.Context, id string, by rollout.Identity, force bool) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 	Freeze(ctx context.Context, on bool, by rollout.Identity, reason string) (bool, string, error)
 	FreezeStatus() (active bool, reason string)
@@ -372,9 +372,12 @@ func (s *Server) apiReject(w http.ResponseWriter, r *http.Request) {
 	s.actByID(w, r, security.PermApprove, s.be.Reject)
 }
 
-// apiPromote promotes a verified rollout. Promote takes no actor identity (it
-// completes an already-approved rollout), but is still authorized against the
-// rollout's target under PermPromote.
+// apiPromote promotes a verified rollout, authorized against the rollout's
+// target under PermPromote and attributed to the console caller.
+//
+// The console never forces: it always promotes with the post-deploy gates
+// enforced. Overriding a failing gate is deliberate break-glass work and stays
+// on the CLI/API, where it is an explicit flag rather than a button.
 func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
 	id, ok := identityFrom(r.Context())
 	if !ok {
@@ -397,7 +400,7 @@ func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if _, err := s.be.Promote(r.Context(), body.ID); err != nil {
+	if _, err := s.be.Promote(r.Context(), body.ID, id, false); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

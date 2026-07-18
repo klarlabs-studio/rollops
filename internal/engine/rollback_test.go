@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -161,7 +162,10 @@ func TestApply_ForwardMigrationRunsBeforeDeploy(t *testing.T) {
 func TestPromote_PostPromoteMigrationRunsAtPromoteNotDeploy(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	db := &fakeDBRollback{}
-	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db))
+	// autoRollbackYAML configures a smoke test, and a manual Promote now runs it
+	// (the same gate as the auto path) — stub it so this test stays about the
+	// post-promote migration.
+	e, _ := newEngine(t, fake, WithDatabaseRollbackRunner(db), WithSmokeRunner(fakeSmoke{code: 0}))
 	c := loadAutoRollback(t)
 	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{
 		Command: []string{"goose", "up"},
@@ -175,7 +179,7 @@ func TestPromote_PostPromoteMigrationRunsAtPromoteNotDeploy(t *testing.T) {
 	if len(db.calls) != 0 {
 		t.Fatalf("post-promote migration must not run at deploy, got %v", db.calls)
 	}
-	out, err := e.Promote(context.Background(), r.ID)
+	out, err := e.Promote(context.Background(), r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}

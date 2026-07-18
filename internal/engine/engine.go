@@ -744,6 +744,23 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.DeliveryFlag = b
 		}
 	}
+	// Capture the metric-analysis descriptor so a later manual Verify — and the
+	// Promote that follows — can run the same analysis gate as the auto path,
+	// which still holds the config. Empty means no analysis was configured.
+	// Mirrors the delivery-descriptor capture above; opaque JSON keeps this model
+	// decoupled from the config package.
+	if an := cfg.Spec.Analysis; an != nil {
+		if b, mErr := json.Marshal(an); mErr == nil {
+			r.Analysis = b
+		}
+	}
+	// Same for the smoke test, so manual Verify/Promote run the same gate as the
+	// auto path. Empty means no smoke test was configured.
+	if st := cfg.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
+		if b, mErr := json.Marshal(st); mErr == nil {
+			r.SmokeTest = b
+		}
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
@@ -915,42 +932,197 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	return VerifyOutcome{Rollout: promoted}, nil
 }
 
-// runPostDeployChecks returns (failed, failure reason, success note) for the
-// health, smoke, and optional metric-analysis gates.
-func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
-	if hc := c.Spec.Rollback.HealthCheck; hc != nil || c.Spec.Rollback.Auto {
-		tgt, err := e.buildTarget(r.TargetRef, r.Desired)
-		if err != nil {
-			// Fail CLOSED: a health gate we cannot even build is not a pass. Letting
-			// a build error fall through would promote an unverified deploy, the
-			// same failure mode the step gate already guards against.
-			return true, "health gate unavailable: " + err.Error(), ""
-		}
-		defer closeTarget(tgt)
-		if hs, herr := tgt.Health(ctx); herr != nil || hs.State == pt.HealthUnhealthy {
-			reason := "health check failed"
-			if hs.Reason != "" {
-				reason = "health check failed: " + hs.Reason
-			}
-			return true, reason, ""
-		}
-	}
-	if st := c.Spec.Rollback.SmokeTest; st != nil && len(st.Command) > 0 {
-		code, err := e.smoke.Run(ctx, st.Command)
-		if err != nil {
-			return true, "smoke test error: " + err.Error(), ""
-		}
-		if code != st.ExpectExit {
-			return true, fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit), ""
-		}
+// Post-deploy gate names, stable identifiers in VerifyReport output.
+const (
+	GateHealth   = "health"
+	GateSmoke    = "smoke"
+	GateAnalysis = "analysis"
+)
+
+// Post-deploy gate outcomes.
+const (
+	GatePass    = "pass"
+	GateFail    = "fail"
+	GateSkipped = "skipped" // not configured (or analysis not enabled)
+	GateNotRun  = "not-run" // short-circuited by an earlier failure
+)
+
+// GateResult is one post-deploy gate's outcome.
+type GateResult struct {
+	Gate   string `json:"gate"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// gateSet is the resolved set of post-deploy gates to run. It is built either
+// from the live config (the auto path, which still holds it) or from the
+// descriptors captured on the rollout at deploy time (the manual paths), so
+// both drive the SAME gate implementations and cannot drift apart.
+type gateSet struct {
+	health   bool
+	smoke    *config.SmokeTest
+	analysis *config.Analysis
+}
+
+// gatesFromConfig resolves the gate set for the auto path. The health gate runs
+// when a health check is configured or auto-rollback is on, matching the
+// original post-deploy behaviour.
+func (e *Engine) gatesFromConfig(c *config.Config) gateSet {
+	gs := gateSet{
+		health: c.Spec.Rollback.HealthCheck != nil || c.Spec.Rollback.Auto,
+		smoke:  c.Spec.Rollback.SmokeTest,
 	}
 	// Metric-based analysis is a stable Phase 2 feature. It remains opt-in at
 	// engine construction so v1 rollback stays observability-free by default.
-	if e.analysis && c.Spec.Analysis != nil {
-		if ok, note := e.runAnalysis(ctx, c.Spec.Analysis); !ok {
-			return true, note, ""
-		} else if note != "" {
-			return false, "", note
+	if e.analysis {
+		gs.analysis = c.Spec.Analysis
+	}
+	return gs
+}
+
+// gatesFromRollout resolves the gate set from the descriptors captured on the
+// rollout at deploy time, for the manual paths that do not hold the config.
+// Health always runs — a manual verification with no health signal is not a
+// verification. Fails CLOSED on an undecodable descriptor: a gate that cannot
+// be read is not a pass.
+func (e *Engine) gatesFromRollout(r rollout.Rollout) (gateSet, error) {
+	gs := gateSet{health: true}
+	if len(r.SmokeTest) > 0 {
+		var st config.SmokeTest
+		if err := json.Unmarshal(r.SmokeTest, &st); err != nil {
+			return gateSet{}, fmt.Errorf("smoke test descriptor unreadable: %w", err)
+		}
+		gs.smoke = &st
+	}
+	if e.analysis && len(r.Analysis) > 0 {
+		var a config.Analysis
+		if err := json.Unmarshal(r.Analysis, &a); err != nil {
+			return gateSet{}, fmt.Errorf("analysis descriptor unreadable: %w", err)
+		}
+		gs.analysis = &a
+	}
+	return gs, nil
+}
+
+// runGates runs the post-deploy gates in order (health → smoke → analysis) and
+// reports every one. It short-circuits on the first failure — the same order and
+// stopping behaviour as the deploy path, so a dry-run predicts what a real
+// verification would do — marking the gates it never reached as not-run.
+func (e *Engine) runGates(ctx context.Context, r rollout.Rollout, gs gateSet) []GateResult {
+	out := make([]GateResult, 0, 3)
+	failed := false
+	run := func(enabled bool, skipDetail string, gate func() GateResult) {
+		switch {
+		case failed:
+			out = append(out, GateResult{Gate: gateNameOf(len(out)), Status: GateNotRun})
+		case !enabled:
+			out = append(out, GateResult{Gate: gateNameOf(len(out)), Status: GateSkipped, Detail: skipDetail})
+		default:
+			res := gate()
+			out = append(out, res)
+			failed = res.Status == GateFail
+		}
+	}
+	run(gs.health, "no health check configured", func() GateResult { return e.gateHealth(ctx, r) })
+	run(gs.smoke != nil && len(gs.smoke.Command) > 0, "no smoke test configured", func() GateResult {
+		return e.gateSmoke(ctx, gs.smoke)
+	})
+	run(gs.analysis != nil, "no metric analysis configured", func() GateResult {
+		return e.gateAnalysis(ctx, gs.analysis)
+	})
+	return out
+}
+
+// gateNameOf maps a gate's position in the fixed run order to its name.
+func gateNameOf(i int) string {
+	switch i {
+	case 0:
+		return GateHealth
+	case 1:
+		return GateSmoke
+	default:
+		return GateAnalysis
+	}
+}
+
+func (e *Engine) gateHealth(ctx context.Context, r rollout.Rollout) GateResult {
+	tgt, err := e.buildTarget(r.TargetRef, r.Desired)
+	if err != nil {
+		// Fail CLOSED: a health gate we cannot even build is not a pass. Letting
+		// a build error fall through would promote an unverified deploy, the
+		// same failure mode the step gate already guards against.
+		return GateResult{Gate: GateHealth, Status: GateFail, Detail: "health gate unavailable: " + err.Error()}
+	}
+	defer closeTarget(tgt)
+	hs, herr := tgt.Health(ctx)
+	if herr != nil || hs.State == pt.HealthUnhealthy {
+		detail := "health check failed"
+		if hs.Reason != "" {
+			detail = "health check failed: " + hs.Reason
+		}
+		return GateResult{Gate: GateHealth, Status: GateFail, Detail: detail}
+	}
+	// A degraded target still passes (only Unhealthy fails), so report which.
+	return GateResult{Gate: GateHealth, Status: GatePass, Detail: healthStateName(hs.State)}
+}
+
+// healthStateName renders a health verdict for report output. Kept local rather
+// than a String() on pkg/target.HealthState, which would change how the state
+// formats everywhere it is already logged.
+func healthStateName(s pt.HealthState) string {
+	switch s {
+	case pt.HealthHealthy:
+		return "healthy"
+	case pt.HealthDegraded:
+		return "degraded"
+	case pt.HealthUnhealthy:
+		return "unhealthy"
+	default:
+		return "unknown"
+	}
+}
+
+func (e *Engine) gateSmoke(ctx context.Context, st *config.SmokeTest) GateResult {
+	code, err := e.smoke.Run(ctx, st.Command)
+	if err != nil {
+		return GateResult{Gate: GateSmoke, Status: GateFail, Detail: "smoke test error: " + err.Error()}
+	}
+	if code != st.ExpectExit {
+		return GateResult{Gate: GateSmoke, Status: GateFail, Detail: fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit)}
+	}
+	return GateResult{Gate: GateSmoke, Status: GatePass}
+}
+
+func (e *Engine) gateAnalysis(ctx context.Context, a *config.Analysis) GateResult {
+	ok, note := e.runAnalysis(ctx, a)
+	if !ok {
+		return GateResult{Gate: GateAnalysis, Status: GateFail, Detail: note}
+	}
+	return GateResult{Gate: GateAnalysis, Status: GatePass, Detail: note}
+}
+
+// firstFailure returns the detail of the first failed gate, or "" if all passed.
+func firstFailure(gates []GateResult) string {
+	for _, g := range gates {
+		if g.Status == GateFail {
+			return g.Detail
+		}
+	}
+	return ""
+}
+
+// runPostDeployChecks returns (failed, failure reason, success note) for the
+// health, smoke, and optional metric-analysis gates. It is the auto path's view
+// of the shared gate runner.
+func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
+	gates := e.runGates(ctx, r, e.gatesFromConfig(c))
+	if reason := firstFailure(gates); reason != "" {
+		return true, reason, ""
+	}
+	// A passing analysis may carry a note worth persisting on the promotion.
+	for _, g := range gates {
+		if g.Gate == GateAnalysis && g.Status == GatePass && g.Detail != "" {
+			return false, "", g.Detail
 		}
 	}
 	return false, "", ""
@@ -1136,32 +1308,101 @@ func (e *Engine) Observe(ctx context.Context, t config.Target) (pt.Fingerprint, 
 	return fp, nil
 }
 
-// Verify gates promotion on the target's health. It does not change phase; a
-// healthy verify clears the way for Promote, an unhealthy one is the auto-
-// rollback signal the reconciler acts on.
-func (e *Engine) Verify(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
+// VerifyReport is the outcome of a dry-run verification: every post-deploy gate
+// with its status, and whether the rollout would pass. The rollout's phase is
+// never changed by producing it.
+type VerifyReport struct {
+	RolloutID string          `json:"rolloutId"`
+	TargetRef string          `json:"targetRef"`
+	Phase     string          `json:"phase"`
+	OK        bool            `json:"ok"`
+	Reason    string          `json:"reason,omitempty"` // first failing gate's detail
+	Gates     []GateResult    `json:"gates"`
+	Rollout   rollout.Rollout `json:"-"`
+}
+
+// Verify is a DRY RUN of the post-deploy gate: it runs the same health, smoke,
+// and metric-analysis checks as the auto path (VerifyOrRollback) against the
+// descriptors captured on the rollout at deploy time, reports each one, and
+// changes nothing — no phase transition, no promotion, no rollback. Use it to
+// answer "would this promote?" before committing to Promote.
+//
+// A failing gate is a RESULT, not an error: the report comes back with OK=false
+// and the reason. The error return is reserved for operational failures (the
+// rollout cannot be loaded, a captured descriptor is unreadable) — those fail
+// CLOSED, since a gate that cannot be read is not a pass.
+//
+// Note the gates run for real: a configured smoke test executes its command on
+// the daemon host (under the same confinement policy as the auto path), and
+// analysis queries the metrics backend. "Dry run" means nothing is *changed*,
+// not that nothing is *run*.
+func (e *Engine) Verify(ctx context.Context, rolloutID string) (VerifyReport, error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return VerifyReport{}, err
+	}
+	gs, err := e.gatesFromRollout(r)
+	if err != nil {
+		return VerifyReport{}, fmt.Errorf("engine: verify: %w", err)
+	}
+	gates := e.runGates(ctx, r, gs)
+	reason := firstFailure(gates)
+	return VerifyReport{
+		RolloutID: r.ID,
+		TargetRef: r.TargetRef,
+		Phase:     string(r.Phase),
+		OK:        reason == "",
+		Reason:    reason,
+		Gates:     gates,
+		Rollout:   r,
+	}, nil
+}
+
+// Promote marks a verified rollout as promoted, gated on the SAME post-deploy
+// checks Verify dry-runs: health, smoke, and metric analysis, in that order.
+// Because a freshly-deployed rollout sits in `verifying` and the lifecycle does
+// not force a prior Verify, an ungated Promote would be a way to skip the gate
+// entirely. The gates live here (not in promoteWithNote) so the auto path
+// (VerifyOrRollback), which has already run them before calling promoteWithNote,
+// does not run them twice.
+//
+// force overrides the gates — the break-glass path for when the gates are
+// themselves wrong (a flaky probe, a metrics backend that is down). It mirrors
+// rollback's force flag, and is recorded in the audit trail and on the rollout's
+// note so the bypass is never silent.
+//
+// Verify is the dry run of exactly this: `verify` passing means `promote`
+// passes.
+func (e *Engine) Promote(ctx context.Context, rolloutID string, by rollout.Identity, force bool) (rollout.Rollout, error) {
 	r, err := e.store.LoadRollout(ctx, rolloutID)
 	if err != nil {
 		return rollout.Rollout{}, err
 	}
-	tgt, err := e.buildTarget(r.TargetRef, r.Desired)
+	note := ""
+	if force {
+		note = "promote: post-deploy gates bypassed (forced)"
+	} else {
+		gs, gErr := e.gatesFromRollout(r)
+		if gErr != nil {
+			return r, fmt.Errorf("engine: promote: %w", gErr)
+		}
+		if reason := firstFailure(e.runGates(ctx, r, gs)); reason != "" {
+			return r, fmt.Errorf("engine: promote: %s; force the promote to override", reason)
+		}
+	}
+	promoted, err := e.promoteWithNote(ctx, rolloutID, note)
 	if err != nil {
-		return r, err
+		return promoted, err
 	}
-	defer closeTarget(tgt)
-	hs, err := tgt.Health(ctx)
-	if err != nil {
-		return r, fmt.Errorf("engine: verify: health: %w", err)
+	detail := "promoted"
+	if force {
+		detail = "promoted (post-deploy gates bypassed: forced)"
 	}
-	if hs.State != pt.HealthHealthy {
-		return r, fmt.Errorf("engine: verify: target unhealthy (%s)", hs.Reason)
-	}
-	return r, nil
-}
-
-// Promote marks a verified rollout as promoted.
-func (e *Engine) Promote(ctx context.Context, rolloutID string) (rollout.Rollout, error) {
-	return e.promoteWithNote(ctx, rolloutID, "")
+	e.record(audit.Entry{
+		Action: audit.ActionPromote, RolloutID: promoted.ID, TargetRef: promoted.TargetRef,
+		Phase: string(promoted.Phase), Actor: by, Detail: detail,
+	})
+	return promoted, nil
 }
 
 // Freeze engages or lifts the emergency kill-switch: while engaged, every apply

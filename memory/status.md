@@ -1,36 +1,66 @@
 # Status — Rollops
 
-*Updated: 2026-07-06*
+*Updated: 2026-07-18*
 
 ## Current State
 
-Rollops is **released at v0.20.0** (security-hardening release) and operating its
-creator's entire production cluster (28 first-party deployments under GitOps, one
-in-cluster `rollopsd`, ns `rollops-system`). **The v0.20.0 container image is NOT
-yet on ghcr** — the release's image-push job fails `permission_denied: write_package`
-(no `CR_PAT` secret + the ghcr `rollopsd` package is unlinked from the repo), same
-as v0.19.0, so the cluster is still on the v0.18.0 image. See Blocked/Waiting.
+Rollops is **released at v0.26.0** and operating its creator's entire production
+cluster (GitOps fleet, one in-cluster `rollopsd`, ns `rollops-system`, watching 11
+repos). **The v0.20-era ghcr image-push blockage is RESOLVED** — `rollopsd:v0.26.0`
+published cleanly (goreleaser binaries + GitHub Release + Docker image all green),
+and the **cluster is running v0.26.0** (pod Running/Ready, 0 restarts). Headline of
+this release: **`manifestFrom`** — Kubernetes targets can now reference manifests
+(path / kustomize / helm) instead of inlining them, plus a rollback that restores
+the exact deployed rendered bytes.
 
-**Last Session Summary (2026-07-06):** Two sessions. (1) mcp v1.15→v1.21 fleet bump
-(#36, WithBearerToken→WithHTTPHeader migration). (2) **Deep-review-and-harden →
-v0.20.0**: full crown-jewel security/correctness review (6 dimension agents) found
-~30 issues (3 CRITICAL, 12 HIGH); remediated via 6 merged PRs (#38–#43) — C1
-crashloop-never-rolled-back, C2 web-console-had-no-RBAC, C3 rollback-didn't-reset-
-traffic, plus fail-closed gates, supply-chain (digest-pin/realm/OOM), plugin-host
-env-scrub, opt-in multi-tenant confinement, JWKS/transport hardening, plaintext-
-refuse. Tagged v0.20.0 (GitHub release + binaries shipped; image push blocked).
-Full detail in sessions/2026-07-06.md (Session 2).
+**Last Session Summary (2026-07-17):** Shipped the #57 feedback end-to-end.
+**#58 `manifestFrom`** — referenced manifest sources rendered at plan/apply time,
+relative to the config-file dir; non-breaking vs inline/flat keys; drift keyed off
+the rendered output; path-confined; `plan`/`doctor` show the rendered result. Kept
+the lean posture (shells out to `kubectl kustomize`/`helm template`, no `client-go`).
+**#59** — rollback restores captured `pt.Manifest.Rendered` bytes instead of
+re-rendering (root-independent across CLI/UI/MCP/API/gRPC; also fixes the latent
+daemon "referenced files changed since deploy" case). Released **v0.26.0** (backfilled
+the missing v0.25.0 changelog; #61 admin-merged past the docs-PR CI path-skip),
+rolled the cluster to v0.26.0, and synced the in-repo deploy manifest (#62). Full
+detail in sessions/2026-07-17.md.
 
-**Next Session Should:** (1) Unblock the ghcr image push — operator adds a
-`write:packages` PAT as repo secret `CR_PAT` OR links the ghcr `rollopsd` package
-to the repo with Write access, then re-run the failed image job (`gh run rerun
-28809739025 --failed -R klarlabs-studio/rollops`). (2) Once `rollopsd:v0.20.0`
-exists, apply the updated deploy manifest to upgrade the cluster (it now sets
-`ROLLOPS_ALLOW_PLAINTEXT=1` — required, since the daemon refuses non-loopback
-plaintext binds). (3) Follow-ups from the review: manual `Promote`/`Verify` still
-skip metric analysis (needs analysis config persisted on the rollout); MCP surface
-has no per-caller transport auth (bounded). Note: the leaked-PAT `ghp_76ied…`
-revocation from the 2026-06-14 note may still be open — confirm with operator.
+**Last Session Summary (2026-07-18):** Closed the #65 follow-up — **#72**, manual
+`Verify`/`Promote` now run the **smoke gate**, not just metric analysis. Smoke
+config is captured on the rollout at deploy time (migration **0009**, mirroring
+0008/analysis) and the manual paths gate in the auto path's order (health → smoke
+→ analysis); no-op when unconfigured, fails closed on an unreadable descriptor,
+auto path unchanged (still exactly one smoke run). Merged, CI green, cluster NOT
+yet rolled. Two threads opened in the process: **`Engine.Verify` has no production
+callers** (remove it, or expose a real `verify` dry-run verb — every operator
+surface calls `Promote`), and the **CHANGELOG is unwritten for #65/#66/#72**.
+
+**Last Session Summary (2026-07-18):** Four PRs merged (#73 memory, #74, #75, #76),
+`main` green. Started from the #65 follow-up and pulled a thread: **#72** brought
+the smoke gate to manual Verify/Promote; **#74** made `verify` a real dry-run verb
+(per-gate `VerifyReport`, changes nothing) and made `promote` enforce exactly what
+it dry-runs, with an audited `--force` — both paths now share ONE gate runner, the
+structural fix for the drift. Auditing a forced promote surfaced that promotion was
+never audited at all. Asking whether MCP tokens belonged in a file rather than an
+env var surfaced a **real security bug (#75)**: smoke tests and DB hooks — commands
+named by untrusted repo config — inherited the daemon's whole environment, so a
+watched repo could read every daemon secret. The plugin host had been hardened
+against exactly this; the smoke path never was. Both now share one implementation.
+**#76** then moved MCP tokens to a file with SIGHUP rotation. #74/#75/#76 were each
+verified end-to-end against real infrastructure (SSH target via Docker; a live
+rollopsd for token rotation), not just unit tests.
+
+**Next Session Should:** Most open threads closed this session — housekeeping
+(flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
+metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth
+(#66, fail-closed, BREAKING)**. FIRST: **before the next MCP-serving deploy, set
+`ROLLOPS_MCP_TOKENS` and give every MCP caller a bearer token** — #66 is merged but
+undeployed (cluster still v0.26.0); deploying without tokens dark-fails the MCP
+surface. Remaining backlog, each its own effort: (1) **roady #34** — least-privilege
+multi-org git auth (deploy keys / GitHub App) to replace the classic PAT — DESIGN
+first with the operator; (2) marketing-sites digest→semver flip (per-app `.rollops`,
+gated on a semver release); (3) hermes/mnemos shared-service config ownership;
+(4) small follow-up: manual `Verify` still skips the smoke test.
 
 ## 🛠️ Distribution maturity (2026-06-11, unreleased, → v0.7.0)
 

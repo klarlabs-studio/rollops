@@ -21,7 +21,7 @@ func TestConfinement_Unset_NoConfinement(t *testing.T) {
 	if c.ClusterConfined() {
 		t.Error("cluster confinement must be off by default")
 	}
-	if got, want := c.LogSummary(), "commands=off namespaces=off cluster=off"; got != want {
+	if got, want := c.LogSummary(), "commands=off namespaces=off cluster=off env=confined(+0)"; got != want {
 		t.Errorf("LogSummary = %q, want %q", got, want)
 	}
 }
@@ -113,7 +113,7 @@ func TestConfinement_LogSummary_AllOn(t *testing.T) {
 	if !c.Active() {
 		t.Fatal("must be active")
 	}
-	if got, want := c.LogSummary(), "commands=on namespaces=on cluster=on"; got != want {
+	if got, want := c.LogSummary(), "commands=on namespaces=on cluster=on env=confined(+0)"; got != want {
 		t.Errorf("LogSummary = %q, want %q", got, want)
 	}
 }

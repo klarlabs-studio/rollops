@@ -54,7 +54,7 @@ func (f *fakeBackend) Reject(_ context.Context, id string, _ rollout.Identity) (
 	f.rejected = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhaseRolledBack}, nil
 }
-func (f *fakeBackend) Promote(_ context.Context, id string) (rollout.Rollout, error) {
+func (f *fakeBackend) Promote(_ context.Context, id string, _ rollout.Identity, _ bool) (rollout.Rollout, error) {
 	f.promoted = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhasePromoted}, nil
 }

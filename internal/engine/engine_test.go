@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -271,18 +272,232 @@ func TestPlan_DetectsChangeByChecksum(t *testing.T) {
 	}
 }
 
+// TestApply_CapturesAnalysisConfig proves the deploy path persists the
+// spec.analysis descriptor on the rollout as opaque JSON, so a later manual
+// Verify/Promote can run the same metric-analysis gate as the auto path.
+func TestApply_CapturesAnalysisConfig(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("load rollout: %v", err)
+	}
+	if len(got.Analysis) == 0 {
+		t.Fatal("Apply should capture spec.analysis on the rollout, got none")
+	}
+	var a config.Analysis
+	if err := json.Unmarshal(got.Analysis, &a); err != nil {
+		t.Fatalf("captured analysis is not valid JSON: %v", err)
+	}
+	if a.Provider != "prometheus" || a.Condition != "errorRate < 0.05" {
+		t.Errorf("captured analysis = %+v, want prometheus provider + errorRate condition", a)
+	}
+}
+
+// TestApply_NoAnalysisLeavesEmpty proves a config without spec.analysis leaves
+// the captured descriptor empty, so the len==0 guard in the manual gate holds.
+func TestApply_NoAnalysisLeavesEmpty(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("load rollout: %v", err)
+	}
+	if len(got.Analysis) != 0 {
+		t.Errorf("no spec.analysis should leave Analysis empty, got %q", got.Analysis)
+	}
+}
+
 func TestVerify_HealthGate(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	e, _ := newEngine(t, fake)
 	ctx := context.Background()
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
-	if _, err := e.Verify(ctx, r.ID); err != nil {
-		t.Fatalf("healthy verify should pass: %v", err)
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("healthy verify should not error: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("healthy verify should pass: %+v", rep.Gates)
 	}
 	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "503"}
-	if _, err := e.Verify(ctx, r.ID); err == nil {
-		t.Fatal("unhealthy verify should fail")
+	// A failing gate is a RESULT, not an error: the report says not-OK.
+	rep, err = e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("a failing gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("unhealthy verify should report OK=false")
+	}
+	if !strings.Contains(rep.Reason, "health check failed") {
+		t.Errorf("reason = %q, want the health failure", rep.Reason)
+	}
+	// The dry run must not advance (or otherwise touch) the phase.
+	if rep.Rollout.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want it untouched at verifying", rep.Rollout.Phase)
+	}
+}
+
+// TestVerify_RunsMetricAnalysisFails proves a manual Verify runs the same
+// metric-analysis gate as the auto path: a healthy target still fails Verify
+// when the injected metrics provider breaches the analysis condition.
+func TestVerify_RunsMetricAnalysisFails(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	// fixedMetrics(0.2) breaches "errorRate < 0.05".
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("a breaching gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("manual verify should not pass when metric analysis breaches, even with a healthy target")
+	}
+	if !strings.Contains(rep.Reason, "analysis") {
+		t.Errorf("reason = %q, want an analysis failure", rep.Reason)
+	}
+}
+
+// TestVerify_RunsMetricAnalysisPasses proves a healthy target plus a passing
+// analysis clears Verify.
+func TestVerify_RunsMetricAnalysisPasses(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.01)))
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("healthy target + passing analysis should verify: %+v", rep.Gates)
+	}
+}
+
+// TestVerify_AnalysisNoopWhenDisabled proves the manual analysis gate stays
+// opt-in: with analysis disabled (no WithMetricAnalysis) a breaching provider
+// is ignored and Verify remains health-only.
+func TestVerify_AnalysisNoopWhenDisabled(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake) // analysis off by default
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("analysis disabled: verify should be health-only: %+v", rep.Gates)
+	}
+	if g := gateByName(t, rep, GateAnalysis); g.Status != GateSkipped {
+		t.Errorf("analysis gate = %+v, want skipped when analysis is disabled", g)
+	}
+}
+
+// TestVerify_AnalysisNoopWhenAbsent proves that even with analysis enabled and a
+// breaching provider, a rollout with no captured analysis config verifies on
+// health alone — the len(r.Analysis)==0 guard holds.
+func TestVerify_AnalysisNoopWhenAbsent(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	// fakeYAML carries no spec.analysis, so r.Analysis stays empty.
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !rep.OK {
+		t.Fatalf("no captured analysis: verify should be health-only: %+v", rep.Gates)
+	}
+	if g := gateByName(t, rep, GateAnalysis); g.Status != GateSkipped {
+		t.Errorf("analysis gate = %+v, want skipped when nothing was captured", g)
+	}
+}
+
+// TestPromote_RunsMetricAnalysisFails proves a direct manual Promote — which
+// can be issued on a freshly-deployed rollout without a prior Verify (the phase
+// is already `verifying` after Apply) — cannot skip the metric-analysis gate: a
+// breaching provider fails the promote and the rollout stays in verifying.
+func TestPromote_RunsMetricAnalysisFails(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, db := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.2)))
+	ctx := context.Background()
+	c, err := config.Load([]byte(analysisYAML))
+	if err != nil {
+		t.Fatalf("load analysis config: %v", err)
+	}
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	_, err = e.Promote(ctx, r.ID, rollout.Identity{}, false)
+	if err == nil {
+		t.Fatal("direct promote must not bypass a breaching metric-analysis gate")
+	}
+	if !strings.Contains(err.Error(), "analysis") {
+		t.Errorf("promote error = %q, want an analysis failure", err)
+	}
+	got, err := db.LoadRollout(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want it held at verifying (not promoted)", got.Phase)
+	}
+}
+
+// TestPromote_RunsMetricAnalysisPasses proves the promote gate lets a passing
+// analysis through to promoted.
+func TestPromote_RunsMetricAnalysisPasses(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(fixedMetrics(0.01)))
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{}, false)
+	if err != nil {
+		t.Fatalf("passing analysis should promote: %v", err)
+	}
+	if pr.Phase != rollout.PhasePromoted {
+		t.Errorf("phase = %q, want promoted", pr.Phase)
 	}
 }
 
@@ -292,7 +507,7 @@ func TestPromote(t *testing.T) {
 	ctx := context.Background()
 	r, _ := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
 
-	pr, err := e.Promote(ctx, r.ID)
+	pr, err := e.Promote(ctx, r.ID, rollout.Identity{}, false)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}

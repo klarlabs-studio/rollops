@@ -1,0 +1,37 @@
+# EXAMPLE ONLY — the `rollopsd-git` Secret holds the git-auth material the daemon
+# mounts at /etc/rollops/git (see the `git` volume in rollopsd.yaml). With the
+# recommended SEPARATE-App-per-org setup (docs/git-auth-migration.md) it holds the
+# two GitHub App private keys — one per org. Each data key becomes a file at
+# /etc/rollops/git/<key>, referenced by `githubAppPrivateKeyFile` in the
+# rollopsd-watch ConfigMap.
+#
+# DO NOT commit real private keys. Create the Secret from the PEM files instead:
+#
+#   kubectl create secret generic rollopsd-git -n rollops-system \
+#     --from-file=github-app-klarlabs.pem=./klarlabs-app.private-key.pem \
+#     --from-file=github-app-fg.pem=./fg-app.private-key.pem
+#
+# Rotation (per org, independent): regenerate that App's key on GitHub, then
+#   kubectl create secret generic rollopsd-git -n rollops-system \
+#     --from-file=github-app-klarlabs.pem=./new-klarlabs.pem \
+#     --from-file=github-app-fg.pem=./fg-app.private-key.pem \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl rollout restart deployment/rollopsd -n rollops-system
+# then delete the old key in the App settings.
+#
+# The manifest below is a skeleton (base64 PEMs elided). Prefer the kubectl
+# recipe above over hand-editing base64.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rollopsd-git
+  namespace: rollops-system
+type: Opaque
+data:
+  # base64-encoded PEM private key for the klarlabs-studio GitHub App
+  github-app-klarlabs.pem: <base64-pem>
+  # base64-encoded PEM private key for the felixgeelhaar GitHub App
+  github-app-fg.pem: <base64-pem>
+  # During cutover you may keep the old PAT here too; delete it once every repo
+  # runs on an App:
+  # token: <base64-pat>

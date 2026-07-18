@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -130,8 +131,20 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	// Hot-reload on SIGHUP: rebuild and atomically swap. A bad file keeps the
-	// current policy (logged), so a typo can't lock everyone out mid-flight.
+	// MCP bearer tokens, built up-front so the SIGHUP handler can rotate them
+	// alongside the policy. Startup failure is fail-closed (empty map rejects
+	// every caller) and loud; the MCP listener below reports the count.
+	mcpTokens, err := loadMCPTokens()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "rollopsd: MCP tokens unavailable, MCP will reject all callers: %v\n", err)
+		mcpTokens = api.TokenAuth{}
+	}
+	mcpAuth := api.NewSwappableTokenAuth(mcpTokens)
+
+	// Hot-reload on SIGHUP: rebuild and atomically swap the RBAC policy and the
+	// MCP tokens. A bad file keeps the current value (logged), so a typo can't
+	// lock everyone out mid-flight — which is also why the loaders distinguish
+	// "failed to load" from "loaded, and empty".
 	go func() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, syscall.SIGHUP)
@@ -139,10 +152,17 @@ func run(args []string) error {
 			fresh, err := buildPolicy(oidcAuth != nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "rollopsd: policy reload failed, keeping current: %v\n", err)
+			} else {
+				policy.ReplaceWith(fresh)
+				fmt.Fprintln(os.Stderr, "rollopsd: RBAC policy reloaded")
+			}
+			tokens, err := loadMCPTokens()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "rollopsd: MCP token reload failed, keeping current: %v\n", err)
 				continue
 			}
-			policy.ReplaceWith(fresh)
-			fmt.Fprintln(os.Stderr, "rollopsd: RBAC policy reloaded")
+			mcpAuth.Replace(tokens)
+			fmt.Fprintf(os.Stderr, "rollopsd: MCP tokens reloaded (%d token(s))\n", mcpAuth.Len())
 		}
 	}()
 
@@ -254,9 +274,14 @@ func run(args []string) error {
 		if err := ensureTransportSecure(mcpAddr, "MCP", tlsCfg); err != nil {
 			return err
 		}
-		agent := rollout.Identity{Kind: "agent", Name: envOr("ROLLOPS_MCP_AGENT", "local")}
-		tools := mcp.NewTools(eng, policy, agent)
-		var mcpOpts []mcpserver.HTTPOption
+		// Per-caller bearer auth: each MCP caller presents a token that resolves to
+		// a distinct identity, so RBAC applies per caller instead of authorizing
+		// every connection as one fixed agent. mTLS (below) still proves a trusted
+		// client at the transport; the bearer token proves WHICH caller. Fail-closed:
+		// with no token map or an unresolved token the request is rejected before any
+		// tool runs.
+		tools := mcp.NewTools(eng, policy)
+		mcpOpts := mcp.AuthServeOptions(mcpAuth)
 		if tlsCfg != nil {
 			tc, err := tlsCfg.ServerTLS(tlsCfg.HasClientCA())
 			if err != nil {
@@ -265,8 +290,8 @@ func run(args []string) error {
 			mcpOpts = append(mcpOpts, mcpserver.WithTLSConfig(tc))
 		}
 		go func() {
-			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s as agent %q (TLS=%s mTLS=%s)\n",
-				mcpAddr, agent.Name, onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
+			fmt.Fprintf(os.Stderr, "rollopsd: MCP serving on %s (per-caller bearer auth, %d token(s), TLS=%s mTLS=%s)\n",
+				mcpAddr, mcpAuth.Len(), onOff(tlsCfg != nil), onOff(tlsCfg.HasClientCA()))
 			_ = mcpserver.ServeHTTP(ctx, mcp.NewServer(tools), mcpAddr, mcpOpts...)
 		}()
 	}
@@ -614,6 +639,63 @@ func buildOIDCAuth() api.Authenticator {
 		return nil
 	}
 	return api.OIDCAuth{Config: cfg}
+}
+
+// loadMCPTokens builds the MCP bearer-token→identity map.
+//
+// Preferred source is ROLLOPS_MCP_TOKENS_FILE, a path to a JSON object mapping
+// each token to an agent name:
+//
+//	{"<token-a>": "nomi", "<token-b>": "deploy-bot"}
+//
+// A file is preferred over ROLLOPS_MCP_TOKENS (same JSON, inline) for two
+// reasons. Token material in the daemon environment is inherited by every
+// subprocess and is visible in /proc/<pid>/environ, `docker inspect` and crash
+// dumps; and a mounted Secret can be rotated in place and re-read on SIGHUP,
+// whereas an env var needs a restart. When the file path is set it is the only
+// source — the env var is ignored, and a warning is logged if both are present,
+// so there is never ambiguity about which one is live.
+//
+// Each entry authenticates as rollout.Identity{Kind:"agent", Name:<value>}, so
+// RBAC authorizes each MCP caller as itself. It reuses api.TokenAuth — the same
+// Authenticator model as the HTTP and gRPC surfaces — so there is one token
+// format across the daemon.
+//
+// Any failure yields an empty map, which is fail-closed: every MCP call is
+// rejected until the operator configures readable tokens. Entries with an empty
+// token or empty name are skipped.
+func loadMCPTokens() (api.TokenAuth, error) {
+	if path := os.Getenv("ROLLOPS_MCP_TOKENS_FILE"); path != "" {
+		if os.Getenv("ROLLOPS_MCP_TOKENS") != "" {
+			fmt.Fprintln(os.Stderr, "rollopsd: both ROLLOPS_MCP_TOKENS_FILE and ROLLOPS_MCP_TOKENS are set; using the file, ignoring the env var")
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read ROLLOPS_MCP_TOKENS_FILE %q: %w", path, err)
+		}
+		return parseMCPTokens(raw, "ROLLOPS_MCP_TOKENS_FILE "+path)
+	}
+	return parseMCPTokens([]byte(os.Getenv("ROLLOPS_MCP_TOKENS")), "ROLLOPS_MCP_TOKENS")
+}
+
+// parseMCPTokens decodes a token→agent-name JSON object. source names the input
+// in log lines so a malformed file and a malformed env var are distinguishable.
+func parseMCPTokens(raw []byte, source string) (api.TokenAuth, error) {
+	auth := api.TokenAuth{}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return auth, nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("%s is not valid JSON: %w", source, err)
+	}
+	for tok, name := range m {
+		if tok == "" || name == "" {
+			continue
+		}
+		auth[tok] = rollout.Identity{Kind: "agent", Name: name}
+	}
+	return auth, nil
 }
 
 func envOr(key, def string) string {

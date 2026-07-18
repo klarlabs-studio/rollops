@@ -7,7 +7,11 @@ on:
     paths-ignore: ["**.md", "docs/**", "LICENSE"]
   pull_request:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+    # No paths-ignore on PRs: the required checks (ci / Test|Build|Lint|Security)
+    # are branch-protection gates, so a docs-only PR that skipped them would be
+    # permanently BLOCKED (never mergeable without an admin override). Running
+    # CI on docs PRs is cheap (~1.5m, all-green with no code change) and keeps
+    # every PR mergeable. push-to-main keeps its paths-ignore below.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
