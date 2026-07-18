@@ -87,23 +87,38 @@
 ### [OPEN] — remaining
 - Future/optional: flip a marketing-site to semver *after* its CI publishes a
   `site-v*`/`marketing-v*` tagged image (see verified note above).
-- **Operator-execution items** (not code): (1) set the MCP tokens before the
-  next MCP-serving deploy (#66 fail-closed) — now preferably
-  `ROLLOPS_MCP_TOKENS_FILE` as a mounted Secret, see `docs/mcp-tokens.md`;
-  (2) execute the git-auth migration per `docs/git-auth-migration.md` (create the
-  two Apps + keys, cut the watch ConfigMap over, decommission the PAT).
+- **Operator-execution item** (not code): execute the git-auth migration per
+  `docs/git-auth-migration.md` (create the two Apps + keys, cut the watch
+  ConfigMap over, decommission the PAT).
+- ~~Set MCP tokens before the next deploy~~ — **NOT a blocker for THIS cluster
+  (verified 2026-07-18).** `ROLLOPS_MCP_ADDR` is **not set** on the rollopsd
+  Deployment, and `main.go` only serves MCP when it is — so the daemon does not
+  expose MCP at all and #66's fail-closed change cannot affect it. The standing
+  note carried since 2026-07-17 was wrong for this deployment. It becomes a real
+  prerequisite the moment MCP is enabled: set `ROLLOPS_MCP_TOKENS_FILE`
+  (`docs/mcp-tokens.md`) in the same change that sets `ROLLOPS_MCP_ADDR`.
 - **CHANGELOG is unwritten for #65, #66, #72, #74, #75 and #76.** The repo writes
   changelog entries at release time; batch all six at the next cut.
-- **THE NEXT DEPLOY CARRIES FOUR BEHAVIOUR CHANGES** (cluster still on v0.26.0).
-  Do it deliberately, in this order:
-  1. **Set MCP tokens first** — #66 made the MCP surface fail-closed; deploying
-     without tokens dark-fails every agent call.
-  2. **Env scrub (#75)** — smoke tests and DB hooks no longer inherit the daemon
-     environment. **Grep your hooks for env-var reads before deploying**; the fix
-     is to name them in `ROLLOPS_ALLOWED_ENV` (`*` restores the old behaviour).
-  3. **Smoke-on-promote (#72)** and **health-on-promote (#74)** — a manual
-     promote now runs the full post-deploy gate and can be refused;
-     `promote --force` is the override.
+- **NEXT-DEPLOY IMPACT — AUDITED 2026-07-18, far smaller than feared.** All four
+  behaviour changes were checked against the actual fleet:
+  - **#66 MCP fail-closed — NO IMPACT.** MCP is not served (no `ROLLOPS_MCP_ADDR`).
+  - **#75 env scrub — NO IMPACT.** Pulled all 71 `.rollops` configs from all 11
+    watched repos: the only spec keys in use are `target`, `strategy`,
+    `imagePolicy`, `verification`. **No `rollback:` block, no `smokeTest`, no
+    `database:` hook anywhere in the fleet** — nothing runs config-sourced
+    commands on the daemon host today, so there is no environment to scrub. Every
+    `command:` found is inside a Kubernetes manifest (probes, initContainers);
+    those run in the pod and are unaffected. Note pet-medical and senat-os run
+    migrations as **initContainers**, not rollops DB hooks — also unaffected.
+  - **#72 smoke-on-promote — NO IMPACT** (no smokeTest configured anywhere).
+  - **#74 health-on-promote — the ONE real change.** A manual `promote` now runs
+    a health check it previously skipped, so it can be refused on an unhealthy
+    target; `promote --force` overrides. Rarely hit: the fleet promotes via the
+    reconciler's auto path (`VerifyOrRollback`), not manual promote.
+- **rollopsd is NOT GitOps-self-managed** (verified 2026-07-18): it appears in no
+  watched repo's `.rollops`, so `deploy/kubernetes/rollopsd.yaml` is applied by
+  hand. **Cutting a release therefore cannot auto-roll the daemon** — image
+  automation only drives the watched apps.
 
 ## Resolved 2026-07-18
 
