@@ -1,9 +1,85 @@
 # Open threads — Rollops
 
-## Blocking next work
-- None blocking. v0.1.0 is cut, published to github.com/klarlabs-studio/rollops
-  with a GitHub release, and importable as go.klarlabs.de/rollops. Next work is
-  P3/studio scope or the notification channel decision.
+> **Reading order:** this section is the authoritative current state. Everything
+> below it is dated history — later sections supersede earlier ones, and the
+> `[OPEN]`/`[WAITING]` markers in the 2026-06-14 and 2026-07-17 blocks are
+> historical, NOT live. Trust this list.
+
+## ACTUALLY OPEN (as of 2026-07-19)
+
+1. **Six merged PRs are undeployed.** #65, #66, #72, #74, #75, #76 are on main;
+   the cluster still runs **v0.26.0**, which predates all of them. Deploy impact
+   was audited (see "NEXT-DEPLOY IMPACT" below) and is small — #74's
+   health-on-promote is the only real behaviour change.
+2. **CHANGELOG is unwritten for those same six PRs.** Batch at the next release cut.
+3. **`k3s-ghcr-pull` expires 2026-08-29** — one shared credential behind ten
+   `<ns>/ghcr-pull` secrets and 39 pods. Rotate deliberately before end of Aug 2026.
+   This is the only dated time bomb left.
+4. **vorhut's first tagged release is still the real proof** of ghcr push on
+   `GITHUB_TOKEN`. PR runs proved login only; push fires on tags.
+5. **Fleet has no working Go dependency-vuln detection — root cause is a nox bug**
+   (found 2026-07-19, detail below). nox resolves Go deps from `go.sum` and never
+   parses `go.mod`, so it reports module versions the build never selected; the 28
+   repos excluding `go.sum` are therefore *correct*, and the exclusion leaves a
+   blind spot. Fix in nox (`core/analyzers/deps`), not in the fleet configs or the
+   shared workflow. govulncheck is ruled out by operator decision.
+   **Status: MERGED to nox `main` 2026-07-19 as `2c3888c` ([#248](https://github.com/Nox-HQ/nox/pull/248));
+   #247 closed as superseded.** Three bugs, each hiding the others:
+   - **Versions from `go.sum`** (the whole module graph, not the build).
+     Now `go.mod`, using `go.sum` only for pruned transitives and only for
+     source-hashed entries. vorhut 376→19, mnemos 148→0, no in-build module lost.
+   - **Severity/remediation never populated.** All 5,263 findings were `medium`
+     with empty summaries — *not one high or critical* — so a critical dep CVE
+     **could never trip the high/critical gate**. Two causes: OSV `querybatch`
+     returns only `{id, modified}`, and OSV ships CVSS as *vector strings* that
+     `cvssToSeverity` couldn't parse. Also explains why the shipped fix-version
+     remediation field (`c8d8e3b`) had **never emitted anything** — it reads
+     `Affected`, which querybatch never returned. Now: 1 critical / 24 high /
+     57 medium / 3 low on vorhut, with real summaries and CVE aliases.
+   - **Module-granular advisory matching.** Now scoped to OSV's
+     `ecosystem_specific.imports` ∩ `go list -deps`. Unreachable findings are
+     demoted to Info with `reachable=false`, never dropped.
+
+   **STILL BLOCKED ON A RELEASE.** The fix is on `main` but unreleased; the
+   shared `go-ci.yml` pins a nox version + sha256. Until a release ships and
+   the pin is bumped, **do NOT drop the 28 repos' `go.sum` excludes** — they
+   remain correct against the released binary.
+
+   **⚠ When it does ship: repos with high/critical dependency vulns will start
+   failing their gate.** Correct behaviour (those vulns were always there,
+   mislabelled medium) but NOT a no-op. Roll out deliberately.
+
+   **Known ceiling:** of vorhut's 19 Go findings, 6 reachable, 2 provably not,
+   **11 undetermined** — most advisories carry no import metadata, so
+   reachability decides less than the rollops case suggests.
+6. ~~**rollops itself has a live dependency vuln:** `GO-2026-5932` in
+   `x/crypto@v0.53.0`.~~ **RETRACTED 2026-07-19 — it is a false positive, and
+   nothing needs bumping.** `GO-2026-5932` has `introduced: 0` and no fixed
+   version: it is the advisory that `x/crypto/openpgp` is unmaintained, scoped
+   by OSV to specific import paths. rollops does not import `openpgp` — it links
+   `chacha20`/`cryptobyte`. The finding is real at *module* granularity and false
+   at *package* granularity. I originally called it a confirmed true positive
+   because I checked only module@version against the build; that check was too
+   coarse. **Lesson: for Go advisories, always check `ecosystem_specific.imports`
+   against `go list -deps` before calling a dependency finding real.**
+7. **Optional/future:** flip a marketing site to semver once its CI publishes a
+   `site-v*`/`marketing-v*` image; add a monitor that alerts when no new image
+   version appears fleet-wide for N days (the billing outage went invisible for
+   6 days precisely because nothing watched this).
+
+Not blocking: v0.1.0+ is published, importable as go.klarlabs.de/rollops, and the
+fleet reconciles cleanly on GitHub App auth.
+
+## Closed since the markers below were written
+- **git-auth migration (roady #34)** — EXECUTED 2026-07-18, fleet fully on App auth.
+- **Leaked PAT `ghp_76ied…`** — REVOKED by operator 2026-07-17.
+- **`tokenFile` stripping + `.pem` cleanup** — DONE 2026-07-18 (keys removed from
+  `~/Downloads`; `rollopsd-git` holds only the two App keys).
+- **PAT decommission** — CLOSED by scope reduction instead of revocation: `RollOps`
+  was reduced in place to `read:packages` (value preserved, no downtime), so the
+  "mint a dedicated token then revoke" plan is moot. It stays as registry auth.
+- **MCP tokens before next deploy** — NOT a blocker for this cluster;
+  `ROLLOPS_MCP_ADDR` is unset, so MCP is not served at all.
 
 ## Resolved
 - **Stack module paths** (2026-06-08): all 7 published + pinned in go.mod, full build resolves.
@@ -41,11 +117,11 @@
 - **Plugin marketplace** — search/info/install/list/update + 10 providers across 3 capabilities; flagconformance suite.
 - **In-cluster rollopsd** — containerized, deployed, running the fleet on v0.16.0.
 
-### [WAITING] operator
-- Revoke leaked PAT `ghp_76ied…`; recreate `rollopsd-git`/`rollopsd-registry` privately (`read -rs`). Cluster works on the (leaked) token until then.
+### [WAITING] operator — ✅ CLOSED 2026-07-17
+- ~~Revoke leaked PAT `ghp_76ied…`~~; recreate `rollopsd-git`/`rollopsd-registry` privately (`read -rs`). **Operator revoked it 2026-07-17.**
 
-### [OPEN]
-- **roady #34** — per-repo deploy keys / GitHub App for least-privilege multi-org git auth (replaces the broad classic PAT).
+### [OPEN] — ✅ ALL CLOSED (historical marker, see top of file)
+- ~~**roady #34**~~ — per-repo deploy keys / GitHub App for least-privilege multi-org git auth. **EXECUTED 2026-07-18**; fleet fully on App auth.
 - Marketing sites (armada/brotwerk/kraftsport-coach/klarlabs) digest→semver: their CI now supports `site-v*`/`marketing-v*` tags; flip `.rollops` imagePolicy to minor after first semver release. Or stay continuous-deploy (digest).
 - hermes/mnemos config lives in klarlabs-studio/mnemos repo (done); shared-service config ownership pattern may need revisiting.
 
@@ -65,7 +141,10 @@
 - **MCP per-caller transport auth (#66):** bearer-token→identity reusing `api.Authenticator`; fail-closed via mcp-go `WithAuthorize` (403) + `WithRequestContextFn`; `Tools` derive the caller per-request (defense-in-depth handler-level fail-close). **BREAKING on deploy — see WAITING.**
 - **roady #34 git-auth — DESIGNED, ready to execute (#68).** Finding: GitHub App auth (auto-rotating installation tokens) *and* deploy keys already exist in the code (`git.Auth` + `internal/git/githubapp.go`) — #34 was never a build, only an operational migration. Landed `docs/git-auth-migration.md` + `deploy/kubernetes/rollopsd-git.example.yaml` + updated `rollopsd-watch.example.yaml`. Decisions: **separate App per org** (blast-radius isolation), cutover = `rollopsd-watch` ConfigMap edit + restart, uniform `contents: write` default. Execution is operator work → WAITING.
 
-### [WAITING] operator
+### [WAITING] operator — ✅ BOTH CLOSED (historical marker, see top of file)
+- ~~Before the next MCP-serving deploy: set `ROLLOPS_MCP_TOKENS`~~ — **superseded
+  2026-07-18**: MCP is not served on this cluster (`ROLLOPS_MCP_ADDR` unset), and
+  #76 replaced the env var with `ROLLOPS_MCP_TOKENS_FILE`. Original text below.
 - **Before the next MCP-serving deploy: set `ROLLOPS_MCP_TOKENS`** (JSON `{"<token>":"<agent>"}`) and give every MCP caller an `Authorization: Bearer <token>`. #66 made the MCP surface **fail-closed** (no fallback agent) — it rejects all calls until tokens are configured. Merged to main but NOT deployed (cluster still on v0.26.0, which predates #66).
 - **Execute the git-auth migration (roady #34)** per `docs/git-auth-migration.md`: create the two GitHub Apps (one per org) + keys, populate the `rollopsd-git` Secret, cut the `rollopsd-watch` ConfigMap over to App auth repo-by-repo, then delete the PAT. Optionally flag any watch-only repos to split read-only vs write scope (else uniform `contents: write`). Design + templates are merged; this is GitHub/cluster operator work.
 
@@ -84,7 +163,11 @@
   optional-off, mnemos-repo config = hermes's instance). No config change needed;
   recorded in decisions.md. Not a shared pool.
 
-### [OPEN] — remaining
+### Reference — git-auth topology and hard-won gotchas (NOT an open list)
+
+The entries below were written as `[OPEN]` mid-migration. The migration is done;
+what survives here is durable reference material — App IDs, the scope-vs-watch-list
+trap, and the ordering constraint. Keep it, don't action it.
 - Future/optional: flip a marketing-site to semver *after* its CI publishes a
   `site-v*`/`marketing-v*` tagged image (see verified note above).
 - **git-auth migration (roady #34) — EXECUTED 2026-07-18, fleet fully on GitHub
@@ -97,9 +180,10 @@
   - **felixgeelhaar** (a USER account, not an org — `/orgs/...` 404s, use
     `/settings/installations/<id>`): app_id `4330615` (`rollopsd-felixgeelhaar`),
     install `147373546`, key `github-app-fg.pem` — 2 repos (website, glossa).
-  - Both keys live in the `rollopsd-git` Secret alongside the legacy `token`;
-    mounted at `/etc/rollops/git`. The original `.pem`s are in `~/Downloads`
-    (chmod 600'd) — delete once satisfied.
+  - Both keys live in the `rollopsd-git` Secret, mounted at `/etc/rollops/git`.
+    The legacy `token` key was removed 2026-07-18, so the Secret now holds only
+    the two App keys. The original `.pem`s were deleted from `~/Downloads` the
+    same day.
 - **GOTCHA THAT NEARLY BROKE THE FLEET (both Apps!):** the install scope did NOT
   match the watch list. klarlabs-studio was missing **armada, klarlabs, mnemos**;
   felixgeelhaar was missing **felixgeelhaar.com**. Cutting over without checking
@@ -205,8 +289,53 @@ coverctl, mnemos, scout, warden and nomi do. Migrating to the thin caller
   `.github/workflows/cf-pages.yml` (`secrets.*` refs). Added the same exclude
   set scout/mnemos ship → 0 high/critical. Two traps kept as comments in the
   file: **root-level `README.md` needs its own entry** (`**/*.md` does NOT
-  match it), and **`go.sum` must stay in dependency scanning** (nox reads it
-  as the module manifest for OSV; excluding it drops dep enumeration to 0).
+  match it), and **`go.sum` must stay in dependency scanning**.
+
+  **CORRECTION — the note above is WRONG, and so was the first attempt to
+  correct it (measured across all 28 repos, 2026-07-19, nox 1.6.0):**
+
+  1. **"Drops dep enumeration to 0" is false.** Enumeration continues from
+     `go.mod`. Measured: scout 137 → 169 deps, mnemos 6 → 158, vorhut 1279 → 1527.
+  2. **The entropy/secret rationale in the exclude comments is also false.**
+     Removing the exclusion adds **zero** SEC findings in every repo tested. The
+     entire delta is `VULN-001` (OSV dependency lookups). `go.sum` is not being
+     flagged as secrets by current nox at all.
+  3. **But excluding it is still mostly RIGHT, for a reason nobody wrote down:**
+     `go.sum` is not the build manifest — it records hashes for the whole module
+     graph, including versions MVS never selects. Checked mnemos' 148 go-ecosystem
+     findings against `go list -m all`: **0 matched a version actually built; 148
+     were stale entries** (e.g. `x/net` flagged at a 2019 pseudo-version while the
+     build uses v0.56.0). Scanning `go.sum` is ~99% false-positive.
+  4. **The catch:** real vulns surface *only* through `go.sum` too. rollops (which
+     does not exclude) reports `GO-2026-5932` on `x/crypto@v0.53.0` — and that one
+     **does** match the built version. So the exclusion trades 99% noise for a
+     blind spot on true positives.
+
+  **Net: 5,263 suppressed `VULN-001` findings across 22 repos, all severity
+  medium, overwhelmingly stale — but hiding an unknown number of real ones.**
+
+  **The real problem is a nox bug, not a `.nox.yaml` setting** (operator decision
+  2026-07-19: stay on nox, no govulncheck). `core/analyzers/deps/deps.go` registers
+  **`go.sum` and never parses `go.mod`** — but `go.sum` is not a lockfile. It
+  records hashes for the entire module graph, so `parseGoSum` emits every version
+  Go ever considered, not the ones MVS selected. Confirmed unchanged on **nox
+  1.9.2** (148/148 still stale), so this is not a version lag.
+
+  **Fix belongs in nox: resolve Go deps from `go.mod`, not `go.sum`.** Validated
+  against the fleet: rollops' true positive (`GO-2026-5932`, `x/crypto@v0.53.0`)
+  **is** in `go.mod` and survives; mnemos' stale hits (`x/net`@2019,
+  `x/crypto`@2019, `yaml.v2`@2.2.2) are **not** in `go.mod` and vanish. mnemos:
+  go.mod 76 modules vs go.sum 152 pairs — the exact 2× inflation.
+
+  **Known trade-off:** Go 1.17+ pruning means `go.mod` lists modules providing
+  *imported* packages, so a vuln in a deeper transitive module can be missed
+  (mnemos builds `x/crypto@v0.53.0` but doesn't name it in `go.mod`). `go.mod`
+  gives ~100% precision with some recall loss; `go.sum` gives full recall at ~1%
+  precision. Full fidelity needs `go list -m all`, which requires the toolchain
+  and breaks nox's offline-graceful file-parser model.
+
+  **Until nox is fixed: keep `go.sum` excluded fleet-wide** — the 28 repos are
+  correct as-is and must NOT be "fixed".
 - **A real lint finding**: the shared bar enables `noctx`. Fixed with
   `httptest.NewRequestWithContext(t.Context(), …)`.
 
