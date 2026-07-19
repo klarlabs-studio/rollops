@@ -37,6 +37,16 @@ scan:
     # match high-entropy secret rules.
     - ".nox/baseline.json"
 
+    # Agent OS notes: prose session logs and threads. They quote already-revoked
+    # credentials by design (e.g. the leaked PAT recorded as revoked), which
+    # SEC-435 reads as live secrets.
+    - "memory/"
+
+    # This file: it documents the false-positive patterns it excludes, so the
+    # rules match the explanations (IAC-351 fires on the comment describing
+    # IAC-351).
+    - ".nox.yaml"
+
     # Generated scan output.
     - "nox-out/"
     - "nox-results/"
