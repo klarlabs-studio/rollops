@@ -64,3 +64,45 @@ Append-only. Superseded entries get `→ superseded [date]`, never deleted.
   independent instances with independent lifecycles, not one service configured
   twice. Going forward: any new mnemos-using product deploys+pins its own instance;
   do not introduce a shared mnemos endpoint.
+
+- **`go.sum` stays excluded from nox scanning; the fix belongs in nox** (decided
+  2026-07-19). A note in open-threads claimed excluding `go.sum` "drops dependency
+  enumeration to 0" and implied 28 repos needed fixing. Measured across all 28:
+  false. Enumeration continues from `go.mod`, and `go.sum` findings are ~99%
+  false-positive because it hashes the entire module graph, not the build — 148 of
+  148 Go findings on mnemos named versions MVS never selected. The exclusions were
+  correct workarounds. Removing them would have injected ~5,263 false positives
+  fleet-wide. **Rule going forward: verify a dependency finding against
+  `go list -deps` (packages actually imported) before calling it real — not
+  `go list -m all`, which reports the module graph and over-reports.**
+
+- **nox is the single dependency scanner; govulncheck is ruled out** (operator
+  decision, 2026-07-19). When the `go.sum` blind spot surfaced, the obvious fix was
+  restoring govulncheck (version- and reachability-aware) in the shared workflow.
+  Operator declined: "we use nox and don't want govulncheck." That scoped the work
+  to making nox correct rather than adding a second scanner, and produced
+  Nox-HQ/nox#248.
+
+- **Unreachable dependency findings are demoted, never dropped** (decided
+  2026-07-19, implemented in Nox-HQ/nox#248). Reachability rests on a `go list`
+  call that can be wrong, and a silently vanished finding is indistinguishable from
+  a scanner that missed it. Unreachable → `info`, with `reachable=false` and
+  `affected_imports` recorded and the reason in the message. Conclusions are drawn
+  only from positive evidence: an advisory with no import metadata, or a build that
+  cannot be enumerated, leaves the finding exactly as it was.
+
+- **The shared `go-ci.yml` pin was bumped to nox 1.10.0 knowing agent-go breaks**
+  (decided 2026-07-19). A canary measured the blast radius first: agent-go 56
+  gate-failing findings (42 critical), senat-os 3, mnemos 2, seven other repos 0.
+  Merged anyway — those vulnerabilities were always present and passing as
+  `medium`; a red build is a fair representation of the actual state, and a stale
+  pin is precisely how they stayed invisible. Consequence to expect: agent-go CI
+  red until its criticals are triaged.
+
+- **RETRACTION: rollops does NOT have a live `GO-2026-5932`** (2026-07-19). An
+  earlier entry in open-threads recorded it as a confirmed true positive in
+  `x/crypto@v0.53.0`. It is a false positive: the advisory has `introduced: 0`, no
+  fixed version, and is scoped by OSV to `x/crypto/openpgp` — which rollops does not
+  import (it links `chacha20`/`cryptobyte`). The original claim came from checking
+  module@version against the build and stopping there. → supersedes the
+  "rollops has a live dependency vuln" note of 2026-07-19.

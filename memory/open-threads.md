@@ -7,6 +7,22 @@
 
 ## ACTUALLY OPEN (as of 2026-07-19)
 
+0. **[OPEN — HIGHEST VALUE] agent-go has 42 CRITICAL dependency vulnerabilities**
+   (+14 high). Found 2026-07-19 by the canary run before bumping the shared nox
+   pin. Not new — they were reported as `medium` and passing the gate for as long
+   as nox's severity bug existed. Everything else that session was plumbing to make
+   these visible. Triage them.
+1. **[OPEN] Drop `go.sum` excludes across the 28 repos** — unblocked by nox v1.10.0
+   + pin bump. ~28 PRs. agent-go LAST. Do not touch any repo pinned below 1.10.0.
+2. **[OPEN] relicta is broken in the nox repo** — `relicta notes` exits 1 silently
+   (`ai.enabled: true`, `model: gpt-4` in `.relicta.yaml`, error swallowed) and
+   `relicta approve` renders `0.0.0` / `0 commits` on its confirmation screen while
+   the state file holds the correct version. v1.10.0's changelog was hand-written
+   as a result. Fix before the next cut.
+3. **[OPEN] nox #248's commit message still mischaracterises `GO-2026-5932`** as a
+   confirmed true positive. The PR body carries an explicit retraction; the commit
+   message would need an amend + force-push. Decide whether that is worth it.
+
 1. **Six merged PRs are undeployed.** #65, #66, #72, #74, #75, #76 are on main;
    the cluster still runs **v0.26.0**, which predates all of them. Deploy impact
    was audited (see "NEXT-DEPLOY IMPACT" below) and is small — #74's
@@ -40,14 +56,23 @@
      `ecosystem_specific.imports` ∩ `go list -deps`. Unreachable findings are
      demoted to Info with `reachable=false`, never dropped.
 
-   **STILL BLOCKED ON A RELEASE.** The fix is on `main` but unreleased; the
-   shared `go-ci.yml` pins a nox version + sha256. Until a release ships and
-   the pin is bumped, **do NOT drop the 28 repos' `go.sum` excludes** — they
-   remain correct against the released binary.
+   **✅ SHIPPED 2026-07-19.** nox **v1.10.0** released (release/sign/docker all
+   green; sha256 `4cc1f33e…` verified against the tarball, not just
+   `checksums.txt`), and the shared `go-ci.yml` pinned **1.7.1 → 1.10.0**
+   (klarlabs-studio/.github#38, merged). The fleet picks it up on next CI run.
 
-   **⚠ When it does ship: repos with high/critical dependency vulns will start
-   failing their gate.** Correct behaviour (those vulns were always there,
-   mislabelled medium) but NOT a no-op. Roll out deliberately.
+   **⚠ BLAST RADIUS — MEASURED BEFORE MERGING THE PIN.** Canary across a 10-repo
+   sample, counting findings that would newly fail the gate:
+   **agent-go 56 (42 critical!), senat-os 3, mnemos 2, seven others 0.**
+   Those vulns were always present, passing as `medium`. Expect agent-go red.
+   Caveat: the canary ran with `go.sum` excludes REMOVED (the end state), so
+   failures may arrive in two waves — some now from better severity data, the
+   rest when the excludes drop.
+
+   **NOW UNBLOCKED: drop the `go.sum` excludes across the 28 repos.** They were
+   correct workarounds, not bugs. **Do NOT remove them on any repo still pinned
+   below 1.10.0.** Suggest agent-go LAST so its criticals surface deliberately
+   rather than inside a bulk sweep.
 
    **Known ceiling:** of vorhut's 19 Go findings, 6 reachable, 2 provably not,
    **11 undetermined** — most advisories carry no import metadata, so
