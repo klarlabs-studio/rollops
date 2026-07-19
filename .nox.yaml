@@ -1,0 +1,48 @@
+# nox scan configuration.
+#
+# Context: the shared klarlabs Go CI (klarlabs-studio/.github go-ci.yml) gates
+# on net-new critical/high ONLY once a baseline exists — with no baseline the
+# job is report-only. rollops had neither this file nor a baseline, so its
+# security gate has been decorative: 269 critical/high reported, none blocking.
+#
+# Nearly all of those are entropy/secret rules firing on things that are not
+# secrets. Excluded below by source, with the reason, so the residue is small
+# enough to baseline and the gate can actually enforce.
+scan:
+  exclude:
+    # 30 `sha256` plugin pins — these ARE the supply-chain control (verified at
+    # install, enforced at launch), not credentials. 240 of the 269 findings.
+    - "registry/plugins.json"
+
+    # Prose, CLI examples and curl snippets read as secrets by entropy rules
+    # (SEC-384/505/506/543/678). Root-level files need their own entries:
+    # "**/*.md" does NOT match a file at the repo root.
+    - "README.md"
+    - "CHANGELOG.md"
+    - "docs/*.md"
+    - "**/README.md"
+
+    # Deployment TEMPLATES, not deployed manifests: placeholder values and
+    # comments describing auth options (IAC-351 fires on a comment reading
+    # "tokenFile / token : a (broad) PAT"). The real manifests
+    # (deploy/kubernetes/rollopsd.yaml) stay scanned.
+    - "deploy/kubernetes/*.example.yaml"
+
+    # Integration test harness: docker-compose fixtures with deliberately
+    # well-known credentials (deploy/deploypass, vault roottoken) used to
+    # stand up throwaway containers.
+    - "test/integration/"
+
+    # The baseline itself is a list of SHA-256 finding fingerprints, which
+    # match high-entropy secret rules.
+    - ".nox/baseline.json"
+
+    # Generated scan output.
+    - "nox-out/"
+    - "nox-results/"
+
+    # NOTE: go.sum is deliberately NOT excluded. nox reads it as the module
+    # manifest for dependency (OSV) scanning — VULN-001 findings attach to
+    # go.sum and package-lock.json — so excluding it drops dependency
+    # enumeration to zero. Some repos in the fleet exclude it; that silently
+    # loses dep coverage.
