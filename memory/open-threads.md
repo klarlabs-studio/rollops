@@ -184,6 +184,47 @@ a senat build to test package permissions surfaced it by accident:
 - Operator fixed billing 2026-07-18; a dispatch build of senat-os then succeeded,
   pushing all four images (`sha-7831b7c`, `latest`).
 
+## vorhut CI brought onto the klarlabs convention — 2026-07-18
+
+vorhut hand-rolled lint/test/build/security instead of calling the org's
+reusable `klarlabs-studio/.github/.github/workflows/go-ci.yml`, the way
+coverctl, mnemos, scout, warden and nomi do. Migrating to the thin caller
+(net -191/+50 lines) surfaced four things the bespoke setup hid:
+
+- **PRs ran no CI at all.** `ci.yml` triggered only on tags + manual dispatch,
+  so lint/test/security never ran on a pull request — a PR could look green
+  with the suite never having executed. Now runs on PR + push-to-main.
+  `paths-ignore` on **push only** (warden's precedent: a docs-only PR that
+  skips the workflow never reports required checks → unmergeable forever).
+- **The vuln gate was effectively report-only.** vorhut ships a 788-finding
+  `.nox/baseline.json`, so the shared gate ENFORCES — and immediately flagged
+  24 net-new critical/high that the repo's own `fail-on-findings: false` scan
+  had been ignoring.
+- **No `.nox.yaml` existed**, so nothing was excluded. All 24 were the known
+  FP classes: SEC-384/505/506 on README.md prose, SEC-446 on
+  `.github/workflows/cf-pages.yml` (`secrets.*` refs). Added the same exclude
+  set scout/mnemos ship → 0 high/critical. Two traps kept as comments in the
+  file: **root-level `README.md` needs its own entry** (`**/*.md` does NOT
+  match it), and **`go.sum` must stay in dependency scanning** (nox reads it
+  as the module manifest for OSV; excluding it drops dep enumeration to 0).
+- **A real lint finding**: the shared bar enables `noctx`. Fixed with
+  `httptest.NewRequestWithContext(t.Context(), …)`.
+
+**Both copies of the decaying govulncheck allowlist are gone** (#66 → nox in
+supply-chain.yml, #68 → shared workflow in ci.yml). An interim fix (#67)
+rewrote acceptance to module+no-fix; it worked and was verified against the
+real dep tree, but it was hand-rolling a gate the org already solves
+centrally — superseded by the convention. **Lesson: check for the shared
+workflow BEFORE improving a bespoke one.**
+
+**vorhut is now PAT-free.** `GHCR_PAT` deleted 2026-07-18 after both logins
+moved to `GITHUB_TOKEN` and all six previously-unlinked `vorhut-*` packages
+were granted the repo Actions **Write** (`vorhut-site` was already linked).
+Keeping the orphaned secret bought nothing: values can't be read back, so it
+was not a recovery path. If a tagged build ever fails at push, the lever is
+package grants, not the PAT. Note the PR runs proved ghcr **login**; **push**
+only fires on tags, so the first tagged release is the real proof.
+
 ## Credential topology — audited 2026-07-18 (124 repos + cluster)
 
 Swept every repo in `klarlabs-studio` + `felixgeelhaar` for Actions secrets and
