@@ -1,6 +1,6 @@
 # Status — Rollops
 
-*Updated: 2026-07-18*
+*Updated: 2026-07-19*
 
 ## Current State
 
@@ -66,7 +66,40 @@ load-bearing. Headline risk is **`k3s-ghcr-pull`, expiring 2026-08-29** — one
 credential shared by all ten `ghcr-pull` Secrets, 39 pods, fleet-wide
 `ImagePullBackOff` when it lapses. Detail + verification recipes in open-threads.
 
-**Next Session Should:** Most open threads closed this session — housekeeping
+**Last Session Summary (2026-07-19):** Started as rollops housekeeping and ended in
+nox. Two tasks: clean the drift in `open-threads.md`, and fix the 28 repos whose
+`.nox.yaml` excludes `go.sum`. **The second task was based on a wrong note in this
+very memory and would have made things worse.** Measured instead of trusting:
+excluding `go.sum` is CORRECT — it hashes the whole module graph, so ~99% of its
+findings name versions the build never selects (148/148 stale on mnemos). Opening
+those 28 PRs would have injected ~5,263 false positives fleet-wide. The real bug
+was in nox, and pulling it surfaced two more: **every dependency finding ever
+produced was `medium` with an empty summary** (5,263/5,263), so a critical
+dependency CVE could never trip the high/critical gate — and the shipped
+fix-version remediation field had never emitted anything, because both read data
+OSV's `querybatch` does not return. Third: advisories matched per module, not per
+affected import path. All three fixed in **Nox-HQ/nox#248** (merged `2c3888c`),
+released as **nox v1.10.0**, and the shared `go-ci.yml` pinned **1.7.1 → 1.10.0**
+(klarlabs-studio/.github#38). Canary before merging the pin: **agent-go 56
+gate-failing findings (42 critical)**, senat-os 3, mnemos 2, seven others 0 — those
+vulnerabilities were always there, mislabelled medium. Also retracted a claim made
+earlier in this file: rollops does NOT have a live `GO-2026-5932`; it is scoped to
+`x/crypto/openpgp`, which rollops does not import. Full detail in
+sessions/2026-07-19.md.
+
+**Next Session Should:** **Triage agent-go's 42 critical dependency
+vulnerabilities** — that is the real finding of 2026-07-19 and the only genuinely
+urgent item; everything else that session was plumbing to make it visible. Then
+drop the `go.sum` excludes across the remaining 27 repos (now unblocked by
+v1.10.0 — they were correct workarounds, not bugs, and must NOT be removed on any
+repo still pinned below 1.10.0), leaving agent-go last so its criticals surface
+deliberately rather than inside a bulk sweep. Lower priority: relicta's `notes`
+(silent exit 1, `model: gpt-4` in `.relicta.yaml`) and `approve` (renders `0.0.0` /
+`0 commits`) are both broken in the nox repo — the v1.10.0 changelog had to be
+hand-written; fix before the next cut.
+
+**Superseded (2026-07-18 plan, kept for context):** Most open threads closed —
+housekeeping
 (flat-key decision, docs-PR merge gotcha #63, PAT revocation) plus two features:
 metric analysis on manual `Verify`/`Promote` (#65) and **MCP per-caller bearer auth
 (#66, fail-closed, BREAKING)**. FIRST: **before the next MCP-serving deploy, set

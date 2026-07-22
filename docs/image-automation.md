@@ -71,6 +71,34 @@ Enable it on the daemon with `ROLLOPS_IMAGE_AUTOMATION=1`. Private registries:
 `ROLLOPS_REGISTRY_USER` / `ROLLOPS_REGISTRY_TOKEN`. Writeback needs a token with
 push access on the config repo (see `docs/deploy-kubernetes.md`).
 
+## Writeback to a protected branch
+
+By default the bump is **committed and pushed directly** to the tracked branch.
+That fails on a **protected branch** — one requiring pull requests or status
+checks — because rollopsd's direct push is rejected (`GH006: Changes must be
+made through a pull request`). The symptom is quiet: the config shows `=error`
+in the reconcile summary and the target simply never updates.
+
+Set `imagePolicy.writeback: pull-request` for those repos:
+
+```yaml
+imagePolicy:
+  mode: digest
+  allowMutableTags: true
+  writeback: pull-request   # default: push
+```
+
+In this mode rollopsd never writes the tracked branch. It pushes the bump to a
+deterministic branch (`rollops/image/<config-name>`) and opens a PR into the
+tracked branch, enabling GitHub **auto-merge** so the change lands the moment
+its required checks pass. The deploy happens through the ordinary reconcile once
+the PR merges and the tracked branch advances — the cluster never leads Git.
+
+The token needs `pull-requests: write` (and `contents: write` for the branch
+push). If the repository has auto-merge disabled, the PR is still opened and
+waits for a human to merge it — writeback is unblocked either way. GitHub is the
+only forge supported for pull-request writeback today.
+
 ## Commit-SHA and mutable tags
 
 Not every pipeline publishes semver. Common schemes and the mode to use:
