@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.28.0 - Deploy through a protected branch
+
+Image automation could not deploy to a repository whose branch is protected.
+rollopsd writes an image bump by committing it to the tracked branch and
+pushing — and a branch that requires pull requests or status checks rejects that
+push (`GH006: Changes must be made through a pull request`). The failure was
+quiet: the config showed `=error` in the reconcile summary and the target simply
+stopped updating, with nothing but a daemon log line to say why.
+
+**New: `imagePolicy.writeback: pull-request`.** The default stays `push`, so
+existing configs are unchanged. In the new mode rollopsd never writes the
+tracked branch. It commits the bump on a deterministic branch
+(`rollops/image/<config-name>`), pushes it, and opens — or refreshes — a pull
+request into the tracked branch, enabling GitHub auto-merge so the change lands
+the moment its required checks pass.
+
+The load-bearing property is that PR mode **does not deploy in the same cycle**.
+The bump lives only on the PR, so the cluster never leads Git; the deploy happens
+through the ordinary reconcile once the PR merges and the tracked branch advances
+to carry it. A protected branch and the running target stay consistent.
+
+```yaml
+imagePolicy:
+  mode: digest
+  allowMutableTags: true
+  writeback: pull-request   # default: push
+```
+
+- **Idempotent.** A duplicate-head response is resolved to the existing PR and
+  reused, so polling every interval neither errors nor spawns pull requests.
+- **Auto-merge is best-effort.** A repository with auto-merge disabled (or a
+  token lacking permission) still gets the PR opened and waits for a human —
+  writeback is unblocked either way, never stuck in an error.
+- GitHub only for now.
+
+### Upgrading
+
+- No action for `push`-mode configs; behaviour is unchanged.
+- For a config on a protected branch, set `imagePolicy.writeback: pull-request`.
+  The daemon's git token needs **`pull-requests: write`** in addition to the
+  existing contents read+write (a GitHub App installation or a PAT scoped to the
+  config repo). Only upgrade the configs after the daemon is on v0.28.0 — an
+  older daemon rejects the unknown `writeback` field.
+
 ## v0.27.0 - One post-deploy gate, and secrets that stay in the daemon
 
 This release closes a class of bug rather than a single one: the automatic and
