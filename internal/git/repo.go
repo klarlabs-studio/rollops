@@ -43,12 +43,16 @@ type Source struct {
 	dir    string
 	branch string
 	auth   Auth
+	url    string // remote URL, retained for the pull-request API (owner/repo)
+	// apiBase is the GitHub REST/GraphQL host, overridable in tests. Empty means
+	// the public default (https://api.github.com).
+	apiBase string
 }
 
 // Clone checks out url@branch into dir. Each watched repo gets its own Source —
 // isolation is a property of Git structure.
 func Clone(ctx context.Context, url, branch, dir string, auth Auth) (*Source, error) {
-	s := &Source{dir: dir, branch: branch, auth: auth}
+	s := &Source{dir: dir, branch: branch, auth: auth, url: url}
 	args := []string{"clone", "--depth", "1", "--branch", branch, url, dir}
 	if _, err := s.git(ctx, "", args...); err != nil {
 		return nil, fmt.Errorf("git: clone %s@%s: %w", url, branch, err)
@@ -60,6 +64,16 @@ func Clone(ctx context.Context, url, branch, dir string, auth Auth) (*Source, er
 func Open(dir, branch string, auth Auth) *Source {
 	return &Source{dir: dir, branch: branch, auth: auth}
 }
+
+// WithURL sets the remote URL on a Source built by Open (Clone sets it already).
+// It is needed for pull-request writeback, which derives owner/repo from the URL.
+func (s *Source) WithURL(url string) *Source { s.url = url; return s }
+
+// WithAPIBase overrides the GitHub API host (tests point it at a stub server).
+func (s *Source) WithAPIBase(base string) *Source { s.apiBase = base; return s }
+
+// Branch is the tracked branch this Source follows.
+func (s *Source) Branch() string { return s.branch }
 
 // Dir is the working-tree path where the config is read from.
 func (s *Source) Dir() string { return s.dir }
@@ -166,6 +180,43 @@ func (s *Source) CommitFile(ctx context.Context, relPath string, content []byte,
 // writeback). Auth is threaded through git() as for fetch/clone.
 func (s *Source) Push(ctx context.Context) error {
 	_, err := s.git(ctx, s.dir, "push", "origin", s.branch)
+	return err
+}
+
+// CommitFileOnBranch creates (or resets) headBranch off the tracked branch,
+// writes one file, and commits it there — the pull-request writeback path,
+// which must never touch the tracked branch itself. Returns whether a commit
+// was made (false when content matches what the branch already has).
+//
+// The branch is force-created from the tracked branch each call (checkout -B),
+// so a stale head from a previous cycle is refreshed to the current base rather
+// than accumulating; the head is deterministic per bump, so re-running updates
+// the same proposed change instead of spawning new ones.
+func (s *Source) CommitFileOnBranch(ctx context.Context, headBranch, relPath string, content []byte, message string) (bool, error) {
+	if headBranch == "" || headBranch == s.branch {
+		return false, fmt.Errorf("git: refusing to commit on the tracked branch %q via the PR path", s.branch)
+	}
+	if _, err := s.git(ctx, s.dir, "checkout", "-B", headBranch, s.branch); err != nil {
+		return false, fmt.Errorf("git: checkout -B %s: %w", headBranch, err)
+	}
+	committed, _, err := s.CommitFile(ctx, relPath, content, message)
+	if err != nil {
+		// Always return to the tracked branch, even on failure, so the working
+		// tree is not left on a half-built head for the next reconcile.
+		_, _ = s.git(ctx, s.dir, "checkout", s.branch)
+		return false, err
+	}
+	if _, err := s.git(ctx, s.dir, "checkout", s.branch); err != nil {
+		return committed, fmt.Errorf("git: return to %s: %w", s.branch, err)
+	}
+	return committed, nil
+}
+
+// PushBranch force-pushes headBranch to origin. Force is safe and intended
+// here: the branch is rollops-owned and deterministically named per bump, so
+// pushing refreshes an existing proposal rather than clobbering shared work.
+func (s *Source) PushBranch(ctx context.Context, headBranch string) error {
+	_, err := s.git(ctx, s.dir, "push", "--force", "origin", headBranch+":"+headBranch)
 	return err
 }
 

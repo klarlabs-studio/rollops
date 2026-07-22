@@ -249,3 +249,19 @@ func TestSchemaJSON_Published(t *testing.T) {
 		t.Errorf("embedded schema should reference the schema version %q", SchemaVersion)
 	}
 }
+
+func TestImagePolicy_WritebackMode(t *testing.T) {
+	var nilPol *ImagePolicy
+	if nilPol.WritebackMode() != WritebackPush {
+		t.Error("nil policy must default to push")
+	}
+	if (&ImagePolicy{}).WritebackMode() != WritebackPush {
+		t.Error("unset writeback must default to push")
+	}
+	if (&ImagePolicy{Writeback: "pull-request"}).WritebackMode() != WritebackPullRequest {
+		t.Error("explicit pull-request not honoured")
+	}
+	if (&ImagePolicy{Writeback: "bogus"}).WritebackMode() != WritebackPush {
+		t.Error("an unrecognised value must fall back to push, not silently disable writeback")
+	}
+}

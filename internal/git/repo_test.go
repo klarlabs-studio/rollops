@@ -148,3 +148,13 @@ func TestRedactArgs_MasksToken(t *testing.T) {
 		t.Errorf("redaction malformed: %q", got)
 	}
 }
+
+func TestCommitFileOnBranch_RefusesTrackedBranch(t *testing.T) {
+	s := Open(t.TempDir(), "main", Auth{})
+	if _, err := s.CommitFileOnBranch(context.Background(), "main", "x.yaml", []byte("y"), "m"); err == nil {
+		t.Fatal("committing the PR path onto the tracked branch must be refused")
+	}
+	if _, err := s.CommitFileOnBranch(context.Background(), "", "x.yaml", []byte("y"), "m"); err == nil {
+		t.Fatal("empty head branch must be refused")
+	}
+}

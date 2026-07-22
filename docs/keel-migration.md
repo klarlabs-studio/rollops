@@ -41,6 +41,13 @@ Enable image automation: `ROLLOPS_IMAGE_AUTOMATION=1` plus
 `ROLLOPS_REGISTRY_USER` / `ROLLOPS_REGISTRY_TOKEN` for private registries. The
 git token needs Contents **read+write** (automation pushes bumps).
 
+> **Protected `main`?** If the config repo protects its branch (PRs / status
+> checks required), keel's direct push has no equivalent — rollopsd's bump push
+> is rejected (`GH006`) and the target silently stops updating. Set
+> `imagePolicy.writeback: pull-request` on those configs so rollopsd opens an
+> auto-merging PR instead of pushing; give the token `pull-requests: write` too.
+> See `docs/image-automation.md` → *Writeback to a protected branch*.
+
 ```sh
 kubectl -n rollops-system create secret generic rollopsd-git --from-literal=token=<scoped-pat>
 kubectl -n rollops-system create secret generic rollopsd-registry --from-literal=user=<u> --from-literal=token=<scoped-pat>

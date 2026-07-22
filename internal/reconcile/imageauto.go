@@ -65,6 +65,13 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 		return nc.Config, "", nil
 	}
 	msg := fmt.Sprintf("chore(image): %s %s -> %s (rollops)", nc.Config.Metadata.Name, from, to)
+
+	if pol.WritebackMode() == config.WritebackPullRequest {
+		return ia.proposeViaPR(ctx, src, nc, patched, msg, from, to)
+	}
+
+	// Push writeback: commit the bump directly on the tracked branch and deploy
+	// it this cycle, since Git and the cluster now agree.
 	if _, _, err := src.CommitFile(ctx, nc.Path, patched, msg); err != nil {
 		return nc.Config, "", fmt.Errorf("imageauto: commit: %w", err)
 	}
@@ -76,6 +83,54 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 		return nc.Config, "", fmt.Errorf("imageauto: reload bumped config: %w", err)
 	}
 	return bumped, newRef, nil
+}
+
+// proposeViaPR is the pull-request writeback path: it commits the bump on a
+// rollops-owned branch, pushes it, and opens (or refreshes) a PR into the
+// tracked branch — never writing that branch directly, so branch protection is
+// honoured.
+//
+// Crucially it returns ref="" (no deploy). The bump lives only on the PR; the
+// cluster must not lead Git. The deploy happens later, through the ordinary
+// reconcile, once the PR merges and the tracked branch advances to carry it.
+// This is what keeps a protected branch and the running target consistent.
+func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string) (*config.Config, string, error) {
+	head := prBranchName(nc.Config.Metadata.Name)
+	committed, err := src.CommitFileOnBranch(ctx, head, nc.Path, patched, msg)
+	if err != nil {
+		return nc.Config, "", fmt.Errorf("imageauto: pr commit: %w", err)
+	}
+	if !committed {
+		// The proposal branch already carries exactly this bump; the PR (if any)
+		// stands. Nothing to push or reopen.
+		return nc.Config, "", nil
+	}
+	if err := src.PushBranch(ctx, head); err != nil {
+		return nc.Config, "", fmt.Errorf("imageauto: pr push: %w", err)
+	}
+	body := fmt.Sprintf("Automated image bump by rollops.\n\n- config: `%s`\n- %s → %s\n\nMerging this deploys the new image through the normal reconcile. Opened as a PR because the tracked branch does not accept direct pushes.", nc.Path, from, to)
+	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, body); err != nil {
+		return nc.Config, "", fmt.Errorf("imageauto: open pr: %w", err)
+	}
+	return nc.Config, "", nil
+}
+
+// prBranchName is the deterministic head branch for a config's image proposals.
+// Deterministic so re-running updates the same PR rather than spawning a new one
+// each poll; sanitised so an arbitrary config name is always a valid git ref.
+func prBranchName(configName string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, configName)
+	if safe == "" {
+		safe = "config"
+	}
+	return "rollops/image/" + safe
 }
 
 // resolve computes the new image reference for the current image and policy, or

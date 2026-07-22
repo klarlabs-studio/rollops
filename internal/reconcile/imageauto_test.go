@@ -2,6 +2,10 @@ package reconcile
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -335,4 +339,106 @@ func TestImageAuto_AlreadyCurrent(t *testing.T) {
 	if err != nil || ref != "" {
 		t.Fatalf("already current must be no-op, got ref=%q err=%v", ref, err)
 	}
+}
+
+// TestImageAuto_PullRequestWriteback proves the protected-branch path: a bump in
+// pull-request mode opens a PR and does NOT deploy. The cluster must never lead
+// Git — the deploy waits for the merge — so Process returns ref="" and the
+// tracked branch is left untouched, while a PR is opened via the API.
+func TestImageAuto_PullRequestWriteback(t *testing.T) {
+	// Stub GitHub: record the create-PR call, succeed on auto-merge.
+	var opened bool
+	var head, base string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
+			opened = true
+			var b map[string]string
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &b)
+			head, base = b["head"], b["base"]
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}`))
+		case r.URL.Path == "/graphql":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true\n    writeback: pull-request", 1)
+
+	src := newGitRepo(t, cfgYAML).WithURL("https://github.com/acme/web").WithAPIBase(srv.URL)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	// No deploy this cycle: ref empty, config returned unchanged.
+	if ref != "" {
+		t.Fatalf("PR mode must not deploy; got ref=%q", ref)
+	}
+	if got, _ := bumped.Spec.Target.Spec["image"].(string); got != "ghcr.io/acme/web:latest" {
+		t.Errorf("returned config must be the original (un-bumped), got %q", got)
+	}
+	// A PR was opened into the tracked branch.
+	if !opened {
+		t.Fatal("no create-PR call reached the API")
+	}
+	if head != "rollops/image/web" || base != "main" {
+		t.Fatalf("wrong PR head/base: %q -> %q", head, base)
+	}
+	// The tracked branch on disk was NOT modified — the bump lives only on the
+	// PR branch. (checkout -B head, commit there, checkout back to main.)
+	data, _ := os.ReadFile(filepath.Join(src.Dir(), "apps/web.yaml"))
+	if strings.Contains(string(data), "sha256:brandnew") {
+		t.Errorf("tracked branch must be untouched in PR mode:\n%s", data)
+	}
+	// The PR branch was pushed to origin with the bump.
+	if out := gitOut(t, src.Dir(), "ls-remote", "origin", "rollops/image/web"); !strings.Contains(out, "rollops/image/web") {
+		t.Fatalf("PR branch was not pushed to origin: %q", out)
+	}
+	head2 := gitOut(t, src.Dir(), "show", "origin/rollops/image/web:apps/web.yaml")
+	if !strings.Contains(head2, "sha256:brandnew") {
+		t.Errorf("PR branch does not carry the bump:\n%s", head2)
+	}
+}
+
+// TestImageAuto_PushWritebackUnchanged pins that the default (push) mode still
+// commits to the tracked branch and deploys, so this feature is additive.
+func TestImageAuto_PushWritebackUnchanged(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1) // no writeback → default push
+	src := newGitRepo(t, cfgYAML)
+	cfg, _ := config.Load([]byte(cfgYAML))
+	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:pushed")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref == "" {
+		t.Fatal("push mode must deploy this cycle (non-empty ref)")
+	}
+	data, _ := os.ReadFile(filepath.Join(src.Dir(), "apps/web.yaml"))
+	if !strings.Contains(string(data), "sha256:pushed") {
+		t.Errorf("push mode must bump the tracked branch:\n%s", data)
+	}
+}
+
+func gitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
 }

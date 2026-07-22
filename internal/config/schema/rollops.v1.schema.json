@@ -285,7 +285,8 @@
         "mode": { "type": "string", "enum": ["none", "major", "minor", "patch", "any", "digest"], "description": "Which version increments to auto-adopt. 'none' disables automation (the Git-committed image is authoritative)." },
         "pattern": { "type": "string", "description": "Optional regexp filter on candidate tags." },
         "allowMutableTags": { "type": "boolean", "description": "Permit latest/main/master." },
-        "allowedRegistries": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Restrict image automation to these registry hosts (e.g. ghcr.io, docker.io). Empty means no restriction." }
+        "allowedRegistries": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Restrict image automation to these registry hosts (e.g. ghcr.io, docker.io). Empty means no restriction." },
+        "writeback": { "type": "string", "enum": ["push", "pull-request"], "description": "How a bumped image reaches the tracked branch. 'push' (default) commits directly — requires push rights the branch may forbid. 'pull-request' pushes the bump to a branch and opens a PR (enabling auto-merge when the repo allows it), so a protected branch is respected: the deploy happens when the PR merges." }
       }
     },
     "trafficRouting": {

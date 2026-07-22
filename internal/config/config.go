@@ -136,6 +136,31 @@ type ImagePolicy struct {
 	// the list — a supply-chain guard so a compromised or mistyped image ref can't
 	// pull automation toward an unexpected registry.
 	AllowedRegistries []string `yaml:"allowedRegistries,omitempty" json:"allowedRegistries,omitempty"`
+	// Writeback selects how a bumped image reaches the tracked branch:
+	//   - "push" (default) commits the bump directly onto the branch. Fast, but
+	//     it needs the rollops identity to be allowed to push, which a protected
+	//     branch forbids — the push is rejected and the deploy never happens.
+	//   - "pull-request" pushes the bump to a fresh branch and opens a PR into
+	//     the tracked branch (enabling GitHub auto-merge when the repo allows
+	//     it). rollops never writes the branch directly, so branch protection is
+	//     honoured; the deploy happens later, when the PR merges and the tracked
+	//     branch advances through the normal reconcile.
+	Writeback string `yaml:"writeback,omitempty" json:"writeback,omitempty"` // push (default) | pull-request
+}
+
+// Image-automation writeback modes.
+const (
+	WritebackPush        = "push"         // commit the bump directly onto the tracked branch (default)
+	WritebackPullRequest = "pull-request" // open a PR instead — for protected branches
+)
+
+// WritebackMode returns the effective writeback mode, defaulting to
+// WritebackPush when unset so existing configs are unchanged.
+func (p *ImagePolicy) WritebackMode() string {
+	if p != nil && p.Writeback == WritebackPullRequest {
+		return WritebackPullRequest
+	}
+	return WritebackPush
 }
 
 // Target selects the deployment target plugin and its criticality weight.
