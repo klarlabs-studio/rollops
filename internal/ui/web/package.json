@@ -22,5 +22,8 @@
     "@vue/compiler-dom": "^3.5.35",
     "esbuild": "^0.28.0",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "postcss": "^8.5.18"
   }
 }
