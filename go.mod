@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/felixgeelhaar/decisionkit v0.1.0
-	github.com/google/cel-go v0.28.1
+	github.com/google/cel-go v0.29.2
 	github.com/jlaffaye/ftp v0.2.1
 	github.com/klarlabs-studio/auth-go v0.2.0
 	github.com/prometheus/client_golang v1.23.2
@@ -49,7 +49,7 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260630182238-925bb5da69e7 // indirect
 	modernc.org/libc v1.72.3 // indirect
