@@ -56,3 +56,12 @@ scan:
     # go.sum and package-lock.json — so excluding it drops dependency
     # enumeration to zero. Some repos in the fleet exclude it; that silently
     # loses dep coverage.
+
+# nox owns code-level SAST here (source-to-sink taint: injection, SSRF, path
+# traversal). Declaring the plugin REQUIRED rather than leaning on the CI
+# install step means a registry outage surfaces as a degraded scan instead of
+# silently producing zero taint findings, which is indistinguishable from
+# clean. The shared go-ci gate fails on meta.degradations.
+plugins:
+  required:
+    - nox/taint-analysis
