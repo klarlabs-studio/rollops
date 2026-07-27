@@ -196,6 +196,21 @@ func (s *Source) CommitFileOnBranch(ctx context.Context, headBranch, relPath str
 	if headBranch == "" || headBranch == s.branch {
 		return false, fmt.Errorf("git: refusing to commit on the tracked branch %q via the PR path", s.branch)
 	}
+	// A proposal that already carries exactly this content must not be rebuilt.
+	// The checkout below re-creates the head branch from the tracked branch, so
+	// without this the comparison inside CommitFile runs against a tree that
+	// never holds the bump: it always "changes", always commits, and every poll
+	// force-pushes an identical diff under a new sha. Each of those pushes
+	// cancels the PR's in-flight checks, so the slowest job never reports and
+	// the proposal can never merge -- observed on klarlabs-studio/mnemos#267,
+	// re-proposed every ~90s for 14 hours.
+	//
+	// Deliberately not rebased onto the tracked branch while unchanged: staying
+	// put may leave the PR behind main, which is visible and fixable, whereas
+	// churn is neither.
+	if existing, err := s.proposalFile(ctx, headBranch, relPath); err == nil && bytes.Equal(existing, content) {
+		return false, nil
+	}
 	if _, err := s.git(ctx, s.dir, "checkout", "-B", headBranch, s.branch); err != nil {
 		return false, fmt.Errorf("git: checkout -B %s: %w", headBranch, err)
 	}
@@ -210,6 +225,26 @@ func (s *Source) CommitFileOnBranch(ctx context.Context, headBranch, relPath str
 		return committed, fmt.Errorf("git: return to %s: %w", s.branch, err)
 	}
 	return committed, nil
+}
+
+// proposalFile returns relPath as it stands on an existing proposal branch --
+// the local ref if this process created it, otherwise the published one, since
+// a restart or a second replica has no local copy. An error means there is no
+// such branch or no such file on it, which is simply "no proposal yet".
+func (s *Source) proposalFile(ctx context.Context, headBranch, relPath string) ([]byte, error) {
+	for _, ref := range []string{headBranch, "origin/" + headBranch} {
+		if out, err := s.git(ctx, s.dir, "show", ref+":"+relPath); err == nil {
+			return []byte(out), nil
+		}
+	}
+	if _, err := s.git(ctx, s.dir, "fetch", "origin", headBranch); err != nil {
+		return nil, err
+	}
+	out, err := s.git(ctx, s.dir, "show", "FETCH_HEAD:"+relPath)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(out), nil
 }
 
 // PushBranch force-pushes headBranch to origin. Force is safe and intended

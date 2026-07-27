@@ -158,3 +158,64 @@ func TestCommitFileOnBranch_RefusesTrackedBranch(t *testing.T) {
 		t.Fatal("empty head branch must be refused")
 	}
 }
+
+// TestCommitFileOnBranch_UnchangedProposalIsNotRebuilt covers the loop that
+// starved a PR's CI in practice: rollops re-proposed the same image bump every
+// poll, each force-push cancelling the in-flight checks, so the slowest job
+// never reported and the PR could never merge. Three Recall Gate runs passed in
+// four minutes on klarlabs-studio/mnemos#267 while `ci / Test` was killed each
+// time; the two newest commits carried byte-identical diffs under different
+// shas.
+//
+// The caller already guards on !committed. The bug was here: rebuilding the
+// head branch from the tracked branch before comparing meant the comparison ran
+// against a tree that never contains the bump, so it always "changed".
+func TestCommitFileOnBranch_UnchangedProposalIsNotRebuilt(t *testing.T) {
+	upstream := makeUpstream(t)
+	dest := filepath.Join(t.TempDir(), "checkout")
+	src, err := Clone(context.Background(), "file://"+upstream, "main", dest, Auth{})
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	ctx := context.Background()
+	bump := []byte("image: repo@sha256:aaaa\n")
+
+	// First proposal: a real change, so it commits and would be pushed.
+	committed, err := src.CommitFileOnBranch(ctx, "rollops/image/x", "rollops.yaml", bump, "chore(image): bump")
+	if err != nil {
+		t.Fatalf("first proposal: %v", err)
+	}
+	if !committed {
+		t.Fatal("first proposal did not commit — nothing would be proposed at all")
+	}
+	if err := src.PushBranch(ctx, "rollops/image/x"); err != nil {
+		t.Fatalf("PushBranch: %v", err)
+	}
+	first, err := src.git(ctx, src.dir, "rev-parse", "rollops/image/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second poll, same digest: must be a no-op. Re-committing here is what
+	// force-pushes a fresh sha and cancels the PR's checks.
+	committed, err = src.CommitFileOnBranch(ctx, "rollops/image/x", "rollops.yaml", bump, "chore(image): bump")
+	if err != nil {
+		t.Fatalf("second proposal: %v", err)
+	}
+	if committed {
+		t.Error("unchanged bump was re-committed — every poll republishes an identical diff under a new sha, starving the PR's CI")
+	}
+	second, err := src.git(ctx, src.dir, "rev-parse", "rollops/image/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Errorf("proposal branch moved for an unchanged bump: %s -> %s", first[:12], second[:12])
+	}
+
+	// A genuinely new digest must still propose, and must land on current main.
+	next := []byte("image: repo@sha256:bbbb\n")
+	if committed, err = src.CommitFileOnBranch(ctx, "rollops/image/x", "rollops.yaml", next, "chore(image): bump"); err != nil || !committed {
+		t.Fatalf("a real change must still be proposed: committed=%v err=%v", committed, err)
+	}
+}
