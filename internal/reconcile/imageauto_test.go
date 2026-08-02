@@ -560,3 +560,85 @@ func TestImageAuto_OutcomeDisabledWithoutPolicy(t *testing.T) {
 		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeDisabled)
 	}
 }
+
+// remoteHead returns the sha origin has for branch, or "" when it has none.
+func remoteHead(t *testing.T, src *git.Source, branch string) string {
+	t.Helper()
+	cmd := exec.Command("git", "ls-remote", "origin", "refs/heads/"+branch)
+	cmd.Dir = src.Dir()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("ls-remote: %v: %s", err, out)
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0]
+}
+
+// A proposal that already stands must not be re-pushed.
+//
+// CommitFileOnBranch resets the head branch from the tracked branch and commits,
+// so it produced a NEW commit every reconcile — same content, new timestamp,
+// new sha — and rollopsd force-pushed it. Repositories whose CI sets
+// concurrency.cancel-in-progress then had every run killed by the next push, 60
+// seconds later, so the checks the PR was waiting on could never finish and
+// auto-merge never fired. Observed in production: three repos accumulated ~50
+// cancelled runs each and their bumps could not land at all.
+func TestImageAuto_DoesNotRepushAnUnchangedProposal(t *testing.T) {
+	var opened int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
+			opened++
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}`))
+		case r.URL.Path == "/graphql":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true\n    writeback: pull-request", 1)
+
+	src := newGitRepo(t, cfgYAML).WithURL("https://github.com/acme/web").WithAPIBase(srv.URL)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := config.NamedConfig{Path: "apps/web.yaml", Config: cfg}
+	ia := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}
+
+	// First reconcile: proposes.
+	_, _, first, err := ia.Process(context.Background(), src, nc)
+	if err != nil {
+		t.Fatalf("first Process: %v", err)
+	}
+	if first != ImageOutcomeProposed {
+		t.Fatalf("first outcome = %q, want %q", first, ImageOutcomeProposed)
+	}
+	headAfterFirst := remoteHead(t, src, "rollops/image/web")
+	if headAfterFirst == "" {
+		t.Fatal("proposal branch was not pushed")
+	}
+
+	// Second reconcile, nothing changed in the registry or in Git.
+	_, _, second, err := ia.Process(context.Background(), src, nc)
+	if err != nil {
+		t.Fatalf("second Process: %v", err)
+	}
+
+	if second != ImageOutcomePending {
+		t.Errorf("second outcome = %q, want %q — the proposal already stands", second, ImageOutcomePending)
+	}
+	if got := remoteHead(t, src, "rollops/image/web"); got != headAfterFirst {
+		t.Errorf("proposal branch was re-pushed: %s -> %s; this cancels the CI the PR waits on", headAfterFirst[:8], got[:8])
+	}
+	if opened != 1 {
+		t.Errorf("opened %d pull requests, want 1", opened)
+	}
+}

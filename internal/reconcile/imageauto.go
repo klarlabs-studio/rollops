@@ -142,6 +142,17 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 // This is what keeps a protected branch and the running target consistent.
 func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string) (*config.Config, string, ImageOutcome, error) {
 	head := prBranchName(nc.Config.Metadata.Name)
+
+	// Stop before touching Git when the proposal already stands. Committing
+	// would produce a new sha for identical content — the branch is rebuilt
+	// from the tracked branch each time — and force-pushing that refreshes the
+	// proposal once per reconcile. Where CI cancels in-progress runs per ref,
+	// that cancels the very checks the pull request is waiting on, so it can
+	// never merge and the bump never deploys.
+	if src.RemoteFileMatches(ctx, head, nc.Path, patched) {
+		return nc.Config, "", ImageOutcomePending, nil
+	}
+
 	committed, err := src.CommitFileOnBranch(ctx, head, nc.Path, patched, msg)
 	if err != nil {
 		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: pr commit: %w", err)
