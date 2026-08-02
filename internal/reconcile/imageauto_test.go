@@ -472,7 +472,7 @@ func TestImageAuto_OutcomeProposedIsNotCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
+	_, ref, status, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
 		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -482,10 +482,10 @@ func TestImageAuto_OutcomeProposedIsNotCurrent(t *testing.T) {
 	if ref != "" {
 		t.Errorf("PR mode must not deploy; got ref=%q", ref)
 	}
-	if outcome != ImageOutcomeProposed {
-		t.Errorf("outcome = %q, want %q — a proposal must not be reported as current", outcome, ImageOutcomeProposed)
+	if status.Outcome != ImageOutcomeProposed {
+		t.Errorf("outcome = %q, want %q — a proposal must not be reported as current", status.Outcome, ImageOutcomeProposed)
 	}
-	if outcome == ImageOutcomeCurrent {
+	if status.Outcome == ImageOutcomeCurrent {
 		t.Error("a freshly opened PR reported as current: the stuck case is invisible")
 	}
 }
@@ -502,7 +502,7 @@ func TestImageAuto_OutcomeCurrentWhenDigestUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.
+	_, ref, status, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.
 		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -510,8 +510,8 @@ func TestImageAuto_OutcomeCurrentWhenDigestUnchanged(t *testing.T) {
 	if ref != "" {
 		t.Errorf("nothing to do, got ref=%q", ref)
 	}
-	if outcome != ImageOutcomeCurrent {
-		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeCurrent)
+	if status.Outcome != ImageOutcomeCurrent {
+		t.Errorf("outcome = %q, want %q", status.Outcome, ImageOutcomeCurrent)
 	}
 }
 
@@ -526,7 +526,7 @@ func TestImageAuto_OutcomeBumpedOnPushWriteback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.
+	_, ref, status, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.
 		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -534,8 +534,8 @@ func TestImageAuto_OutcomeBumpedOnPushWriteback(t *testing.T) {
 	if ref == "" {
 		t.Fatal("push writeback should deploy this cycle")
 	}
-	if outcome != ImageOutcomeBumped {
-		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeBumped)
+	if status.Outcome != ImageOutcomeBumped {
+		t.Errorf("outcome = %q, want %q", status.Outcome, ImageOutcomeBumped)
 	}
 }
 
@@ -548,7 +548,7 @@ func TestImageAuto_OutcomeDisabledWithoutPolicy(t *testing.T) {
 	}
 	cfg.Spec.ImagePolicy = nil
 
-	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:whatever")}.
+	_, ref, status, err := ImageAuto{Scanner: fakeDigest("sha256:whatever")}.
 		Process(context.Background(), nil, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -556,8 +556,8 @@ func TestImageAuto_OutcomeDisabledWithoutPolicy(t *testing.T) {
 	if ref != "" {
 		t.Errorf("no policy must not deploy, got ref=%q", ref)
 	}
-	if outcome != ImageOutcomeDisabled {
-		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeDisabled)
+	if status.Outcome != ImageOutcomeDisabled {
+		t.Errorf("outcome = %q, want %q", status.Outcome, ImageOutcomeDisabled)
 	}
 }
 
@@ -614,12 +614,12 @@ func TestImageAuto_DoesNotRepushAnUnchangedProposal(t *testing.T) {
 	ia := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}
 
 	// First reconcile: proposes.
-	_, _, first, err := ia.Process(context.Background(), src, nc)
+	_, _, firstS, err := ia.Process(context.Background(), src, nc)
 	if err != nil {
 		t.Fatalf("first Process: %v", err)
 	}
-	if first != ImageOutcomeProposed {
-		t.Fatalf("first outcome = %q, want %q", first, ImageOutcomeProposed)
+	if firstS.Outcome != ImageOutcomeProposed {
+		t.Fatalf("first outcome = %q, want %q", firstS.Outcome, ImageOutcomeProposed)
 	}
 	headAfterFirst := remoteHead(t, src, "rollops/image/web")
 	if headAfterFirst == "" {
@@ -627,18 +627,75 @@ func TestImageAuto_DoesNotRepushAnUnchangedProposal(t *testing.T) {
 	}
 
 	// Second reconcile, nothing changed in the registry or in Git.
-	_, _, second, err := ia.Process(context.Background(), src, nc)
+	_, _, secondS, err := ia.Process(context.Background(), src, nc)
 	if err != nil {
 		t.Fatalf("second Process: %v", err)
 	}
 
-	if second != ImageOutcomePending {
-		t.Errorf("second outcome = %q, want %q — the proposal already stands", second, ImageOutcomePending)
+	if secondS.Outcome != ImageOutcomePending {
+		t.Errorf("second outcome = %q, want %q — the proposal already stands", secondS.Outcome, ImageOutcomePending)
 	}
 	if got := remoteHead(t, src, "rollops/image/web"); got != headAfterFirst {
 		t.Errorf("proposal branch was re-pushed: %s -> %s; this cancels the CI the PR waits on", headAfterFirst[:8], got[:8])
 	}
 	if opened != 1 {
 		t.Errorf("opened %d pull requests, want 1", opened)
+	}
+}
+
+// `current` has to be checkable, not merely trusted. The stall that motivated
+// klarlabs-studio/rollops#98 could not be diagnosed after the fact because the
+// verdict was recorded without the observation behind it: the summary said
+// current, and nothing said what the registry had actually offered when it did.
+// Recording the resolved identity alongside the verdict separates "resolved
+// correctly and matched" from "resolved to something unexpected".
+func TestImageAuto_StatusCarriesWhatWasResolved(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:same", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, status, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	if status.Outcome != ImageOutcomeCurrent {
+		t.Fatalf("outcome = %q, want current", status.Outcome)
+	}
+	if status.Resolved != "sha256:same" {
+		t.Errorf("Resolved = %q, want the digest the registry offered", status.Resolved)
+	}
+	if status.Pinned != "sha256:same" {
+		t.Errorf("Pinned = %q, want what Git pins", status.Pinned)
+	}
+	if status.Short() == "" {
+		t.Error("Short() is empty; the summary would carry no observation")
+	}
+}
+
+// A resolution that differs from the pin is exactly the case worth seeing.
+func TestImageAuto_StatusShowsResolvedDifferingFromPinned(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:old", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, status, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if status.Resolved != "sha256:newer" || status.Pinned != "sha256:old" {
+		t.Errorf("resolved/pinned = %q/%q, want sha256:newer/sha256:old", status.Resolved, status.Pinned)
 	}
 }

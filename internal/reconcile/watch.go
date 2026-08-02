@@ -190,31 +190,35 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		// Best-effort: a scan/push failure is logged but never blocks reconciling
 		// desired state (managing the app matters more than the image bump).
 		if w.imageAuto != nil {
-			bumped, ref, outcome, ierr := w.imageAuto.Process(ctx, r.src, nc)
+			bumped, ref, status, ierr := w.imageAuto.Process(ctx, r.src, nc)
 			switch {
 			case ierr != nil:
 				decisions = append(decisions, name+"="+string(ImageOutcomeError))
 				if w.logf != nil {
 					w.logf("image automation %s/%s: %v (continuing)", r.spec.Name, nc.Path, ierr)
 				}
-			case outcome.Deployed():
+			case status.Outcome.Deployed():
 				cfg = bumped
-				decisions = append(decisions, name+"="+string(outcome))
+				decisions = append(decisions, name+"="+string(status.Outcome)+status.Short())
 				if w.logf != nil {
 					w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
 				}
-			case outcome.AwaitingGit():
+			case status.Outcome.AwaitingGit():
 				// A newer image exists that Git has not adopted. This used to be
 				// reported as `current` — the same word as "nothing to do" — so a
 				// proposal that never merged looked identical to a healthy target
 				// for as long as nobody compared the running image by hand. Name it
 				// every cycle so the wait is visible while it is still short.
-				decisions = append(decisions, name+"="+string(outcome))
+				decisions = append(decisions, name+"="+string(status.Outcome)+status.Short())
 				if w.logf != nil {
-					w.logf("image automation %s/%s: %s — a newer image is waiting on Git, not deployed", r.spec.Name, nc.Path, outcome)
+					w.logf("image automation %s/%s: %s — a newer image is waiting on Git, not deployed (registry offers %s, Git pins %s)",
+						r.spec.Name, nc.Path, status.Outcome, shortDigest(status.Resolved), shortDigest(status.Pinned))
 				}
 			default:
-				decisions = append(decisions, name+"="+string(outcome))
+				// current / disabled. current carries what was resolved, so a
+				// stale resolution is visible rather than implied: a verdict
+				// recorded without its observation cannot be checked later.
+				decisions = append(decisions, name+"="+string(status.Outcome)+status.Short())
 			}
 		}
 		cfgs[i] = cfg
