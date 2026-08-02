@@ -51,6 +51,18 @@ scan:
     - "nox-out/"
     - "nox-results/"
 
+    # esbuild bundle, 219 KB of minified JavaScript on three lines. Minified
+    # identifiers are indistinguishable from high-entropy secrets, so SEC-161,
+    # SEC-162 and SEC-163 each fire repeatedly on the same line: 236 findings,
+    # every one of them on line 1, and every one a false positive.
+    #
+    # Excluded rather than baselined on purpose. The file is build output that
+    # changes wholesale on every rebuild, so fingerprints taken from it would
+    # drift on the next `esbuild` run and the baseline would need rewriting each
+    # time. Reviewing the SOURCE this is built from is the thing that carries
+    # security value; scanning the bundle is not.
+    - "internal/ui/assets/app.js"
+
     # NOTE: go.sum is deliberately NOT excluded. nox reads it as the module
     # manifest for dependency (OSV) scanning — VULN-001 findings attach to
     # go.sum and package-lock.json — so excluding it drops dependency

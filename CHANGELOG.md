@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.29.0 - Image automation says what it did
+
+Two fixes to the same blind spot: image automation could not be told apart from
+doing nothing, and it acted on that confusion by re-proposing forever.
+
+**A standing proposal is no longer re-pushed.** `CommitFileOnBranch` rebuilds the
+proposal branch from the tracked branch and commits, so it produced a new commit
+every reconcile — identical content, later timestamp, different sha — and
+rollopsd force-pushed it. A repository whose CI sets
+`concurrency.cancel-in-progress` then had every run cancelled by the next push
+60 seconds later, so the checks the pull request was waiting on could never
+finish and auto-merge never fired. Three private repositories accumulated 864
+workflow runs in 78 minutes this way and could not land their bumps at all.
+Automation now compares the proposal branch on the remote against the bump it is
+about to make and, when they already match, does nothing.
+
+**Upgrade note:** if you use `writeback: pull-request` on a repository whose CI
+cancels in-progress runs, you want this release. Public repositories were
+affected too; they just were not billed for it.
+
+### Fixed — a standing proposal is no longer re-pushed every reconcile
+
+`CommitFileOnBranch` rebuilds the proposal branch from the tracked branch and
+commits, so it produced a new commit — identical content, later timestamp, a
+different sha — on every reconcile, and rollopsd force-pushed it. A repository
+whose CI sets `concurrency.cancel-in-progress` then had each run killed by the
+next push 60 seconds later, so the checks the pull request was waiting on could
+never finish and auto-merge never fired.
+
+Observed in production: three repositories accumulated roughly fifty cancelled
+runs each, and their image bumps could not land at all. Any repository whose CI
+takes longer than the reconcile interval was affected — which is most of them.
+
+Image automation now compares the proposal branch on the remote against the bump
+it is about to make and, when they already match, does nothing: no commit, no
+push, no second pull request. That is what `pending` was for; it was previously
+unreachable, because the check was "did I make a commit" and a fresh commit is
+always made.
+
+### Fixed — a waiting deploy is no longer reported as `current`
+
+The reconcile summary had one word for two opposite states. `Process` returns
+`ref=""` for a pull-request proposal exactly as it does for a target with
+nothing to do — deliberately, since PR mode must not deploy in the same cycle —
+and the summary turned both into `=current`. So a proposal that never merged
+reported `current` on every cycle, forever, while the deploy never happened.
+Nothing in the logs, the summary, or the exit status distinguished it from a
+healthy target; the only symptom was the running target quietly serving an old
+image, discovered by looking at the target itself.
+
+Image automation now reports what it actually did:
+
+| outcome | meaning |
+|---|---|
+| `disabled` | no `imagePolicy`, or `mode: none` — no check was performed |
+| `current` | the registry offers nothing Git does not already pin |
+| `bumped` | the tracked branch carries the bump; deploying this cycle |
+| `proposed` | a PR carrying the bump was opened or refreshed — **Git has not adopted it** |
+| `pending` | the proposal branch already carries it, still unmerged |
+| `error` | the cycle failed |
+
+`proposed` and `pending` also log a line each cycle naming the target as waiting
+on Git rather than deployed, so the wait is visible while it is still short.
+`current` now means one thing only.
+
+This is an observability fix, not a behaviour change: what rollopsd deploys, and
+when, is unchanged.
+
 ## v0.28.0 - Deploy through a protected branch
 
 Image automation could not deploy to a repository whose branch is protected.

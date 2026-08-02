@@ -19,6 +19,48 @@ type TagLister interface {
 	Digest(ctx context.Context, image string) (string, error)
 }
 
+// ImageOutcome names what image automation did for one config in a cycle.
+//
+// It exists because "nothing to do" and "something should have happened and did
+// not" used to be the same word. Process returns ref="" for a pull-request
+// proposal as well as for an up-to-date target — deliberately, since the deploy
+// waits for the merge — so the reconcile summary reported both as `current`. A
+// proposal that never merges therefore reported `current` on every cycle while
+// the deploy never happened, which is indistinguishable from healthy. The only
+// symptom was the running target quietly serving an old image.
+type ImageOutcome string
+
+const (
+	// ImageOutcomeDisabled: the config carries no imagePolicy, or mode: none. No
+	// check was performed — reporting that as `current` claims one was.
+	ImageOutcomeDisabled ImageOutcome = "disabled"
+	// ImageOutcomeCurrent: the registry offers nothing Git does not already pin.
+	// This is the only outcome that means "nothing to do".
+	ImageOutcomeCurrent ImageOutcome = "current"
+	// ImageOutcomeBumped: the tracked branch now carries the bump; it deploys this
+	// cycle.
+	ImageOutcomeBumped ImageOutcome = "bumped"
+	// ImageOutcomeProposed: a pull request carrying the bump was opened or
+	// refreshed. Git has NOT adopted it yet, so the deploy waits on the merge —
+	// a target that stays here across cycles is stuck, not healthy.
+	ImageOutcomeProposed ImageOutcome = "proposed"
+	// ImageOutcomePending: a newer image exists and the proposal branch already
+	// carries exactly it, so nothing was pushed. Git has still not adopted it.
+	ImageOutcomePending ImageOutcome = "pending"
+	// ImageOutcomeError: the cycle failed; see the accompanying error.
+	ImageOutcomeError ImageOutcome = "error"
+)
+
+// Deployed reports whether the tracked branch now carries the bump.
+func (o ImageOutcome) Deployed() bool { return o == ImageOutcomeBumped }
+
+// AwaitingGit reports whether a newer image exists that Git has not adopted.
+// These are the outcomes that look idle but are not: left unattended they mean
+// a target never receives an image the registry has been offering.
+func (o ImageOutcome) AwaitingGit() bool {
+	return o == ImageOutcomeProposed || o == ImageOutcomePending
+}
+
 // ImageAuto performs registry-poll image automation for a config that carries an
 // imagePolicy: it scans the registry for newer tags of the tracked image and,
 // per policy, writes a bumped image back to Git. Git stays the source of truth —
@@ -31,38 +73,42 @@ type ImageAuto struct {
 // Process scans nc's tracked image and, when a newer tag qualifies, patches the
 // config file in src, commits, and pushes. It returns the config to reconcile
 // (the bumped one when it changed, else the original) and the new image ref.
-func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.NamedConfig) (*config.Config, string, error) {
+func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.NamedConfig) (*config.Config, string, ImageOutcome, error) {
 	pol := nc.Config.Spec.ImagePolicy
 	if pol == nil || pol.Mode == "none" {
 		// No automation: the image committed in Git is authoritative. "none" makes
 		// this explicit for digest-pinned configs that must not be re-bumped from a
 		// mutable tag.
-		return nc.Config, "", nil
+		return nc.Config, "", ImageOutcomeDisabled, nil
 	}
 	image, _ := nc.Config.Spec.Target.Spec["image"].(string)
 	if image == "" {
-		return nc.Config, "", fmt.Errorf("imageauto: imagePolicy set but spec.target.spec.image is empty")
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: imagePolicy set but spec.target.spec.image is empty")
 	}
 
 	// Resolve the new image reference per mode: digest mode pins a mutable tag
 	// (latest) to its current manifest digest and redeploys when it changes (keel
 	// "force"); the semver modes pick the highest qualifying tag.
 	newRef, from, to, err := ia.resolve(ctx, image, pol)
-	if err != nil || newRef == "" {
-		return nc.Config, "", err
+	if err != nil {
+		return nc.Config, "", ImageOutcomeError, err
+	}
+	if newRef == "" {
+		return nc.Config, "", ImageOutcomeCurrent, nil
 	}
 
 	path := filepath.Join(src.Dir(), nc.Path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: read %s: %w", nc.Path, err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: read %s: %w", nc.Path, err)
 	}
 	patched, changed, err := imageupdate.PatchRolloutImageRef(data, newRef)
 	if err != nil {
-		return nc.Config, "", err
+		return nc.Config, "", ImageOutcomeError, err
 	}
 	if !changed {
-		return nc.Config, "", nil
+		// The tracked branch already pins exactly this ref.
+		return nc.Config, "", ImageOutcomeCurrent, nil
 	}
 	msg := fmt.Sprintf("chore(image): %s %s -> %s (rollops)", nc.Config.Metadata.Name, from, to)
 
@@ -73,16 +119,16 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 	// Push writeback: commit the bump directly on the tracked branch and deploy
 	// it this cycle, since Git and the cluster now agree.
 	if _, _, err := src.CommitFile(ctx, nc.Path, patched, msg); err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: commit: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: commit: %w", err)
 	}
 	if err := src.Push(ctx); err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: push: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: push: %w", err)
 	}
 	bumped, err := config.Load(patched)
 	if err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: reload bumped config: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: reload bumped config: %w", err)
 	}
-	return bumped, newRef, nil
+	return bumped, newRef, ImageOutcomeBumped, nil
 }
 
 // proposeViaPR is the pull-request writeback path: it commits the bump on a
@@ -94,25 +140,37 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 // cluster must not lead Git. The deploy happens later, through the ordinary
 // reconcile, once the PR merges and the tracked branch advances to carry it.
 // This is what keeps a protected branch and the running target consistent.
-func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string) (*config.Config, string, error) {
+func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string) (*config.Config, string, ImageOutcome, error) {
 	head := prBranchName(nc.Config.Metadata.Name)
+
+	// Stop before touching Git when the proposal already stands. Committing
+	// would produce a new sha for identical content — the branch is rebuilt
+	// from the tracked branch each time — and force-pushing that refreshes the
+	// proposal once per reconcile. Where CI cancels in-progress runs per ref,
+	// that cancels the very checks the pull request is waiting on, so it can
+	// never merge and the bump never deploys.
+	if src.RemoteFileMatches(ctx, head, nc.Path, patched) {
+		return nc.Config, "", ImageOutcomePending, nil
+	}
+
 	committed, err := src.CommitFileOnBranch(ctx, head, nc.Path, patched, msg)
 	if err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: pr commit: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: pr commit: %w", err)
 	}
 	if !committed {
 		// The proposal branch already carries exactly this bump; the PR (if any)
-		// stands. Nothing to push or reopen.
-		return nc.Config, "", nil
+		// stands. Nothing to push or reopen — but Git has still not adopted the
+		// newer image, so this is pending, never current.
+		return nc.Config, "", ImageOutcomePending, nil
 	}
 	if err := src.PushBranch(ctx, head); err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: pr push: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: pr push: %w", err)
 	}
 	body := fmt.Sprintf("Automated image bump by rollops.\n\n- config: `%s`\n- %s → %s\n\nMerging this deploys the new image through the normal reconcile. Opened as a PR because the tracked branch does not accept direct pushes.", nc.Path, from, to)
 	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, body); err != nil {
-		return nc.Config, "", fmt.Errorf("imageauto: open pr: %w", err)
+		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: open pr: %w", err)
 	}
-	return nc.Config, "", nil
+	return nc.Config, "", ImageOutcomeProposed, nil
 }
 
 // prBranchName is the deterministic head branch for a config's image proposals.
