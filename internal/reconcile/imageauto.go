@@ -61,6 +61,44 @@ func (o ImageOutcome) AwaitingGit() bool {
 	return o == ImageOutcomeProposed || o == ImageOutcomePending
 }
 
+// ImageStatus is what image automation did for one config, and what it saw
+// while doing it.
+//
+// The verdict alone proved undiagnosable in production: a target reported
+// `current` for eighteen hours while the registry had moved, and nothing
+// recorded what had actually been resolved at the time, so afterwards there was
+// no way to tell a correct match from a bad resolution. Carrying the
+// observation next to the verdict makes `current` checkable rather than
+// something to be trusted.
+type ImageStatus struct {
+	Outcome ImageOutcome
+
+	// Resolved is the identity the registry currently offers for the tracked
+	// reference: the manifest digest in digest mode, the selected tag in the
+	// semver modes. Empty when nothing was resolved (disabled, or an error
+	// before the registry was reached).
+	Resolved string
+
+	// Pinned is what Git pins today, in the same terms as Resolved.
+	Pinned string
+}
+
+// withOutcome stamps an outcome onto an observation.
+func withOutcome(s ImageStatus, o ImageOutcome) ImageStatus { s.Outcome = o; return s }
+
+// Short renders the observation compactly for a reconcile summary, as
+// "(resolved==pinned)" when they agree and "(resolved!=pinned)" when they do
+// not. Empty when nothing was resolved.
+func (s ImageStatus) Short() string {
+	if s.Resolved == "" {
+		return ""
+	}
+	if s.Resolved == s.Pinned {
+		return "(" + shortDigest(s.Resolved) + ")"
+	}
+	return "(" + shortDigest(s.Pinned) + "->" + shortDigest(s.Resolved) + ")"
+}
+
 // ImageAuto performs registry-poll image automation for a config that carries an
 // imagePolicy: it scans the registry for newer tags of the tracked image and,
 // per policy, writes a bumped image back to Git. Git stays the source of truth —
@@ -73,62 +111,64 @@ type ImageAuto struct {
 // Process scans nc's tracked image and, when a newer tag qualifies, patches the
 // config file in src, commits, and pushes. It returns the config to reconcile
 // (the bumped one when it changed, else the original) and the new image ref.
-func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.NamedConfig) (*config.Config, string, ImageOutcome, error) {
+func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.NamedConfig) (*config.Config, string, ImageStatus, error) {
 	pol := nc.Config.Spec.ImagePolicy
 	if pol == nil || pol.Mode == "none" {
 		// No automation: the image committed in Git is authoritative. "none" makes
 		// this explicit for digest-pinned configs that must not be re-bumped from a
 		// mutable tag.
-		return nc.Config, "", ImageOutcomeDisabled, nil
+		return nc.Config, "", ImageStatus{Outcome: ImageOutcomeDisabled}, nil
 	}
 	image, _ := nc.Config.Spec.Target.Spec["image"].(string)
 	if image == "" {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: imagePolicy set but spec.target.spec.image is empty")
+		return nc.Config, "", ImageStatus{Outcome: ImageOutcomeError}, fmt.Errorf("imageauto: imagePolicy set but spec.target.spec.image is empty")
 	}
 
 	// Resolve the new image reference per mode: digest mode pins a mutable tag
 	// (latest) to its current manifest digest and redeploys when it changes (keel
 	// "force"); the semver modes pick the highest qualifying tag.
-	newRef, from, to, err := ia.resolve(ctx, image, pol)
+	res, err := ia.resolve(ctx, image, pol)
+	seen := ImageStatus{Resolved: res.Resolved, Pinned: res.Pinned}
 	if err != nil {
-		return nc.Config, "", ImageOutcomeError, err
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
 	}
-	if newRef == "" {
-		return nc.Config, "", ImageOutcomeCurrent, nil
+	if res.Ref == "" {
+		return nc.Config, "", withOutcome(seen, ImageOutcomeCurrent), nil
 	}
+	newRef, from, to := res.Ref, res.From, res.To
 
 	path := filepath.Join(src.Dir(), nc.Path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: read %s: %w", nc.Path, err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: read %s: %w", nc.Path, err)
 	}
 	patched, changed, err := imageupdate.PatchRolloutImageRef(data, newRef)
 	if err != nil {
-		return nc.Config, "", ImageOutcomeError, err
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
 	}
 	if !changed {
 		// The tracked branch already pins exactly this ref.
-		return nc.Config, "", ImageOutcomeCurrent, nil
+		return nc.Config, "", withOutcome(seen, ImageOutcomeCurrent), nil
 	}
 	msg := fmt.Sprintf("chore(image): %s %s -> %s (rollops)", nc.Config.Metadata.Name, from, to)
 
 	if pol.WritebackMode() == config.WritebackPullRequest {
-		return ia.proposeViaPR(ctx, src, nc, patched, msg, from, to)
+		return ia.proposeViaPR(ctx, src, nc, patched, msg, from, to, seen)
 	}
 
 	// Push writeback: commit the bump directly on the tracked branch and deploy
 	// it this cycle, since Git and the cluster now agree.
 	if _, _, err := src.CommitFile(ctx, nc.Path, patched, msg); err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: commit: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: commit: %w", err)
 	}
 	if err := src.Push(ctx); err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: push: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: push: %w", err)
 	}
 	bumped, err := config.Load(patched)
 	if err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: reload bumped config: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: reload bumped config: %w", err)
 	}
-	return bumped, newRef, ImageOutcomeBumped, nil
+	return bumped, newRef, withOutcome(seen, ImageOutcomeBumped), nil
 }
 
 // proposeViaPR is the pull-request writeback path: it commits the bump on a
@@ -140,7 +180,7 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 // cluster must not lead Git. The deploy happens later, through the ordinary
 // reconcile, once the PR merges and the tracked branch advances to carry it.
 // This is what keeps a protected branch and the running target consistent.
-func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string) (*config.Config, string, ImageOutcome, error) {
+func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string, seen ImageStatus) (*config.Config, string, ImageStatus, error) {
 	head := prBranchName(nc.Config.Metadata.Name)
 
 	// Stop before touching Git when the proposal already stands. Committing
@@ -150,27 +190,27 @@ func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config
 	// that cancels the very checks the pull request is waiting on, so it can
 	// never merge and the bump never deploys.
 	if src.RemoteFileMatches(ctx, head, nc.Path, patched) {
-		return nc.Config, "", ImageOutcomePending, nil
+		return nc.Config, "", withOutcome(seen, ImageOutcomePending), nil
 	}
 
 	committed, err := src.CommitFileOnBranch(ctx, head, nc.Path, patched, msg)
 	if err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: pr commit: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: pr commit: %w", err)
 	}
 	if !committed {
 		// The proposal branch already carries exactly this bump; the PR (if any)
 		// stands. Nothing to push or reopen — but Git has still not adopted the
 		// newer image, so this is pending, never current.
-		return nc.Config, "", ImageOutcomePending, nil
+		return nc.Config, "", withOutcome(seen, ImageOutcomePending), nil
 	}
 	if err := src.PushBranch(ctx, head); err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: pr push: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: pr push: %w", err)
 	}
 	body := fmt.Sprintf("Automated image bump by rollops.\n\n- config: `%s`\n- %s → %s\n\nMerging this deploys the new image through the normal reconcile. Opened as a PR because the tracked branch does not accept direct pushes.", nc.Path, from, to)
 	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, body); err != nil {
-		return nc.Config, "", ImageOutcomeError, fmt.Errorf("imageauto: open pr: %w", err)
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: open pr: %w", err)
 	}
-	return nc.Config, "", ImageOutcomeProposed, nil
+	return nc.Config, "", withOutcome(seen, ImageOutcomeProposed), nil
 }
 
 // prBranchName is the deterministic head branch for a config's image proposals.
@@ -191,15 +231,23 @@ func prBranchName(configName string) string {
 	return "rollops/image/" + safe
 }
 
-// resolve computes the new image reference for the current image and policy, or
-// returns newRef="" when nothing changed. from/to are the human-readable old/new
-// versions for the commit message.
-func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
+// resolution is what resolve observed and decided.
+type resolution struct {
+	Ref      string // new image reference, "" when nothing changed
+	From, To string // human-readable old/new for the commit message
+	Resolved string // what the registry currently offers
+	Pinned   string // what Git pins today
+}
+
+// resolve computes the new image reference for the current image and policy,
+// reporting what it observed even when nothing changed — a verdict without its
+// observation cannot be checked later.
+func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.ImagePolicy) (resolution, error) {
 	// Bind automation to the allowed registries (when configured) before any
 	// network call: a compromised or mistyped image ref must never pull
 	// automation toward an unexpected registry.
 	if aerr := registryAllowed(image, pol.AllowedRegistries); aerr != nil {
-		return "", "", "", aerr
+		return resolution{}, aerr
 	}
 
 	if pol.Mode == "digest" {
@@ -207,12 +255,15 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 		mutable := repo + ":" + tag
 		newDigest, derr := ia.Scanner.Digest(ctx, mutable)
 		if derr != nil {
-			return "", "", "", fmt.Errorf("imageauto: digest %s: %w", mutable, derr)
+			return resolution{Pinned: oldDigest}, fmt.Errorf("imageauto: digest %s: %w", mutable, derr)
 		}
+		obs := resolution{Resolved: newDigest, Pinned: oldDigest}
 		if newDigest == oldDigest {
-			return "", "", "", nil
+			return obs, nil
 		}
-		return mutable + "@" + newDigest, shortDigest(oldDigest), shortDigest(newDigest), nil
+		obs.Ref = mutable + "@" + newDigest
+		obs.From, obs.To = shortDigest(oldDigest), shortDigest(newDigest)
+		return obs, nil
 	}
 
 	// semver modes. A ref may carry a deliberate digest pin
@@ -236,17 +287,17 @@ func (ia ImageAuto) resolve(ctx context.Context, image string, pol *config.Image
 	}
 	// Unpinned, non-semver current (e.g. repo:latest under a semver policy): there
 	// is no version to compare. digest mode is the tool for tracking a mutable tag.
-	return "", "", "", nil
+	return resolution{Pinned: curTag}, nil
 }
 
 // selectSemver picks the highest qualifying semver tag for a semver-tagged
 // current ref and returns it digest-pinned, so all semver modes now emit an
 // immutable reference. wasPinned records whether the current ref carried a
 // digest so the pin can never be silently dropped (see pinnedRef).
-func (ia ImageAuto) selectSemver(ctx context.Context, repo, curTag string, wasPinned bool, pol *config.ImagePolicy) (newRef, from, to string, err error) {
+func (ia ImageAuto) selectSemver(ctx context.Context, repo, curTag string, wasPinned bool, pol *config.ImagePolicy) (resolution, error) {
 	tags, terr := ia.Scanner.Tags(ctx, repo)
 	if terr != nil {
-		return "", "", "", fmt.Errorf("imageauto: scan %s: %w", repo, terr)
+		return resolution{Pinned: curTag}, fmt.Errorf("imageauto: scan %s: %w", repo, terr)
 	}
 	mode := pol.Mode
 	if mode == "any" {
@@ -254,17 +305,19 @@ func (ia ImageAuto) selectSemver(ctx context.Context, repo, curTag string, wasPi
 	}
 	newTag, ok := imageupdate.SelectTag(curTag, tags, mode, pol.Pattern)
 	if !ok {
-		return "", "", "", nil // already current — a pinned ref stays as-is
+		// Already current — a pinned ref stays as-is. The observation still
+		// records that the highest qualifying tag is the one Git pins.
+		return resolution{Resolved: curTag, Pinned: curTag}, nil
 	}
 	check := imageupdate.Policy{AllowedRegistries: pol.AllowedRegistries, TagPattern: pol.Pattern, AllowMutableTags: pol.AllowMutableTags}
 	if verr := check.Validate(imageupdate.Update{Image: repo, Tag: newTag}); verr != nil {
-		return "", "", "", verr
+		return resolution{Resolved: newTag, Pinned: curTag}, verr
 	}
 	ref, perr := ia.pinnedRef(ctx, repo, newTag, wasPinned)
 	if perr != nil {
-		return "", "", "", perr
+		return resolution{Resolved: newTag, Pinned: curTag}, perr
 	}
-	return ref, curTag, newTag, nil
+	return resolution{Ref: ref, From: curTag, To: newTag, Resolved: newTag, Pinned: curTag}, nil
 }
 
 // migrate performs the one-time digest→semver conversion for a ref that is
@@ -274,21 +327,21 @@ func (ia ImageAuto) selectSemver(ctx context.Context, repo, curTag string, wasPi
 // digest, so the result is immutable by construction). Fail-closed: when no
 // semver tag matches it returns an error rather than dropping or keeping an
 // unresolvable pin — best-effort, so the reconcile loop logs it and never blocks.
-func (ia ImageAuto) migrate(ctx context.Context, repo, pinned string, pol *config.ImagePolicy) (newRef, from, to string, err error) {
+func (ia ImageAuto) migrate(ctx context.Context, repo, pinned string, pol *config.ImagePolicy) (resolution, error) {
 	tags, terr := ia.Scanner.Tags(ctx, repo)
 	if terr != nil {
-		return "", "", "", fmt.Errorf("imageauto: scan %s: %w", repo, terr)
+		return resolution{Pinned: pinned}, fmt.Errorf("imageauto: scan %s: %w", repo, terr)
 	}
 	match, ok := ia.semverForDigest(ctx, repo, pinned, tags, pol.Pattern)
 	if !ok {
-		return "", "", "", fmt.Errorf("imageauto: no semver tag for digest %s of %s", shortDigest(pinned), repo)
+		return resolution{Pinned: pinned}, fmt.Errorf("imageauto: no semver tag for digest %s of %s", shortDigest(pinned), repo)
 	}
 	check := imageupdate.Policy{AllowedRegistries: pol.AllowedRegistries, TagPattern: pol.Pattern, AllowMutableTags: pol.AllowMutableTags}
 	if verr := check.Validate(imageupdate.Update{Image: repo, Tag: match}); verr != nil {
-		return "", "", "", verr
+		return resolution{Resolved: match, Pinned: pinned}, verr
 	}
 	// The pinned digest is exactly this tag's digest (we matched on it) → keep it.
-	return repo + ":" + match + "@" + pinned, shortDigest(pinned), match, nil
+	return resolution{Ref: repo + ":" + match + "@" + pinned, From: shortDigest(pinned), To: match, Resolved: match, Pinned: pinned}, nil
 }
 
 // pinnedRef resolves tag's current manifest digest and returns
