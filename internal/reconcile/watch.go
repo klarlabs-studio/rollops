@@ -190,21 +190,31 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		// Best-effort: a scan/push failure is logged but never blocks reconciling
 		// desired state (managing the app matters more than the image bump).
 		if w.imageAuto != nil {
-			bumped, ref, ierr := w.imageAuto.Process(ctx, r.src, nc)
+			bumped, ref, outcome, ierr := w.imageAuto.Process(ctx, r.src, nc)
 			switch {
 			case ierr != nil:
-				decisions = append(decisions, name+"=error")
+				decisions = append(decisions, name+"="+string(ImageOutcomeError))
 				if w.logf != nil {
 					w.logf("image automation %s/%s: %v (continuing)", r.spec.Name, nc.Path, ierr)
 				}
-			case ref != "":
+			case outcome.Deployed():
 				cfg = bumped
-				decisions = append(decisions, name+"=bumped")
+				decisions = append(decisions, name+"="+string(outcome))
 				if w.logf != nil {
 					w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
 				}
+			case outcome.AwaitingGit():
+				// A newer image exists that Git has not adopted. This used to be
+				// reported as `current` — the same word as "nothing to do" — so a
+				// proposal that never merged looked identical to a healthy target
+				// for as long as nobody compared the running image by hand. Name it
+				// every cycle so the wait is visible while it is still short.
+				decisions = append(decisions, name+"="+string(outcome))
+				if w.logf != nil {
+					w.logf("image automation %s/%s: %s — a newer image is waiting on Git, not deployed", r.spec.Name, nc.Path, outcome)
+				}
 			default:
-				decisions = append(decisions, name+"=current")
+				decisions = append(decisions, name+"="+string(outcome))
 			}
 		}
 		cfgs[i] = cfg

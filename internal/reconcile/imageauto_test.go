@@ -105,7 +105,7 @@ func TestImageAuto_BumpsAndCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	ia := ImageAuto{Scanner: fakeTags{"v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0"}}
-	bumped, ref, err := ia.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	bumped, ref, _, err := ia.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestImageAuto_BumpsAndCommits(t *testing.T) {
 
 func TestImageAuto_NoPolicyNoop(t *testing.T) {
 	cfg, _ := config.Load([]byte(strings.Replace(imgConfigYAML, "  imagePolicy:\n    mode: minor\n", "", 1)))
-	_, ref, err := ImageAuto{Scanner: fakeTags{"v9.9.9"}}.Process(context.Background(), nil, config.NamedConfig{Path: "x", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: fakeTags{"v9.9.9"}}.Process(context.Background(), nil, config.NamedConfig{Path: "x", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("no policy must be a no-op, got ref=%q err=%v", ref, err)
 	}
@@ -142,7 +142,7 @@ func TestImageAuto_ModeNoneNoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	bumped, ref, _, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("mode none must be a no-op, got ref=%q err=%v", ref, err)
 	}
@@ -159,7 +159,7 @@ func TestImageAuto_DigestModePinsMutableTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:abc123")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	bumped, ref, _, err := ImageAuto{Scanner: fakeDigest("sha256:abc123")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestImageAuto_DigestModeUnchanged(t *testing.T) {
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
 	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
-	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("same digest must be a no-op, got ref=%q err=%v", ref, err)
 	}
@@ -200,7 +200,7 @@ func TestImageAuto_MigrateDigestToSemver(t *testing.T) {
 			"latest": "sha256:abc123",
 		},
 	}
-	bumped, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	bumped, ref, _, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestImageAuto_EmbeddedSemverPinPreserved(t *testing.T) {
 	cfg, _ := config.Load([]byte(cfgYAML))
 	// Only the current version exists (as a semver tag) → no newer tag → no-op.
 	reg := fakeRegistry{tags: []string{"v1.1.0"}, digests: map[string]string{"v1.1.0": "sha256:abc123"}}
-	bumped, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	bumped, ref, _, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestImageAuto_EmbeddedSemverPinAdvancesPinned(t *testing.T) {
 		tags:    []string{"v1.1.0", "v1.2.0"},
 		digests: map[string]string{"v1.1.0": "sha256:old", "v1.2.0": "sha256:new"},
 	}
-	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestImageAuto_SemverPinFailClosed(t *testing.T) {
 	cfg, _ := config.Load([]byte(cfgYAML))
 	// v1.2.0 is offered as a newer tag, but its digest resolves to "" (unknown).
 	reg := fakeRegistry{tags: []string{"v1.1.0", "v1.2.0"}, digests: map[string]string{"v1.1.0": "sha256:old"}}
-	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err == nil {
 		t.Fatal("expected fail-closed error when a pinned ref's new digest is unresolvable")
 	}
@@ -289,7 +289,7 @@ func TestImageAuto_RegistryAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: fakeTags{"v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err == nil || !strings.Contains(err.Error(), "allowedRegistries") {
 		t.Fatalf("expected allowlist rejection for ghcr.io, got ref=%q err=%v", ref, err)
 	}
@@ -304,7 +304,7 @@ func TestImageAuto_RegistryAllowlistPermits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.0.0", "v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: fakeTags{"v1.0.0", "v1.1.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestImageAuto_MigrateNoMatchingDigest(t *testing.T) {
 		tags:    []string{"v1.0.0", "v1.1.0"},
 		digests: map[string]string{"v1.0.0": "sha256:a", "v1.1.0": "sha256:b"},
 	}
-	_, ref, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: reg}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err == nil {
 		t.Fatal("expected error when no semver tag matches the pinned digest")
 	}
@@ -335,7 +335,7 @@ func TestImageAuto_AlreadyCurrent(t *testing.T) {
 	src := newGitRepo(t, imgConfigYAML)
 	cfg, _ := config.Load([]byte(imgConfigYAML))
 	// Only the current tag available → no bump.
-	_, ref, err := ImageAuto{Scanner: fakeTags{"v1.0.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	_, ref, _, err := ImageAuto{Scanner: fakeTags{"v1.0.0"}}.Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil || ref != "" {
 		t.Fatalf("already current must be no-op, got ref=%q err=%v", ref, err)
 	}
@@ -375,7 +375,7 @@ func TestImageAuto_PullRequestWriteback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bumped, ref, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
+	bumped, ref, _, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
 		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -418,7 +418,7 @@ func TestImageAuto_PushWritebackUnchanged(t *testing.T) {
 	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1) // no writeback → default push
 	src := newGitRepo(t, cfgYAML)
 	cfg, _ := config.Load([]byte(cfgYAML))
-	_, ref, err := ImageAuto{Scanner: fakeDigest("sha256:pushed")}.
+	_, ref, _, err := ImageAuto{Scanner: fakeDigest("sha256:pushed")}.
 		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -441,4 +441,122 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
 	}
 	return string(out)
+}
+
+// A pull-request proposal is not "current". Process returns ref="" for both —
+// deliberately, since the deploy waits for the merge — so the reconcile summary
+// reported a freshly opened PR with the same word it uses for a target that had
+// nothing to do. A proposal that then never merges therefore reports "current"
+// on every cycle while the deploy never happens, which is indistinguishable
+// from healthy. See klarlabs-studio/rollops#98.
+func TestImageAuto_OutcomeProposedIsNotCurrent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}`))
+		case r.URL.Path == "/graphql":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true\n    writeback: pull-request", 1)
+
+	src := newGitRepo(t, cfgYAML).WithURL("https://github.com/acme/web").WithAPIBase(srv.URL)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	// Still no deploy this cycle — that contract is unchanged.
+	if ref != "" {
+		t.Errorf("PR mode must not deploy; got ref=%q", ref)
+	}
+	if outcome != ImageOutcomeProposed {
+		t.Errorf("outcome = %q, want %q — a proposal must not be reported as current", outcome, ImageOutcomeProposed)
+	}
+	if outcome == ImageOutcomeCurrent {
+		t.Error("a freshly opened PR reported as current: the stuck case is invisible")
+	}
+}
+
+// current must mean exactly one thing: the registry offers nothing Git does not
+// already pin.
+func TestImageAuto_OutcomeCurrentWhenDigestUnchanged(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:same", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:same")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "" {
+		t.Errorf("nothing to do, got ref=%q", ref)
+	}
+	if outcome != ImageOutcomeCurrent {
+		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeCurrent)
+	}
+}
+
+// A push-writeback bump lands on the tracked branch and deploys this cycle.
+func TestImageAuto_OutcomeBumpedOnPushWriteback(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:old", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+
+	src := newGitRepo(t, cfgYAML)
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref == "" {
+		t.Fatal("push writeback should deploy this cycle")
+	}
+	if outcome != ImageOutcomeBumped {
+		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeBumped)
+	}
+}
+
+// A config with no imagePolicy was never considered. Reporting that as
+// "current" claims a check happened that did not.
+func TestImageAuto_OutcomeDisabledWithoutPolicy(t *testing.T) {
+	cfg, err := config.Load([]byte(imgConfigYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Spec.ImagePolicy = nil
+
+	_, ref, outcome, err := ImageAuto{Scanner: fakeDigest("sha256:whatever")}.
+		Process(context.Background(), nil, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if ref != "" {
+		t.Errorf("no policy must not deploy, got ref=%q", ref)
+	}
+	if outcome != ImageOutcomeDisabled {
+		t.Errorf("outcome = %q, want %q", outcome, ImageOutcomeDisabled)
+	}
 }
