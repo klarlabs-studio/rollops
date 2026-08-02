@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## v0.29.0 - Image automation says what it did
+
+Two fixes to the same blind spot: image automation could not be told apart from
+doing nothing, and it acted on that confusion by re-proposing forever.
+
+**A standing proposal is no longer re-pushed.** `CommitFileOnBranch` rebuilds the
+proposal branch from the tracked branch and commits, so it produced a new commit
+every reconcile — identical content, later timestamp, different sha — and
+rollopsd force-pushed it. A repository whose CI sets
+`concurrency.cancel-in-progress` then had every run cancelled by the next push
+60 seconds later, so the checks the pull request was waiting on could never
+finish and auto-merge never fired. Three private repositories accumulated 864
+workflow runs in 78 minutes this way and could not land their bumps at all.
+Automation now compares the proposal branch on the remote against the bump it is
+about to make and, when they already match, does nothing.
+
+**Upgrade note:** if you use `writeback: pull-request` on a repository whose CI
+cancels in-progress runs, you want this release. Public repositories were
+affected too; they just were not billed for it.
 
 ### Fixed — a standing proposal is no longer re-pushed every reconcile
 
