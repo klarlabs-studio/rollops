@@ -2,49 +2,13 @@
   "schema_version": "1.0.0",
   "entries": [
     {
-      "fingerprint": "51fa8c95844fea62ad2fbc93e184729f8672efd171eded70ad1bc2f6ad17f461",
-      "rule_id": "",
-      "file_path": "",
-      "severity": "",
-      "reason": "Entropy/secret rules on non-secrets, verified 2026-07-19 against CI scan output: test fixtures (ghp_secret, ghs_tok%d, config test literals) and SEC-680 'Prometheus API key' misfiring on the identifier validateKubernetesManifestSource. Fingerprints taken from the CI run, not a local scan — they differ. Re-verify if any moves to non-test source.",
+      "fingerprint": "3c5e19d6e392ce9568bb760ac4a27a3442efedb066ca6d78a521a47060b16c8c",
+      "rule_id": "TAINT-004",
+      "file_path": "internal/pluginhost/cosign.go",
+      "severity": "high",
+      "reason": "ROLLOPS_PLUGIN_PUBLIC_KEY is operator configuration, not attacker-controlled input. VerifyArtifact reads it as the path to the cosign public key used to verify plugin signatures; whoever can set the process environment can already read any file the process can, so treating it as a path-traversal source assumes a threat model in which the attack is already unnecessary. Same shape as a --config flag. Fingerprint taken from the CI nox-results artifact, not a local scan \u2014 they differ. Re-verify if this path ever becomes settable from a request, a plugin manifest, or any other non-operator source.",
       "owner": "felixgeelhaar",
-      "created_at": "2026-07-19T05:25:48.751912Z"
-    },
-    {
-      "fingerprint": "8991d897034a8cb0bb3e0b09d4d9f06c3ec50a522fa69c432ccc55cb5d695160",
-      "rule_id": "",
-      "file_path": "",
-      "severity": "",
-      "reason": "Entropy/secret rules on non-secrets, verified 2026-07-19 against CI scan output: test fixtures (ghp_secret, ghs_tok%d, config test literals) and SEC-680 'Prometheus API key' misfiring on the identifier validateKubernetesManifestSource. Fingerprints taken from the CI run, not a local scan — they differ. Re-verify if any moves to non-test source.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-07-19T05:25:48.751916Z"
-    },
-    {
-      "fingerprint": "7996922c54aec6194d294af779c0f742e17dc65d534b1d20fff0be0542c35427",
-      "rule_id": "",
-      "file_path": "",
-      "severity": "",
-      "reason": "Entropy/secret rules on non-secrets, verified 2026-07-19 against CI scan output: test fixtures (ghp_secret, ghs_tok%d, config test literals) and SEC-680 'Prometheus API key' misfiring on the identifier validateKubernetesManifestSource. Fingerprints taken from the CI run, not a local scan — they differ. Re-verify if any moves to non-test source.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-07-19T05:25:48.751922Z"
-    },
-    {
-      "fingerprint": "0a24e539871a2332b8e57fddaee8a623dad8482cdeba48d821f40f39d740ab86",
-      "rule_id": "",
-      "file_path": "",
-      "severity": "",
-      "reason": "Entropy/secret rules on non-secrets, verified 2026-07-19 against CI scan output: test fixtures (ghp_secret, ghs_tok%d, config test literals) and SEC-680 'Prometheus API key' misfiring on the identifier validateKubernetesManifestSource. Fingerprints taken from the CI run, not a local scan — they differ. Re-verify if any moves to non-test source.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-07-19T05:25:48.751923Z"
-    },
-    {
-      "fingerprint": "920c9a78dfd894dd582a44d77333b70618b18fdf64914cd181c9aca3e9dc6245",
-      "rule_id": "",
-      "file_path": "",
-      "severity": "",
-      "reason": "Entropy/secret rules on non-secrets, verified 2026-07-19 against CI scan output: test fixtures (ghp_secret, ghs_tok%d, config test literals) and SEC-680 'Prometheus API key' misfiring on the identifier validateKubernetesManifestSource. Fingerprints taken from the CI run, not a local scan — they differ. Re-verify if any moves to non-test source.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-07-19T05:25:48.751924Z"
+      "created_at": "2026-08-02T00:00:00Z"
     }
   ]
 }
