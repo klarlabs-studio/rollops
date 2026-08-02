@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Fixed — a standing proposal is no longer re-pushed every reconcile
+
+`CommitFileOnBranch` rebuilds the proposal branch from the tracked branch and
+commits, so it produced a new commit — identical content, later timestamp, a
+different sha — on every reconcile, and rollopsd force-pushed it. A repository
+whose CI sets `concurrency.cancel-in-progress` then had each run killed by the
+next push 60 seconds later, so the checks the pull request was waiting on could
+never finish and auto-merge never fired.
+
+Observed in production: three repositories accumulated roughly fifty cancelled
+runs each, and their image bumps could not land at all. Any repository whose CI
+takes longer than the reconcile interval was affected — which is most of them.
+
+Image automation now compares the proposal branch on the remote against the bump
+it is about to make and, when they already match, does nothing: no commit, no
+push, no second pull request. That is what `pending` was for; it was previously
+unreachable, because the check was "did I make a commit" and a fresh commit is
+always made.
+
 ### Fixed — a waiting deploy is no longer reported as `current`
 
 The reconcile summary had one word for two opposite states. `Process` returns

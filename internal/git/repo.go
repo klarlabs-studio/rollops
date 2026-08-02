@@ -212,6 +212,30 @@ func (s *Source) CommitFileOnBranch(ctx context.Context, headBranch, relPath str
 	return committed, nil
 }
 
+// RemoteFileMatches reports whether origin/branch already carries exactly want
+// at relPath.
+//
+// It exists so a proposal that already stands is not re-pushed. CommitFileOnBranch
+// resets the head branch from the tracked branch and commits, which yields a new
+// commit — identical content, later timestamp, different sha — on every
+// reconcile. Force-pushing that refreshed the proposal branch once a minute, and
+// a repository whose CI sets concurrency.cancel-in-progress had each run killed
+// by the next push before it could finish, so the checks the pull request was
+// waiting on never completed and it could never merge.
+//
+// A branch the remote does not have, or cannot be read, is not a match: the
+// caller then proposes as usual, which is the safe direction.
+func (s *Source) RemoteFileMatches(ctx context.Context, branch, relPath string, want []byte) bool {
+	if _, err := s.git(ctx, s.dir, "fetch", "origin", branch); err != nil {
+		return false
+	}
+	got, err := s.git(ctx, s.dir, "show", "FETCH_HEAD:"+relPath)
+	if err != nil {
+		return false
+	}
+	return got == string(want)
+}
+
 // PushBranch force-pushes headBranch to origin. Force is safe and intended
 // here: the branch is rollops-owned and deterministically named per bump, so
 // pushing refreshes an existing proposal rather than clobbering shared work.
