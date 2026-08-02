@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Fixed — a waiting deploy is no longer reported as `current`
+
+The reconcile summary had one word for two opposite states. `Process` returns
+`ref=""` for a pull-request proposal exactly as it does for a target with
+nothing to do — deliberately, since PR mode must not deploy in the same cycle —
+and the summary turned both into `=current`. So a proposal that never merged
+reported `current` on every cycle, forever, while the deploy never happened.
+Nothing in the logs, the summary, or the exit status distinguished it from a
+healthy target; the only symptom was the running target quietly serving an old
+image, discovered by looking at the target itself.
+
+Image automation now reports what it actually did:
+
+| outcome | meaning |
+|---|---|
+| `disabled` | no `imagePolicy`, or `mode: none` — no check was performed |
+| `current` | the registry offers nothing Git does not already pin |
+| `bumped` | the tracked branch carries the bump; deploying this cycle |
+| `proposed` | a PR carrying the bump was opened or refreshed — **Git has not adopted it** |
+| `pending` | the proposal branch already carries it, still unmerged |
+| `error` | the cycle failed |
+
+`proposed` and `pending` also log a line each cycle naming the target as waiting
+on Git rather than deployed, so the wait is visible while it is still short.
+`current` now means one thing only.
+
+This is an observability fix, not a behaviour change: what rollopsd deploys, and
+when, is unchanged.
+
 ## v0.28.0 - Deploy through a protected branch
 
 Image automation could not deploy to a repository whose branch is protected.
