@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.30.0 - Verdicts you can check
+
+Both changes here fix a signal that could not fail visibly.
+
+### Image automation records what it resolved
+
+`current` was unfalsifiable. A target reported it for eighteen hours while the
+registry had moved, and because only the verdict was recorded there was
+afterwards no way to tell a correct match from a bad resolution — the
+observation behind it was gone.
+
+`Process` now returns an `ImageStatus` carrying the identity the registry
+offered and the identity Git pins, and the reconcile summary prints it beside
+the outcome:
+
+```
+klarlabs-klarlabs-site=current(sha256:da334a515126)
+pet-medical-web=pending(sha256:2f08b1adf9eb->sha256:4fe22ed806aa)
+```
+
+One line is now enough to check a verdict against the registry by hand.
+Behaviour is unchanged; this records what was already being computed and
+discarded. Completes klarlabs-studio/rollops#98.
+
+### The taint-analysis plugin is required
+
+The shared CI installed it with `continue-on-error`, so a registry outage
+produced zero taint findings — indistinguishable from a clean scan. Declaring
+the plugin required makes nox record the miss in `meta.degradations`, which the
+shared go-ci gate fails on. (#95, part of klarlabs-studio/.github#14.)
+
+
 ## v0.29.0 - Image automation says what it did
 
 Two fixes to the same blind spot: image automation could not be told apart from
