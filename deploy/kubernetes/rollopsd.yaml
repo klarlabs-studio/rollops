@@ -122,6 +122,26 @@ rules:
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]
     verbs: [get, list, watch, create, update, patch]
+  # Scheduled work. A CronJob is a legitimate rollout target — its image drifts
+  # exactly like a Deployment's, and being outside the reconciler is how a job
+  # ends up running a container 58 minor versions behind the app it belongs to.
+  # `batch` was absent from this role entirely, so such a target got as far as
+  # apply and then failed:
+  #
+  #   cronjobs.batch "..." is forbidden: User
+  #   "system:serviceaccount:rollops-system:rollopsd" cannot get resource
+  #   "cronjobs" in API group "batch"
+  #
+  # jobs are READ-ONLY here: rollops does not manage Jobs as targets (a Job spec
+  # is immutable, so there is nothing to roll), but reading the Jobs a CronJob
+  # spawns is what makes its health assessable. No `delete` on either — removing
+  # a CronJob would silently drop scheduled work, the same reasoning as PVCs.
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch]
   - apiGroups: [gateway.networking.k8s.io]
     resources: [httproutes]
     verbs: [get, list, watch, update, patch]
