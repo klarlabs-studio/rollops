@@ -14,7 +14,7 @@ require (
 	go.klarlabs.de/fortify v1.8.1
 	go.klarlabs.de/mcp v1.24.0
 	go.klarlabs.de/mnemos v0.19.0
-	go.klarlabs.de/statekit v1.13.1
+	go.klarlabs.de/statekit v1.13.2
 	golang.org/x/crypto v0.53.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
