@@ -260,9 +260,25 @@ spec:
             httpGet: { path: /readyz, port: https, scheme: HTTPS }
             initialDelaySeconds: 10
             periodSeconds: 20
+          # Measured 2026-08-10 on a 2-node edge cluster: 268m steady, 330m
+          # peak over 5m windows, 104Mi memory — against requests of 50m/64Mi
+          # and a 500m CPU limit. Both numbers were wrong in the same direction.
+          #
+          # The request understated real use by 5x, so the scheduler packed the
+          # node as if rollopsd were idle. The limit then throttled it 70% of
+          # every CFS period: reconciles are bursty, and short spikes blow
+          # through 500m even while the 5m average sits below it. A throttled
+          # reconciler is slow to notice a new image, which is the one thing
+          # this process exists to do.
+          #
+          # Requests now track observed steady state; the CPU limit is ~4.5x the
+          # observed peak, which is headroom for the burst rather than a target.
+          # If throttling persists, the next step is dropping the CPU limit
+          # entirely — CFS throttling costs a latency-sensitive controller more
+          # than the limit protects the node.
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { cpu: 1500m, memory: 384Mi }
       volumes:
         - name: data
           persistentVolumeClaim: { claimName: rollopsd-data }
