@@ -30,6 +30,7 @@ import (
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/git"
+	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/grpcapi"
 	"go.klarlabs.de/rollops/internal/imageupdate"
 	"go.klarlabs.de/rollops/internal/mcp"
@@ -101,6 +102,17 @@ func run(args []string) error {
 	}
 	if n, _ := notify.FromEnv(os.Getenv); n != nil {
 		engOpts = append(engOpts, engine.WithNotifier(n))
+	}
+	// External governance (opt-in, default off). With ROLLOPS_GOVERNANCE_URL set, an
+	// apply is refused unless an outside system says it may proceed — and refused too
+	// if that system cannot be reached, because a gate that evaporates on a bad
+	// network is absent exactly when a rushed deploy is most likely. Logged on
+	// startup, since a fail-closed dependency on the deploy path should never be a
+	// surprise discovered during an incident.
+	if g := governance.FromEnv(os.Getenv); g != nil {
+		engOpts = append(engOpts, engine.WithGovernance(g))
+		fmt.Fprintf(os.Stderr, "rollopsd: external governance: %s (fail-closed)\n",
+			os.Getenv("ROLLOPS_GOVERNANCE_URL"))
 	}
 	// Multi-tenant confinement (opt-in, default off). In the "one repo per
 	// customer" model repo config is untrusted; these allowlists stop a poisoned

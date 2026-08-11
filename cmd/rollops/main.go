@@ -16,6 +16,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/cli"
 	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/grpcapi"
 	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -48,6 +49,8 @@ func run(args []string) error {
 		},
 	}
 	app.Doctor.Notifier, app.Doctor.NotifyChannels = notify.FromEnv(os.Getenv)
+	app.Doctor.Governor = governance.FromEnv(os.Getenv)
+	app.Doctor.GovernorURL = os.Getenv("ROLLOPS_GOVERNANCE_URL")
 
 	// doctor and plugin need no engine/daemon — dispatch them directly.
 	if len(args) > 0 && (args[0] == "doctor" || args[0] == "plugin") {
@@ -72,7 +75,14 @@ func run(args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin()), Actor: app.Actor}
+	// The in-process engine honors external governance too. Wiring it only into the
+	// daemon would leave `rollops apply` on a laptop as the way around the gate, and a
+	// gate you can walk around is not one.
+	var engOpts []engine.Option
+	if g := governance.FromEnv(os.Getenv); g != nil {
+		engOpts = append(engOpts, engine.WithGovernance(g))
+	}
+	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin(), engOpts...), Actor: app.Actor}
 	return app.Run(context.Background(), args)
 }
 
