@@ -244,3 +244,72 @@ func TestAnUnparseableTimeoutKeepsTheDefault(t *testing.T) {
 		t.Errorf("Timeout = %v, want the %v default", got, defaultGovernanceTimeout)
 	}
 }
+
+// A governor behind ordinary API authentication needs a credential, and an HMAC
+// signature is not one: it proves the body was not altered, not who is asking. A
+// provider that could only sign would be turned away by every authenticated governor,
+// which would quietly limit this to unauthenticated ones.
+func TestTheRequestCarriesABearerTokenWhenSet(t *testing.T) {
+	var authorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(wireDecision{Allowed: true})
+	}))
+	defer srv.Close()
+
+	if _, err := hookFor(map[string]string{
+		"ROLLOPS_GOVERNANCE_URL":   srv.URL,
+		"ROLLOPS_GOVERNANCE_TOKEN": "tok-abc123",
+	}).Evaluate(context.Background(), applyRequest()); err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	if authorization != "Bearer tok-abc123" {
+		t.Errorf("Authorization = %q, want %q", authorization, "Bearer tok-abc123")
+	}
+}
+
+// A token and a signature answer different questions and must not exclude each other:
+// a governor may reasonably want proof of who is asking *and* that the body is intact.
+func TestATokenAndASignatureCoexist(t *testing.T) {
+	var authorization, signature string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		signature = r.Header.Get("X-Rollops-Signature")
+		_ = json.NewEncoder(w).Encode(wireDecision{Allowed: true})
+	}))
+	defer srv.Close()
+
+	if _, err := hookFor(map[string]string{
+		"ROLLOPS_GOVERNANCE_URL":    srv.URL,
+		"ROLLOPS_GOVERNANCE_TOKEN":  "tok-abc123",
+		"ROLLOPS_GOVERNANCE_SECRET": "shared-secret",
+	}).Evaluate(context.Background(), applyRequest()); err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	if authorization == "" {
+		t.Error("the bearer token was dropped when a signing secret was also configured")
+	}
+	if signature == "" {
+		t.Error("the signature was dropped when a bearer token was also configured")
+	}
+}
+
+func TestNoAuthorizationHeaderWithoutAToken(t *testing.T) {
+	var present bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, present = r.Header["Authorization"]
+		_ = json.NewEncoder(w).Encode(wireDecision{Allowed: true})
+	}))
+	defer srv.Close()
+
+	if _, err := hookFor(map[string]string{"ROLLOPS_GOVERNANCE_URL": srv.URL}).
+		Evaluate(context.Background(), applyRequest()); err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if present {
+		t.Error("an empty Authorization header was sent: a governor cannot distinguish " +
+			"that from a malformed credential")
+	}
+}

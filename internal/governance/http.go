@@ -27,6 +27,13 @@ type HTTPProvider struct {
 	Secret  string
 	Timeout time.Duration
 
+	// Token is sent as `Authorization: Bearer`. Separate from Secret because the two
+	// answer different questions: the HMAC proves the body was not altered in transit,
+	// a bearer token proves who is asking. A governor sitting behind ordinary API
+	// authentication needs the second and cannot use the first for it, so a provider
+	// that could only sign would be turned away by every authenticated governor.
+	Token string
+
 	// Client is injectable for tests.
 	Client *http.Client
 }
@@ -40,7 +47,7 @@ type HTTPProvider struct {
 const defaultGovernanceTimeout = 5 * time.Second
 
 // FromEnv builds a provider from ROLLOPS_GOVERNANCE_URL and optional
-// ROLLOPS_GOVERNANCE_SECRET / ROLLOPS_GOVERNANCE_TIMEOUT.
+// ROLLOPS_GOVERNANCE_SECRET / ROLLOPS_GOVERNANCE_TOKEN / ROLLOPS_GOVERNANCE_TIMEOUT.
 //
 // Returns nil when no URL is set, which is the ordinary case: a user who has not
 // asked for external governance must be entirely unaffected by this existing.
@@ -64,6 +71,7 @@ func FromEnv(getenv func(string) string) Provider {
 	return &HTTPProvider{
 		URL:     url,
 		Secret:  getenv("ROLLOPS_GOVERNANCE_SECRET"),
+		Token:   getenv("ROLLOPS_GOVERNANCE_TOKEN"),
 		Timeout: timeout,
 	}
 }
@@ -120,6 +128,9 @@ func (p *HTTPProvider) Evaluate(ctx context.Context, req Request) (Decision, err
 		return Decision{}, fmt.Errorf("governance: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if p.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.Token)
+	}
 	if p.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(p.Secret))
 		mac.Write(body)
