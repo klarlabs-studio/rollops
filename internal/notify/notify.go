@@ -29,6 +29,20 @@ type Event struct {
 	TargetRef string `json:"target_ref"`
 	RolloutID string `json:"rollout_id"`
 	Detail    string `json:"detail,omitempty"`
+
+	// Version and Environment describe what reached where.
+	//
+	// A consumer recording deployment evidence needs both, and this payload carried
+	// neither: a target ref identifies where something was deployed to but not what,
+	// and a rollout ID is only resolvable by asking us. A receiver should not have to
+	// call back to understand what it was told, so the facts travel with the event.
+	//
+	// Environment comes from the target's declared env and is therefore always
+	// present. Version is whatever the operator labelled the deployment with, so it
+	// may be empty — empty means unreported, which is honest, rather than a value
+	// invented from a target spec whose shape differs per kind.
+	Version     string `json:"version,omitempty"`
+	Environment string `json:"environment,omitempty"`
 }
 
 // verb returns the emoji and human verb for the event kind.
