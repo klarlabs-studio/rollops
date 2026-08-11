@@ -58,14 +58,12 @@ by choice.
      githubAppPrivateKeyFile per repo; deploy keys + PAT still supported. See
      docs/git-auth.md. -->
 
-- **The 10s plugin handshake budget is load-dependent.**
-  `pluginhost.TestLaunch_ConfinesEnvironment` and
-  `featureflags.TestBuildProvider_EndToEnd` build a helper binary and wait 10s for
-  the gRPC handshake. Both fail intermittently when `go test ./...` runs on a busy
-  machine — compilation competes with the handshake and the budget expires — and
-  pass in isolation, warm, or cold. Observed twice on 2026-08-11. This is a timeout
-  measuring the machine rather than the code, so it will surface as an unexplained
-  red CI run. Either raise the budget substantially for the test path or pre-build
-  the helper binary before starting the clock.
+<!-- DONE: The load-dependent plugin handshake — fixed, and it was a real bug not just
+     a flaky test. awaitHandshake bounded its wait with a bare 10s timer and ignored the
+     context, so a cancelled caller still waited the full ten seconds on a plugin that
+     would never answer. It now honors the caller's deadline (shorter or longer) and
+     returns on cancellation with an error that reads as cancellation rather than a
+     timeout. BuildProvider gained a ctx for the same reason: the engine's two call sites
+     had one in scope and were dropping it. -->
 
 ---

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // buildProbePlugin compiles the shared test helper binary once per run.
@@ -97,7 +98,15 @@ func TestLaunch_ConfinesEnvironment(t *testing.T) {
 	t.Setenv("ROLLOPS_PROBE_SECRET", "super-secret-token")
 
 	// Allow only the dump-file var through; the secret is deliberately omitted.
-	proc, err := Launch(context.Background(), bin, []string{"PROBE_ENV_DUMP_FILE"})
+	// A generous bound rather than the 10s default. This test exec's a real
+	// subprocess, and on a machine compiling the rest of the suite in parallel a
+	// freshly started process can take longer than that just to be scheduled — which
+	// produced a failure indistinguishable from a broken plugin. The wait is still
+	// finite, so a genuinely silent plugin still fails.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	proc, err := Launch(ctx, bin, []string{"PROBE_ENV_DUMP_FILE"})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
