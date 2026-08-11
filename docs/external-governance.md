@@ -73,6 +73,7 @@ never has to live in a config file that gets committed:
 |---|---|
 | `ROLLOPS_GOVERNANCE_URL` | The governor's endpoint. **Unset means no gate** — this is entirely opt-in. |
 | `ROLLOPS_GOVERNANCE_SECRET` | Optional. Signs the request body with HMAC-SHA256 in `X-Rollops-Signature`. |
+| `ROLLOPS_GOVERNANCE_TOKEN` | Optional. Sent as `Authorization: Bearer`. Needed when the governor sits behind ordinary API authentication — a signature proves the body is intact, not who is asking, so the two are independent and can be used together. |
 | `ROLLOPS_GOVERNANCE_TIMEOUT` | Optional Go duration, default `5s`. A mistyped value keeps the default rather than failing startup. |
 
 Both the daemon and the one-shot CLI read these. Wiring only the daemon would leave
