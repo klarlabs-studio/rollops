@@ -1,0 +1,1849 @@
+{
+  "meta": {
+    "schema_version": "1.0.0",
+    "generated_at": "2026-08-10T14:14:18Z",
+    "tool_name": "nox",
+    "tool_version": "1.29.0",
+    "offline": false,
+    "sast_languages": {
+      "c": "standard",
+      "cpp": "standard",
+      "csharp": "standard",
+      "go": "standard",
+      "java": "standard",
+      "javascript": "deep",
+      "kotlin": "standard",
+      "objc": "standard",
+      "php": "standard",
+      "python": "deep",
+      "ruby": "standard",
+      "rust": "standard",
+      "shell": "standard",
+      "swift": "standard",
+      "typescript": "deep"
+    },
+    "degradations": [
+      {
+        "kind": "plugin",
+        "detail": "20 installed plugin(s) are not listed in plugins.required and did not run: freshness, nox/ai-eval, nox/api-abuse, nox/attack-surface, nox/baseline-mgmt, nox/container, nox/dast, nox/depconfusion, nox/grc, nox/k8s-runtime, nox/policy-gate, nox/reachability, nox/red-team, nox/remediate, nox/risk-score, nox/sast, nox/threat-enrich, nox/threat-explain, nox/threat-model, nox/triage-agent",
+        "impact": "their findings are absent from this scan; add the ones you want to plugins.required in .nox.yaml"
+      }
+    ]
+  },
+  "findings": [
+    {
+      "ID": "CONT-001-f87561db9810",
+      "RuleID": "CONT-001",
+      "Severity": "medium",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 4,
+        "EndLine": 4,
+        "StartColumn": 0,
+        "EndColumn": 0
+      },
+      "Message": "Container base image golang:1.26-alpine not pinned to specific digest",
+      "Fingerprint": "f87561db981095963155e0a041012f47d728048c8725e18e4ade44c767569297",
+      "Metadata": {
+        "ecosystem": "docker",
+        "image": "golang",
+        "version": "1.26-alpine"
+      }
+    },
+    {
+      "ID": "CONT-001-3317b9eb6d97",
+      "RuleID": "CONT-001",
+      "Severity": "medium",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 15,
+        "EndLine": 15,
+        "StartColumn": 0,
+        "EndColumn": 0
+      },
+      "Message": "Container base image alpine:3.20 not pinned to specific digest",
+      "Fingerprint": "3317b9eb6d97f950f0932a8f39bc90859ad18debce3671d6e3d60f65c6227807",
+      "Metadata": {
+        "ecosystem": "docker",
+        "image": "alpine",
+        "version": "3.20"
+      }
+    },
+    {
+      "ID": "DATA-001-22cad7179a85",
+      "RuleID": "DATA-001",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/config/repo_test.go",
+        "StartLine": 11,
+        "EndLine": 11,
+        "StartColumn": 20,
+        "EndColumn": 35
+      },
+      "Message": "Email address in code or config",
+      "Fingerprint": "22cad7179a85363e70be9438c5463be55554266e24c4ce936e9571e2af908454",
+      "Metadata": {
+        "cwe": "CWE-359"
+      }
+    },
+    {
+      "ID": "DATA-001-acfa757d3e07",
+      "RuleID": "DATA-001",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/git/pullrequest_test.go",
+        "StartLine": 20,
+        "EndLine": 20,
+        "StartColumn": 4,
+        "EndColumn": 19
+      },
+      "Message": "Email address in code or config",
+      "Fingerprint": "acfa757d3e07c62d5b24c7fda03d100111e203231745c1ffc32cd5f0af617c3c",
+      "Metadata": {
+        "cwe": "CWE-359"
+      }
+    },
+    {
+      "ID": "DATA-001-dd913e1575b5",
+      "RuleID": "DATA-001",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/security/artifact_test.go",
+        "StartLine": 52,
+        "EndLine": 52,
+        "StartColumn": 19,
+        "EndColumn": 31
+      },
+      "Message": "Email address in code or config",
+      "Fingerprint": "dd913e1575b538910ca10cecbe0d8fb257f5075d05d7c9a1cd7307d39909b854",
+      "Metadata": {
+        "cwe": "CWE-359"
+      }
+    },
+    {
+      "ID": "IAC-121-9d590b9b2c18",
+      "RuleID": "IAC-121",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 4,
+        "EndLine": 4,
+        "StartColumn": 1,
+        "EndColumn": 7
+      },
+      "Message": "Dockerfile missing HEALTHCHECK instruction",
+      "Fingerprint": "9d590b9b2c18c7219e248982e206843d23cb57c4d8c2a0229161c96a282dd7b4",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-123-3cb0974f4012",
+      "RuleID": "IAC-123",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 7,
+        "EndLine": 7,
+        "StartColumn": 1,
+        "EndColumn": 14
+      },
+      "Message": "Dockerfile COPY without --chown flag",
+      "Fingerprint": "3cb0974f40120543f0df690f71c1d81ba34e1efdd237fbd52c767033afb736b5",
+      "Metadata": {
+        "cwe": "CWE-732"
+      }
+    },
+    {
+      "ID": "IAC-123-950950a207f9",
+      "RuleID": "IAC-123",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 9,
+        "EndLine": 9,
+        "StartColumn": 1,
+        "EndColumn": 9
+      },
+      "Message": "Dockerfile COPY without --chown flag",
+      "Fingerprint": "950950a207f915771a84bc9b1baf629aa727cf38b2bfaf0cae2458a059cff5a2",
+      "Metadata": {
+        "cwe": "CWE-732"
+      }
+    },
+    {
+      "ID": "IAC-123-17fd6f4ea76a",
+      "RuleID": "IAC-123",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 27,
+        "EndLine": 27,
+        "StartColumn": 1,
+        "EndColumn": 20
+      },
+      "Message": "Dockerfile COPY without --chown flag",
+      "Fingerprint": "17fd6f4ea76ae90f76efaa5b9f5648fe1c9d279f80f35834c3780ba8b8a1b897",
+      "Metadata": {
+        "cwe": "CWE-732"
+      }
+    },
+    {
+      "ID": "IAC-124-e13c3239eacb",
+      "RuleID": "IAC-124",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "Dockerfile",
+        "StartLine": 4,
+        "EndLine": 4,
+        "StartColumn": 1,
+        "EndColumn": 7
+      },
+      "Message": "Dockerfile missing LABEL maintainer",
+      "Fingerprint": "e13c3239eacb20162130bfc20e6b9ce80e1518f96ffb1a46124af723f2520484",
+      "Metadata": {
+        "cwe": "CWE-1059"
+      }
+    },
+    {
+      "ID": "IAC-131-4d4088c57c94",
+      "RuleID": "IAC-131",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload detected - verify NetworkPolicy exists",
+      "Fingerprint": "4d4088c57c946897310692575848e1cb67cae1d64c3eb24b1bea56b9e2127538",
+      "Metadata": {
+        "cwe": "CWE-284"
+      }
+    },
+    {
+      "ID": "IAC-131-3386c33ebe20",
+      "RuleID": "IAC-131",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 196,
+        "EndLine": 196,
+        "StartColumn": 1,
+        "EndColumn": 17
+      },
+      "Message": "Kubernetes workload detected - verify NetworkPolicy exists",
+      "Fingerprint": "3386c33ebe20881fe89dde43524923fae764611daee2e7eae9800447af88680a",
+      "Metadata": {
+        "cwe": "CWE-284"
+      }
+    },
+    {
+      "ID": "IAC-131-321580265250",
+      "RuleID": "IAC-131",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload detected - verify NetworkPolicy exists",
+      "Fingerprint": "321580265250c45e55cf7491b18f87a187e22dbe37ec3c99fe1d1ed40da2954f",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-284",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-131-80d8fce00bde",
+      "RuleID": "IAC-131",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "Kubernetes workload detected - verify NetworkPolicy exists",
+      "Fingerprint": "80d8fce00bde1bf2d6a36cadceed42968bdfcc029f696dd723602c926866f141",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-284",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-131-5fbe13595df0",
+      "RuleID": "IAC-131",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload detected - verify NetworkPolicy exists",
+      "Fingerprint": "5fbe13595df07fe01b9921befa061ed908235f7fc50ff460f13c4fa7f30b1d8f",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-284",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-132-09ee0c0812b1",
+      "RuleID": "IAC-132",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload without PodDisruptionBudget",
+      "Fingerprint": "09ee0c0812b167d130f8e4992c7c3bff19c061cbd4fb9909203980b9ff33827e",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-132-7d86d7ddab86",
+      "RuleID": "IAC-132",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 196,
+        "EndLine": 196,
+        "StartColumn": 1,
+        "EndColumn": 17
+      },
+      "Message": "Kubernetes workload without PodDisruptionBudget",
+      "Fingerprint": "7d86d7ddab8671848d9a39111ff77415710ccbe43b52e66fe61fba7c1cd99869",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-132-d92ac9fd122f",
+      "RuleID": "IAC-132",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload without PodDisruptionBudget",
+      "Fingerprint": "d92ac9fd122fb371f0e47f6cd6423f228d5aee9b8955ccecc5a0631501a852a1",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-132-d124b8fe8de0",
+      "RuleID": "IAC-132",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "Kubernetes workload without PodDisruptionBudget",
+      "Fingerprint": "d124b8fe8de0415dfd1c30b0f7f857c26a8b57f716a68522e03ca646fa2ba7fe",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-132-28946ad6cc87",
+      "RuleID": "IAC-132",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes workload without PodDisruptionBudget",
+      "Fingerprint": "28946ad6cc87137cf371d7d99735059e4dc3269763d810921ad8dc254101d43e",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-133-e87eaab88cff",
+      "RuleID": "IAC-133",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 6,
+        "EndLine": 6,
+        "StartColumn": 1,
+        "EndColumn": 16
+      },
+      "Message": "Kubernetes namespace without ResourceQuota",
+      "Fingerprint": "e87eaab88cff9befdc1cfef046fe6e2d09606b60d3a7581d0db9b0c899354864",
+      "Metadata": {
+        "cwe": "CWE-770"
+      }
+    },
+    {
+      "ID": "IAC-134-6cef67654956",
+      "RuleID": "IAC-134",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 6,
+        "EndLine": 6,
+        "StartColumn": 1,
+        "EndColumn": 16
+      },
+      "Message": "Kubernetes namespace without LimitRange",
+      "Fingerprint": "6cef67654956ae0f36157fe176dfa722006159232ada8502c7373a929f77c886",
+      "Metadata": {
+        "cwe": "CWE-770"
+      }
+    },
+    {
+      "ID": "IAC-135-486fba4c270a",
+      "RuleID": "IAC-135",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 209,
+        "EndLine": 209,
+        "StartColumn": 7,
+        "EndColumn": 23
+      },
+      "Message": "Kubernetes pod security context missing seccomp profile",
+      "Fingerprint": "486fba4c270af80d68193c9aecc69662fefdd80b47d14371cbf0ade290a33613",
+      "Metadata": {
+        "cwe": "CWE-250"
+      }
+    },
+    {
+      "ID": "IAC-137-e8387c5abdad",
+      "RuleID": "IAC-137",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "deploy/kubernetes/cutover-patch.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes container without resource limits",
+      "Fingerprint": "e8387c5abdadf47499b3364ec7983a5aa8f346094075450591056a2b41863f9e",
+      "Metadata": {
+        "cwe": "CWE-770"
+      }
+    },
+    {
+      "ID": "IAC-137-b3a8ba76f3e2",
+      "RuleID": "IAC-137",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without resource limits",
+      "Fingerprint": "b3a8ba76f3e2aa9870e2575489d10604a6396b20cef6d9e154bd2b35bd185f6e",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-770",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-137-602893918302",
+      "RuleID": "IAC-137",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without resource limits",
+      "Fingerprint": "60289391830294ee75398f835ef5b73b19d98f29addf73db76f4e53e0e99bf3b",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-770",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-138-5a0948d16847",
+      "RuleID": "IAC-138",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "deploy/kubernetes/cutover-patch.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes container without resource requests",
+      "Fingerprint": "5a0948d16847c022a17355cf1ecb16cd05a98e6b345fdbc887aa0c267c7e27c5",
+      "Metadata": {
+        "cwe": "CWE-770"
+      }
+    },
+    {
+      "ID": "IAC-138-46320ce767fb",
+      "RuleID": "IAC-138",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without resource requests",
+      "Fingerprint": "46320ce767fb4487df7debabc1d33d23949cc8647e601f9f9f90e1764bda7815",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-770",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-138-c172e25a4d90",
+      "RuleID": "IAC-138",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without resource requests",
+      "Fingerprint": "c172e25a4d902d1e4434ae132f0a307d9c7ad890750387723048b9c74a7a22c1",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-770",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-139-07c1c3448dc0",
+      "RuleID": "IAC-139",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without liveness probe",
+      "Fingerprint": "07c1c3448dc024e8ec0afb7214d8ebd3f1746ac5f6674c27ba61ab1a6a5be0d2",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-139-564639e35b86",
+      "RuleID": "IAC-139",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/cutover-patch.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes container without liveness probe",
+      "Fingerprint": "564639e35b86def578266ee884ddac926a78e0b333885529ff93427130faf139",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-139-c514eeafd09c",
+      "RuleID": "IAC-139",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without liveness probe",
+      "Fingerprint": "c514eeafd09cac8ed22b95be3ecf6f5ddf651171ac2b92a948be0d30a314fb9f",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-139-d20cbada5a15",
+      "RuleID": "IAC-139",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without liveness probe",
+      "Fingerprint": "d20cbada5a157b0e71d9f98a05e9dbaf858665a5a4dde371f30dfda803be4efd",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-140-9cc53504595e",
+      "RuleID": "IAC-140",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without readiness probe",
+      "Fingerprint": "9cc53504595e30feadc49590926358e5630deb0146cf840e18daa6c594b3e6eb",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-140-c4667de532f3",
+      "RuleID": "IAC-140",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/cutover-patch.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes container without readiness probe",
+      "Fingerprint": "c4667de532f3250459b8b6dd2537d4418afa25948be7f05d4f359f1b911457e3",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-140-93c3948a3c61",
+      "RuleID": "IAC-140",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without readiness probe",
+      "Fingerprint": "93c3948a3c61bfb9b651e4120a66ae02f2a24d699e0fea9b163767327a8e17fd",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-140-fd0f11b712e1",
+      "RuleID": "IAC-140",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes container without readiness probe",
+      "Fingerprint": "fd0f11b712e1ccf460e0a6e4930a0f4afaf880c55444b535e02163db835bf9ae",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-141-4884595af749",
+      "RuleID": "IAC-141",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 202,
+        "EndLine": 202,
+        "StartColumn": 3,
+        "EndColumn": 14
+      },
+      "Message": "Kubernetes Deployment with single replica (no high availability)",
+      "Fingerprint": "4884595af749c12cbc3668cf1aff90f10a0f723ea91242c0fc98afe3c89a34bb",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-141-e76d47bda0f0",
+      "RuleID": "IAC-141",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 21,
+        "EndLine": 21,
+        "StartColumn": 11,
+        "EndColumn": 22
+      },
+      "Message": "Kubernetes Deployment with single replica (no high availability)",
+      "Fingerprint": "e76d47bda0f09a3519b8e3247bf4ffedd1864583c49a4943940690c123173e47",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-142-27a6aae3ba07",
+      "RuleID": "IAC-142",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes Deployment without pod anti-affinity rules",
+      "Fingerprint": "27a6aae3ba07af8ffa22ff66fdaa517d2f54f313c363f5ed46e35eeb61aafea1",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-142-3ec8611fa27d",
+      "RuleID": "IAC-142",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 196,
+        "EndLine": 196,
+        "StartColumn": 1,
+        "EndColumn": 17
+      },
+      "Message": "Kubernetes Deployment without pod anti-affinity rules",
+      "Fingerprint": "3ec8611fa27d92623c12c07d27f67f865b01581ef8cdbb902f2517cd036acada",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-142-20a136361908",
+      "RuleID": "IAC-142",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes Deployment without pod anti-affinity rules",
+      "Fingerprint": "20a136361908679a6b3a707b7b17570ad33ec803c52f8c47f9b1776ef487e6b9",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-142-6f9fafa09000",
+      "RuleID": "IAC-142",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "Kubernetes Deployment without pod anti-affinity rules",
+      "Fingerprint": "6f9fafa09000efa5d6fa0f42dbbd7a8a645c2f981571a08b7e9c41008b79f7cd",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-142-ba4217a7b9f9",
+      "RuleID": "IAC-142",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Kubernetes Deployment without pod anti-affinity rules",
+      "Fingerprint": "ba4217a7b9f9cfac57e7ff17271dce8e8642226d33a4af37839d07ff6e2fc1a9",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-145-fe450e9a7c29",
+      "RuleID": "IAC-145",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes pod without security context",
+      "Fingerprint": "fe450e9a7c29d9c355535da5baabbe818b81983335435d1e9042e759e8c608eb",
+      "Metadata": {
+        "cwe": "CWE-250"
+      }
+    },
+    {
+      "ID": "IAC-145-b66cc6e1c734",
+      "RuleID": "IAC-145",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/cutover-patch.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes pod without security context",
+      "Fingerprint": "b66cc6e1c734f1c849ac6f6d5103c634052a0f30e8156bb17900622cc921b582",
+      "Metadata": {
+        "cwe": "CWE-250"
+      }
+    },
+    {
+      "ID": "IAC-145-afdcb904898a",
+      "RuleID": "IAC-145",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 213,
+        "EndLine": 213,
+        "StartColumn": 7,
+        "EndColumn": 18
+      },
+      "Message": "Kubernetes pod without security context",
+      "Fingerprint": "afdcb904898ac6636384c5dcde6823678ff713396616727c6405e920e7e4aaa3",
+      "Metadata": {
+        "cwe": "CWE-250"
+      }
+    },
+    {
+      "ID": "IAC-145-5acaa36b8c9b",
+      "RuleID": "IAC-145",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes pod without security context",
+      "Fingerprint": "5acaa36b8c9bf373c7eaaa1bd3d489cbd9ccd0713dc6f0c095fdc194dfcfa80d",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-250",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-145-7552206d2540",
+      "RuleID": "IAC-145",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 28,
+        "EndLine": 28,
+        "StartColumn": 15,
+        "EndColumn": 26
+      },
+      "Message": "Kubernetes pod without security context",
+      "Fingerprint": "7552206d2540cddfff3416e9b55080da4b951974d7e7bb2debe610973fd39337",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-250",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-176-868def413ff9",
+      "RuleID": "IAC-176",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart template missing securityContext",
+      "Fingerprint": "868def413ff9ee343db56bf2f2fe10a24b704187ea352bb74cacd07e7ef7a1e4",
+      "Metadata": {
+        "cwe": "CWE-250"
+      }
+    },
+    {
+      "ID": "IAC-176-5a0884e0d46f",
+      "RuleID": "IAC-176",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart template missing securityContext",
+      "Fingerprint": "5a0884e0d46f7e1318e544cd872fe87a03752875d1f7684c5a55538cbfdd7835",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-250",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-176-b8bb915eb240",
+      "RuleID": "IAC-176",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "Helm chart template missing securityContext",
+      "Fingerprint": "b8bb915eb240dd44559c717bf23b45bc8efab468f12cc7e51adb2e81bad6021e",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-250",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-176-788daaaf550e",
+      "RuleID": "IAC-176",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart template missing securityContext",
+      "Fingerprint": "788daaaf550ee7a9c091626bcbad0d7fc05553a96dc8ad201a09aee5637aafa6",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-250",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-183-f2df2a8863cb",
+      "RuleID": "IAC-183",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart without PodDisruptionBudget template",
+      "Fingerprint": "f2df2a8863cb8cef8c918774a63fb852c0f9a89771f08cfff73453cb37d99fab",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-183-56fd048a5d7f",
+      "RuleID": "IAC-183",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 196,
+        "EndLine": 196,
+        "StartColumn": 1,
+        "EndColumn": 17
+      },
+      "Message": "Helm chart without PodDisruptionBudget template",
+      "Fingerprint": "56fd048a5d7f5eaf5a7f3affc41059972842ed9ae4ff509bcb0e2086dafdedcb",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-183-8deb8bd56da1",
+      "RuleID": "IAC-183",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart without PodDisruptionBudget template",
+      "Fingerprint": "8deb8bd56da12d6ab218b1cbfc0bee39f1627f9c8194fd1a4ba14cc4e9a08d70",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-183-547304c5175a",
+      "RuleID": "IAC-183",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "Helm chart without PodDisruptionBudget template",
+      "Fingerprint": "547304c5175a8e9474e4d2cad662f4e5b7ac18c15a9b679d5a079be2cb5af637",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-183-487f13943e0e",
+      "RuleID": "IAC-183",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "Helm chart without PodDisruptionBudget template",
+      "Fingerprint": "487f13943e0e90667577f8b0252e9c2259bfbb637dda25da937a877a494af705",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-286-bd22e511722d",
+      "RuleID": "IAC-286",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "K8s workload (verify NetworkPolicy exists)",
+      "Fingerprint": "bd22e511722d600b10b5c4a81b07a85374a6056fff08ee0cb52f833a8ebe44c5",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-286-eba64a5789d4",
+      "RuleID": "IAC-286",
+      "Severity": "low",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 196,
+        "EndLine": 196,
+        "StartColumn": 1,
+        "EndColumn": 17
+      },
+      "Message": "K8s workload (verify NetworkPolicy exists)",
+      "Fingerprint": "eba64a5789d4fe3e6644e7c98aaea8e63b42f2e5e923c198a85c06fe1ea8b3ef",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-286-51f6cc55484c",
+      "RuleID": "IAC-286",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "K8s workload (verify NetworkPolicy exists)",
+      "Fingerprint": "51f6cc55484c0f5f5915b0c7b17ec67c326dbb9084a4477f96322e29f6a517de",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-286-7b1feec7f532",
+      "RuleID": "IAC-286",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 34,
+        "EndLine": 34,
+        "StartColumn": 11,
+        "EndColumn": 27
+      },
+      "Message": "K8s workload (verify NetworkPolicy exists)",
+      "Fingerprint": "7b1feec7f53257b9a4b2645ca398632d1737750fdb445e93c304cbf9b9bbe00b",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-286-f408b57adc23",
+      "RuleID": "IAC-286",
+      "Severity": "info",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 9,
+        "EndColumn": 25
+      },
+      "Message": "K8s workload (verify NetworkPolicy exists)",
+      "Fingerprint": "f408b57adc23aaf1c97986422ccdd846f3c12e61276f417bf7a1ddeb223e7841",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-308-52922952e40b",
+      "RuleID": "IAC-308",
+      "Severity": "low",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": ".github/workflows/nox-remediate.yml",
+        "StartLine": 9,
+        "EndLine": 9,
+        "StartColumn": 3,
+        "EndColumn": 21
+      },
+      "Message": "GHA manual workflow dispatch enabled",
+      "Fingerprint": "52922952e40b8c5ebd4fef0969dd782d57266e9ecccc4e9bddc9be74f0f6daa2",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-309-8c9a05e7d0c8",
+      "RuleID": "IAC-309",
+      "Severity": "low",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": ".github/workflows/ci.yml",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 3,
+        "EndColumn": 27
+      },
+      "Message": "GHA cancels in-progress runs (verify intent)",
+      "Fingerprint": "8c9a05e7d0c8a05b61d4c18aefce8e2dc91a85c3456246a1c92bea30dbb416d8",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-314-8378df7a1d4a",
+      "RuleID": "IAC-314",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": ".github/workflows/nox-remediate.yml",
+        "StartLine": 12,
+        "EndLine": 12,
+        "StartColumn": 3,
+        "EndColumn": 18
+      },
+      "Message": "GHA workflow has contents write permission",
+      "Fingerprint": "8378df7a1d4adb5806616a668bc89e456b48fe9b7212ca5799b5b8eddbe0ae9c",
+      "Metadata": {
+        "cwe": "CWE-284"
+      }
+    },
+    {
+      "ID": "IAC-314-e37e2faa5f7d",
+      "RuleID": "IAC-314",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": ".github/workflows/release.yml",
+        "StartLine": 8,
+        "EndLine": 8,
+        "StartColumn": 3,
+        "EndColumn": 18
+      },
+      "Message": "GHA workflow has contents write permission",
+      "Fingerprint": "e37e2faa5f7d812400d1323a31d22e93b710b881ea06f3b656d724454d47a8f4",
+      "Metadata": {
+        "cwe": "CWE-284",
+        "gha_context": "justified_by_consumer_action",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-315-67d1566bc98d",
+      "RuleID": "IAC-315",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": ".github/workflows/release.yml",
+        "StartLine": 50,
+        "EndLine": 50,
+        "StartColumn": 7,
+        "EndColumn": 22
+      },
+      "Message": "GHA workflow has packages write permission",
+      "Fingerprint": "67d1566bc98dd13ba7ce93f32980089dd18f1516c29d70443f17566e2ea4dea6",
+      "Metadata": {
+        "cwe": "CWE-284",
+        "gha_context": "justified_by_consumer_action",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-370-a50c62ec189c",
+      "RuleID": "IAC-370",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 212,
+        "EndLine": 212,
+        "StartColumn": 9,
+        "EndColumn": 23
+      },
+      "Message": "K8s pod defines fsGroup (verify intended GID)",
+      "Fingerprint": "a50c62ec189c0a2ccd84dd16c7208b5cefb64bc29aa27fe16ee6350891fdc223",
+      "Metadata": {
+        "cwe": "CWE-732"
+      }
+    },
+    {
+      "ID": "IAC-379-30f4c6562bcd",
+      "RuleID": "IAC-379",
+      "Severity": "info",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/rollout-config.example.yaml",
+        "StartLine": 57,
+        "EndLine": 57,
+        "StartColumn": 3,
+        "EndColumn": 35
+      },
+      "Message": "K8s CronJob defines schedule (verify timezone)",
+      "Fingerprint": "30f4c6562bcdaeee6c93ce5b9cc0f5d7f1d36812cee3d42b3060a910166bb182",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "low"
+      }
+    },
+    {
+      "ID": "IAC-464-4e9bbc1f8718",
+      "RuleID": "IAC-464",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "demo/rollops.yaml",
+        "StartLine": 4,
+        "EndLine": 4,
+        "StartColumn": 1,
+        "EndColumn": 358
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "4e9bbc1f8718e955456a40e73f1af65f530a720ebbfb70c5e5ee1bc0e4619e06",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-464-a6be4e8a7e98",
+      "RuleID": "IAC-464",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "deploy/kubernetes/rollopsd.yaml",
+        "StartLine": 5,
+        "EndLine": 5,
+        "StartColumn": 1,
+        "EndColumn": 10961
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "a6be4e8a7e98e2e9655bf97d136cfaef37f7a067ffb09e0097e321505dba6b5f",
+      "Metadata": {
+        "cwe": "CWE-693"
+      }
+    },
+    {
+      "ID": "IAC-464-e9985f553d3a",
+      "RuleID": "IAC-464",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/canary-with-analysis.example.yaml",
+        "StartLine": 4,
+        "EndLine": 4,
+        "StartColumn": 1,
+        "EndColumn": 218
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "e9985f553d3a8c7a407212b41cc491491a74ffff0ae7a1c4b32f84104f775bd8",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-464-511ba67bfd68",
+      "RuleID": "IAC-464",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/canary-with-feature-flags.example.yaml",
+        "StartLine": 1,
+        "EndLine": 1,
+        "StartColumn": 1,
+        "EndColumn": 398
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "511ba67bfd6868eecfca96a5ad1acaa547378c6f5d5e530fcc96a4ae89cc4029",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-464-243141ca753a",
+      "RuleID": "IAC-464",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/helm-rollout.example.yaml",
+        "StartLine": 6,
+        "EndLine": 6,
+        "StartColumn": 1,
+        "EndColumn": 205
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "243141ca753aff5dc813bed12cc8f769f369547272b1c23b8f1f24087c1b72d2",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-464-cb7e824e80ee",
+      "RuleID": "IAC-464",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/kubernetes-rollout.example.yaml",
+        "StartLine": 1,
+        "EndLine": 1,
+        "StartColumn": 1,
+        "EndColumn": 395
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "cb7e824e80ee2a5aaae75d71513725172105588981e0ce61e18fad65f061e261",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "IAC-464-67176cd8c21d",
+      "RuleID": "IAC-464",
+      "Severity": "low",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "examples/manifest-from.example.yaml",
+        "StartLine": 13,
+        "EndLine": 13,
+        "StartColumn": 1,
+        "EndColumn": 205
+      },
+      "Message": "K8s Namespace defined (informational)",
+      "Fingerprint": "67176cd8c21d11cd519d7ed7bf54df5521fb9187faa4eecf36ccd476ec1281c0",
+      "Metadata": {
+        "context": "non-production",
+        "cwe": "CWE-693",
+        "original_severity": "medium"
+      }
+    },
+    {
+      "ID": "SEC-083-ab87814a2609",
+      "RuleID": "SEC-083",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/git/repo_test.go",
+        "StartLine": 142,
+        "EndLine": 142,
+        "StartColumn": 43,
+        "EndColumn": 81
+      },
+      "Message": "Basic auth header detected",
+      "Fingerprint": "ab87814a2609c2c6f7863fba5e8b09addb9328a9f061ca0058e79d5f64c47173",
+      "Metadata": {
+        "cwe": "CWE-798"
+      }
+    },
+    {
+      "ID": "SEC-161-2655c3f84551",
+      "RuleID": "SEC-161",
+      "Severity": "medium",
+      "Confidence": "medium",
+      "Location": {
+        "FilePath": "internal/store/sqlite/sqlite.go",
+        "StartLine": 67,
+        "EndLine": 67,
+        "StartColumn": 22,
+        "EndColumn": 107
+      },
+      "Message": "High-entropy string in assignment (possible secret)",
+      "Fingerprint": "2655c3f84551bec825dbdef2249a118e399e6185eb125bfe6b68b0e68c0c2a03",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "5.0"
+      }
+    },
+    {
+      "ID": "SEC-162-d0547bcab5c1",
+      "RuleID": "SEC-162",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/store/sqlite/sqlite.go",
+        "StartLine": 67,
+        "EndLine": 67,
+        "StartColumn": 22,
+        "EndColumn": 107
+      },
+      "Message": "High-entropy base64 blob detected (possible encoded secret)",
+      "Fingerprint": "d0547bcab5c16b1b130c2b77de427bc6dc43ccc3c91b012b03afa8614134271c",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "5.2",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-a4ad9cf249e4",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "cmd/rollopsd/tls_integration_test.go",
+        "StartLine": 41,
+        "EndLine": 41,
+        "StartColumn": 26,
+        "EndColumn": 47
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "a4ad9cf249e401d5326a83398275aff0edded5312e6d3ae9f83e359b59d0081f",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-8d49878e25b9",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "cmd/rollopsd/tls_integration_test.go",
+        "StartLine": 73,
+        "EndLine": 73,
+        "StartColumn": 17,
+        "EndColumn": 46
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "8d49878e25b923c1ae7addceaef406acb6cb90b7b587a5ab71bb7733eb8f26df",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-8d49878e25b9",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "cmd/rollopsd/tls_integration_test.go",
+        "StartLine": 103,
+        "EndLine": 103,
+        "StartColumn": 17,
+        "EndColumn": 46
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "8d49878e25b923c1ae7addceaef406acb6cb90b7b587a5ab71bb7733eb8f26df",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-63429dc6f276",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/grpcapi/mtls_test.go",
+        "StartLine": 51,
+        "EndLine": 51,
+        "StartColumn": 26,
+        "EndColumn": 47
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "63429dc6f2761fb587e9a10bdf9ee5de8aeffc635a9a59cc1f5b895970090aed",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-88821d1ae5e8",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/grpcapi/mtls_test.go",
+        "StartLine": 83,
+        "EndLine": 83,
+        "StartColumn": 17,
+        "EndColumn": 46
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "88821d1ae5e80e170e6501a2c526fdfdc9804b3f926300347a70c301fbcb9a21",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-7a65538e608d",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/security/confine_env_test.go",
+        "StartLine": 16,
+        "EndLine": 16,
+        "StartColumn": 3,
+        "EndColumn": 35
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "7a65538e608df1072d5a0fbefb779525895cbf2716675016edb9a1044942915c",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-7c92997f92c9",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/security/confine_env_test.go",
+        "StartLine": 17,
+        "EndLine": 17,
+        "StartColumn": 3,
+        "EndColumn": 30
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "7c92997f92c9c2035f1c09d762a0a742926b15373150ae35ee1c75dd510effe2",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-1f34986c47be",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/security/confine_env_test.go",
+        "StartLine": 18,
+        "EndLine": 18,
+        "StartColumn": 3,
+        "EndColumn": 38
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "1f34986c47beee29510e91f206e277f7932c762a6c82aac62c78d8defc087277",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-5c185b5cfb86",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/security/confine_env_test.go",
+        "StartLine": 19,
+        "EndLine": 19,
+        "StartColumn": 3,
+        "EndColumn": 35
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "5c185b5cfb86d9f0dd3eb4e8d88d479b5438bb0be1c3daf032ed6fb665eb75e1",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-5663b93e94a3",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/servertls/servertls_test.go",
+        "StartLine": 36,
+        "EndLine": 36,
+        "StartColumn": 26,
+        "EndColumn": 55
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "5663b93e94a3f64506e6ae84ccc2fbd329826d4973b622817f0eeeaf79ca0df7",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "SEC-163-dee6a703417c",
+      "RuleID": "SEC-163",
+      "Severity": "medium",
+      "Confidence": "low",
+      "Location": {
+        "FilePath": "internal/store/sqlite/sqlite.go",
+        "StartLine": 67,
+        "EndLine": 67,
+        "StartColumn": 22,
+        "EndColumn": 107
+      },
+      "Message": "High-entropy hex string detected (possible secret key)",
+      "Fingerprint": "dee6a703417ce6062fe2ecea37cdbc579a54c6bcf059e0d53371e29531e1170a",
+      "Metadata": {
+        "cwe": "CWE-798",
+        "entropy_threshold": "4.5",
+        "require_context": "true"
+      }
+    },
+    {
+      "ID": "TAINT-004-e60f86d47938",
+      "RuleID": "TAINT-004",
+      "Severity": "high",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": "internal/pluginhost/cosign.go",
+        "StartLine": 32,
+        "EndLine": 36,
+        "StartColumn": 0,
+        "EndColumn": 0
+      },
+      "Message": "Path Traversal: tainted input flows to file operations: keyPath flows from env_var (line 32) to os.ReadFile (line 36) in VerifyArtifact",
+      "Fingerprint": "e60f86d47938f007c8d4b4802ef765d9f1e9426feaa9acfe0acb435157b13c9f",
+      "Metadata": {
+        "cwe": "CWE-22",
+        "function": "VerifyArtifact",
+        "language": "go",
+        "sink_line": "36",
+        "source_kind": "env_var",
+        "source_line": "32",
+        "source_var": "keyPath"
+      }
+    },
+    {
+      "ID": "VULN-001-5c0a9e142e69",
+      "RuleID": "VULN-001",
+      "Severity": "info",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": "go.mod",
+        "StartLine": 1,
+        "EndLine": 1,
+        "StartColumn": 0,
+        "EndColumn": 0
+      },
+      "Message": "Known vulnerability GO-2026-5932 in golang.org/x/crypto@v0.53.0: The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues (not reachable: the affected package is not linked by this build)",
+      "Fingerprint": "5c0a9e142e693d1304ef4735caa6ba1ffd5cd6ae048b27a797674b60c7330dea",
+      "Metadata": {
+        "affected_imports": "golang.org/x/crypto/openpgp,golang.org/x/crypto/openpgp/packet,golang.org/x/crypto/openpgp/armor,golang.org/x/crypto/openpgp/clearsign,golang.org/x/crypto/openpgp/errors,golang.org/x/crypto/openpgp/elgamal,golang.org/x/crypto/openpgp/s2k",
+        "aliases": "",
+        "ecosystem": "go",
+        "package": "golang.org/x/crypto",
+        "reachable": "false",
+        "version": "v0.53.0",
+        "vuln_id": "GO-2026-5932"
+      }
+    },
+    {
+      "ID": "VULN-001-7000785f4c74",
+      "RuleID": "VULN-001",
+      "Severity": "medium",
+      "Confidence": "high",
+      "Location": {
+        "FilePath": "internal/ui/web/package-lock.json",
+        "StartLine": 1,
+        "EndLine": 1,
+        "StartColumn": 0,
+        "EndColumn": 0
+      },
+      "Message": "Known vulnerability GHSA-2v37-7h3g-55p8 in nanoid@3.3.16: nanoid: custom generators can loop indefinitely when size is zero",
+      "Fingerprint": "7000785f4c74e00f416aac39e3aba5c7d5a8389b64c5218f0c1c2552ec16b6b3",
+      "Metadata": {
+        "aliases": "CVE-2026-67213",
+        "ecosystem": "npm",
+        "fixed_in": "3.3.17",
+        "package": "nanoid",
+        "remediation_action": "upgrade",
+        "remediation_command": "npm install nanoid@3.3.17",
+        "version": "3.3.16",
+        "vuln_id": "GHSA-2v37-7h3g-55p8"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "2.0.0",
+  "components": [
+    {
+      "name": "settings.local.json",
+      "type": "ai_component",
+      "path": ".claude/settings.local.json"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "ai_component",
+      "path": "AGENTS.md"
+    }
+  ]
+}

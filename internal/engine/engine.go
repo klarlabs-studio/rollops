@@ -852,7 +852,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 				rb, rbErr := e.applyRollback(ctx, &r, prior, "auto-rollback on deploy failure: "+runErr.Error(), cfg.Spec.DatabaseRollbackHook(), true)
 				if rbErr == nil {
 					e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: rb.ID, TargetRef: ref, Phase: string(rb.Phase), Actor: req.Initiator, Detail: "auto-rollback: " + runErr.Error()})
-					e.notifyEvent(ctx, notify.Event{Kind: notify.RolledBack, TargetRef: ref, RolloutID: rb.ID, Detail: runErr.Error()})
+					e.notifyDeployment(ctx, notify.RolledBack, rb, runErr.Error())
 					return &rb, fmt.Errorf("engine: apply: %w (auto-rolled back to prior manifest)", runErr)
 				}
 				// The rollback itself failed — fall through to the mark-rolled-back
@@ -864,7 +864,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		r.UpdatedAt = e.now()
 		_ = e.store.SaveRollout(ctx, r)
 		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: runErr.Error()})
-		e.notifyEvent(ctx, notify.Event{Kind: notify.Failed, TargetRef: ref, RolloutID: r.ID, Detail: runErr.Error()})
+		e.notifyDeployment(ctx, notify.Failed, r, runErr.Error())
 		return &r, fmt.Errorf("engine: apply: %w", runErr)
 	}
 	if _, err := lc.Send(rollout.EventDeployed); err != nil {
@@ -917,7 +917,7 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 		if err != nil {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: auto-rollback after %q: %w", reason, err)
 		}
-		e.notifyEvent(ctx, notify.Event{Kind: notify.RolledBack, TargetRef: rb.TargetRef, RolloutID: rb.ID, Detail: reason})
+		e.notifyDeployment(ctx, notify.RolledBack, rb, reason)
 		return VerifyOutcome{Rollout: rb, RolledBack: true, Reason: reason}, nil
 	}
 	promoted, err := e.promoteWithNote(ctx, rolloutID, successNote)
@@ -928,7 +928,7 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	if flagsEnabled(c.Spec.FeatureFlags, "promote") {
 		e.driveFlag(ctx, promoted.TargetRef, c.Spec.FeatureFlags, 100)
 	}
-	e.notifyEvent(ctx, notify.Event{Kind: notify.Promoted, TargetRef: promoted.TargetRef, RolloutID: promoted.ID})
+	e.notifyDeployment(ctx, notify.Promoted, promoted, "")
 	return VerifyOutcome{Rollout: promoted}, nil
 }
 
@@ -1904,10 +1904,27 @@ func manifestFromConfig(c *config.Config, root string) (pt.Manifest, error) {
 		return pt.Manifest{}, fmt.Errorf("engine: marshal target spec: %w", err)
 	}
 	sum := sha256.Sum256(spec)
+
+	// The declared environment is stamped onto the manifest so every notification
+	// can say where a version went, without threading config through to each
+	// notification site. An operator label of the same name wins: an explicit
+	// statement outranks a derived one.
+	labels := c.Metadata.Labels
+	if c.Spec.Target.Env != "" {
+		merged := make(map[string]string, len(labels)+1)
+		for k, v := range labels {
+			merged[k] = v
+		}
+		if _, set := merged[LabelEnvironment]; !set {
+			merged[LabelEnvironment] = c.Spec.Target.Env
+		}
+		labels = merged
+	}
+
 	return pt.Manifest{
 		Kind:     c.Spec.Target.Kind,
 		Spec:     spec,
-		Labels:   c.Metadata.Labels,
+		Labels:   labels,
 		Checksum: hex.EncodeToString(sum[:]),
 		Root:     root,
 	}, nil
