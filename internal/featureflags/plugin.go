@@ -32,7 +32,13 @@ func (p *pluginProvider) Close() error { return p.proc.Close() }
 // (the engine closes it after the rollout phase that used it). The binary is
 // sha256-verified and its manifest validated against the plugin safety policy,
 // and must declare the "featureflag" capability.
-func BuildProvider(cfg *config.FeatureFlags) (Provider, error) {
+//
+// ctx bounds launching the subprocess and reading its manifest. Both previously used
+// context.Background(), so a caller that cancelled — a rollout being abandoned, a
+// daemon shutting down — still waited out the plugin's own timeouts on a subprocess
+// that may never answer. The engine's two call sites had a ctx in scope and were
+// dropping it.
+func BuildProvider(ctx context.Context, cfg *config.FeatureFlags) (Provider, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("featureflags: nil config")
 	}
@@ -44,11 +50,14 @@ func BuildProvider(cfg *config.FeatureFlags) (Provider, error) {
 		return nil, fmt.Errorf("featureflags: %w", err)
 	}
 	policy := pluginhost.DefaultPolicy()
-	proc, err := pluginhost.Launch(context.Background(), real, policy.AllowedEnvVars)
+	proc, err := pluginhost.Launch(ctx, real, policy.AllowedEnvVars)
 	if err != nil {
 		return nil, fmt.Errorf("featureflags: %w", err)
 	}
-	mctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
+	// The manifest bound stays relative to now rather than inheriting a caller deadline
+	// wholesale, but a caller whose deadline is sooner still wins — the shorter of the
+	// two applies, which is what WithTimeout on a ctx that already has a deadline does.
+	mctx, cancel := context.WithTimeout(ctx, pluginhost.ManifestTimeout)
 	m, err := proc.Client.Manifest(mctx)
 	cancel()
 	if err != nil {

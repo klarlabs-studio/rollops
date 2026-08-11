@@ -73,9 +73,9 @@ type Engine struct {
 	analysis     bool
 	confinement  security.Confinement // multi-tenant confinement policy (default off)
 	dbRollback   DatabaseRollbackRunner
-	flagBuild    func(*config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
-	routerBuild  func(*config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
-	metricsBuild func(*config.Analysis) (analysis.MetricsProvider, error)    // metric-provider plugin builder (test seam)
+	flagBuild    func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) // flag plugin builder (test seam)
+	routerBuild  func(*config.TrafficRouting) (trafficrouting.Router, error)                // traffic-router plugin builder (test seam)
+	metricsBuild func(*config.Analysis) (analysis.MetricsProvider, error)                   // metric-provider plugin builder (test seam)
 }
 
 // Option configures an Engine.
@@ -176,7 +176,7 @@ func WithMetricAnalysis() Option { return func(e *Engine) { e.analysis = true } 
 
 // WithFlagProviderBuilder overrides how a feature-flag provider is built from
 // config (test seam; default launches the configured flag plugin).
-func WithFlagProviderBuilder(f func(*config.FeatureFlags) (featureflags.Provider, error)) Option {
+func WithFlagProviderBuilder(f func(context.Context, *config.FeatureFlags) (featureflags.Provider, error)) Option {
 	return func(e *Engine) { e.flagBuild = f }
 }
 
@@ -234,7 +234,7 @@ func flagsEnabled(ff *config.FeatureFlags, phase string) bool {
 // launched flag provider, then closes it. Best-effort: a flag failure is
 // logged via audit and never aborts the rollout.
 func (e *Engine) driveFlag(ctx context.Context, ref string, ff *config.FeatureFlags, percentage int) {
-	prov, err := e.flagBuild(ff)
+	prov, err := e.flagBuild(ctx, ff)
 	if err != nil {
 		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "featureflag build failed: " + err.Error()})
 		return
@@ -1647,7 +1647,7 @@ func (e *Engine) resetDelivery(ctx context.Context, r *rollout.Rollout) {
 // Disabling is unconditional (independent of the flag's `when`): a flag already
 // at 0% is safe to disable, and a partially rolled-out flag must be turned off.
 func (e *Engine) driveFlagDisable(ctx context.Context, ref string, ff *config.FeatureFlags) {
-	prov, err := e.flagBuild(ff)
+	prov, err := e.flagBuild(ctx, ff)
 	if err != nil {
 		e.record(audit.Entry{Action: audit.ActionRollback, TargetRef: ref, Detail: "featureflag build failed: " + err.Error()})
 		return

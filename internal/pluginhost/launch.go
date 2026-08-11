@@ -130,7 +130,7 @@ func Launch(ctx context.Context, path string, allowedEnv []string) (*Process, er
 		return nil, fmt.Errorf("plugin: launch %s: %w", path, err)
 	}
 
-	hs, err := awaitHandshake(stdout)
+	hs, err := awaitHandshake(ctx, stdout)
 	if err != nil {
 		killLaunch(cmd, stdin)
 		return nil, err
@@ -168,7 +168,19 @@ func killLaunch(cmd *exec.Cmd, stdin io.Closer) {
 	}
 }
 
-func awaitHandshake(r io.Reader) (pubplugin.Handshake, error) {
+// awaitHandshake reads the plugin's handshake line, bounded by the caller's context.
+//
+// The bound was previously a bare 10s timer that ignored ctx entirely, which had two
+// costs. A caller that cancelled — a shutting-down daemon, an abandoned request — still
+// waited the full ten seconds on a plugin that was never going to answer. And no caller
+// could state a bound of its own, so a slow machine produced a failure indistinguishable
+// from a broken plugin.
+//
+// Now: a deadline the caller set is honored, whether shorter or longer than the default,
+// because the caller knows what it is willing to wait. Absent a deadline the 10s default
+// applies. Either way the wait is finite, which is the property the constant exists to
+// guarantee — a plugin that dials and never speaks must not hang the daemon.
+func awaitHandshake(ctx context.Context, r io.Reader) (pubplugin.Handshake, error) {
 	type result struct {
 		hs  pubplugin.Handshake
 		err error
@@ -189,11 +201,25 @@ func awaitHandshake(r io.Reader) (pubplugin.Handshake, error) {
 		}
 		ch <- result{err: fmt.Errorf("plugin: exited before handshake")}
 	}()
+	bound := handshakeTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			bound = remaining
+		}
+	}
+
+	timer := time.NewTimer(bound)
+	defer timer.Stop()
+
 	select {
 	case res := <-ch:
 		return res.hs, res.err
-	case <-time.After(handshakeTimeout):
-		return pubplugin.Handshake{}, fmt.Errorf("plugin: handshake timeout after %s", handshakeTimeout)
+	case <-ctx.Done():
+		// Distinguished from the timeout below: a cancelled caller is not a slow plugin,
+		// and reporting one as the other sends someone to debug a plugin that was fine.
+		return pubplugin.Handshake{}, fmt.Errorf("plugin: handshake canceled: %w", ctx.Err())
+	case <-timer.C:
+		return pubplugin.Handshake{}, fmt.Errorf("plugin: handshake timeout after %s", bound)
 	}
 }
 

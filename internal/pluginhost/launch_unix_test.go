@@ -21,7 +21,12 @@ func TestLaunch_KillsProcessGroupOnHandshakeFailure(t *testing.T) {
 	pidfile := t.TempDir() + "/child.pid"
 	t.Setenv("PROBE_FORK_PIDFILE", pidfile)
 
-	_, err := Launch(context.Background(), bin, []string{"PROBE_FORK_PIDFILE"})
+	// Generous for the same reason as TestLaunch_ConfinesEnvironment: this launches a
+	// real subprocess and the default 10s measures machine load as much as the plugin.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	_, err := Launch(ctx, bin, []string{"PROBE_FORK_PIDFILE"})
 	if err == nil {
 		t.Fatal("wrong-cookie handshake must fail Launch")
 	}

@@ -49,7 +49,7 @@ func (r *recordingFlagProvider) ApplyFlag(_ context.Context, c featureflags.Chan
 func TestApply_DrivesFeatureFlagPerStep(t *testing.T) {
 	fake := &fakeTarget{}
 	rec := &recordingFlagProvider{}
-	e, _ := newEngine(t, fake, WithFlagProviderBuilder(func(*config.FeatureFlags) (featureflags.Provider, error) {
+	e, _ := newEngine(t, fake, WithFlagProviderBuilder(func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) {
 		return rec, nil
 	}))
 	c, err := config.Load([]byte(canaryFlagYAML))
