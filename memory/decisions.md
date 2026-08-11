@@ -106,3 +106,42 @@ Append-only. Superseded entries get `→ superseded [date]`, never deleted.
   import (it links `chacha20`/`cryptobyte`). The original claim came from checking
   module@version against the build and stopping there. → supersedes the
   "rollops has a live dependency vuln" note of 2026-07-19.
+
+## 2026-08-11 — External governance and deployment evidence
+
+- **Governance and deployment evidence cross a wire protocol, never a Go
+  dependency.** Rollops must not depend on relicta and relicta must not depend on
+  Rollops: they are separate products, and a user of one must never be obliged to
+  adopt the other. That rules out a relicta-shaped `governance.Provider` in this
+  tree, and a Rollops-shaped receiver in relicta's. Recorded in full as relicta
+  ADR-012 and summarized in `docs/external-governance.md`; the two records are
+  deliberately independent so neither repo has to read the other's docs.
+- **Both flows are Rollops-initiated.** Rollops asks "may I deploy version V to
+  environment E?" before rolling out, and reports "V reached E at T" after. The
+  governor never reaches into a cluster, holds no cluster credentials, and does not
+  poll. This also settles fidelity: a manifest commit is a *request* to deploy,
+  while the controller reporting healthy is the *fact*, and only we know the fact.
+- **The provider stays generic.** `internal/governance.Provider` gets an HTTP
+  implementation configured with a URL, a signing secret and a timeout — not a
+  named integration. Anything answering the documented contract works. With no URL
+  configured, behaviour is exactly as today (`Hook` returns allowed), so nothing
+  changes for a user who has not asked for governance.
+- **A configured gate fails closed.** `Hook` returning allowed with no provider is
+  correct — governance not requested must not block. But once a provider *is*
+  configured and unreachable, the answer is deny. A gate that evaporates when the
+  network is bad is absent exactly when a rushed deploy is most likely. "Not
+  requested" and "requested but unavailable" are different states and must not
+  produce the same outcome.
+- **`notify.Event` gains `version` and `environment`.** The payload carries
+  `{kind, target_ref, rollout_id, detail}` today, and a deployment record needs the
+  version that landed. A receiver should not have to call back to understand what it
+  was told, so the fields go in the event rather than being resolved afterwards.
+- **Two risk scores, two questions, neither recomputed.** We score the *rollout* —
+  which target, what traffic share, what depends on it, what a failure there costs.
+  An external governor scores the *change* — what is in it. When we ask for a
+  decision, its score arrives in `Decision.Evidence` as a fact we record, not as an
+  input we re-derive. Written down because two components producing one number for
+  one change is a known source of silent disagreement.
+- **Invariant:** this repo must build, test and pass CI with relicta absent, and
+  `go.mod` must never reference it. Worth a test asserting the absence, because the
+  decision decays the first time someone reaches for a convenient import.
