@@ -145,3 +145,43 @@ Append-only. Superseded entries get `→ superseded [date]`, never deleted.
 - **Invariant:** this repo must build, test and pass CI with relicta absent, and
   `go.mod` must never reference it. Worth a test asserting the absence, because the
   decision decays the first time someone reaches for a convenient import.
+
+## 2026-08-11 — The governance gate is wired, and what that changed
+
+The seam existed and nothing called it: `Hook.Evaluate` had no caller and no
+provider, so a documented governance feature was doing nothing. Now `Apply` calls it.
+
+- **The gate refuses; it does not escalate.** Steps 1 and 2 of `Apply` (confinement
+  floor, risk gate) feed `needApproval`. This one does not: `Allowed == false` blocks.
+  The point of delegating a decision is that the answer is binding, and escalating to
+  approval would let an approver here overrule the system that was asked precisely
+  because it knows something the engine does not.
+- **Both entrypoints, not just the daemon.** `cmd/rollops` builds an in-process engine
+  for one-shot use. Wiring the gate only into `rollopsd` would leave `rollops apply`
+  on a laptop as the way around it, and a gate you can walk around is not one.
+- **Configured from the environment, like notify.** `ROLLOPS_GOVERNANCE_URL` /
+  `_SECRET` / `_TIMEOUT`. No config-file block, so a signing secret never has to live
+  in a committed file. An unparseable timeout keeps the 5s default rather than failing
+  startup — refusing to boot over a mistyped duration takes the deploy path down for a
+  formatting error.
+- **Anything that is not a parseable 200 denies.** A 500, an HTML error page from a
+  proxy, a timeout: none of these are decisions. Treating a broken governor as
+  permission is the same failure as treating an unreachable one as permission. The
+  audit entry distinguishes the two, because reporting an outage as a policy refusal
+  sends someone to read a policy that never ran.
+- **`doctor` reports reachability.** A fail-closed dependency on the deploy path
+  should not be discovered during an incident. The probe sends `action: "probe"` so a
+  governor can tell a readiness check from a deploy decision and not record it.
+- **`Request` gained `Environment` and `Version`.** A target ref alone is not enough
+  to decide on: prod and staging deserve different answers, and a governor holding a
+  release record needs the version to find it. Version comes from the
+  `rollops.version` label — a declared fact, not one guessed out of a target-specific
+  spec whose shape differs per kind.
+- **The wire structs are mapped field by field, not converted,** though they line up
+  today. `wireDecision` is a contract with software outside this repo; `Decision` is
+  ours. A conversion would tie them together and invite someone to "fix" a compile
+  error by editing the wire type, silently changing what every governor must send.
+  (Carries a `//nolint:staticcheck` saying so.)
+- **Still no dependency.** `TestNoGovernorDependency` passes; nothing in `internal/`
+  or `cmd/` names relicta. The provider is generic HTTP — a script answering the
+  contract works as well as a product.

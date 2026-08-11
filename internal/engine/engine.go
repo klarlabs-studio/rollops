@@ -29,6 +29,7 @@ import (
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/depgraph"
 	"go.klarlabs.de/rollops/internal/featureflags"
+	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/metricplugin"
 	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/progressive"
@@ -58,7 +59,12 @@ type Engine struct {
 	// Optional trust/delivery collaborators. When set, Apply enforces them in
 	// order; nil means that stage is skipped (keeps the bare engine simple for
 	// tests, while a daemon wires the full pipeline).
-	audit        *audit.Logger
+	audit *audit.Logger
+
+	// governance delegates the may-this-proceed decision to an external system. A
+	// zero Hook holds no provider and allows everything, so an engine that was never
+	// configured for it behaves exactly as before.
+	governance   governance.Hook
 	guardrails   *security.Guardrails
 	artifact     *security.ArtifactGate
 	secrets      secrets.Provider
@@ -121,6 +127,28 @@ func WithAudit(a *audit.Logger) Option { return func(e *Engine) { e.audit = a } 
 
 // WithGuardrails enables the agent guardrails (freeze/rate-limit/policy floor).
 func WithGuardrails(g *security.Guardrails) Option { return func(e *Engine) { e.guardrails = g } }
+
+// WithGovernance delegates the may-this-proceed decision to an external provider.
+//
+// A nil provider is a no-op rather than an error, so a caller can pass
+// governance.FromEnv(os.Getenv) unconditionally and get a gate only when the
+// operator configured one.
+func WithGovernance(p governance.Provider) Option {
+	return func(e *Engine) { e.governance = governance.Hook{Provider: p} }
+}
+
+// governanceEnvironment reports which environment a rollout is heading for.
+//
+// The rollout-time input wins over the config's declared env: a config may be
+// applied to more than one environment, and the caller performing the apply knows
+// which one this is. Falling back to the declared env keeps the field populated for
+// callers that do not supply risk inputs at all.
+func governanceEnvironment(cfg *config.Config, req ApplyRequest) string {
+	if req.Risk.Environment != "" {
+		return req.Risk.Environment
+	}
+	return cfg.Spec.Target.Env
+}
 
 // WithArtifactGate enables artifact provenance verification before deploy.
 func WithArtifactGate(g security.ArtifactGate) Option { return func(e *Engine) { e.artifact = &g } }
@@ -641,6 +669,35 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			return nil, err
 		}
 		needApproval = needApproval || d.NeedsApproval
+	}
+
+	// 3. External governance, when a provider is configured. Unlike the gates above,
+	//    this can refuse outright rather than escalate to approval: the point of
+	//    delegating a decision is that the answer is binding. Escalating instead would
+	//    let an approver here overrule a system that was asked precisely because it
+	//    knows something this engine does not.
+	//
+	//    Checked before the target lock, so a refusal costs nothing and no manifest is
+	//    built for a rollout that will not happen.
+	if decision, err := e.governance.Evaluate(ctx, governance.Request{
+		Action:      "apply",
+		TargetRef:   ref,
+		Actor:       req.Initiator,
+		Environment: governanceEnvironment(cfg, req),
+		Version:     cfg.Metadata.Labels[LabelVersion],
+	}); err != nil || !decision.Allowed {
+		// An unreachable governor and a refusing one both stop the deploy, but they are
+		// different problems and the audit entry says which. Reporting an outage as a
+		// policy refusal would send someone to read a policy that never ran.
+		reason := decision.Reason
+		if err != nil {
+			reason = "governance is unavailable: " + err.Error()
+		}
+		e.record(audit.Entry{
+			Action: audit.ActionApply, TargetRef: ref, Actor: req.Initiator,
+			Detail: "blocked by governance: " + reason,
+		})
+		return nil, fmt.Errorf("engine: apply: blocked by governance: %s", reason)
 	}
 
 	release, ok, err := e.acquireTarget(ctx, ref)

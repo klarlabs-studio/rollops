@@ -44,10 +44,10 @@ and a deployment record should say which of the two it represents.
 
 ## 1. The gate
 
-`internal/governance` already defines the seam:
+`internal/governance` defines the seam:
 
 ```go
-type Request  struct { Action, TargetRef string; Actor rollout.Identity }
+type Request  struct { Action, TargetRef, Environment, Version string; Actor rollout.Identity }
 type Decision struct { Allowed bool; Reason string; Evidence map[string]string }
 type Provider interface { Evaluate(ctx context.Context, req Request) (Decision, error) }
 ```
@@ -63,6 +63,68 @@ during an incident, on a bad network, mid-migration.
 `Decision.Evidence` is recorded on the rollout, so the audit trail says *why* a
 deployment was allowed — the release ID, the risk score, the approver, the policy
 that decided — rather than only that it was.
+
+### Configuring it
+
+Environment variables only, matching how `notify` is wired, so a signing secret
+never has to live in a config file that gets committed:
+
+| Variable | Meaning |
+|---|---|
+| `ROLLOPS_GOVERNANCE_URL` | The governor's endpoint. **Unset means no gate** — this is entirely opt-in. |
+| `ROLLOPS_GOVERNANCE_SECRET` | Optional. Signs the request body with HMAC-SHA256 in `X-Rollops-Signature`. |
+| `ROLLOPS_GOVERNANCE_TIMEOUT` | Optional Go duration, default `5s`. A mistyped value keeps the default rather than failing startup. |
+
+Both the daemon and the one-shot CLI read these. Wiring only the daemon would leave
+`rollops apply` on a laptop as the way around the gate, and a gate you can walk
+around is not one.
+
+`rollops doctor` reports reachability, because a fail-closed dependency on the deploy
+path should not be discovered during an incident. Its probe sends
+`action: "probe"` so a governor can recognize a readiness check and not record it as
+a deployment decision.
+
+### The wire contract
+
+Rollops POSTs this before applying, and refuses the apply unless it reads back
+`allowed: true`:
+
+```jsonc
+// request
+{
+  "action": "apply",            // "probe" for a doctor readiness check
+  "target_ref": "k8s/prod/api",
+  "environment": "prod",        // omitted when unknown
+  "version": "1.4.0",           // from the rollops.version label; omitted when unset
+  "actor_id": "pipeline-7",
+  "actor_kind": "ci"            // human | agent | ci
+}
+
+// response — HTTP 200 required; any other status is treated as "no decision"
+{
+  "allowed": false,
+  "reason": "release 1.4.0 has no approval on record",
+  "evidence": {"release_id": "run-7", "policy": "prod-requires-approval"}
+}
+```
+
+`reason` is surfaced verbatim to the operator and written to the audit entry, so
+write it for someone deciding what to do next. Anything that is not a `200` carrying
+parseable JSON — a 500, an HTML error page from a proxy, a timeout — is not a
+decision, and denies. Treating a broken governor as permission is the same failure as
+treating an unreachable one as permission.
+
+A refusal **blocks**; it does not escalate to approval. The point of delegating a
+decision is that the answer is binding — escalating instead would let an approver
+here overrule the system that was asked precisely because it knows something Rollops
+does not.
+
+### Where the version comes from
+
+`rollops.version` on the config's `metadata.labels`. Version is not first-class in
+Rollops: it lives inside a target-specific spec whose shape differs per kind, so this
+is a declared fact rather than one extracted by guessing. An absent label sends no
+version rather than one inferred from a spec Rollops does not model.
 
 ## 2. The evidence
 

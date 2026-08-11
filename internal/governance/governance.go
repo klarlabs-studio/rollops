@@ -11,6 +11,15 @@ type Request struct {
 	Action    string
 	TargetRef string
 	Actor     rollout.Identity
+
+	// Environment and Version say what is going where.
+	//
+	// A governor cannot decide much from a target reference alone: "may this proceed"
+	// has a different answer for staging than for production, and an external system
+	// holding a release record needs the version to find it. Both are optional, so a
+	// caller that does not know them can still ask.
+	Environment string
+	Version     string
 }
 
 type Decision struct {

@@ -29,3 +29,9 @@ governance request before calling it:
 
 The hook can approve, reject, or annotate rollout actions without replacing the
 hard Rollops policy floor, RBAC checks, or audit attribution.
+
+This is now a shipped feature rather than only a seam. `Apply` calls the hook after
+the risk gate, a generic HTTP provider is configured from `ROLLOPS_GOVERNANCE_URL`,
+and a refusal blocks the deploy rather than escalating it to approval. Unset means no
+gate; once set, an unreachable governor also denies. See
+`docs/external-governance.md` for the wire contract and the reasoning.

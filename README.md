@@ -133,6 +133,7 @@ See `docs/image-automation.md` for image update policy and Git writeback.
 See `docs/studio-boundary.md` for the OSS/studio product boundary.
 See `docs/optional-integrations.md` for feature flag and governance seams.
 See `docs/notifications.md` for email (briefkasten/SMTP) and webhook notifications.
+See `docs/external-governance.md` for requiring an external governor's approval before an apply (opt-in, fail-closed).
 See `docs/multi-instance.md` for Store-backed target leases and reconcile
 leader election.
 See `docs/database-rollback.md` for optional database rollback hooks.

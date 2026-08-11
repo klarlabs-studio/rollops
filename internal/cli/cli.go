@@ -16,6 +16,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
@@ -92,6 +93,12 @@ type Doctor struct {
 	Probe          DaemonProbe
 	Notifier       notify.Notifier // when set, doctor sends a test event
 	NotifyChannels []string        // channel names for display (email, webhook)
+	// Governor, when set, is the external governance provider. doctor asks it a
+	// question it can safely answer to prove it is reachable — because this gate fails
+	// closed, and an operator should learn it is unreachable from doctor rather than
+	// from a refused deploy during an incident.
+	Governor    governance.Provider
+	GovernorURL string
 	// ToolProbe reports a render tool's version (kubectl/helm), or an error when
 	// it is missing/unusable. Injectable for tests; defaults to execToolProbe.
 	ToolProbe ToolProbe
@@ -405,6 +412,22 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "notify: skipped (set ROLLOPS_BRIEFKASTEN_URL, ROLLOPS_SMTP_ADDR, or ROLLOPS_WEBHOOK_URL)")
+	}
+
+	if a.Doctor.Governor != nil {
+		// A probe rather than a real request: action "probe" tells a governor this is a
+		// readiness check and not a deploy it should record. Its verdict is irrelevant —
+		// a governor answering "no" is still working. Only an error means trouble, and
+		// with this gate failing closed, an unreachable governor blocks every apply.
+		_, err := a.Doctor.Governor.Evaluate(ctx, governance.Request{Action: "probe", TargetRef: "doctor"})
+		if err != nil {
+			_, _ = fmt.Fprintf(a.Out, "governance: fail (%v) — applies will be refused while this is unreachable\n", err)
+			failed = append(failed, "governance")
+		} else {
+			_, _ = fmt.Fprintf(a.Out, "governance: ok (%s, fail-closed)\n", a.Doctor.GovernorURL)
+		}
+	} else {
+		_, _ = fmt.Fprintln(a.Out, "governance: skipped (set ROLLOPS_GOVERNANCE_URL to require external approval)")
 	}
 
 	if len(failed) > 0 {
