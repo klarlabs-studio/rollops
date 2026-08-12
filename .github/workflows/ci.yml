@@ -26,4 +26,8 @@ jobs:
       pull-requests: write
     secrets: inherit
     with:
-      coverage: false
+      # Enabled now that .coverctl.yaml exists. The shared bar runs the suite either
+      # way; this input controls only the `coverctl check` gate, and its own
+      # description explains the previous value: "set false for repos without a
+      # threshold yet". There is a threshold now.
+      coverage: true

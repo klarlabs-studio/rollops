@@ -1,0 +1,126 @@
+# Coverage policy for Rollops.
+#
+# The shared CI bar (klarlabs-studio/.github go-ci.yml) runs the test suite either way
+# and gates on coverage only when its `coverage` input is true. That input was set false
+# when the shared workflow was adopted (#24), and its own description says why that is a
+# temporary state rather than a decision: "set false for repos without a threshold yet".
+# This file is that threshold, so the flag can be turned on.
+#
+# Thresholds lock in the coverage measured when they were written rather than aspiring
+# upward. A gate that fails on arrival gets switched off again, and a gate that is off
+# protects nothing — so this one starts by making the current state the floor, and every
+# regression from here is visible. Raising a domain is then a deliberate, reviewable edit.
+version: 1
+policy:
+  default:
+    min: 70
+  domains:
+    # Entry points. cmd/rollops is argument parsing over the library; cmd/rollopsd is
+    # wiring. Both are covered indirectly through the packages they compose, so a floor
+    # here would measure how much of main() a test happens to walk.
+    - name: cmd
+      match:
+        - ./cmd/...
+      min: 0
+
+    # The deploy path. Highest floors in the file: these decide whether a rollout
+    # proceeds, what it does, and whether it can be undone.
+    - name: engine
+      match:
+        - ./internal/engine/...
+      min: 80
+    - name: governance
+      match:
+        - ./internal/governance/...
+      min: 90
+    - name: security
+      match:
+        - ./internal/security/...
+      min: 88
+    - name: risk
+      match:
+        - ./internal/risk/...
+      min: 87
+
+    # Surfaces and adapters.
+    - name: api
+      match:
+        - ./internal/api/...
+      min: 75
+    - name: cli
+      match:
+        - ./internal/cli/...
+      min: 68
+    - name: grpcapi
+      match:
+        - ./internal/grpcapi
+      min: 63
+    - name: mcp
+      match:
+        - ./internal/mcp/...
+      min: 78
+
+    # Plugin and target machinery. Lower floors reflect subprocess and network paths
+    # that cannot be exercised without a real peer; the numbers are the current state,
+    # not an opinion about what is acceptable.
+    - name: pluginhost
+      match:
+        - ./internal/pluginhost/...
+      min: 81
+    - name: target
+      match:
+        - ./internal/target/...
+      min: 60
+    - name: featureflags
+      match:
+        - ./internal/featureflags/...
+      min: 68
+    - name: trafficrouting
+      match:
+        - ./internal/trafficrouting/...
+      min: 40
+    - name: metricplugin
+      match:
+        - ./internal/metricplugin/...
+      min: 0
+
+    # Everything else in internal, gated at the default. Listed as one domain rather
+    # than left unmatched: coverctl gates the domains it is given, and a package in no
+    # domain has no floor — which reads as coverage nobody has.
+    - name: internal
+      match:
+        - ./internal/analysis/...
+        - ./internal/audit/...
+        - ./internal/condition/...
+        - ./internal/config/...
+        - ./internal/depgraph/...
+        - ./internal/git/...
+        - ./internal/imageupdate/...
+        - ./internal/metrics/...
+        - ./internal/notify/...
+        - ./internal/progressive/...
+        - ./internal/promote/...
+        - ./internal/reconcile/...
+        - ./internal/registry/...
+        - ./internal/rollout/...
+        - ./internal/secrets/...
+        - ./internal/servertls/...
+        - ./internal/stack/...
+        - ./internal/step/...
+        - ./internal/store/...
+        - ./internal/ui/...
+        - ./internal/version/...
+      min: 79
+
+    # Public API. pkg/target and pkg/plugin are the contracts third-party plugins
+    # implement, so their generated protobuf stubs sit alongside hand-written code and
+    # dilute the figure.
+    - name: pkg
+      match:
+        - ./pkg/...
+      min: 55
+exclude:
+  # Generated protobuf/gRPC stubs: no hand-written statements to cover, and their
+  # presence in a domain only moves the number around.
+  - internal/grpcapi/rollopsv1/*
+  - pkg/plugin/rollopspluginv1/*
