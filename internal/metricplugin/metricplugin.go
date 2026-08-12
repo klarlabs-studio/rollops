@@ -44,7 +44,7 @@ func (p *provider) Close() error { return p.proc.Close() }
 // MetricsProvider backed by it. The caller must Close the returned provider when
 // done. The binary is sha256-verified and its manifest validated against the
 // plugin safety policy, and must declare the "metricprovider" capability.
-func Build(cfg *config.Analysis) (analysis.MetricsProvider, error) {
+func Build(ctx context.Context, cfg *config.Analysis) (analysis.MetricsProvider, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("analysis: nil config")
 	}
@@ -56,11 +56,11 @@ func Build(cfg *config.Analysis) (analysis.MetricsProvider, error) {
 		return nil, fmt.Errorf("analysis: %w", err)
 	}
 	policy := pluginhost.DefaultPolicy()
-	proc, err := pluginhost.Launch(context.Background(), real, policy.AllowedEnvVars)
+	proc, err := pluginhost.Launch(ctx, real, policy.AllowedEnvVars)
 	if err != nil {
 		return nil, fmt.Errorf("analysis: %w", err)
 	}
-	mctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
+	mctx, cancel := context.WithTimeout(ctx, pluginhost.ManifestTimeout)
 	m, err := proc.Client.Manifest(mctx)
 	cancel()
 	if err != nil {

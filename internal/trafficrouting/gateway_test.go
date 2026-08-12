@@ -85,7 +85,7 @@ func TestGatewayRouter_SetWeight_NoMatchingBackend(t *testing.T) {
 }
 
 func TestBuildRouter_GatewayProviderNoPlugin(t *testing.T) {
-	r, err := BuildRouter(&config.TrafficRouting{Provider: "gateway", Route: "web", StableService: "s", CanaryService: "c"})
+	r, err := BuildRouter(context.Background(), &config.TrafficRouting{Provider: "gateway", Route: "web", StableService: "s", CanaryService: "c"})
 	if err != nil {
 		t.Fatalf("BuildRouter(gateway): %v", err)
 	}
@@ -95,7 +95,7 @@ func TestBuildRouter_GatewayProviderNoPlugin(t *testing.T) {
 }
 
 func TestBuildRouter_UnknownProvider(t *testing.T) {
-	if _, err := BuildRouter(&config.TrafficRouting{Provider: "nope"}); err == nil {
+	if _, err := BuildRouter(context.Background(), &config.TrafficRouting{Provider: "nope"}); err == nil {
 		t.Fatal("unknown provider must error")
 	}
 }

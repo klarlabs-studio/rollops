@@ -73,9 +73,9 @@ type Engine struct {
 	analysis     bool
 	confinement  security.Confinement // multi-tenant confinement policy (default off)
 	dbRollback   DatabaseRollbackRunner
-	flagBuild    func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) // flag plugin builder (test seam)
-	routerBuild  func(*config.TrafficRouting) (trafficrouting.Router, error)                // traffic-router plugin builder (test seam)
-	metricsBuild func(*config.Analysis) (analysis.MetricsProvider, error)                   // metric-provider plugin builder (test seam)
+	flagBuild    func(context.Context, *config.FeatureFlags) (featureflags.Provider, error)   // flag plugin builder (test seam)
+	routerBuild  func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) // traffic-router plugin builder (test seam)
+	metricsBuild func(context.Context, *config.Analysis) (analysis.MetricsProvider, error)    // metric-provider plugin builder (test seam)
 }
 
 // Option configures an Engine.
@@ -182,13 +182,13 @@ func WithFlagProviderBuilder(f func(context.Context, *config.FeatureFlags) (feat
 
 // WithTrafficRouterBuilder overrides how a traffic router is built from config
 // (test seam; default launches the configured trafficrouter plugin).
-func WithTrafficRouterBuilder(f func(*config.TrafficRouting) (trafficrouting.Router, error)) Option {
+func WithTrafficRouterBuilder(f func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error)) Option {
 	return func(e *Engine) { e.routerBuild = f }
 }
 
 // WithMetricsProviderBuilder overrides how a metricprovider plugin is built from
 // an analysis config (test seam; default launches the configured plugin).
-func WithMetricsProviderBuilder(f func(*config.Analysis) (analysis.MetricsProvider, error)) Option {
+func WithMetricsProviderBuilder(f func(context.Context, *config.Analysis) (analysis.MetricsProvider, error)) Option {
 	return func(e *Engine) { e.metricsBuild = f }
 }
 
@@ -197,7 +197,7 @@ func WithMetricsProviderBuilder(f func(*config.Analysis) (analysis.MetricsProvid
 // a routing failure is audited and never aborts the rollout (the health gate
 // remains the source of truth), mirroring feature-flag delivery.
 func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.TrafficRouting, weight int) {
-	router, err := e.routerBuild(tr)
+	router, err := e.routerBuild(ctx, tr)
 	if err != nil {
 		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "trafficrouter build failed: " + err.Error()})
 		return
@@ -1194,7 +1194,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 		case a.Plugin != "":
 			// A metricprovider plugin supplies the backend (Datadog, CloudWatch,
 			// a custom metrics service). Launched per analysis run, then closed.
-			p, err := e.metricsBuild(a)
+			p, err := e.metricsBuild(ctx, a)
 			if err != nil {
 				return false, "analysis: " + err.Error()
 			}

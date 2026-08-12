@@ -21,7 +21,7 @@ func TestApply_CrashloopAutoRollsBackToPrior(t *testing.T) {
 	flag := &recordingFlagProvider{}
 	e, db := newEngine(t, fake,
 		WithIDGen(incIDs()),
-		WithTrafficRouterBuilder(func(*config.TrafficRouting) (trafficrouting.Router, error) { return rec, nil }),
+		WithTrafficRouterBuilder(func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) { return rec, nil }),
 		WithFlagProviderBuilder(func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) { return flag, nil }),
 	)
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestManualRollback_ResetsDeliveryFromPersistedDescriptor(t *testing.T) {
 	rec := &recordingRouter{}
 	flag := &recordingFlagProvider{}
 	e, _ := newEngine(t, fake,
-		WithTrafficRouterBuilder(func(*config.TrafficRouting) (trafficrouting.Router, error) { return rec, nil }),
+		WithTrafficRouterBuilder(func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) { return rec, nil }),
 		WithFlagProviderBuilder(func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) { return flag, nil }),
 	)
 	ctx := context.Background()
