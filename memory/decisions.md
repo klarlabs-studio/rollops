@@ -306,3 +306,32 @@ CONT-001 (base image not digest-pinned) is a real practice with a real cost: a p
 digest stops receiving base-image security patches until someone bumps it by hand, so it
 trades one supply-chain risk for another and wants automation (Renovate) alongside it
 rather than a bare pin. Left open deliberately.
+
+## 2026-08-12 — Container hardening on rollopsd, minus the one line that needs a cluster
+
+The pod already ran as uid 10001 with a non-root securityContext. Added the privileges a
+non-root process can still acquire or retain: allowPrivilegeEscalation: false (a setuid
+binary is otherwise still a path up), capabilities drop ALL (the daemon binds :8443 and
+shells out to kubectl; neither needs one), and seccompProfile RuntimeDefault at pod level —
+unset means Unconfined on most runtimes, leaving the whole syscall surface reachable from a
+process that needs an ordinary subset.
+
+- **readOnlyRootFilesystem is deliberately absent.** It is the natural fourth line. rollopsd
+  writes its database to a mounted volume, but whether it ever writes elsewhere — a temp
+  file, a plugin unpacked to disk, a kubectl cache — could not be established by reading,
+  and getting it wrong stops the daemon at startup in someone's cluster. It wants an
+  in-cluster run, so it is a separate change rather than a guess bundled into a safe one.
+- Validated with `kubectl apply --dry-run=client` (schema only, no cluster mutation) and by
+  rescanning: IAC-145 is gone, total findings 93 → 92, and the only high remains the
+  already-baselined TAINT-004.
+
+### The remaining rollopsd.yaml findings are mostly category errors
+
+IAC-132 wants a PodDisruptionBudget and IAC-142 pod anti-affinity. This is a single-replica
+Deployment with strategy Recreate, because it is the single writer to a SQLite PVC. A PDB
+over one replica either blocks node drains outright or does nothing, and anti-affinity
+across one pod is meaningless. IAC-131/286 want a NetworkPolicy, which is a property of the
+cluster the operator runs, not of a manifest we ship.
+
+Recorded because these will be flagged again on every scan, and the answer is "not
+applicable to a single-writer daemon", not "not done yet".
