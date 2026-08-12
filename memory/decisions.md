@@ -525,3 +525,34 @@ is still downloaded from a hardcoded linux/amd64 path, which crashes under emula
 (`fatal error: lfstack.push`) — confirmed again on this build. So the image now advertises
 portability its contents do not have. Still a separate change: multi-arch kubectl needs TARGETARCH
 plus a checksum per architecture.
+
+## 2026-08-12 — The demo workload is hardened, and it is a real workload
+
+The six findings on demo/rollops.yaml were left open in #121 pending an answer to "is this file
+actually reconciled?" The file answers it in its own first line: rollopsd watches this path and
+applies the rollout on its reconcile interval. So the findings were real, not illustrative — the
+distinction from examples/*.example.yaml holds, and that is why this file is hardened and those
+are waived.
+
+- **The stock image could not satisfy the request.** nginx:1.27-alpine binds port 80, which needs
+  root or NET_BIND_SERVICE, so runAsNonRoot with capabilities dropped would have left it unable
+  to listen. Switched to nginxinc/nginx-unprivileged:1.27-alpine, which listens on 8080 as uid
+  101 — both confirmed by running the image rather than read from its documentation, and the
+  hardened combination (uid 101, cap-drop ALL, no-new-privileges) verified to serve 200.
+- **Probes matter more here than the rule suggests.** Without them Kubernetes treats "the process
+  started" as "the workload is serving", which is precisely the assumption a canary rollout exists
+  to disprove. A progressive-delivery demo without probes demonstrates less than it appears to.
+- **Anti-affinity is preferred, not required, and the scanner disagrees (IAC-390).** Required
+  leaves the second replica unschedulable on a single-node cluster, and this is dogfood meant to
+  run on whatever somebody points at it. Waived with that reasoning rather than changed.
+- **A PodDisruptionBudget is not expressible here (IAC-132).** This is a RolloutConfig with one
+  embedded workload manifest; a PDB is a separate object with nowhere to live in it. Waived, with
+  a note to revisit if RolloutConfig ever applies companion resources.
+
+Unwaived findings are now zero, from 91 before the triage in #121.
+
+### Not merged by me
+
+This file is reconciled by a live daemon, so merging changes a running workload — including its
+image. That is the system working as designed rather than a side effect to avoid, but it is an
+outward-facing change to somebody's cluster and the timing belongs to whoever operates it.
