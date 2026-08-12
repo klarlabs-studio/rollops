@@ -266,3 +266,43 @@ number was the signal, not the problem.
 - The rest of hostKeyCallback was already right and is now pinned by tests: a pin
   verifies, a mismatched key is refused, the explicit opt-in works, and an unpinned host
   is refused rather than trusted on first use.
+
+## 2026-08-12 — The image verified nothing it downloaded
+
+The Dockerfile fetched kubectl over curl and ran it. That binary is what drives the
+user's cluster — it applies manifests, patches HTTPRoutes and shifts production traffic —
+so the image's integrity rested on the CDN object still being what it was when the tag was
+written.
+
+Rollops already holds plugin binaries to exactly this standard: pluginhost.VerifyArtifact
+refuses a plugin whose sha256 does not match its pin. The image was the one place shipping
+an unpinned executable, and it was the one binary with the most authority.
+
+- **Pinned, not fetched from the adjacent .sha256.** A checksum retrieved from the same
+  host as the artifact is not an independent check: a host able to serve a substituted
+  binary can serve a matching digest alongside it. Pinning moves the trust decision into a
+  reviewed commit.
+- **Verified in both directions**, because a check that cannot fail is decoration: the
+  build prints "kubectl: OK", and building with a zeroed digest exits 1 with "1 of 1
+  computed checksums did NOT match".
+- **The checksum is written to a file and checked, not piped into sha256sum.** The first
+  version piped it, which put a pipe on a RUN line that also mentions curl — matching the
+  "remote script piped directly to shell" rule (nox IAC-023, CWE-94) and failing CI's
+  net-new-high gate. The verification is identical either way, and that rule is worth
+  keeping sharp for the case where it is right; waiving a "piped to shell" high finding in
+  a Dockerfile is how a baseline stops being trustworthy.
+- Found by reading, not by the scanner. nox's Dockerfile findings were the other two rules
+  and both were false positives — see below.
+
+### The Dockerfile findings nox did report were wrong
+
+IAC-123 (COPY without --chown) fires three times. Two are in the build stage, which is
+discarded. The third copies the daemon binary into the final image, where it is owned by
+root and mode 0755 while the process runs as uid 10001 — so the process cannot modify its
+own executable. Adding --chown would hand it that ability. Following this finding would be
+a regression, which is worth recording before someone "fixes" it.
+
+CONT-001 (base image not digest-pinned) is a real practice with a real cost: a pinned
+digest stops receiving base-image security patches until someone bumps it by hand, so it
+trades one supply-chain risk for another and wants automation (Renovate) alongside it
+rather than a bare pin. Left open deliberately.
