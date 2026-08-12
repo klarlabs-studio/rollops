@@ -11,6 +11,15 @@
       "created_at": "2026-08-02T00:00:00Z"
     },
     {
+      "fingerprint": "e60f86d47938f007c8d4b4802ef765d9f1e9426feaa9acfe0acb435157b13c9f",
+      "rule_id": "TAINT-004",
+      "file_path": "internal/pluginhost/cosign.go",
+      "severity": "high",
+      "reason": "Same finding and same reasoning as the entry above; this is its second fingerprint. The taint plugin's fingerprint for this flow is not stable across nox releases: the entry above was taken from a CI nox-results artifact produced by nox 1.27.0, and nox 1.29.0 computes e60f86d4 for the identical source. Verified rather than guessed - all 91 findings in the 1.27.0 CI artifact were compared against a 1.29.0 scan of the same tree and exactly one fingerprint moved, this one; it is also not path-dependent (two checkouts at different absolute paths agree). Both are kept so the waiver holds on either side of CI's next nox bump, which would otherwise resurface the repo's only high finding as net-new and fail the gate. Do NOT run `nox baseline update` here: it prunes whichever of the two the running version does not produce, silently re-arming that failure. Re-verify the underlying judgement only on the condition stated in the entry above - if that key path ever stops being operator configuration.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
       "fingerprint": "2678ae2b74948072d76040b950287fb2b6a0cefa18df3abaac9dc4c4e2fe3ce4",
       "rule_id": "IAC-294",
       "file_path": "deploy/kubernetes/rollopsd.yaml",
@@ -18,6 +27,726 @@
       "reason": "The limit this rule asks for is set. Both emptyDir volumes added for the read-only root filesystem declare a 64Mi ceiling, which parsing the manifest confirms: the tmp and kubecache volumes each resolve to a mapping carrying that ceiling. The rule matches on the volume-type key alone and does not read the line beneath it, so it reports the ceiling as absent whether it is written inline or below \u2014 neither form satisfies it, which is why this is waived rather than restructured. Deliberately worded without reproducing the flagged text, because the rule would then match this reason and file a fresh finding against the baseline itself. Fingerprint taken from the CI nox-results artifact and confirmed identical to a local scan, unlike TAINT-004 above where the two differed. Re-verify if the ceiling is ever removed from either volume, since the finding would then be correct and indistinguishable from this one.",
       "owner": "felixgeelhaar",
       "created_at": "2026-08-12T14:00:00Z"
+    },
+    {
+      "fingerprint": "ab87814a2609c2c6f7863fba5e8b09addb9328a9f061ca0058e79d5f64c47173",
+      "rule_id": "SEC-083",
+      "file_path": "internal/git/repo_test.go",
+      "severity": "medium",
+      "reason": "The fixture the redaction test is about. The flagged span is the http.extraheader argument inside TestRedactArgs_MasksToken, whose entire purpose is proving redactArgs strips an Authorization: Basic value before any git argv reaches a log; the assertion two lines down checks that neither the encoded body nor the scheme survives. The base64 body decodes to the ASCII words secret and token concatenated and authenticates nothing. Note the inverse risk: removing this fixture to quiet the rule would delete the only coverage keeping real git tokens out of the daemon's logs. Re-verify if the fixture is ever replaced with a header captured from a real session, or if redactArgs grows additional header shapes that this test does not cover.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "dd913e1575b538910ca10cecbe0d8fb257f5075d05d7c9a1cd7307d39909b854",
+      "rule_id": "DATA-001",
+      "file_path": "internal/security/artifact_test.go",
+      "severity": "medium",
+      "reason": "A cosign certificate identity, not a mailbox. The flagged span is the CertIdentity field of the CosignVerifier under test \u2014 the value cosign compares against the SAN of a signing certificate. The test asserts only that the field is forwarded verbatim into the --certificate-identity argument, and the value is a placeholder at a vendor domain of the example.com kind: no one receives mail there and no person is identified. Re-verify if a real signer identity is ever hardcoded here rather than read from configuration \u2014 a production identity belongs in config, and pinning one in a test would also mean the suite asserts against a specific human.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "3cb0974f40120543f0df690f71c1d81ba34e1efdd237fbd52c767033afb736b5",
+      "rule_id": "IAC-123",
+      "file_path": "Dockerfile",
+      "severity": "low",
+      "reason": "Following this rule would be a regression, recorded in memory/decisions.md. Two of the three hits (lines 7 and 9) are in the build stage, which runs as root and has no unprivileged user for --chown to name. The third copies the compiled daemon into the runtime image, where it lands root-owned and mode 0755 while the process runs as uid 10001: readable and executable by the daemon, writable by nobody it can become. COPY --chown=10001 would hand the running process ownership of its own executable, converting any arbitrary-write bug into persistence across restarts. The directory the daemon must actually write, /var/lib/rollops, is chown'd to it explicitly on the adduser line. Re-verify if the runtime image ever needs the process to modify a copied file \u2014 that file, and only it, should carry --chown.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "950950a207f915771a84bc9b1baf629aa727cf38b2bfaf0cae2458a059cff5a2",
+      "rule_id": "IAC-123",
+      "file_path": "Dockerfile",
+      "severity": "low",
+      "reason": "Following this rule would be a regression, recorded in memory/decisions.md. Two of the three hits (lines 7 and 9) are in the build stage, which runs as root and has no unprivileged user for --chown to name. The third copies the compiled daemon into the runtime image, where it lands root-owned and mode 0755 while the process runs as uid 10001: readable and executable by the daemon, writable by nobody it can become. COPY --chown=10001 would hand the running process ownership of its own executable, converting any arbitrary-write bug into persistence across restarts. The directory the daemon must actually write, /var/lib/rollops, is chown'd to it explicitly on the adduser line. Re-verify if the runtime image ever needs the process to modify a copied file \u2014 that file, and only it, should carry --chown.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "17fd6f4ea76ae90f76efaa5b9f5648fe1c9d279f80f35834c3780ba8b8a1b897",
+      "rule_id": "IAC-123",
+      "file_path": "Dockerfile",
+      "severity": "low",
+      "reason": "Following this rule would be a regression, recorded in memory/decisions.md. Two of the three hits (lines 7 and 9) are in the build stage, which runs as root and has no unprivileged user for --chown to name. The third copies the compiled daemon into the runtime image, where it lands root-owned and mode 0755 while the process runs as uid 10001: readable and executable by the daemon, writable by nobody it can become. COPY --chown=10001 would hand the running process ownership of its own executable, converting any arbitrary-write bug into persistence across restarts. The directory the daemon must actually write, /var/lib/rollops, is chown'd to it explicitly on the adduser line. Re-verify if the runtime image ever needs the process to modify a copied file \u2014 that file, and only it, should carry --chown.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "2655c3f84551bec825dbdef2249a118e399e6185eb125bfe6b68b0e68c0c2a03",
+      "rule_id": "SEC-161",
+      "file_path": "internal/store/sqlite/sqlite.go",
+      "severity": "medium",
+      "reason": "One SQLite connection string, three rules disagreeing about it. All of SEC-161, SEC-162 and SEC-163 fire on the same span in sqlite.Open: the fmt.Sprintf template that builds the DSN, a file: URI carrying three _pragma query parameters (busy_timeout, journal_mode WAL, foreign_keys). It holds no credential and structurally cannot \u2014 SQLite has no authentication, and the only interpolated value is the database path. That the three rules classify it as an assigned secret, an encoded blob and a hex key respectively is itself the tell: they matched a long mixed-character URI, not encoded key material. This is production code, so it is baselined by fingerprint on the single line rather than by any path rule over internal/store. Re-verify if the DSN ever gains a credential-bearing pragma: an encrypted-SQLite driver (SQLCipher's _pragma=key(...)) or any driver that accepts a password in the URI would make a literal here a genuine hardcoded secret.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "d0547bcab5c16b1b130c2b77de427bc6dc43ccc3c91b012b03afa8614134271c",
+      "rule_id": "SEC-162",
+      "file_path": "internal/store/sqlite/sqlite.go",
+      "severity": "medium",
+      "reason": "One SQLite connection string, three rules disagreeing about it. All of SEC-161, SEC-162 and SEC-163 fire on the same span in sqlite.Open: the fmt.Sprintf template that builds the DSN, a file: URI carrying three _pragma query parameters (busy_timeout, journal_mode WAL, foreign_keys). It holds no credential and structurally cannot \u2014 SQLite has no authentication, and the only interpolated value is the database path. That the three rules classify it as an assigned secret, an encoded blob and a hex key respectively is itself the tell: they matched a long mixed-character URI, not encoded key material. This is production code, so it is baselined by fingerprint on the single line rather than by any path rule over internal/store. Re-verify if the DSN ever gains a credential-bearing pragma: an encrypted-SQLite driver (SQLCipher's _pragma=key(...)) or any driver that accepts a password in the URI would make a literal here a genuine hardcoded secret.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "dee6a703417ce6062fe2ecea37cdbc579a54c6bcf059e0d53371e29531e1170a",
+      "rule_id": "SEC-163",
+      "file_path": "internal/store/sqlite/sqlite.go",
+      "severity": "medium",
+      "reason": "One SQLite connection string, three rules disagreeing about it. All of SEC-161, SEC-162 and SEC-163 fire on the same span in sqlite.Open: the fmt.Sprintf template that builds the DSN, a file: URI carrying three _pragma query parameters (busy_timeout, journal_mode WAL, foreign_keys). It holds no credential and structurally cannot \u2014 SQLite has no authentication, and the only interpolated value is the database path. That the three rules classify it as an assigned secret, an encoded blob and a hex key respectively is itself the tell: they matched a long mixed-character URI, not encoded key material. This is production code, so it is baselined by fingerprint on the single line rather than by any path rule over internal/store. Re-verify if the DSN ever gains a credential-bearing pragma: an encrypted-SQLite driver (SQLCipher's _pragma=key(...)) or any driver that accepts a password in the URI would make a literal here a genuine hardcoded secret.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "7a65538e608df1072d5a0fbefb779525895cbf2716675016edb9a1044942915c",
+      "rule_id": "SEC-163",
+      "file_path": "internal/security/confine_env_test.go",
+      "severity": "medium",
+      "reason": "Synthetic test fixture, deliberately shaped like secrets. The four flagged spans are elements of daemonEnv, the stand-in for rollopsd's real environment that TestCommandEnv_WithholdsDaemonSecrets uses to prove ConfinementFromEnv strips secret-bearing variables before a config-sourced smoke test or database hook is handed an environment. Each value was read individually: one is the words super and secret hyphenated, one is the canonical IRC-joke password, one is a GitHub token prefix followed by the hex word for a dead beef, and one just repeats its own variable name. None authenticates to anything, and none is even long enough to be a real PAT or AWS key. The fixture has to look like secrets or the assertion would pass vacuously, so silencing the rule by softening the values would delete the test's meaning. Baselined per fingerprint, not by a path exclusion on *_test.go, which would also hide a real leaked credential in a test. Re-verify if any of these values is ever replaced with material copied out of a real environment, or if the slice grows an entry that is not obviously synthetic on sight.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "7c92997f92c9c2035f1c09d762a0a742926b15373150ae35ee1c75dd510effe2",
+      "rule_id": "SEC-163",
+      "file_path": "internal/security/confine_env_test.go",
+      "severity": "medium",
+      "reason": "Synthetic test fixture, deliberately shaped like secrets. The four flagged spans are elements of daemonEnv, the stand-in for rollopsd's real environment that TestCommandEnv_WithholdsDaemonSecrets uses to prove ConfinementFromEnv strips secret-bearing variables before a config-sourced smoke test or database hook is handed an environment. Each value was read individually: one is the words super and secret hyphenated, one is the canonical IRC-joke password, one is a GitHub token prefix followed by the hex word for a dead beef, and one just repeats its own variable name. None authenticates to anything, and none is even long enough to be a real PAT or AWS key. The fixture has to look like secrets or the assertion would pass vacuously, so silencing the rule by softening the values would delete the test's meaning. Baselined per fingerprint, not by a path exclusion on *_test.go, which would also hide a real leaked credential in a test. Re-verify if any of these values is ever replaced with material copied out of a real environment, or if the slice grows an entry that is not obviously synthetic on sight.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "1f34986c47beee29510e91f206e277f7932c762a6c82aac62c78d8defc087277",
+      "rule_id": "SEC-163",
+      "file_path": "internal/security/confine_env_test.go",
+      "severity": "medium",
+      "reason": "Synthetic test fixture, deliberately shaped like secrets. The four flagged spans are elements of daemonEnv, the stand-in for rollopsd's real environment that TestCommandEnv_WithholdsDaemonSecrets uses to prove ConfinementFromEnv strips secret-bearing variables before a config-sourced smoke test or database hook is handed an environment. Each value was read individually: one is the words super and secret hyphenated, one is the canonical IRC-joke password, one is a GitHub token prefix followed by the hex word for a dead beef, and one just repeats its own variable name. None authenticates to anything, and none is even long enough to be a real PAT or AWS key. The fixture has to look like secrets or the assertion would pass vacuously, so silencing the rule by softening the values would delete the test's meaning. Baselined per fingerprint, not by a path exclusion on *_test.go, which would also hide a real leaked credential in a test. Re-verify if any of these values is ever replaced with material copied out of a real environment, or if the slice grows an entry that is not obviously synthetic on sight.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5c185b5cfb86d9f0dd3eb4e8d88d479b5438bb0be1c3daf032ed6fb665eb75e1",
+      "rule_id": "SEC-163",
+      "file_path": "internal/security/confine_env_test.go",
+      "severity": "medium",
+      "reason": "Synthetic test fixture, deliberately shaped like secrets. The four flagged spans are elements of daemonEnv, the stand-in for rollopsd's real environment that TestCommandEnv_WithholdsDaemonSecrets uses to prove ConfinementFromEnv strips secret-bearing variables before a config-sourced smoke test or database hook is handed an environment. Each value was read individually: one is the words super and secret hyphenated, one is the canonical IRC-joke password, one is a GitHub token prefix followed by the hex word for a dead beef, and one just repeats its own variable name. None authenticates to anything, and none is even long enough to be a real PAT or AWS key. The fixture has to look like secrets or the assertion would pass vacuously, so silencing the rule by softening the values would delete the test's meaning. Baselined per fingerprint, not by a path exclusion on *_test.go, which would also hide a real leaked credential in a test. Re-verify if any of these values is ever replaced with material copied out of a real environment, or if the slice grows an entry that is not obviously synthetic on sight.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "321580265250c45e55cf7491b18f87a187e22dbe37ec3c99fe1d1ed40da2954f",
+      "rule_id": "IAC-131",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "80d8fce00bde1bf2d6a36cadceed42968bdfcc029f696dd723602c926866f141",
+      "rule_id": "IAC-131",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5fbe13595df07fe01b9921befa061ed908235f7fc50ff460f13c4fa7f30b1d8f",
+      "rule_id": "IAC-131",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "d92ac9fd122fb371f0e47f6cd6423f228d5aee9b8955ccecc5a0631501a852a1",
+      "rule_id": "IAC-132",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "d124b8fe8de0415dfd1c30b0f7f857c26a8b57f716a68522e03ca646fa2ba7fe",
+      "rule_id": "IAC-132",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "28946ad6cc87137cf371d7d99735059e4dc3269763d810921ad8dc254101d43e",
+      "rule_id": "IAC-132",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "b3a8ba76f3e2aa9870e2575489d10604a6396b20cef6d9e154bd2b35bd185f6e",
+      "rule_id": "IAC-137",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "60289391830294ee75398f835ef5b73b19d98f29addf73db76f4e53e0e99bf3b",
+      "rule_id": "IAC-137",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "46320ce767fb4487df7debabc1d33d23949cc8647e601f9f9f90e1764bda7815",
+      "rule_id": "IAC-138",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "c172e25a4d902d1e4434ae132f0a307d9c7ad890750387723048b9c74a7a22c1",
+      "rule_id": "IAC-138",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "c514eeafd09cac8ed22b95be3ecf6f5ddf651171ac2b92a948be0d30a314fb9f",
+      "rule_id": "IAC-139",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "d20cbada5a157b0e71d9f98a05e9dbaf858665a5a4dde371f30dfda803be4efd",
+      "rule_id": "IAC-139",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "93c3948a3c61bfb9b651e4120a66ae02f2a24d699e0fea9b163767327a8e17fd",
+      "rule_id": "IAC-140",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "fd0f11b712e1ccf460e0a6e4930a0f4afaf880c55444b535e02163db835bf9ae",
+      "rule_id": "IAC-140",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "e76d47bda0f09a3519b8e3247bf4ffedd1864583c49a4943940690c123173e47",
+      "rule_id": "IAC-141",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "20a136361908679a6b3a707b7b17570ad33ec803c52f8c47f9b1776ef487e6b9",
+      "rule_id": "IAC-142",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "6f9fafa09000efa5d6fa0f42dbbd7a8a645c2f981571a08b7e9c41008b79f7cd",
+      "rule_id": "IAC-142",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "ba4217a7b9f9cfac57e7ff17271dce8e8642226d33a4af37839d07ff6e2fc1a9",
+      "rule_id": "IAC-142",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5acaa36b8c9bf373c7eaaa1bd3d489cbd9ccd0713dc6f0c095fdc194dfcfa80d",
+      "rule_id": "IAC-145",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "7552206d2540cddfff3416e9b55080da4b951974d7e7bb2debe610973fd39337",
+      "rule_id": "IAC-145",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5a0884e0d46f7e1318e544cd872fe87a03752875d1f7684c5a55538cbfdd7835",
+      "rule_id": "IAC-176",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "b8bb915eb240dd44559c717bf23b45bc8efab468f12cc7e51adb2e81bad6021e",
+      "rule_id": "IAC-176",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "788daaaf550ee7a9c091626bcbad0d7fc05553a96dc8ad201a09aee5637aafa6",
+      "rule_id": "IAC-176",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "8deb8bd56da12d6ab218b1cbfc0bee39f1627f9c8194fd1a4ba14cc4e9a08d70",
+      "rule_id": "IAC-183",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "547304c5175a8e9474e4d2cad662f4e5b7ac18c15a9b679d5a079be2cb5af637",
+      "rule_id": "IAC-183",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "487f13943e0e90667577f8b0252e9c2259bfbb637dda25da937a877a494af705",
+      "rule_id": "IAC-183",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "51f6cc55484c0f5f5915b0c7b17ec67c326dbb9084a4477f96322e29f6a517de",
+      "rule_id": "IAC-286",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "7b1feec7f53257b9a4b2645ca398632d1737750fdb445e93c304cbf9b9bbe00b",
+      "rule_id": "IAC-286",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "f408b57adc23aaf1c97986422ccdd846f3c12e61276f417bf7a1ddeb223e7841",
+      "rule_id": "IAC-286",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "30f4c6562bcdaeee6c93ce5b9cc0f5d7f1d36812cee3d42b3060a910166bb182",
+      "rule_id": "IAC-379",
+      "file_path": "examples/rollout-config.example.yaml",
+      "severity": "info",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "e9985f553d3a8c7a407212b41cc491491a74ffff0ae7a1c4b32f84104f775bd8",
+      "rule_id": "IAC-464",
+      "file_path": "examples/canary-with-analysis.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "511ba67bfd6868eecfca96a5ad1acaa547378c6f5d5e530fcc96a4ae89cc4029",
+      "rule_id": "IAC-464",
+      "file_path": "examples/canary-with-feature-flags.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "243141ca753aff5dc813bed12cc8f769f369547272b1c23b8f1f24087c1b72d2",
+      "rule_id": "IAC-464",
+      "file_path": "examples/helm-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "cb7e824e80ee2a5aaae75d71513725172105588981e0ce61e18fad65f061e261",
+      "rule_id": "IAC-464",
+      "file_path": "examples/kubernetes-rollout.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "67176cd8c21d11cd519d7ed7bf54df5521fb9187faa4eecf36ccd476ec1281c0",
+      "rule_id": "IAC-464",
+      "file_path": "examples/manifest-from.example.yaml",
+      "severity": "low",
+      "reason": "Documentation examples, not deployed manifests. Every file here is a rollops RolloutConfig document (apiVersion rollops.klarlabs.de/v1); the Deployment, Namespace or CronJob these IAC rules react to is a YAML string nested in spec.target.spec.manifest, illustrating the user's own workload. They are kept minimal on purpose \u2014 a pause container, a bare nginx pod \u2014 so that the rollout strategy around them is what a reader sees. Nothing under examples/ is applied by CI, by the shipped deployment or by any test; the manifest block belongs to whoever copies the example, and padding it with probes, quotas and affinity rules would make these files teach container hardening instead of rollouts \u2014 the manifest that is deployed, deploy/kubernetes/rollopsd.yaml, stays scanned and carries probes, measured requests and limits, seccomp, a dropped capability set and a read-only root filesystem. IAC-176 and IAC-183 additionally misfile them as Helm chart templates, which none of them is. Baselined per fingerprint rather than by excluding examples/, so the secret and PII rules keep running over these paths. Re-verify if any file under examples/ ever becomes something a user or a pipeline is expected to kubectl apply directly.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "52922952e40b8c5ebd4fef0969dd782d57266e9ecccc4e9bddc9be74f0f6daa2",
+      "rule_id": "IAC-308",
+      "file_path": ".github/workflows/nox-remediate.yml",
+      "severity": "low",
+      "reason": "Workflow permissions verified against what each job does. nox-remediate is a scheduled dependency-bump workflow: contents write is what lets it push a remediation branch and pull-requests write is what lets it open the PR, and workflow_dispatch on it is a maintainer convenience that already requires repository write access to invoke. Neither it nor release.yml uses pull_request_target or checks out a fork ref, so no untrusted code runs under those tokens. release.yml takes contents write at the top level for goreleaser to create the release, and the image job narrows itself to contents read plus packages write for the GHCR push \u2014 the job-level scoping these rules are meant to encourage. ci.yml's cancel-in-progress is intentional and scoped to a concurrency group keyed on the ref: it cancels superseded CI runs, and the release workflow deliberately has no such group, so nothing that publishes can be interrupted midway. Re-verify if any of these workflows gains a pull_request_target trigger, checks out github.event.pull_request.head.sha, or if cancel-in-progress spreads to a workflow that pushes artifacts.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "8c9a05e7d0c8a05b61d4c18aefce8e2dc91a85c3456246a1c92bea30dbb416d8",
+      "rule_id": "IAC-309",
+      "file_path": ".github/workflows/ci.yml",
+      "severity": "low",
+      "reason": "Workflow permissions verified against what each job does. nox-remediate is a scheduled dependency-bump workflow: contents write is what lets it push a remediation branch and pull-requests write is what lets it open the PR, and workflow_dispatch on it is a maintainer convenience that already requires repository write access to invoke. Neither it nor release.yml uses pull_request_target or checks out a fork ref, so no untrusted code runs under those tokens. release.yml takes contents write at the top level for goreleaser to create the release, and the image job narrows itself to contents read plus packages write for the GHCR push \u2014 the job-level scoping these rules are meant to encourage. ci.yml's cancel-in-progress is intentional and scoped to a concurrency group keyed on the ref: it cancels superseded CI runs, and the release workflow deliberately has no such group, so nothing that publishes can be interrupted midway. Re-verify if any of these workflows gains a pull_request_target trigger, checks out github.event.pull_request.head.sha, or if cancel-in-progress spreads to a workflow that pushes artifacts.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "8378df7a1d4adb5806616a668bc89e456b48fe9b7212ca5799b5b8eddbe0ae9c",
+      "rule_id": "IAC-314",
+      "file_path": ".github/workflows/nox-remediate.yml",
+      "severity": "medium",
+      "reason": "Workflow permissions verified against what each job does. nox-remediate is a scheduled dependency-bump workflow: contents write is what lets it push a remediation branch and pull-requests write is what lets it open the PR, and workflow_dispatch on it is a maintainer convenience that already requires repository write access to invoke. Neither it nor release.yml uses pull_request_target or checks out a fork ref, so no untrusted code runs under those tokens. release.yml takes contents write at the top level for goreleaser to create the release, and the image job narrows itself to contents read plus packages write for the GHCR push \u2014 the job-level scoping these rules are meant to encourage. ci.yml's cancel-in-progress is intentional and scoped to a concurrency group keyed on the ref: it cancels superseded CI runs, and the release workflow deliberately has no such group, so nothing that publishes can be interrupted midway. Re-verify if any of these workflows gains a pull_request_target trigger, checks out github.event.pull_request.head.sha, or if cancel-in-progress spreads to a workflow that pushes artifacts.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "e37e2faa5f7d812400d1323a31d22e93b710b881ea06f3b656d724454d47a8f4",
+      "rule_id": "IAC-314",
+      "file_path": ".github/workflows/release.yml",
+      "severity": "low",
+      "reason": "Workflow permissions verified against what each job does. nox-remediate is a scheduled dependency-bump workflow: contents write is what lets it push a remediation branch and pull-requests write is what lets it open the PR, and workflow_dispatch on it is a maintainer convenience that already requires repository write access to invoke. Neither it nor release.yml uses pull_request_target or checks out a fork ref, so no untrusted code runs under those tokens. release.yml takes contents write at the top level for goreleaser to create the release, and the image job narrows itself to contents read plus packages write for the GHCR push \u2014 the job-level scoping these rules are meant to encourage. ci.yml's cancel-in-progress is intentional and scoped to a concurrency group keyed on the ref: it cancels superseded CI runs, and the release workflow deliberately has no such group, so nothing that publishes can be interrupted midway. Re-verify if any of these workflows gains a pull_request_target trigger, checks out github.event.pull_request.head.sha, or if cancel-in-progress spreads to a workflow that pushes artifacts.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "67d1566bc98dd13ba7ce93f32980089dd18f1516c29d70443f17566e2ea4dea6",
+      "rule_id": "IAC-315",
+      "file_path": ".github/workflows/release.yml",
+      "severity": "low",
+      "reason": "Workflow permissions verified against what each job does. nox-remediate is a scheduled dependency-bump workflow: contents write is what lets it push a remediation branch and pull-requests write is what lets it open the PR, and workflow_dispatch on it is a maintainer convenience that already requires repository write access to invoke. Neither it nor release.yml uses pull_request_target or checks out a fork ref, so no untrusted code runs under those tokens. release.yml takes contents write at the top level for goreleaser to create the release, and the image job narrows itself to contents read plus packages write for the GHCR push \u2014 the job-level scoping these rules are meant to encourage. ci.yml's cancel-in-progress is intentional and scoped to a concurrency group keyed on the ref: it cancels superseded CI runs, and the release workflow deliberately has no such group, so nothing that publishes can be interrupted midway. Re-verify if any of these workflows gains a pull_request_target trigger, checks out github.event.pull_request.head.sha, or if cancel-in-progress spreads to a workflow that pushes artifacts.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "22cad7179a85363e70be9438c5463be55554266e24c4ce936e9571e2af908454",
+      "rule_id": "DATA-001",
+      "file_path": "internal/config/repo_test.go",
+      "severity": "medium",
+      "reason": "An SCP-style git remote, not an email address. The rule's address regex matches the user@host prefix of a remote of the form user@host:owner/repo. In both files the flagged span is a table-driven input to the remote-URL parser, and the case exists precisely to prove the SCP form resolves to the same owner and repo as the https form on the line above it. The local part is the fixed service account name every SSH remote on that forge uses and the host is the public forge itself, so nothing here identifies a person, which is what CWE-359 is about. Re-verify if a parser case is ever written using a real person's address as the local part, or if these fixtures move from a public forge to an internal host whose name is itself sensitive.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "acfa757d3e07c62d5b24c7fda03d100111e203231745c1ffc32cd5f0af617c3c",
+      "rule_id": "DATA-001",
+      "file_path": "internal/git/pullrequest_test.go",
+      "severity": "medium",
+      "reason": "An SCP-style git remote, not an email address. The rule's address regex matches the user@host prefix of a remote of the form user@host:owner/repo. In both files the flagged span is a table-driven input to the remote-URL parser, and the case exists precisely to prove the SCP form resolves to the same owner and repo as the https form on the line above it. The local part is the fixed service account name every SSH remote on that forge uses and the host is the public forge itself, so nothing here identifies a person, which is what CWE-359 is about. Re-verify if a parser case is ever written using a real person's address as the local part, or if these fixtures move from a public forge to an internal host whose name is itself sensitive.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "9d590b9b2c18c7219e248982e206843d23cb57c4d8c2a0229161c96a282dd7b4",
+      "rule_id": "IAC-121",
+      "file_path": "Dockerfile",
+      "severity": "medium",
+      "reason": "A HEALTHCHECK here would be decoration. The only supported deployment for this image is Kubernetes (deploy/kubernetes/rollopsd.yaml), and the kubelet ignores a Dockerfile HEALTHCHECK outright \u2014 health is expressed there as liveness and readiness probes against /readyz over HTTPS on 8443, both of which exist. Implementing one would also mean reintroducing an HTTP client into the runtime layer, which currently apk del's curl on purpose, to produce a signal nothing consumes. The repo ships no docker-compose or documented docker run path for the daemon (the only compose file is the integration-test harness). Re-verify if a single-container docker run or compose deployment ever becomes supported \u2014 a HEALTHCHECK is the right answer the moment something is actually reading it.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "a50c62ec189c0a2ccd84dd16c7208b5cefb64bc29aa27fe16ee6350891fdc223",
+      "rule_id": "IAC-370",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "low",
+      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job \u2014 the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other \u2014 the daemon would then fail to write its database on a fresh volume.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "4e9bbc1f8718e955456a40e73f1af65f530a720ebbfb70c5e5ee1bc0e4619e06",
+      "rule_id": "IAC-464",
+      "file_path": "demo/rollops.yaml",
+      "severity": "medium",
+      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job \u2014 the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other \u2014 the daemon would then fail to write its database on a fresh volume.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "9704d42dd3e3b9e812f5c1bf592a4c83258024a8eab806a644a9f8ed2db0bf69",
+      "rule_id": "IAC-464",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job \u2014 the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other \u2014 the daemon would then fail to write its database on a fresh volume.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "a4ad9cf249e401d5326a83398275aff0edded5312e6d3ae9f83e359b59d0081f",
+      "rule_id": "SEC-163",
+      "file_path": "cmd/rollopsd/tls_integration_test.go",
+      "severity": "medium",
+      "reason": "Not a hex string and not a secret: the flagged span is the Go identifier x509.KeyUsageCertSign / x509.KeyUsageDigitalSignature inside an x509.Certificate template literal. Checked the reported column range on every one of these lines \u2014 it covers the constant name exactly, and there is no hex or base64 literal anywhere on them. SEC-163 needs a key-ish context word to fire, which the identifier itself supplies, and its 4.5-bit entropy floor is cleared by ordinary Go CamelCase; that collision is the whole finding. Every keypair in these three files is generated at test runtime with ecdsa.GenerateKey(elliptic.P256(), rand.Reader) and dropped with t.TempDir(); the repo carries no .pem/.key/.crt file and no PEM block in any Go source (checked with find and grep, not assumed). Baselined per fingerprint rather than by excluding *_test.go, so a credential genuinely committed to a test file still surfaces. Re-verify if any of these files stops generating its keys and starts embedding fixed material.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "8d49878e25b923c1ae7addceaef406acb6cb90b7b587a5ab71bb7733eb8f26df",
+      "rule_id": "SEC-163",
+      "file_path": "cmd/rollopsd/tls_integration_test.go",
+      "severity": "medium",
+      "reason": "Not a hex string and not a secret: the flagged span is the Go identifier x509.KeyUsageCertSign / x509.KeyUsageDigitalSignature inside an x509.Certificate template literal. Checked the reported column range on every one of these lines \u2014 it covers the constant name exactly, and there is no hex or base64 literal anywhere on them. SEC-163 needs a key-ish context word to fire, which the identifier itself supplies, and its 4.5-bit entropy floor is cleared by ordinary Go CamelCase; that collision is the whole finding. Every keypair in these three files is generated at test runtime with ecdsa.GenerateKey(elliptic.P256(), rand.Reader) and dropped with t.TempDir(); the repo carries no .pem/.key/.crt file and no PEM block in any Go source (checked with find and grep, not assumed). Baselined per fingerprint rather than by excluding *_test.go, so a credential genuinely committed to a test file still surfaces. Re-verify if any of these files stops generating its keys and starts embedding fixed material.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "63429dc6f2761fb587e9a10bdf9ee5de8aeffc635a9a59cc1f5b895970090aed",
+      "rule_id": "SEC-163",
+      "file_path": "internal/grpcapi/mtls_test.go",
+      "severity": "medium",
+      "reason": "Not a hex string and not a secret: the flagged span is the Go identifier x509.KeyUsageCertSign / x509.KeyUsageDigitalSignature inside an x509.Certificate template literal. Checked the reported column range on every one of these lines \u2014 it covers the constant name exactly, and there is no hex or base64 literal anywhere on them. SEC-163 needs a key-ish context word to fire, which the identifier itself supplies, and its 4.5-bit entropy floor is cleared by ordinary Go CamelCase; that collision is the whole finding. Every keypair in these three files is generated at test runtime with ecdsa.GenerateKey(elliptic.P256(), rand.Reader) and dropped with t.TempDir(); the repo carries no .pem/.key/.crt file and no PEM block in any Go source (checked with find and grep, not assumed). Baselined per fingerprint rather than by excluding *_test.go, so a credential genuinely committed to a test file still surfaces. Re-verify if any of these files stops generating its keys and starts embedding fixed material.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "88821d1ae5e80e170e6501a2c526fdfdc9804b3f926300347a70c301fbcb9a21",
+      "rule_id": "SEC-163",
+      "file_path": "internal/grpcapi/mtls_test.go",
+      "severity": "medium",
+      "reason": "Not a hex string and not a secret: the flagged span is the Go identifier x509.KeyUsageCertSign / x509.KeyUsageDigitalSignature inside an x509.Certificate template literal. Checked the reported column range on every one of these lines \u2014 it covers the constant name exactly, and there is no hex or base64 literal anywhere on them. SEC-163 needs a key-ish context word to fire, which the identifier itself supplies, and its 4.5-bit entropy floor is cleared by ordinary Go CamelCase; that collision is the whole finding. Every keypair in these three files is generated at test runtime with ecdsa.GenerateKey(elliptic.P256(), rand.Reader) and dropped with t.TempDir(); the repo carries no .pem/.key/.crt file and no PEM block in any Go source (checked with find and grep, not assumed). Baselined per fingerprint rather than by excluding *_test.go, so a credential genuinely committed to a test file still surfaces. Re-verify if any of these files stops generating its keys and starts embedding fixed material.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5663b93e94a3f64506e6ae84ccc2fbd329826d4973b622817f0eeeaf79ca0df7",
+      "rule_id": "SEC-163",
+      "file_path": "internal/servertls/servertls_test.go",
+      "severity": "medium",
+      "reason": "Not a hex string and not a secret: the flagged span is the Go identifier x509.KeyUsageCertSign / x509.KeyUsageDigitalSignature inside an x509.Certificate template literal. Checked the reported column range on every one of these lines \u2014 it covers the constant name exactly, and there is no hex or base64 literal anywhere on them. SEC-163 needs a key-ish context word to fire, which the identifier itself supplies, and its 4.5-bit entropy floor is cleared by ordinary Go CamelCase; that collision is the whole finding. Every keypair in these three files is generated at test runtime with ecdsa.GenerateKey(elliptic.P256(), rand.Reader) and dropped with t.TempDir(); the repo carries no .pem/.key/.crt file and no PEM block in any Go source (checked with find and grep, not assumed). Baselined per fingerprint rather than by excluding *_test.go, so a credential genuinely committed to a test file still surfaces. Re-verify if any of these files stops generating its keys and starts embedding fixed material.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "4d4088c57c946897310692575848e1cb67cae1d64c3eb24b1bea56b9e2127538",
+      "rule_id": "IAC-131",
+      "file_path": "demo/rollops.yaml",
+      "severity": "medium",
+      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace \u2014 at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "3386c33ebe20881fe89dde43524923fae764611daee2e7eae9800447af88680a",
+      "rule_id": "IAC-131",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace \u2014 at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "bd22e511722d600b10b5c4a81b07a85374a6056fff08ee0cb52f833a8ebe44c5",
+      "rule_id": "IAC-286",
+      "file_path": "demo/rollops.yaml",
+      "severity": "low",
+      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace \u2014 at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "eba64a5789d4fe3e6644e7c98aaea8e63b42f2e5e923c198a85c06fe1ea8b3ef",
+      "rule_id": "IAC-286",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "low",
+      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace \u2014 at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "e87eaab88cff9befdc1cfef046fe6e2d09606b60d3a7581d0db9b0c899354864",
+      "rule_id": "IAC-133",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon \u2014 per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "6cef67654956ae0f36157fe176dfa722006159232ada8502c7373a929f77c886",
+      "rule_id": "IAC-134",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon \u2014 per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5c0a9e142e693d1304ef4735caa6ba1ffd5cd6ae048b27a797674b60c7330dea",
+      "rule_id": "VULN-001",
+      "file_path": "go.mod",
+      "severity": "info",
+      "reason": "Unreachable, and there is no version that fixes it. GO-2026-5932 says golang.org/x/crypto/openpgp is unmaintained and unsafe by design \u2014 the advisory has no fixed range, so bumping x/crypto cannot clear it. Nox's own reachability pass already resolved it to info with 'the affected package is not linked by this build': none of the seven affected import paths appears in rollops, which uses x/crypto transitively and never touches OpenPGP. Re-verify if anything ever imports x/crypto/openpgp or its subpackages \u2014 for the commit-signature verification in internal/git, for instance, where shelling out to gpg or using a maintained library is the answer rather than this package.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "e8387c5abdadf47499b3364ec7983a5aa8f346094075450591056a2b41863f9e",
+      "rule_id": "IAC-137",
+      "file_path": "deploy/kubernetes/cutover-patch.yaml",
+      "severity": "medium",
+      "reason": "A strategic-merge patch, not a pod spec. cutover-patch.yaml is applied with kubectl patch --patch-file and deliberately contains only the fields it changes (image, added env, added volume mounts); the container list is there solely to key the merge by name. Following these rules would be an active regression: writing resources, probes or a securityContext into the patch would overwrite the values the base Deployment already sets \u2014 which are stricter, and in the case of resources were derived from measurement \u2014 with whatever the patch happened to say. The pod-level controls the rules are looking for are present in deploy/kubernetes/rollopsd.yaml, which stays scanned. Re-verify if this file is ever turned into a standalone manifest or a kustomize base rather than an overlay patch.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "5a0948d16847c022a17355cf1ecb16cd05a98e6b345fdbc887aa0c267c7e27c5",
+      "rule_id": "IAC-138",
+      "file_path": "deploy/kubernetes/cutover-patch.yaml",
+      "severity": "medium",
+      "reason": "A strategic-merge patch, not a pod spec. cutover-patch.yaml is applied with kubectl patch --patch-file and deliberately contains only the fields it changes (image, added env, added volume mounts); the container list is there solely to key the merge by name. Following these rules would be an active regression: writing resources, probes or a securityContext into the patch would overwrite the values the base Deployment already sets \u2014 which are stricter, and in the case of resources were derived from measurement \u2014 with whatever the patch happened to say. The pod-level controls the rules are looking for are present in deploy/kubernetes/rollopsd.yaml, which stays scanned. Re-verify if this file is ever turned into a standalone manifest or a kustomize base rather than an overlay patch.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "564639e35b86def578266ee884ddac926a78e0b333885529ff93427130faf139",
+      "rule_id": "IAC-139",
+      "file_path": "deploy/kubernetes/cutover-patch.yaml",
+      "severity": "medium",
+      "reason": "A strategic-merge patch, not a pod spec. cutover-patch.yaml is applied with kubectl patch --patch-file and deliberately contains only the fields it changes (image, added env, added volume mounts); the container list is there solely to key the merge by name. Following these rules would be an active regression: writing resources, probes or a securityContext into the patch would overwrite the values the base Deployment already sets \u2014 which are stricter, and in the case of resources were derived from measurement \u2014 with whatever the patch happened to say. The pod-level controls the rules are looking for are present in deploy/kubernetes/rollopsd.yaml, which stays scanned. Re-verify if this file is ever turned into a standalone manifest or a kustomize base rather than an overlay patch.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "c4667de532f3250459b8b6dd2537d4418afa25948be7f05d4f359f1b911457e3",
+      "rule_id": "IAC-140",
+      "file_path": "deploy/kubernetes/cutover-patch.yaml",
+      "severity": "medium",
+      "reason": "A strategic-merge patch, not a pod spec. cutover-patch.yaml is applied with kubectl patch --patch-file and deliberately contains only the fields it changes (image, added env, added volume mounts); the container list is there solely to key the merge by name. Following these rules would be an active regression: writing resources, probes or a securityContext into the patch would overwrite the values the base Deployment already sets \u2014 which are stricter, and in the case of resources were derived from measurement \u2014 with whatever the patch happened to say. The pod-level controls the rules are looking for are present in deploy/kubernetes/rollopsd.yaml, which stays scanned. Re-verify if this file is ever turned into a standalone manifest or a kustomize base rather than an overlay patch.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "b66cc6e1c734f1c849ac6f6d5103c634052a0f30e8156bb17900622cc921b582",
+      "rule_id": "IAC-145",
+      "file_path": "deploy/kubernetes/cutover-patch.yaml",
+      "severity": "medium",
+      "reason": "A strategic-merge patch, not a pod spec. cutover-patch.yaml is applied with kubectl patch --patch-file and deliberately contains only the fields it changes (image, added env, added volume mounts); the container list is there solely to key the merge by name. Following these rules would be an active regression: writing resources, probes or a securityContext into the patch would overwrite the values the base Deployment already sets \u2014 which are stricter, and in the case of resources were derived from measurement \u2014 with whatever the patch happened to say. The pod-level controls the rules are looking for are present in deploy/kubernetes/rollopsd.yaml, which stays scanned. Re-verify if this file is ever turned into a standalone manifest or a kustomize base rather than an overlay patch.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "7d86d7ddab8671848d9a39111ff77415710ccbe43b52e66fe61fba7c1cd99869",
+      "rule_id": "IAC-132",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "4884595af749c12cbc3668cf1aff90f10a0f723ea91242c0fc98afe3c89a34bb",
+      "rule_id": "IAC-141",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "3ec8611fa27d92623c12c07d27f67f865b01581ef8cdbb902f2517cd036acada",
+      "rule_id": "IAC-142",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "low",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "f2df2a8863cb8cef8c918774a63fb852c0f9a89771f08cfff73453cb37d99fab",
+      "rule_id": "IAC-183",
+      "file_path": "demo/rollops.yaml",
+      "severity": "medium",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "56fd048a5d7f5eaf5a7f3affc41059972842ed9ae4ff509bcb0e2086dafdedcb",
+      "rule_id": "IAC-183",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
     }
   ]
 }
