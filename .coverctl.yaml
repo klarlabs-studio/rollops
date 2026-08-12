@@ -78,7 +78,7 @@ policy:
     - name: trafficrouting
       match:
         - ./internal/trafficrouting/...
-      min: 40
+      min: 47
     - name: metricplugin
       match:
         - ./internal/metricplugin/...

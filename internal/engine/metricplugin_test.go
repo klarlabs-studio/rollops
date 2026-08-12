@@ -45,7 +45,7 @@ func TestPipeline_MetricPluginProviderRollsBack(t *testing.T) {
 	var built int
 	e, _, _ := wiredEngine(t,
 		WithMetricAnalysis(),
-		WithMetricsProviderBuilder(func(a *config.Analysis) (analysis.MetricsProvider, error) {
+		WithMetricsProviderBuilder(func(_ context.Context, a *config.Analysis) (analysis.MetricsProvider, error) {
 			built++
 			if a.Plugin == "" {
 				t.Error("metricsBuild called without a plugin path")

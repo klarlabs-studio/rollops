@@ -32,7 +32,7 @@ func (p *pluginRouter) Close() error { return p.proc.Close() }
 // backed by it. The caller must Close the returned router when done. The binary
 // is sha256-verified and its manifest validated against the plugin safety
 // policy, and must declare the "trafficrouter" capability.
-func BuildRouter(cfg *config.TrafficRouting) (Router, error) {
+func BuildRouter(ctx context.Context, cfg *config.TrafficRouting) (Router, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("trafficrouting: nil config")
 	}
@@ -53,11 +53,11 @@ func BuildRouter(cfg *config.TrafficRouting) (Router, error) {
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
 	policy := pluginhost.DefaultPolicy()
-	proc, err := pluginhost.Launch(context.Background(), real, policy.AllowedEnvVars)
+	proc, err := pluginhost.Launch(ctx, real, policy.AllowedEnvVars)
 	if err != nil {
 		return nil, fmt.Errorf("trafficrouting: %w", err)
 	}
-	mctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
+	mctx, cancel := context.WithTimeout(ctx, pluginhost.ManifestTimeout)
 	m, err := proc.Client.Manifest(mctx)
 	cancel()
 	if err != nil {

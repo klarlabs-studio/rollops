@@ -215,3 +215,27 @@ explains what that meant: "set false for repos without a threshold yet". There w
   difference is real and worth checking before trusting a threshold.
 - Generated protobuf stubs are excluded. They have no hand-written statements and only
   move the number around.
+
+## 2026-08-12 — All three plugin builders now honour their caller's context
+
+#113 fixed featureflags.BuildProvider and stopped there. There were three builders with
+the same defect — trafficrouting.BuildRouter and metricplugin.Build both hardcoded
+context.Background() for the subprocess launch and the manifest RPC, while the engine call
+sites that invoke them (driveTraffic, runAnalysis) had a ctx in scope and dropped it. So a
+cancelled rollout still waited out each plugin's own timeouts on a subprocess nobody was
+waiting for.
+
+Found by looking at why trafficrouting sat at 42% once coverage was gated. The low number
+was not itself the problem; it was the signal pointing at code nobody had exercised.
+
+- **Asserted at the engine, not in each builder.** The engine is where the context
+  originates, and the builder seams can observe exactly what they are handed. A test
+  inside trafficrouting could not do it: sha256 verification runs before the launch, so a
+  cancelled context never reaches the code that would honour it, and such a test would
+  pass without exercising anything. One was written that way first and deleted.
+- **baseArgs was untested**, and it decides which cluster kubectl talks to. Wrong there
+  does not fail loudly — it shifts production traffic on whatever cluster the ambient
+  kubeconfig names. Now covered, including that the flags reach kubectl rather than merely
+  being computed: a correct baseArgs that nothing passes targets the ambient cluster while
+  looking configured.
+- The trafficrouting floor is ratcheted 40 → 47 to hold the gain (coverage 42.3% → 50.0%).

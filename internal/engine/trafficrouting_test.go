@@ -51,7 +51,7 @@ func (r *recordingRouter) SetWeight(_ context.Context, c trafficrouting.Change) 
 func TestApply_DrivesTrafficRouterPerStep(t *testing.T) {
 	fake := &fakeTarget{}
 	rec := &recordingRouter{}
-	e, _ := newEngine(t, fake, WithTrafficRouterBuilder(func(*config.TrafficRouting) (trafficrouting.Router, error) {
+	e, _ := newEngine(t, fake, WithTrafficRouterBuilder(func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) {
 		return rec, nil
 	}))
 	c, err := config.Load([]byte(canaryTrafficYAML))
