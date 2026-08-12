@@ -32,13 +32,21 @@ LABEL org.opencontainers.image.source="https://github.com/klarlabs-studio/rollop
 # (pluginhost.VerifyArtifact refuses a plugin whose sha256 does not match the pin),
 # so the image was the one place shipping an unpinned executable.
 #
+# Written to a file and checked, rather than piped into sha256sum. The verification is
+# identical either way, but a pipe on a RUN line that also mentions curl matches the
+# "remote script piped directly to shell" pattern (nox IAC-023, CWE-94) — and that rule is
+# worth keeping sharp for the case where it is right, which is more valuable than winning
+# the argument here with a waiver.
+#
 # To bump: set both, from https://dl.k8s.io/release/<version>/bin/linux/amd64/kubectl.sha256
 ARG KUBECTL_VERSION=v1.31.0
 ARG KUBECTL_SHA256=7c27adc64a84d1c0cc3dcf7bf4b6e916cc00f3f576a2dbac51b318d926032437
 RUN apk add --no-cache ca-certificates curl git \
  && curl -fsSLo /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
- && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - \
+ && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" > /tmp/kubectl.sha256 \
+ && sha256sum -c /tmp/kubectl.sha256 \
+ && rm /tmp/kubectl.sha256 \
  && chmod +x /usr/local/bin/kubectl \
  && apk del curl \
  && adduser -D -u 10001 rollops \

@@ -285,6 +285,12 @@ an unpinned executable, and it was the one binary with the most authority.
 - **Verified in both directions**, because a check that cannot fail is decoration: the
   build prints "kubectl: OK", and building with a zeroed digest exits 1 with "1 of 1
   computed checksums did NOT match".
+- **The checksum is written to a file and checked, not piped into sha256sum.** The first
+  version piped it, which put a pipe on a RUN line that also mentions curl — matching the
+  "remote script piped directly to shell" rule (nox IAC-023, CWE-94) and failing CI's
+  net-new-high gate. The verification is identical either way, and that rule is worth
+  keeping sharp for the case where it is right; waiving a "piped to shell" high finding in
+  a Dockerfile is how a baseline stops being trustworthy.
 - Found by reading, not by the scanner. nox's Dockerfile findings were the other two rules
   and both were false positives — see below.
 
