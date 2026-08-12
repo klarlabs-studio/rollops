@@ -495,3 +495,33 @@ arguments waives everything currently open, which is the opposite of triage.
 `findings.json` and `ai.inventory.json` were tracked in git, committed by accident in #110.
 They are generated scan output that changes on every run; removed and added to `.gitignore`
 along with `results.sarif`. Scans that must not dirty the tree take `-output <dir>`.
+
+## 2026-08-12 — Base images pinned by digest, with something that moves them
+
+CONT-001 was the last real finding left after the triage in #121, and it was deferred because a
+pin on its own trades one supply-chain risk for another: a digest stops receiving base-image
+security patches until somebody bumps it by hand. It lands now because it lands together with
+dependency automation.
+
+- **Dependabot, not Renovate.** Renovate is the better tool for digest pinning and it needs its
+  GitHub App installed on the organization. A committed renovate.json would therefore sit inert
+  until somebody did that, and the pins would silently stop receiving patches while looking
+  maintained — the same wired-but-unreachable shape this session kept finding. Dependabot is
+  built into GitHub and works from the committed file alone, so the automation exists the moment
+  the file merges.
+- **Index digests, not per-architecture ones.** `docker inspect .RepoDigests` after a tag pull
+  gives the manifest-list digest, and both were verified to cover linux/amd64 and linux/arm64
+  before being written down. An arch-specific digest would have pinned the build to whichever
+  machine resolved it — here arm64, which would have broken CI's amd64 runners.
+- The tag stays in a comment above each FROM, which is both how Dependabot recognizes what to
+  update and how a reader sees what the digest means.
+- Covers gomod and github-actions as well: the workflows pin actions by commit SHA, which has
+  exactly the same staleness problem as a digest and the same fix.
+
+### The amd64 kubectl finding is now sharper, not fixed
+
+The pinned base images are multi-arch, so the image itself builds anywhere. The kubectl inside it
+is still downloaded from a hardcoded linux/amd64 path, which crashes under emulation
+(`fatal error: lfstack.push`) — confirmed again on this build. So the image now advertises
+portability its contents do not have. Still a separate change: multi-arch kubectl needs TARGETARCH
+plus a checksum per architecture.

@@ -1,0 +1,38 @@
+# Dependency updates, so the digest pins in the Dockerfile have something that moves them.
+#
+# Dependabot rather than Renovate deliberately. Renovate is the better tool for digest pinning,
+# and it needs its GitHub App installed on the organization — so a committed renovate.json would
+# sit inert until somebody did that, and the pins would silently stop receiving security patches
+# while looking maintained. Dependabot is built into GitHub and works from this file alone.
+version: 2
+updates:
+  # The reason this file exists. Without it, `FROM ...@sha256:...` freezes the base image at
+  # whatever was current the day it was pinned, including its unpatched CVEs.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Patch and minor bumps arrive as one pull request rather than a dozen. Majors stay
+      # separate because they are the ones that need reading.
+      go-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The workflows pin actions by commit SHA, which has the same staleness problem as a digest
+  # and the same fix.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
