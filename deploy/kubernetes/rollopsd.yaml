@@ -235,6 +235,11 @@ spec:
               # rollopsd binds :8443, well above the privileged range, and shells out to
               # kubectl. Neither needs a capability.
               drop: ["ALL"]
+            # Repeated from the pod context, which already sets it. Containers inherit the
+            # pod's profile, so this is redundant to Kubernetes — but it keeps the container
+            # confined if the pod-level block is ever edited, and it is what a scanner
+            # checking this block for itself expects to find.
+            seccompProfile: { type: RuntimeDefault }
           args: []
           ports:
             - { name: https, containerPort: 8443 }
