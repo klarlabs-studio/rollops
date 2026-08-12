@@ -220,14 +220,23 @@ spec:
           # Container hardening. The pod already runs as uid 10001; these remove the
           # privileges that a non-root process can still acquire or retain.
           #
-          # Deliberately without readOnlyRootFilesystem. It is the natural fourth line
-          # here and it is left out on purpose: rollopsd writes its database to a mounted
-          # volume, but whether it ever writes anywhere else — a temp file, a plugin
-          # unpacked to disk, a kubectl cache — could not be established by reading, and
-          # getting it wrong stops the daemon at startup in someone's cluster. It wants an
-          # in-cluster run to confirm, so it is a separate change rather than a guess
-          # bundled into a safe one.
+          # readOnlyRootFilesystem is on, and the two writable paths below are why.
+          #
+          # Measured rather than assumed, by running this image with --read-only under a
+          # non-root uid: the daemon starts, creates its database, and writes WAL
+          # (rollops.db-wal appeared and grew across a real API write) entirely inside the
+          # mounted volume. SQLite needs no temp directory here, which was the specific
+          # doubt that kept this setting off.
+          #
+          # kubectl is the part that does need writable space. In the same container,
+          # `mkdir -p $HOME/.kube` failed with "Read-only file system", and kubectl keeps a
+          # discovery cache under ~/.kube/cache and an HTTP cache under ~/.kube/http-cache.
+          # The Kubernetes target and the traffic router both shell out to it, so a
+          # read-only root filesystem without these mounts degrades or breaks the one thing
+          # this daemon exists to do — and it would do so at the first reconcile, not at
+          # startup, which is the worst way to find out.
           securityContext:
+            readOnlyRootFilesystem: true
             # A non-root process can still gain privileges through a setuid binary; this
             # closes that path.
             allowPrivilegeEscalation: false
@@ -277,6 +286,13 @@ spec:
             # Git credentials for private config repos: GitHub App private key(s),
             # deploy keys, and/or a token — referenced by path in watch.json.
             - { name: git, mountPath: /etc/rollops/git, readOnly: true }
+            # Writable scratch, required by readOnlyRootFilesystem above.
+            #
+            # emptyDir rather than a PVC: both hold caches that are rebuilt on demand, so
+            # losing them on restart costs one slower reconcile and nothing else. Sized so a
+            # runaway cache cannot consume the node's ephemeral storage.
+            - { name: tmp, mountPath: /tmp }
+            - { name: kubecache, mountPath: /home/rollops/.kube }
           # /readyz is unauthenticated and needs no client cert, but the listener
           # is HTTPS — probe over TLS on 8443.
           readinessProbe:
@@ -315,6 +331,15 @@ spec:
           secret: { secretName: rollopsd-tls }
         - name: git
           secret: { secretName: rollopsd-git, optional: true }
+        # Scratch for a read-only root filesystem. Both are caches rebuilt on demand, so
+        # emptyDir is right and losing them on restart costs one slower reconcile.
+        # sizeLimit is set because an unbounded emptyDir is charged against the node's
+        # ephemeral storage, and a cache that grows without one can evict the pod it belongs
+        # to — a failure mode that reads as a mysterious eviction rather than a full disk.
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        - name: kubecache
+          emptyDir: { sizeLimit: 64Mi }
 ---
 apiVersion: v1
 kind: Service

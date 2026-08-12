@@ -335,3 +335,38 @@ cluster the operator runs, not of a manifest we ship.
 
 Recorded because these will be flagged again on every scan, and the answer is "not
 applicable to a single-writer daemon", not "not done yet".
+
+## 2026-08-12 — readOnlyRootFilesystem is on, and what it took to know that
+
+#119 left this off because whether rollopsd writes outside its volume could not be
+established by reading. It was settled by running the image rather than by reasoning:
+`docker run --read-only --user 10001` with a tmpfs at the data path.
+
+- **The daemon itself needs nothing else.** It starts, creates its database, and writes WAL
+  entirely inside the mounted volume — rollops.db-wal appeared and grew to 152KB across a
+  real API write (POST /v1/freeze, verified by reading the state back). SQLite needed no temp
+  directory, which was the specific doubt.
+- **kubectl is the part that does.** In the same container `mkdir -p $HOME/.kube` failed with
+  "Read-only file system", and kubectl keeps a discovery cache under ~/.kube/cache and an
+  HTTP cache under ~/.kube/http-cache. The Kubernetes target and the traffic router both
+  shell out to it, so a read-only root filesystem without writable scratch degrades or breaks
+  the daemon's whole purpose — at the first reconcile, not at startup, which is the worst way
+  to learn it.
+- Hence emptyDir at /tmp and /home/rollops/.kube, both sizeLimit 64Mi. An unbounded emptyDir
+  is charged against the node's ephemeral storage, and a cache that grows without a limit can
+  evict the pod it belongs to — which reads as a mysterious eviction rather than a full disk.
+- **Verified against the final configuration**, not just the diagnosis: the same image run
+  with those two paths as tmpfs starts, keeps / read-only (touch /usr/local/bin fails), makes
+  $HOME/.kube/cache writable, and still serves a real write.
+
+### What this did not verify, and a separate finding
+
+kubectl could not be executed under test: this machine is arm64 and the image installs
+linux/amd64 kubectl, which crashes under emulation (`fatal error: lfstack.push`). So the
+*need* for the cache paths is measured, while kubectl working with them is inferred from its
+documented cache locations.
+
+That crash exposes something worth its own change: the Dockerfile hardcodes linux/amd64, so
+this image cannot run on an arm64 node at all. Not fixed here — a multi-arch build means
+TARGETARCH plus a checksum per architecture, which is a different piece of work from
+enabling a security setting.
