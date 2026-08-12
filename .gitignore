@@ -34,3 +34,10 @@ node_modules/
 test/integration/keys/
 test/integration/keys/cosign.*
 internal/ui/web/src/render.generated.ts
+
+# Generated nox scan output (nox writes these into the scan root).
+findings.json
+ai.inventory.json
+results.sarif
+nox-out/
+nox-results/

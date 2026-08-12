@@ -370,3 +370,128 @@ That crash exposes something worth its own change: the Dockerfile hardcodes linu
 this image cannot run on an arm64 node at all. Not fixed here — a multi-arch build means
 TARGETARCH plus a checksum per architecture, which is a different piece of work from
 enabling a security setting.
+
+## 2026-08-12 — The 91 nox findings, triaged rather than batch-waived
+
+The gate only fails on net-new critical/high, so the other 90 findings had no consequence
+and were accumulating unread. That is the failure mode worth naming: a scanner nobody
+answers is indistinguishable from one that finds nothing, and the next real finding arrives
+into a list already 90 items long. Each was read against the file it points at. The result
+is 1 fixed, 82 waived across 81 baseline entries with per-group reasoning, and 8 left
+deliberately open. Unwaived findings go 91 to 8, none of them high or critical.
+
+The one real defect was IAC-124: the image carried no maintainer label. `LABEL maintainer`
+is the current form (the `MAINTAINER` *instruction* is what Docker deprecated, not the
+label), so this was a genuine gap and is now set to the org handle rather than a mailbox —
+an address in a label is PII baked into every published layer, and the issue tracker is the
+route that stays correct when maintainers change.
+
+### The secret findings were all rule-shape collisions, and none was a credential
+
+Fourteen Secrets-family findings, checked one at a time against the reported column range
+rather than by file type. Six of the eleven SEC-163 "high-entropy hex string" hits are not
+hex at all: the flagged span is the Go identifier `x509.KeyUsageCertSign` or
+`x509.KeyUsageDigitalSignature` inside a certificate template. The rule needs a key-ish
+context word to fire, the identifier supplies it, and CamelCase clears a 4.5-bit entropy
+floor. Four more are elements of the `daemonEnv` fixture in `confine_env_test.go`, which
+has to look like a set of secrets or `TestCommandEnv_WithholdsDaemonSecrets` would assert
+nothing; the values are a hyphenated "super secret", the IRC-joke password, a token prefix
+followed by the hex word for a dead beef, and a value that repeats its own variable name.
+The last, plus both SEC-161 and SEC-162, all land on one line of `sqlite.Open` — the DSN
+format string. Three rules classifying the same span as an assigned secret, an encoded blob
+and a hex key respectively is the tell that they matched a long URI. A SQLite DSN carries no
+credential and cannot; the caveat worth keeping is that an encrypted-SQLite driver's
+`_pragma=key(...)` would make a literal there genuinely secret.
+
+**Nothing that looked like a real credential was found.** Independently of nox: no `.pem`,
+`.key`, `.crt`, `.p12` or `.env` file exists in the tree, no Go source contains a PEM
+block, and a sweep for the live shapes (GitHub PAT/`github_pat_`, `AKIA`, `sk-`, `xox*-`,
+JWT) matched nothing. Every TLS fixture in the three mTLS test files generates its keypair
+at runtime with `ecdsa.GenerateKey(elliptic.P256(), rand.Reader)` and discards it with
+`t.TempDir()`.
+
+The three DATA-001 "email address" hits are two SCP-style git remotes (`user@host:owner/repo`
+— the rule matches the `user@host` prefix; both are parser test inputs whose entire point is
+that the SCP form resolves like the https form) and one cosign `--certificate-identity`
+placeholder at an example.com-class vendor domain. SEC-083's basic-auth header is the
+fixture inside `TestRedactArgs_MasksToken`, whose base64 body decodes to the words "secret"
+and "token"; deleting it to quiet the rule would delete the only coverage keeping real git
+tokens out of the daemon's logs.
+
+**These are baselined per fingerprint, never by a path rule over `*_test.go`.** A blanket
+exclusion on test files would have collapsed all fourteen into one line of config and would
+also have hidden a credential genuinely committed to a test — which is the case the rule
+exists for. Fourteen fingerprints is the price of the rule still working.
+
+### Most of the infrastructure findings were about files that are not manifests
+
+Thirty-five findings sit on `examples/*.example.yaml`. Those are rollops RolloutConfig
+documents; the Deployment the IAC rules react to is a YAML string nested in
+`spec.target.spec.manifest`, illustrating the reader's own workload. Nothing there is
+applied by CI, by tests or by the shipped install, and padding the examples with probes and
+affinity rules would make them teach container hardening instead of rollouts. Five more sit
+on `cutover-patch.yaml`, which is a strategic-merge patch: writing resources or a
+securityContext into it would *overwrite* the base Deployment's stricter, measured values —
+following those findings is the regression. IAC-176 and IAC-183 additionally read several of
+these files as Helm chart templates, which none of them is.
+
+On `rollopsd.yaml` the earlier conclusion holds and is now written down as a waiver:
+single-replica-Recreate is the storage model (single writer to a SQLite RWO PVC), so PDB,
+anti-affinity and the replica-count finding are all downstream of one decision, and
+NetworkPolicy belongs to the operator's cluster. Added to that: ResourceQuota and LimitRange
+(IAC-133/134) are cross-namespace governance aimed at namespaces whose workloads do not
+declare their own numbers — `rollops-system` holds exactly one workload and it declares
+measured requests and limits, so a quota would only add a second place to keep them in sync
+and would reject an operator's `kubectl debug` during an incident. IAC-370 (fsGroup) was
+verified rather than assumed: 10001 matches `runAsUser` and the `adduser -u 10001` that owns
+`/var/lib/rollops`. The GitHub Actions permission findings were checked against what each
+job does — neither workflow uses `pull_request_target` or checks out a fork ref, and
+`release.yml` already narrows its image job to `contents: read` + `packages: write`.
+
+VULN-001 (x/crypto openpgp) has no fixed version — the advisory is that the package is
+unmaintained by design — and nox's own reachability pass already resolved it to info with
+"not linked by this build". Bumping x/crypto cannot clear it; only importing openpgp could
+make it real.
+
+### Eight findings are left open on purpose, and the reason is not "later"
+
+CONT-001 twice: digest-pinning the base images is real, but a bare pin stops receiving
+base-image patches until someone bumps it by hand. It wants Renovate or Dependabot landing
+in the same change, which is a separate piece of work, so pinning without automation is not
+an improvement.
+
+Six on `demo/rollops.yaml`: unlike `examples/`, the demo manifest *is* applied — the
+in-cluster rollopsd reconciles it as dogfood — so its missing probes and securityContext are
+genuinely applicable rather than a category error. They are not waived. They are also not
+fixed here, because `nginx:1.27-alpine` cannot run as non-root without a rewritten config,
+and editing this file makes the running daemon perform a canary rollout on the demo cluster
+as a side effect of a security-triage commit. Hardening the demo workload is its own change,
+with the image swap it implies.
+
+### The taint waiver needed a second fingerprint, and this is a trap worth knowing about
+
+The one high (TAINT-004) was already baselined with a fingerprint taken from a CI artifact,
+noted at the time as differing from a local scan. The cause is now known: it is the nox
+version. CI ran 1.27.0, local is 1.29.0, and comparing all 91 fingerprints from both shows
+exactly one moved — this one. It is not path-dependent (two checkouts at different absolute
+paths agree). So the existing entry would have stopped matching the moment CI upgrades,
+resurfacing the repo's only high as net-new and failing the gate for no reason. Both
+fingerprints are now in the baseline.
+
+A second fingerprint lesson, learned by rebasing this work onto the readOnlyRootFilesystem
+change above: IAC-464's fingerprint on `rollopsd.yaml` *moved* when that file gained the
+emptyDir volumes, even though the Namespace object it points at is untouched and still on
+line 5. So a fingerprint is not reliably a function of the flagged line alone — editing a
+file can invalidate baseline entries elsewhere in it. The working practice is to regenerate
+entries from a fresh scan of the tree being committed rather than carrying fingerprints
+across a rebase, which is what was done here.
+
+The corollary: **do not run `nox baseline update` on this repo.** It prunes entries the
+running version does not reproduce, which means it would delete whichever of the two
+fingerprints belongs to the *other* nox version — re-arming exactly the failure the pair
+prevents. `nox baseline add` is safe; `update` is not. And `nox baseline add` with no
+arguments waives everything currently open, which is the opposite of triage.
+
+`findings.json` and `ai.inventory.json` were tracked in git, committed by accident in #110.
+They are generated scan output that changes on every run; removed and added to `.gitignore`
+along with `results.sarif`. Scans that must not dirty the tree take `-output <dir>`.

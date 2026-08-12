@@ -16,6 +16,10 @@ FROM alpine:3.20
 # Link this image to its source repo on GHCR (provenance + lets the repo's
 # GITHUB_TOKEN inherit push access, so releases don't need a standing PAT).
 LABEL org.opencontainers.image.source="https://github.com/klarlabs-studio/rollops"
+# Who to contact about this image. Deliberately the org handle and not a mailbox:
+# an address here is PII baked into every published layer, and the repo's issue
+# tracker is the route that stays correct when maintainers change.
+LABEL maintainer="klarlabs-studio"
 # kubectl is verified against a pinned sha256, not merely downloaded.
 #
 # This binary is what drives the user's cluster: whatever lands here applies
