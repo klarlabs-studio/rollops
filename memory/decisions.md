@@ -185,3 +185,33 @@ provider, so a documented governance feature was doing nothing. Now `Apply` call
 - **Still no dependency.** `TestNoGovernorDependency` passes; nothing in `internal/`
   or `cmd/` names relicta. The provider is generic HTTP — a script answering the
   contract works as well as a product.
+
+## 2026-08-12 — Coverage is gated, and why the floors look the way they do
+
+The shared CI bar was adopted with `coverage: false` (#24). Its own input description
+explains what that meant: "set false for repos without a threshold yet". There was no
+`.coverctl.yaml`, so there was nothing to check. Now there is.
+
+- **The floors are the current state, not an ambition.** A gate that fails the day it
+  arrives gets switched off, and a gate that is off protects nothing. Each domain sits
+  about two to three points under measured coverage — enough margin that ordinary churn
+  does not trip it, tight enough that a real regression does. Raising one is then a
+  deliberate edit somebody reviews.
+- **The deploy path carries the highest floors.** governance 90, engine 80, security 88,
+  risk 87. These decide whether a rollout proceeds and whether it can be undone; the rest
+  of the tree is gated lower because that is where it honestly is.
+- **cmd and metricplugin are 0.** Both are wiring covered indirectly through what they
+  compose, so a floor would measure how far a test happens to walk into main() rather
+  than anything about the code.
+- **Nothing is left unmatched.** coverctl gates the domains it is given, so a package in
+  no domain has no floor — which reads as coverage nobody has. An `internal` catch-all
+  domain covers the remainder rather than leaving gaps. (Relicta had exactly this hole:
+  nine domains' worth of code, including its whole REST API, sat outside every domain
+  while the gate reported all-pass.)
+- **Verified against CI's actual commands**, not a local approximation: the shared bar
+  runs `go test -race -covermode=atomic -coverprofile=coverage.out ./...` then
+  `coverctl check --profile=coverage.out`, which attributes coverage per-package rather
+  than across a `-coverpkg` set. Both paths produce identical figures here, but the
+  difference is real and worth checking before trusting a threshold.
+- Generated protobuf stubs are excluded. They have no hand-written statements and only
+  move the number around.
