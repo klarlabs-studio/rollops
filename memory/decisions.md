@@ -239,3 +239,30 @@ was not itself the problem; it was the signal pointing at code nobody had exerci
   being computed: a correct baseArgs that nothing passes targets the ambient cluster while
   looking configured.
 - The trafficrouting floor is ratcheted 40 → 47 to hold the gain (coverage 42.3% → 50.0%).
+
+## 2026-08-12 — SSH command quoting was not quoting, and a malformed host-key pin failed open
+
+Both found by asking why internal/target/ssh sat at 26% once coverage was gated. The
+number was the signal, not the problem.
+
+- **shellQuote wrapped values in single quotes without escaping the ones inside**, so a
+  value containing an apostrophe closed the quoting and the rest was interpreted by the
+  remote shell. Its comment justified this: "paths are operator-controlled config, not
+  end-user input". That premise contradicts our own threat model — internal/security/
+  confine.go says "In the documented 'one repo per customer' model the repo config is
+  untrusted", and a target spec comes from that config. The confinement allowlists exist
+  because a poisoned repo is an expected input, and a path is as good a place to hide a
+  command as a command is. It was also a plain correctness bug for a trusted operator:
+  /home/o'brien/app is a legitimate path that produced a broken command.
+- **A pinned host key that failed to parse fell through.** Combined with a stale
+  insecureSkipHostKeyCheck from dev, that removed verification altogether — the one
+  outcome neither setting expresses. An operator who sets hostKey has asked for
+  verification, so an unparseable pin is now refused, naming the parse error so the typo
+  is findable rather than reported as "no pinned host key" when one is plainly set.
+- **The quoting tests run values through a real shell** and detect injection by whether a
+  file was created, not by searching output for a marker. The first version searched
+  stdout for "INJECTED" — which the hostile path contains verbatim — so it could not tell
+  an intact string from an executed command, and failed against the working fix.
+- The rest of hostKeyCallback was already right and is now pinned by tests: a pin
+  verifies, a mismatched key is refused, the explicit opt-in works, and an unpinned host
+  is refused rather than trusted on first use.

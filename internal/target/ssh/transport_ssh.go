@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -69,8 +70,18 @@ func hostKeyCallback(s spec) ssh.HostKeyCallback {
 	// A pinned host key in the spec is the secure path; an explicit
 	// insecureSkipHostKeyCheck opt-in exists for throwaway/dev hosts only.
 	if fp := s.str("hostKey"); fp != "" {
-		if pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(fp)); err == nil {
+		pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(fp))
+		if err == nil {
 			return ssh.FixedHostKey(pk)
+		}
+		// A pin that does not parse is a configuration error, and it must not fall through
+		// to the insecure branch below. An operator who set hostKey has asked for
+		// verification; combining a typo there with a stale insecureSkipHostKeyCheck from
+		// dev would silently remove it altogether, which is the one outcome neither
+		// setting expresses. Refused with the parse error, so the typo is findable.
+		return func(string, net.Addr, ssh.PublicKey) error {
+			return fmt.Errorf("ssh: spec.hostKey is set but unparseable, refusing rather than "+
+				"connecting unverified: %w", err)
 		}
 	}
 	if b, _ := s["insecureSkipHostKeyCheck"].(bool); b {
@@ -136,7 +147,25 @@ func (t *sshTransport) ReadFile(ctx context.Context, path string) ([]byte, error
 	return []byte(out), nil
 }
 
+// shellQuote wraps a value for safe interpolation into a remote shell command.
+//
+// The single quotes are not enough on their own: a value containing an apostrophe closes
+// the quoting and everything after it is interpreted by the remote shell. So
+// "/srv/a'; rm -rf /; echo '" became three commands, of which we intended one.
+//
+// This previously wrapped without escaping, justified as "paths are operator-controlled
+// config, not end-user input". That premise does not hold here. A target spec comes from
+// the repository's own config, and Rollops documents a multi-tenant model in which
+// exactly that config is untrusted — internal/security/confine.go: "In the documented
+// 'one repo per customer' model the repo config is untrusted". The confinement allowlists
+// exist because a poisoned repo is an expected input, and a path is as good a place to
+// hide a command as a command is.
+//
+// It is also a plain correctness bug for a trusted operator: /home/o'brien/app is a
+// legitimate path that produced a broken command.
+//
+// The escape is the POSIX idiom — end the quoted run, emit an escaped quote, start a new
+// run — which is what every shell accepts and needs no shell-specific handling.
 func shellQuote(s string) string {
-	// Paths are operator-controlled config, not end-user input.
-	return "'" + s + "'"
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
