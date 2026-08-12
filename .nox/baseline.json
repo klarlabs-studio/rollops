@@ -9,6 +9,15 @@
       "reason": "ROLLOPS_PLUGIN_PUBLIC_KEY is operator configuration, not attacker-controlled input. VerifyArtifact reads it as the path to the cosign public key used to verify plugin signatures; whoever can set the process environment can already read any file the process can, so treating it as a path-traversal source assumes a threat model in which the attack is already unnecessary. Same shape as a --config flag. Fingerprint taken from the CI nox-results artifact, not a local scan \u2014 they differ. Re-verify if this path ever becomes settable from a request, a plugin manifest, or any other non-operator source.",
       "owner": "felixgeelhaar",
       "created_at": "2026-08-02T00:00:00Z"
+    },
+    {
+      "fingerprint": "2678ae2b74948072d76040b950287fb2b6a0cefa18df3abaac9dc4c4e2fe3ce4",
+      "rule_id": "IAC-294",
+      "file_path": "deploy/kubernetes/rollopsd.yaml",
+      "severity": "medium",
+      "reason": "The limit this rule asks for is set. Both emptyDir volumes added for the read-only root filesystem declare a 64Mi ceiling, which parsing the manifest confirms: the tmp and kubecache volumes each resolve to a mapping carrying that ceiling. The rule matches on the volume-type key alone and does not read the line beneath it, so it reports the ceiling as absent whether it is written inline or below \u2014 neither form satisfies it, which is why this is waived rather than restructured. Deliberately worded without reproducing the flagged text, because the rule would then match this reason and file a fresh finding against the baseline itself. Fingerprint taken from the CI nox-results artifact and confirmed identical to a local scan, unlike TAINT-004 above where the two differed. Re-verify if the ceiling is ever removed from either volume, since the finding would then be correct and indistinguishable from this one.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T14:00:00Z"
     }
   ]
 }
