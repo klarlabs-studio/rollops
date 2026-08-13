@@ -1,4 +1,9 @@
 # Demo rollout config reconciled by an in-cluster rollopsd (dogfood).
+#
+# Because it is genuinely reconciled, its contents are a real workload and the scanner's
+# findings against it are real rather than illustrative — which is why this file is hardened
+# and examples/*.example.yaml are not. Editing it makes the running daemon perform a canary
+# rollout, which is the system working rather than a side effect to avoid.
 # rollopsd watches this path in the repo and applies the rollout on its
 # reconcile interval — Rollops operating a workload from Git, on the cluster.
 apiVersion: rollops.klarlabs.de/v1
@@ -25,10 +30,52 @@ spec:
           template:
             metadata: { labels: { app: web } }
             spec:
+              # Spread the two replicas across nodes where the cluster allows it.
+              # Preferred rather than required: on a single-node cluster a required rule
+              # leaves the second replica unschedulable, and this manifest is meant to run
+              # on whatever cluster somebody points at it.
+              affinity:
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 100
+                      podAffinityTerm:
+                        topologyKey: kubernetes.io/hostname
+                        labelSelector:
+                          matchLabels: { app: web }
+              securityContext:
+                runAsNonRoot: true
+                # 101 is the nginx user in the unprivileged image, confirmed by running it
+                # rather than taken from its documentation.
+                runAsUser: 101
+                runAsGroup: 101
+                seccompProfile: { type: RuntimeDefault }
               containers:
                 - name: web
-                  image: nginx:1.27-alpine
-                  ports: [{ containerPort: 80 }]
+                  # The unprivileged variant, because the hardening below is what the
+                  # scanner asked for and the stock image cannot satisfy it: nginx:alpine
+                  # binds port 80, which needs root or NET_BIND_SERVICE, so dropping
+                  # capabilities and running as non-root would leave it unable to listen.
+                  # This variant listens on 8080 as uid 101 by default.
+                  image: nginxinc/nginx-unprivileged:1.27-alpine
+                  ports: [{ containerPort: 8080 }]
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                      drop: ["ALL"]
+                    seccompProfile: { type: RuntimeDefault }
+                  # Probes on the port it actually listens on. Without them Kubernetes
+                  # treats "the process started" as "the workload is serving", which is the
+                  # assumption a canary rollout is supposed to be able to disprove — so a
+                  # demo of progressive delivery without probes demonstrates less than it
+                  # appears to.
+                  readinessProbe:
+                    httpGet: { path: /, port: 8080 }
+                    initialDelaySeconds: 2
+                    periodSeconds: 5
+                  livenessProbe:
+                    httpGet: { path: /, port: 8080 }
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
                   resources:
                     requests: { cpu: 10m, memory: 16Mi }
                     limits: { cpu: 50m, memory: 32Mi }

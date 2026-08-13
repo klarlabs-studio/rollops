@@ -747,6 +747,24 @@
       "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election \u2014 the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
       "owner": "felixgeelhaar",
       "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "09ee0c0812b167d130f8e4992c7c3bff19c061cbd4fb9909203980b9ff33827e",
+      "rule_id": "IAC-132",
+      "file_path": "demo/rollops.yaml",
+      "severity": "medium",
+      "reason": "Not expressible in this file. A disruption budget is a separate Kubernetes object, and this file is a RolloutConfig carrying one embedded workload manifest \u2014 the field the rule wants has nowhere to live here, so there is no edit that satisfies it short of Rollops growing a way to apply companion objects. The workload it guards is a two-replica deployment with preferred anti-affinity, so a drain can still take one replica at a time on a multi-node cluster. Re-verify if RolloutConfig ever gains support for additional resources, at which point this becomes a real omission rather than an unrepresentable one.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T19:00:00Z"
+    },
+    {
+      "fingerprint": "70cfc24604be3ba7a2e68f934ec84f444820ef01d661f6b77f9e7f2d496a0218",
+      "rule_id": "IAC-390",
+      "file_path": "demo/rollops.yaml",
+      "severity": "medium",
+      "reason": "The soft form is deliberate, and the rule is asking for the harder one. A required anti-affinity rule leaves the second replica permanently unschedulable on a single-node cluster, and this manifest is dogfood meant to reconcile on whatever cluster somebody points at it \u2014 including a one-node kind or k3s. Preferred spreads the replicas wherever the topology allows and degrades to co-location where it does not, which is the correct trade for a workload whose job is to demonstrate progressive delivery rather than to survive a node loss. Re-verify if this demo is ever promoted to something with an availability expectation, where required would then be right.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T19:00:00Z"
     }
   ]
 }
