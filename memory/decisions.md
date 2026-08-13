@@ -556,3 +556,31 @@ Unwaived findings are now zero, from 91 before the triage in #121.
 This file is reconciled by a live daemon, so merging changes a running workload — including its
 image. That is the system working as designed rather than a side effect to avoid, but it is an
 outward-facing change to somebody's cluster and the timing belongs to whoever operates it.
+
+## 2026-08-13 — kubectl is fetched per architecture, so the image runs where it says it does
+
+The Dockerfile fetched linux/amd64 kubectl unconditionally. The base images were already
+multi-arch, so the image built for arm64 and advertised a portability its contents did not have:
+the amd64 kubectl crashes the Go runtime under emulation with "fatal error: lfstack.push", and
+because the Kubernetes target and the traffic router only shell out to kubectl during a rollout,
+that surfaced at the first reconcile rather than at startup. Recorded as deferred twice — in
+#120 when the crash was first observed, and again in #122 when digest-pinning made the base
+images provably multi-arch and sharpened the contradiction.
+
+- **Selected by TARGETARCH, not by uname.** BuildKit supplies the platform being built *for*,
+  which is the distinction that matters on a CI runner emitting arm64 images from an amd64 host —
+  uname there reports the builder and would reintroduce the bug in a form that only appears in
+  cross-builds.
+- **ARG TARGETARCH is declared inside the final stage.** ARG scope is per-stage; without that
+  line the variable is empty and the download URL loses a path segment, which fails as a 404
+  rather than as anything that names the cause.
+- **An unrecognized architecture fails the build.** Defaulting to amd64 would reproduce exactly
+  the bug being replaced and hide it a layer deeper.
+- **Verified per architecture rather than inferred from one.** arm64 built natively and
+  `kubectl version --client` printed v1.31.0 on aarch64 — the command that crashed twice before.
+  amd64 built under emulation, fetched the amd64 URL, and reports x86_64. TARGETARCH=riscv64
+  fails with the intended message.
+
+One thing this does not do: publish a multi-arch manifest. The release workflow still builds a
+single platform, so the fix makes an arm64 image *possible* rather than *published*. Adding
+buildx with a platform matrix to release.yml is its own change.

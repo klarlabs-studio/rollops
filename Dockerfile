@@ -28,6 +28,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 # alpine:3.20
 FROM alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+# Supplied by BuildKit for the platform being built. Declared here because ARG scope is
+# per-stage: without this line TARGETARCH is empty in this stage and the kubectl download
+# below would silently build a URL with a missing path segment.
+ARG TARGETARCH
 # Link this image to its source repo on GHCR (provenance + lets the repo's
 # GITHUB_TOKEN inherit push access, so releases don't need a standing PAT).
 LABEL org.opencontainers.image.source="https://github.com/klarlabs-studio/rollops"
@@ -57,12 +61,34 @@ LABEL maintainer="klarlabs-studio"
 # worth keeping sharp for the case where it is right, which is more valuable than winning
 # the argument here with a waiver.
 #
-# To bump: set both, from https://dl.k8s.io/release/<version>/bin/linux/amd64/kubectl.sha256
+# One checksum per architecture, because the binary differs per architecture.
+#
+# This used to fetch linux/amd64 unconditionally, which made the image unrunnable on an arm64
+# node: the amd64 kubectl crashes the Go runtime under emulation with "fatal error:
+# lfstack.push", and the failure surfaces at the first reconcile rather than at startup. The
+# base images are multi-arch, so the image built and advertised portability its contents did
+# not have.
+#
+# Selected by TARGETARCH rather than by uname, so a cross-build produces the kubectl for the
+# platform it is building *for* and not for the machine doing the building — which is the
+# whole point on a CI runner emitting arm64 images from an amd64 host.
+#
+# An unrecognized architecture fails the build loudly. The alternative, defaulting to amd64,
+# reproduces exactly the bug this replaces and hides it one layer deeper.
+#
+# To bump: set the version and both checksums, from
+# https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256
 ARG KUBECTL_VERSION=v1.31.0
-ARG KUBECTL_SHA256=7c27adc64a84d1c0cc3dcf7bf4b6e916cc00f3f576a2dbac51b318d926032437
+ARG KUBECTL_SHA256_AMD64=7c27adc64a84d1c0cc3dcf7bf4b6e916cc00f3f576a2dbac51b318d926032437
+ARG KUBECTL_SHA256_ARM64=f42832db7d77897514639c6df38214a6d8ae1262ee34943364ec1ffaee6c009c
 RUN apk add --no-cache ca-certificates curl git \
+ && case "${TARGETARCH}" in \
+      amd64) KUBECTL_SHA256="${KUBECTL_SHA256_AMD64}" ;; \
+      arm64) KUBECTL_SHA256="${KUBECTL_SHA256_ARM64}" ;; \
+      *) echo "unsupported TARGETARCH [${TARGETARCH}]: add its kubectl checksum" >&2; exit 1 ;; \
+    esac \
  && curl -fsSLo /usr/local/bin/kubectl \
-      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
  && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" > /tmp/kubectl.sha256 \
  && sha256sum -c /tmp/kubectl.sha256 \
  && rm /tmp/kubectl.sha256 \
