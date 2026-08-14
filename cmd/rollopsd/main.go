@@ -562,7 +562,7 @@ func basicAuth(next http.Handler) http.Handler {
 		// Cookie path: the SPA's fetch() rides on the issued session token.
 		if c, err := r.Cookie(sessionCookie); err == nil {
 			if tok, terr := domain.TokenFromString(c.Value); terr == nil {
-				if _, verr := sessions.Validate(tok); verr == nil {
+				if _, verr := sessions.Validate(r.Context(), tok); verr == nil {
 					next.ServeHTTP(w, r.WithContext(ui.WithIdentity(r.Context(), uiIdentity)))
 					return
 				}
@@ -574,7 +574,7 @@ func basicAuth(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		sess, err := sessions.Issue(uid, tid)
+		sess, err := sessions.Issue(r.Context(), uid, tid)
 		if err != nil {
 			http.Error(w, "session issue failed", http.StatusInternalServerError)
 			return
