@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 406,
+  "version": 415,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1168,9 +1168,15 @@
       "elapsed_minutes": 0
     },
     "task-real-deploy-agent-rbac": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "7a29d06"
+      ],
+      "started_at": "2026-08-14T15:33:51.630522546Z",
+      "completed_at": "2026-08-14T15:35:30.165822825Z",
+      "elapsed_minutes": 1
     },
     "task-real-extract-engine-boot": {
       "status": "verified",
@@ -1227,13 +1233,25 @@
       "elapsed_minutes": 5
     },
     "task-real-mcp-observe-tools": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "2fff172"
+      ],
+      "started_at": "2026-08-14T15:33:51.657496746Z",
+      "completed_at": "2026-08-14T15:35:30.198978019Z",
+      "elapsed_minutes": 1
     },
     "task-real-mcp-runbook": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "b45f5032477f213714cdb60d142eb8c4fe13a0d8"
+      ],
+      "started_at": "2026-08-14T15:35:30.247506091Z",
+      "completed_at": "2026-08-14T15:36:12.638797883Z",
       "elapsed_minutes": 0
     },
     "task-real-pause-resume-abort-api": {
@@ -1490,5 +1508,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T15:32:12.692107231Z"
+  "updated_at": "2026-08-14T15:36:12.657318449Z"
 }
