@@ -47,6 +47,10 @@ const (
 	// ImageOutcomePending: a newer image exists and the proposal branch already
 	// carries exactly it, so nothing was pushed. Git has still not adopted it.
 	ImageOutcomePending ImageOutcome = "pending"
+	// ImageOutcomePinned: the config file already contains the computed ref, so
+	// Git was not rewritten. Distinct from current — current means the scanner
+	// identity equals the Git pin, not "patch was a no-op".
+	ImageOutcomePinned ImageOutcome = "pinned"
 	// ImageOutcomeError: the cycle failed; see the accompanying error.
 	ImageOutcomeError ImageOutcome = "error"
 )
@@ -133,6 +137,9 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 		return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
 	}
 	if res.Ref == "" {
+		if err := requireCurrentIdentities(seen); err != nil {
+			return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
+		}
 		return nc.Config, "", withOutcome(seen, ImageOutcomeCurrent), nil
 	}
 	newRef, from, to := res.Ref, res.From, res.To
@@ -147,8 +154,13 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 		return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
 	}
 	if !changed {
-		// The tracked branch already pins exactly this ref.
-		return nc.Config, "", withOutcome(seen, ImageOutcomeCurrent), nil
+		// Scanner moved and the file did not: that combination is an error, never
+		// current (#98). File-already-pins (identities agree, patch is a no-op)
+		// is pinned — a distinct outcome from "registry matches Git".
+		if err := requireCurrentIdentities(seen); err != nil {
+			return nc.Config, "", withOutcome(seen, ImageOutcomeError), err
+		}
+		return nc.Config, "", withOutcome(seen, ImageOutcomePinned), nil
 	}
 	msg := fmt.Sprintf("chore(image): %s %s -> %s (rollops)", nc.Config.Metadata.Name, from, to)
 
@@ -422,4 +434,14 @@ func shortDigest(d string) string {
 		return d[:i+13]
 	}
 	return d
+}
+
+// requireCurrentIdentities is the #98 invariant: current (and the patch-no-op
+// pinned path) are only legal when the scanner identity equals the Git pin.
+// A mismatch with nothing written is an error, never current.
+func requireCurrentIdentities(s ImageStatus) error {
+	if s.Resolved == "" || s.Pinned == "" || s.Resolved == s.Pinned {
+		return nil
+	}
+	return fmt.Errorf("imageauto: scanner %s does not match Git pin %s", shortDigest(s.Resolved), shortDigest(s.Pinned))
 }
