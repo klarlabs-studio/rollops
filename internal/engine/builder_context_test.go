@@ -92,7 +92,9 @@ func TestACancelledRolloutIsVisibleToTheTrafficRouterBuilder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	e.driveTraffic(ctx, "demo/prod/app", &config.TrafficRouting{Provider: "gateway"}, 50)
+	if err := e.driveTraffic(ctx, "demo/prod/app", &config.TrafficRouting{Provider: "gateway"}, 50); err == nil {
+		t.Fatal("canceled driveTraffic must fail")
+	}
 
 	if seenErr == nil {
 		t.Error("the builder saw a live context after the caller cancelled: it would launch " +

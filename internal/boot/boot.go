@@ -40,7 +40,7 @@ func (c Config) logf(format string, args ...any) {
 	if c.Log == nil {
 		return
 	}
-	fmt.Fprintf(c.Log, format, args...)
+	_, _ = fmt.Fprintf(c.Log, format, args...)
 }
 
 // Options builds the engine option set the daemon and one-shot CLI share.
