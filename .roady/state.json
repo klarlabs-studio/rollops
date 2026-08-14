@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 391,
+  "version": 400,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1152,9 +1152,15 @@
       "elapsed_minutes": 0
     },
     "task-real-cli-policy-parity": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "ec28ef21b77507589bb5f550027695f989a8e4c1"
+      ],
+      "started_at": "2026-08-14T15:20:53.760395464Z",
+      "completed_at": "2026-08-14T15:26:45.462302745Z",
+      "elapsed_minutes": 5
     },
     "task-real-dependson-wait": {
       "status": "pending",
@@ -1198,9 +1204,15 @@
       "elapsed_minutes": 0
     },
     "task-real-imageauto-current-invariant": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "17f21f5eae54abf199856b340262e504787c2271"
+      ],
+      "started_at": "2026-08-14T15:20:53.8131534Z",
+      "completed_at": "2026-08-14T15:26:45.442853857Z",
+      "elapsed_minutes": 5
     },
     "task-real-mcp-observe-tools": {
       "status": "pending",
@@ -1266,9 +1278,15 @@
       "elapsed_minutes": 0
     },
     "task-real-traffic-fail-closed": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "32f134c0699ca31f719317b99b28b401d98adefc"
+      ],
+      "started_at": "2026-08-14T15:20:53.786944892Z",
+      "completed_at": "2026-08-14T15:26:45.422588397Z",
+      "elapsed_minutes": 5
     },
     "task-real-webhook-listener": {
       "status": "pending",
@@ -1460,5 +1478,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T15:14:16.218570504Z"
+  "updated_at": "2026-08-14T15:26:45.507935949Z"
 }

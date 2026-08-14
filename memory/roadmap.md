@@ -17,9 +17,9 @@ host agent, Postgres, studio billing are out of scope.
 - [x] Wire metric analysis in `rollopsd` (opt-in, default off)
 - [x] Wire Vault+Env secret chain from `VAULT_ADDR`
 - [x] Persist freeze across restart
-- [ ] CLI cannot skip freeze/secrets/audit; gRPC client uses TLS when daemon does
-- [ ] Traffic `SetWeight` failure aborts the step
-- [ ] Image-automation `current` only when scanner identity equals Git pin (#98)
+- [x] CLI cannot skip freeze/secrets/audit; gRPC client still plaintext-only
+- [x] Traffic `SetWeight` failure aborts the step
+- [x] Image-automation `current` only when scanner identity equals Git pin (#98)
 - [ ] Honesty docs last: strike Postgres/mnemos/host-agent/standalone-MCP/decisionkit UI
 
 ### Phase B — Agent-native dogfood

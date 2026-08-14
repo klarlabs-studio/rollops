@@ -16,8 +16,11 @@ gaps real. Encoded as Roady features `real-trust` / `real-agent` /
 freeze persists in SQLite (`runtime_freeze`), `internal/boot` is shared by
 CLI and daemon, Apply writes `Rollout.RiskScore` and the UI says blast-radius.
 Second slice also verified: Vault+Env chain, `ROLLOPS_ANALYSIS` opt-in, and
-callers fill `RiskInputs`. 126/142 tasks verified. Next ready (max WIP 3):
-CLI policy parity, TLS client, traffic fail-closed, #98 invariant.
+callers fill `RiskInputs`. Third slice verified: traffic SetWeight fails the
+step, image-auto `current` requires scanner==Git pin (#98), one-shot engine
+shares freeze/secrets/audit/artifact gate. 129/142 tasks verified. Next
+ready: gRPC TLS client (last Phase A wire), then honesty docs. Do not start
+Phase C stepper before honesty docs.
 
 ---
 
