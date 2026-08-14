@@ -80,7 +80,7 @@ A single Go package exposing all operations: plan, apply, verify, promote, rollb
 Wraps the engine behind **gRPC** (typed, ergonomic for CLI and agents) and an authenticated **HTTP/JSON** surface for browser and automation clients. Production deployments should terminate TLS/mTLS at the daemon boundary or a trusted reverse proxy; local development uses bearer tokens.
 
 ### 5.3 MCP server (mcp-go)
-**Embedded in the daemon.** One process exposes the agent surface; there is no standalone MCP binary. MCP tools expose the safe agent operations: `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, and `rollouts.status`.
+**Embedded in the daemon.** One process exposes the agent surface; there is no standalone MCP binary. MCP tools expose the safe agent operations: `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, `rollouts.status`, `rollouts.list`, `rollouts.history`, and `rollouts.drift`. Apply still requires plan-before-apply.
 
 ### 5.4 CLI
 Two modes against the same engine: in-process (one-shot) or gRPC client (talking to a running daemon). Identical command surface.

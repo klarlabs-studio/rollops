@@ -173,6 +173,15 @@ func TestTools_FailClosedWithoutIdentity(t *testing.T) {
 	if _, err := tl.Freeze(ctx, FreezeInput{Active: true}); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("Freeze without identity = %v, want ErrUnauthenticated", err)
 	}
+	if _, err := tl.List(ctx, ListInput{}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("List without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.History(ctx, HistoryInput{TargetRef: "demo/staging/app"}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("History without identity = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := tl.Drift(ctx, DriftInput{}); !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("Drift without identity = %v, want ErrUnauthenticated", err)
+	}
 }
 
 func TestTools_Rollback(t *testing.T) {
@@ -220,9 +229,52 @@ spec:
 func TestNewServer_RegistersTools(t *testing.T) {
 	tl := newTools(t)
 	srv := NewServer(tl)
-	for _, name := range []string{"rollouts.plan", "rollouts.apply", "rollouts.rollback", "rollouts.status"} {
+	for _, name := range []string{
+		"rollouts.plan", "rollouts.apply", "rollouts.rollback", "rollouts.status",
+		"rollouts.list", "rollouts.history", "rollouts.drift",
+	} {
 		if _, ok := srv.GetTool(name); !ok {
 			t.Errorf("tool %q not registered", name)
 		}
+	}
+}
+
+func TestTools_ListHistoryDrift(t *testing.T) {
+	tl := newTools(t)
+	ctx := asAgent("nomi")
+	if _, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := tl.List(ctx, ListInput{Limit: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(listed.Rollouts) != 1 || listed.Rollouts[0].RolloutID != "ro-mcp-1" || listed.Rollouts[0].Target != "demo/staging/app" {
+		t.Errorf("list = %+v", listed)
+	}
+	hist, err := tl.History(ctx, HistoryInput{TargetRef: "demo/staging/app"})
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(hist.Records) == 0 {
+		t.Fatal("history empty")
+	}
+	drift, err := tl.Drift(ctx, DriftInput{})
+	if err != nil {
+		t.Fatalf("Drift: %v", err)
+	}
+	if len(drift.Items) != 1 || drift.Items[0].Target != "demo/staging/app" {
+		t.Errorf("drift = %+v", drift)
+	}
+}
+
+func TestTools_ListDeniedWithoutStatus(t *testing.T) {
+	tl := newTools(t)
+	pol := security.NewPolicy()
+	pol.DefineRole(security.Role{Name: "planner", Grants: []security.Grant{{Perm: security.PermPlan}}})
+	pol.Bind("agent:planner", "planner")
+	tl.policy = pol
+	if _, err := tl.List(asAgent("planner"), ListInput{}); err == nil {
+		t.Fatal("plan-only agent must not list")
 	}
 }
