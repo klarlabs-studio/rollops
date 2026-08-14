@@ -31,19 +31,18 @@ host agent, Postgres, studio billing are out of scope.
 ### Phase C — Canary as a verb
 
 - [x] Tick-driven `Stepper` with snapshot restore (replace blocking `Executor`)
-- [ ] Pause / resume / abort on CLI, HTTP, gRPC, MCP
-- [ ] Same controls in `/ui`
-- [ ] `doctor`/`plan` name bake vs traffic canary and cutover vs blue-green
+- [x] Pause / resume / abort on CLI, HTTP, gRPC, MCP
+- [x] Same controls in `/ui`
+- [x] `doctor`/`plan` name bake vs traffic canary and cutover vs blue-green
 
 ### Phase D — GitOps wedge
 
-- [ ] GitHub HMAC webhook → `watcher.Tick`
-- [ ] `RolloutSet` list generator (in-memory; no engine/store change)
-- [ ] Kubernetes `ignoreDifferences`
-- [ ] Reconcile waits on `dependsOn`
+- [x] GitHub HMAC webhook → `watcher.Tick`
+- [x] `RolloutSet` list generator (in-memory; no engine/store change)
+- [x] Kubernetes `ignoreDifferences`
+- [x] Reconcile waits on `dependsOn`
 
-WIP: `max_wip: 3`. Finish a phase before opening the next. Do not start B
-until A honesty-docs is done.
+**Executed 2026-08-14.** Roady 142/142. Stop. Do not add Argo checkboxes.
 
 ---
 

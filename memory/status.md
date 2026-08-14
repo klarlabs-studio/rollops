@@ -5,21 +5,21 @@
 ## Current State
 
 Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
-in-cluster pin was v0.26.0). It operates the creator's GitOps fleet. The
-**near-roadmap is Make it real** (`docs/design/make-it-real.md`): wire advertised
-behaviour, then dogfood MCP, then controllable canaries, then a small GitOps
-wedge. Do not add Argo checkboxes outside that RFC.
+in-cluster pin was v0.26.0). It operates the creator's GitOps fleet.
 
-**Last Session Summary (2026-08-14):** Product review, then a plan to make the
-gaps real. Encoded as Roady features `real-trust` / `real-agent` /
-`real-canary` / `real-gitops`. Phase A is **complete in Roady** (trust pass):
-freeze persists, shared `internal/boot`, risk score on the rollout, Vault+Env,
-`ROLLOPS_ANALYSIS` opt-in, callers fill `RiskInputs`, traffic fail-closed,
-image-auto `current` iff scanner==Git pin, CLI policy parity, gRPC TLS client,
-honesty docs. Phase B (agent dogfood) is closed: opt-in `agent-deploy`, MCP
-list/history/drift, operator runbook. Phase C1 is in: tick-driven `Stepper`
-with snapshot restore (Apply no longer `time.Sleep`s a canary pause). Next
-is pause/resume/abort on every surface, then honest strategy names.
+**Make it real is executed** (`docs/design/make-it-real.md`, Roady 142/142).
+Advertised behaviour matches `rollopsd`: freeze persist, shared boot, risk on
+the rollout, Vault+Env, opt-in analysis, honest `current`, agent-deploy + MCP
+observe tools, tick-driven canary with pause/resume/abort, HMAC webhook,
+`RolloutSet` list, `ignoreDifferences`, `dependsOn` waits. Do not add Argo
+checkboxes. Next is TDD §17 leftovers (schema versioning, plugin protocol,
+analysis P2, multi-instance, UI act-vs-observe, RBAC taxonomy) — plan those
+in Roady before coding.
+
+**Last Session Summary (2026-08-14):** Closed Phases C2–D after C1. Warden
+pre-push green on HEAD; CI 7/7. Four historical chore commits lack notes
+(pre-commit only; Cursor overrides `core.hooksPath` so `git push` does not
+run pre-push — always `warden run pre-push` explicitly).
 
 ---
 
