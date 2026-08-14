@@ -20,7 +20,6 @@ func TestHonestyDocsDoNotClaimUnwiredSurfaces(t *testing.T) {
 			rel: "README.md",
 			forbidden: []string{
 				"postgres / mnemos",
-				"webhook+poll",
 				"Concept / pre-MVP",
 				"enabled in engine wiring",
 			},
@@ -41,14 +40,12 @@ func TestHonestyDocsDoNotClaimUnwiredSurfaces(t *testing.T) {
 				"runnable standalone",
 				"Postgres-backed",
 				"Optional agent",
-				"webhook + poll",
 				"decision-kit scores",
 			},
 		},
 		{
 			rel: "wiki/architecture.md",
 			forbidden: []string{
-				"webhook+poll",
 				"risk gate (decision-kit)",
 				"same binary, Postgres",
 			},

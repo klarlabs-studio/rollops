@@ -143,6 +143,13 @@ func run(args []string) error {
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	// "Sync now" triggers an immediate reconcile of the watched repos.
 	var watcher *reconcile.Watcher
+	// GitHub HMAC webhook sits on the top mux (not the bearer-gated API) so
+	// GitHub can POST without a token. Unset ROLLOPS_WEBHOOK_SECRET → 404.
+	attachGitHubWebhook(top, os.Getenv("ROLLOPS_WEBHOOK_SECRET"), func(ctx context.Context, hint string) {
+		if watcher != nil {
+			watcher.TickHint(ctx, hint)
+		}
+	})
 	// The console enforces the same RBAC policy as the REST API (WithPolicy), and
 	// acts as the real per-request identity injected by uiAuth — never a static
 	// admin. The actor arg is legacy and unused for authorization.
@@ -235,6 +242,9 @@ func run(args []string) error {
 		}
 		go watcher.Run(ctx, interval)
 		fmt.Fprintf(os.Stderr, "rollopsd: watching %d repo(s) every %s\n", len(specs), interval)
+	}
+	if os.Getenv("ROLLOPS_WEBHOOK_SECRET") != "" {
+		fmt.Fprintln(os.Stderr, "rollopsd: GitHub webhook on POST /v1/hooks/github (HMAC); poll remains the safety net")
 	}
 
 	// MCP agent surface, embedded by default when an address is configured. It is
@@ -673,4 +683,10 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// attachGitHubWebhook registers POST /v1/hooks/github. HMAC is the auth;
+// the route is 404 when secret is unset so it is never an open tick.
+func attachGitHubWebhook(mux *http.ServeMux, secret string, tick git.TickFunc) {
+	mux.Handle("/v1/hooks/github", git.WebhookHandler(secret, tick))
 }

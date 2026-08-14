@@ -52,8 +52,8 @@ The **engine is a Go library** at the center. Every interface — CLI, daemon, M
      bolt (audit log)
 
    compiled-in targets: K8s | SSH/VM | FTP        gRPC plugin escape hatch: community/custom
-   Git repos (one per customer/service) ──poll──▶ Reconciler
-     (HMAC webhook listener: Phase D of make-it-real; poll is the trigger today)
+   Git repos (one per customer/service) ──poll / HMAC webhook──▶ Reconciler
+     (POST /v1/hooks/github; poll remains the safety net)
 ```
 
 ---
@@ -156,7 +156,7 @@ Gate behaviour (configurable via CEL): below threshold → auto-proceed; above t
 
 ## 10. Git Integration
 
-- **Trigger: poll today.** The daemon pulls watched repos on a tick; that poll **doubles as the drift-detection heartbeat**. HMAC signature verification exists as a library (`internal/git`); a GitHub webhook listener that fires immediate reconciliation is Phase D of make-it-real — do not document it as shipping until that lands.
+- **Trigger: poll plus HMAC webhook.** The daemon pulls watched repos on a tick; that poll **doubles as the drift-detection heartbeat**. `POST /v1/hooks/github` verifies `X-Hub-Signature-256` (`internal/git`) and ticks the matching watched repo (or every watched repo when the payload does not name one). Secret from `ROLLOPS_WEBHOOK_SECRET`; unset → 404. Poll remains the safety net.
 - **Auth: GitHub App or deploy keys**, per repo.
 - **Multi-tenancy: one repo per customer/service.** The daemon watches N repos, each with its own config at a configurable branch + path. Isolation is a property of Git structure.
 - Git is the single source of **desired** state; observed state lives in the `Store`.
@@ -231,7 +231,7 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 - Before deploy, Rollops verifies provenance and signature (cosign / SLSA-style) where the target supports it. Verification policy is configurable per target, with a secure default. Matters most for agent-driven rollouts.
 
 ### 14.5 Webhook verification
-- HMAC-SHA256 verification for inbound GitHub webhooks exists as a library. The daemon has **no webhook route** yet (Phase D of make-it-real). Poll is the only reconcile trigger today.
+- Inbound GitHub webhooks (`POST /v1/hooks/github`) are HMAC-SHA256 (`X-Hub-Signature-256`). A missing secret 404s the route so it is never an open tick; a bad signature is 401 and does not reconcile. Poll remains the safety net.
 
 ### 14.6 Agent guardrails
 - **Non-bypassable policy floor** — certain changes (prod schema migrations, critical-flagged targets) always require human approval regardless of computed risk. An agent cannot lower its own thresholds.
@@ -268,10 +268,9 @@ Still true, and in scope there:
 
 - **Metric-based analysis** — opt-in via `ROLLOPS_ANALYSIS=1`; default off.
   v1 rollback stays observability-free unless analysis is enabled.
-- **Git webhook listener** — HMAC verify exists; the daemon has no route
-  (Phase D). Poll is the only trigger today.
-- **Canary pause/resume** — `Stepper` exists and is unused; engine still
-  blocks in `Executor` (Phase C).
+- **Git webhook listener** — `POST /v1/hooks/github` HMAC-ticks the watcher;
+  poll remains the safety net.
+- **Canary pause/resume/abort** — engine, CLI, HTTP, gRPC, MCP, and UI.
 
 Out of this program (do not start): plugin keyless/Rekor, ApplicationSet
 matrix, Jsonnet, app-of-apps, host agent, Postgres/mnemos backends, studio

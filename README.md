@@ -37,7 +37,7 @@ internal/
   target        target registry + first-party targets (k8s/ssh/ftp) + plugin
   store         Store interface + sqlite (runtime state only)
   config        YAML + strict schema + CEL
-  git           poll triggers (webhook listener is Phase D of make-it-real)
+  git           poll + HMAC GitHub webhook (poll is the safety net)
   secrets       SecretProvider (vault integration; never local)
   audit         bolt audit log with secret redaction
   mcp           mcp-go server (tools 1:1 to engine ops)

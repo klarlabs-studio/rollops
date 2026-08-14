@@ -20,9 +20,9 @@ Both paths share the library, so they stay behaviourally identical and there's n
 
 ## Data flow
 
-Git (desired) ──poll──▶ Reconciler ──▶ statekit lifecycle ──▶ blast-radius risk gate ──▶ deploy (axi-go in fortify) via Target ──▶ verify (Health + smoke) ──▶ promoted / rolled-back. bolt audits every step.
+Git (desired) ──poll / HMAC webhook──▶ Reconciler ──▶ statekit lifecycle ──▶ blast-radius risk gate ──▶ deploy (axi-go in fortify) via Target ──▶ verify (Health + smoke) ──▶ promoted / rolled-back. bolt audits every step.
 
-A GitHub HMAC webhook listener that ticks the watcher is Phase D of make-it-real; poll is the trigger today.
+`POST /v1/hooks/github` HMAC-ticks matching watched repos; poll is the safety net.
 
 ## Rollout lifecycle
 

@@ -29,8 +29,10 @@ type RepoSpec struct {
 
 // Watcher watches N repos and reconciles each on every tick — the always-on
 // brain. Each tick pulls the latest desired state from Git (poll, which
-// doubles as the drift heartbeat) and reconciles. A GitHub webhook that calls
-// Tick is Phase D of make-it-real. Repos are independent and serialized per repo.
+// doubles as the drift heartbeat) and reconciles. A GitHub HMAC webhook
+// calls TickHint for the matching repo (or every watched repo when the
+// payload does not name one). Poll remains the safety net. Repos are
+// independent and serialized per repo.
 type Watcher struct {
 	rec       *Reconciler
 	baseDir   string
@@ -113,6 +115,13 @@ type RepoOutcome struct {
 // Tick pulls and reconciles every watched repo once. Per-repo errors are
 // captured in the result, not fatal to the others.
 func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
+	return w.TickHint(ctx, "")
+}
+
+// TickHint is Tick filtered by a GitHub webhook repo hint (owner/repo or a
+// remote URL). An empty or unmatched hint ticks every watched repo — still
+// bounded by the watch list, never an unbounded fan-out.
+func (w *Watcher) TickHint(ctx context.Context, repoHint string) []RepoOutcome {
 	if w.leases != nil {
 		ok, err := w.leases.AcquireLease(ctx, "reconcile:leader", w.owner, w.leaseTTL, w.now().UTC())
 		if err != nil {
@@ -122,11 +131,28 @@ func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
 			return []RepoOutcome{{Err: ErrNotLeader}}
 		}
 	}
-	out := make([]RepoOutcome, 0, len(w.repos))
-	for _, r := range w.repos {
+	repos := w.matching(repoHint)
+	out := make([]RepoOutcome, 0, len(repos))
+	for _, r := range repos {
 		out = append(out, w.tickOne(ctx, r)...)
 	}
 	return out
+}
+
+func (w *Watcher) matching(hint string) []watched {
+	if strings.TrimSpace(hint) == "" {
+		return w.repos
+	}
+	matched := make([]watched, 0, 1)
+	for _, r := range w.repos {
+		if git.SameRepo(r.spec.URL, hint) {
+			matched = append(matched, r)
+		}
+	}
+	if len(matched) == 0 {
+		return w.repos
+	}
+	return matched
 }
 
 func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {

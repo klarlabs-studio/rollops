@@ -19,7 +19,8 @@ this: install the App on each owner, and each repo references its installation.
 ## GitHub App (recommended)
 
 1. Create a GitHub App (org or personal). Permissions: **Contents: Read & write**
-   (Rollops reads config and pushes image-automation bumps). No webhook required.
+   (Rollops reads config and pushes image-automation bumps). The App itself
+   needs no webhook; repo webhooks (below) are optional and separate.
 2. Generate a **private key** (PEM) and note the **App ID**.
 3. Install the App on each owner, selecting only the repos Rollops manages. Note
    each **Installation ID** (`/orgs/<org>/installations`, or the install URL).
@@ -66,3 +67,28 @@ Naturally single-repo and multi-org, but the key is long-lived (rotate manually)
 
 `tokenFile` is read at startup; `token` is an inline value (operator-substituted).
 Prefer a fine-grained PAT scoped to the single repo over a shared/classic one.
+
+## GitHub webhook (optional, HMAC)
+
+Poll is the reconcile safety net. To tick immediately on push, point a GitHub
+**repository** webhook at the daemon:
+
+- URL: `https://<rollopsd>/v1/hooks/github`
+- Content type: `application/json`
+- Secret: the same value as `ROLLOPS_WEBHOOK_SECRET`
+- Events: at least `push` (ping is accepted)
+
+The daemon verifies `X-Hub-Signature-256` and calls `watcher.Tick` for the
+matching watched repo (`repository.full_name`). If the payload does not name a
+known repo, every watched repo is ticked — still bounded by `ROLLOPS_WATCH`.
+Invalid signatures are **401** and do not tick. If `ROLLOPS_WEBHOOK_SECRET` is
+unset the route is **404**, so the listener is never an unauthenticated tick.
+
+This is independent of GitHub App webhooks. The App used for clone/push does
+not need a webhook subscription.
+
+`ROLLOPS_WEBHOOK_SECRET` is also the optional HMAC key for *outbound* notify
+webhooks (`ROLLOPS_WEBHOOK_URL`). Setting it for notify HMAC also opens the
+inbound GitHub route; a caller still needs the secret to produce a valid
+signature.
+

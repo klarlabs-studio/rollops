@@ -131,6 +131,71 @@ func TestWatcher_TickReconcilesFromGit(t *testing.T) {
 	}
 }
 
+func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
+	cfg := func(name string) string {
+		return strings.ReplaceAll(repoConfigV1, "demo/prod/app", "demo/prod/"+name)
+	}
+	upA := makeRepo(t, cfg("east"))
+	upB := makeRepo(t, cfg("west"))
+	east := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	west := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "hint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "demo/prod/east":
+			return east, nil
+		case "demo/prod/west":
+			return west, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+
+	srcA, err := git.Clone(context.Background(), "file://"+upA, "main", filepath.Join(t.TempDir(), "east"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcB, err := git.Clone(context.Background(), "file://"+upB, "main", filepath.Join(t.TempDir(), "west"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{
+		Name: "east", URL: "https://github.com/acme/east.git",
+		Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"},
+	}, srcA)
+	w.AddExisting(RepoSpec{
+		Name: "west", URL: "https://github.com/acme/west.git",
+		Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"},
+	}, srcB)
+
+	if out := w.TickHint(context.Background(), "acme/east"); len(out) != 1 || out[0].Repo != "east/rollops.yaml" {
+		t.Fatalf("matching hint should tick only east, got %+v", out)
+	}
+	if len(east.applied) != 1 {
+		t.Errorf("east applied=%d, want 1", len(east.applied))
+	}
+	if len(west.applied) != 0 {
+		t.Errorf("west must not tick for an east hint, applied=%d", len(west.applied))
+	}
+
+	if out := w.TickHint(context.Background(), "unknown/repo"); len(out) != 2 {
+		t.Fatalf("unknown hint should tick every watched repo, got %d: %+v", len(out), out)
+	}
+	if len(west.applied) != 1 {
+		t.Errorf("unknown hint should still tick west (bounded by watch list), applied=%d", len(west.applied))
+	}
+}
+
 func TestWatcher_PicksUpNewCommit(t *testing.T) {
 	upstream := makeRepo(t, repoConfigV1)
 	fake := &fakeTarget{}
