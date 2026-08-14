@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 427,
+  "version": 431,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1316,8 +1316,10 @@
       "elapsed_minutes": 3
     },
     "task-real-rolloutset-list": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T17:36:44.306819762Z",
       "elapsed_minutes": 0
     },
     "task-real-stepper-tick": {
@@ -1343,9 +1345,15 @@
       "elapsed_minutes": 5
     },
     "task-real-webhook-listener": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "Cursor Agent",
+      "evidence": [
+        "565ba0d"
+      ],
+      "started_at": "2026-08-14T17:36:44.28888657Z",
+      "completed_at": "2026-08-14T17:42:32.362160259Z",
+      "elapsed_minutes": 5
     },
     "task-real-wire-metric-analysis": {
       "status": "verified",
@@ -1532,5 +1540,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T17:30:17.638282165Z"
+  "updated_at": "2026-08-14T17:42:32.385080793Z"
 }
