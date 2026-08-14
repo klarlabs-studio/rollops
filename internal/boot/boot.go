@@ -71,11 +71,19 @@ func (c Config) Options(ctx context.Context) ([]engine.Option, error) {
 		owner = "rollopsd"
 	}
 
+	prov, err := secrets.FromEnv(c.getenv)
+	if err != nil {
+		return nil, fmt.Errorf("boot: secrets: %w", err)
+	}
+
 	opts := []engine.Option{
 		engine.WithAudit(audit.New(logOrDiscard(c.Log))),
 		engine.WithGuardrails(guard),
-		engine.WithSecrets(secrets.EnvProvider{Prefix: "ROLLOPS_SECRET_"}),
+		engine.WithSecrets(prov),
 		engine.WithLeaseOwner(owner),
+	}
+	if c.getenv("VAULT_ADDR") != "" {
+		c.logf("rollops: secret chain Vault+Env (%s)\n", c.getenv("VAULT_ADDR"))
 	}
 	if key := c.getenv("ROLLOPS_COSIGN_KEY"); key != "" {
 		opts = append(opts, engine.WithArtifactGate(security.ArtifactGate{

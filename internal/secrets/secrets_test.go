@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,86 @@ func TestVaultProvider_NotFound(t *testing.T) {
 	})}
 	if _, err := v.Resolve(context.Background(), "kv/x/y#k"); err == nil {
 		t.Fatal("expected not-found")
+	}
+}
+
+func TestFromEnv_UnsetIsEnvOnly(t *testing.T) {
+	p, err := FromEnv(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.(EnvProvider); !ok {
+		t.Fatalf("unset VAULT_ADDR must be EnvProvider, got %T", p)
+	}
+}
+
+func TestFromEnv_VaultAddrBuildsChain(t *testing.T) {
+	p, err := FromEnv(func(k string) string {
+		switch k {
+		case "VAULT_ADDR":
+			return "https://vault.example"
+		case "VAULT_TOKEN":
+			return "s.xxx"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := p.(Chain)
+	if !ok || len(c.Providers) != 2 {
+		t.Fatalf("got %T %#v", p, p)
+	}
+	v, ok := c.Providers[0].(VaultProvider)
+	if !ok {
+		t.Fatalf("first provider %T, want VaultProvider", c.Providers[0])
+	}
+	if v.Addr != "https://vault.example" || v.Token != "s.xxx" {
+		t.Errorf("vault = %+v", v)
+	}
+	if _, ok := c.Providers[1].(EnvProvider); !ok {
+		t.Errorf("second provider %T, want EnvProvider", c.Providers[1])
+	}
+}
+
+func TestFromEnv_TokenFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(" filetok \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := FromEnv(func(k string) string {
+		switch k {
+		case "VAULT_ADDR":
+			return "https://v"
+		case "VAULT_TOKEN_FILE":
+			return path
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := p.(Chain)
+	v := c.Providers[0].(VaultProvider)
+	if v.Token != "filetok" {
+		t.Errorf("token from file = %q", v.Token)
+	}
+}
+
+func TestFromEnv_MissingTokenFileErrors(t *testing.T) {
+	_, err := FromEnv(func(k string) string {
+		switch k {
+		case "VAULT_ADDR":
+			return "https://v"
+		case "VAULT_TOKEN_FILE":
+			return filepath.Join(t.TempDir(), "missing")
+		default:
+			return ""
+		}
+	})
+	if err == nil {
+		t.Fatal("unreadable VAULT_TOKEN_FILE must error")
 	}
 }

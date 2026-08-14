@@ -123,3 +123,30 @@ func TestOptions_WiresGovernanceFromEnv(t *testing.T) {
 		t.Errorf("expected governance startup log, got %q", log.String())
 	}
 }
+
+func TestOptions_WiresVaultFromEnv(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "v.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	var log bytes.Buffer
+	_, err = Config{
+		Getenv: getenv(map[string]string{
+			"VAULT_ADDR":  "https://vault.example",
+			"VAULT_TOKEN": "s.supersecret",
+		}),
+		Store: db,
+		Log:   &log,
+	}.Options(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := log.String()
+	if strings.Contains(got, "s.supersecret") {
+		t.Fatal("vault token must not appear in boot logs")
+	}
+	if !strings.Contains(got, "Vault+Env") || !strings.Contains(got, "https://vault.example") {
+		t.Errorf("expected Vault chain log, got %q", got)
+	}
+}
