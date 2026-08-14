@@ -1,7 +1,8 @@
-// Package git is the Git integration: HMAC-verified webhooks for immediate
-// reconciliation, periodic poll as the safety net (which doubles as the drift
-// heartbeat), and per-repo working trees. Multi-tenancy is a property of Git
-// structure — one repo per customer/service.
+// Package git is the Git integration: per-repo working trees, poll as the
+// reconcile trigger (which doubles as the drift heartbeat), and HMAC-SHA256
+// signature verification for a future GitHub webhook listener (Phase D of
+// make-it-real — the daemon has no webhook route today). Multi-tenancy is a
+// property of Git structure — one repo per customer/service.
 package git
 
 import (
@@ -17,8 +18,8 @@ var ErrBadSignature = errors.New("git: webhook signature verification failed")
 
 // VerifySignature checks a GitHub-style HMAC-SHA256 webhook signature against
 // the raw request body. The header is "sha256=<hex>". A missing or invalid
-// signature is rejected so a forged webhook never triggers reconciliation; the
-// poll path remains the trusted fallback.
+// signature is rejected so a forged payload never triggers reconciliation once
+// a listener exists; poll is the only trigger today.
 func VerifySignature(secret, body []byte, signatureHeader string) error {
 	const prefix = "sha256="
 	if !strings.HasPrefix(signatureHeader, prefix) {

@@ -1,7 +1,7 @@
 # Rollops — Technical Design Document
 
 *Rollout operations for the agentic web*
-**Umbrella:** Klarlatz · **Status:** MVP implementation design · **Companion to:** `rollops-vision.md`
+**Umbrella:** Klarlatz · **Status:** Dogfooded OSS design · **Companion to:** `rollops-vision.md`
 
 ---
 
@@ -28,10 +28,9 @@ Rollops is assembled from existing components rather than built from scratch:
 | Rollout lifecycle | **statekit** | Each rollout is a statechart: `pending → validating → deploying → verifying → promoted` / `rolled-back` |
 | Step execution | **axi-go** | Safe, auditable execution kernel that actually runs each deployment step |
 | Resilience | **fortify** | Retries, circuit breakers, rate limiting, bulkheads around every target operation |
-| Risk scoring | **decision-kit** | Computes the blast-radius risk score that drives the approval gate |
+| Risk scoring | **blast-radius gate** | Homegrown `internal/risk` score that drives the approval gate. decision-kit is a reserved pin, not the scorer. |
 | Audit / events | **bolt** | Structured, compliance-grade audit and event logging (distinct from `bbolt`, which is intentionally **not** used to avoid the name clash) |
-| Agent interface | **mcp-go** | The MCP server exposing Rollops operations to agents |
-| Bitemporal history (optional) | **mnemos** | Optional `Store` backend for rollout history — believed-vs-actual deployed state over time |
+| Agent interface | **mcp-go** | The MCP server embedded in the daemon, exposing Rollops operations to agents |
 
 Language: **Go** throughout. Config: **YAML + strict schema + CEL** for conditional logic.
 
@@ -47,13 +46,14 @@ The **engine is a Go library** at the center. Every interface — CLI, daemon, M
    Browser ─────HTTP/JSON──▶
 
    ENGINE (Go library):
-     Reconciler ──▶ statekit (rollout lifecycle) ──▶ decision-kit (risk gate)
-     Store (iface: SQLite/PG/mnemos)   axi-go (step execution, wrapped in fortify)
+     Reconciler ──▶ statekit (rollout lifecycle) ──▶ blast-radius risk gate
+     Store (iface: SQLite)   axi-go (step execution, wrapped in fortify)
                                        ──▶ Target (iface)
      bolt (audit log)
 
    compiled-in targets: K8s | SSH/VM | FTP        gRPC plugin escape hatch: community/custom
-   Git repos (one per customer/service) ──webhook + poll──▶ Reconciler
+   Git repos (one per customer/service) ──poll──▶ Reconciler
+     (HMAC webhook listener: Phase D of make-it-real; poll is the trigger today)
 ```
 
 ---
@@ -65,10 +65,7 @@ The **engine is a Go library** at the center. Every interface — CLI, daemon, M
 - **Daemon mode** — a long-running reconciler watches Git, detects drift, and fires scheduled rollouts. The always-on brain for unattended operation.
 - **One-shot mode** — every action is also invokable directly from the CLI, running the engine in-process. No hard dependency on the daemon being up; good for local use, CI, and recovery.
 
-**Target reach is dual:**
-
-- **Agentless by default** — the daemon/CLI pushes to each target over its native transport (kube-apiserver, SSH, FTP) from one control point. Nothing to install on targets. The lean default.
-- **Optional agent** — a lightweight agent can sit on a host where pull-based execution, network constraints, or local observation make agentless impractical.
+**Target reach is agentless:** the daemon/CLI pushes to each target over its native transport (kube-apiserver, SSH, FTP) from one control point. Nothing to install on targets. A host-side pull agent is out of scope.
 
 **Trade-off:** the hybrid adds a little surface area (two execution paths over one engine) but removes the single point of failure and keeps the lean OSS story intact. The shared engine library keeps the two paths behaviourally identical.
 
@@ -83,7 +80,7 @@ A single Go package exposing all operations: plan, apply, verify, promote, rollb
 Wraps the engine behind **gRPC** (typed, ergonomic for CLI and agents) and an authenticated **HTTP/JSON** surface for browser and automation clients. Production deployments should terminate TLS/mTLS at the daemon boundary or a trusted reverse proxy; local development uses bearer tokens.
 
 ### 5.3 MCP server (mcp-go)
-**Embedded in the daemon by default** — one process exposes the agent surface — but **runnable standalone** as its own client of the engine for setups where the agent surface must live separately. MCP tools expose the safe agent operations: `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, and `rollouts.status`.
+**Embedded in the daemon.** One process exposes the agent surface; there is no standalone MCP binary. MCP tools expose the safe agent operations: `rollouts.plan`, `rollouts.apply`, `rollouts.rollback`, and `rollouts.status`.
 
 ### 5.4 CLI
 Two modes against the same engine: in-process (one-shot) or gRPC client (talking to a running daemon). Identical command surface.
@@ -134,7 +131,7 @@ pending → validating → [risk gate] → deploying → verifying → promoted
 ```
 
 - **validating** — schema + CEL validation, dependency resolution, and a **plan/diff** computed and surfaced before anything is applied. Apply on an agent-driven rollout requires the plan to have been produced.
-- **risk gate** — decision-kit scores the change (§9). Below threshold → proceed; above/sensitive → `awaiting-approval`.
+- **risk gate** — `internal/risk` scores the change (§9). Below threshold → proceed; above/sensitive → `awaiting-approval`.
 - **deploying** — progressive strategy executes: canary, blue-green, or rolling, with configurable traffic shifting.
 - **verifying** — `Health()` + post-deploy smoke tests gate promotion.
 - **rolled-back** — triggered manually, by an agent, or automatically (§11).
@@ -143,7 +140,7 @@ statekit gives durable, inspectable state for every in-flight rollout — persis
 
 ---
 
-## 9. Risk Gate (decision-kit)
+## 9. Risk Gate (blast-radius)
 
 Blast-radius score from five **observability-free** signals:
 
@@ -159,7 +156,7 @@ Gate behaviour (configurable via CEL): below threshold → auto-proceed; above t
 
 ## 10. Git Integration
 
-- **Trigger: webhook + poll.** GitHub webhook fires immediate reconciliation; periodic poll is the safety net and **doubles as the drift-detection heartbeat**.
+- **Trigger: poll today.** The daemon pulls watched repos on a tick; that poll **doubles as the drift-detection heartbeat**. HMAC signature verification exists as a library (`internal/git`); a GitHub webhook listener that fires immediate reconciliation is Phase D of make-it-real — do not document it as shipping until that lands.
 - **Auth: GitHub App or deploy keys**, per repo.
 - **Multi-tenancy: one repo per customer/service.** The daemon watches N repos, each with its own config at a configurable branch + path. Isolation is a property of Git structure.
 - Git is the single source of **desired** state; observed state lives in the `Store`.
@@ -169,7 +166,7 @@ Gate behaviour (configurable via CEL): below threshold → auto-proceed; above t
 ## 11. Reconciliation, Drift & Rollback
 
 ### Reconcile loop
-On each tick (poll) or event (webhook): read desired state from Git → call `Observe()` on each target → diff. **Drift = desired fingerprint ≠ observed fingerprint.** On drift: detect, alert (bolt + notifications), and reconcile back to desired state, subject to the risk gate.
+On each poll tick: read desired state from Git → call `Observe()` on each target → diff. **Drift = desired fingerprint ≠ observed fingerprint.** On drift: detect, alert (bolt + notifications), and reconcile back to desired state, subject to the risk gate.
 
 ### Drift across heterogeneous targets
 - **Rich targets** (K8s) implement `Observe()` natively against live state.
@@ -181,7 +178,7 @@ Three modes — manual, automatic, agent-driven. v1 auto-rollback signal is obse
 - a post-deploy **smoke test** failure ("run this, expect exit 0"), **or**
 - a **step error / timeout** from axi-go.
 
-Metric-based rollout analysis is the **Phase 2 seam** where Obvia technology can plug in.
+Metric-based rollout analysis is the **Phase 2 seam** where Obvia technology can plug in. It is off by default; set `ROLLOPS_ANALYSIS=1` to evaluate `spec.analysis`.
 
 ---
 
@@ -198,7 +195,7 @@ type Store interface {
 }
 ```
 
-Backends: **SQLite** (default, single-file, single-binary friendly), **Postgres** (studio/scale shared state), **mnemos** (optional bitemporal history).
+Backends: **SQLite** (the shipped runtime Store — single-file, single-binary friendly). Postgres and mnemos backends are not implemented; do not document them as options.
 
 Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `Dependency`.
 
@@ -234,7 +231,7 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 - Before deploy, Rollops verifies provenance and signature (cosign / SLSA-style) where the target supports it. Verification policy is configurable per target, with a secure default. Matters most for agent-driven rollouts.
 
 ### 14.5 Webhook verification
-- Inbound GitHub webhooks verify the HMAC signature before triggering reconciliation. The poll path is the trusted fallback.
+- HMAC-SHA256 verification for inbound GitHub webhooks exists as a library. The daemon has **no webhook route** yet (Phase D of make-it-real). Poll is the only reconcile trigger today.
 
 ### 14.6 Agent guardrails
 - **Non-bypassable policy floor** — certain changes (prod schema migrations, critical-flagged targets) always require human approval regardless of computed risk. An agent cannot lower its own thresholds.
@@ -257,7 +254,7 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 ## 16. Deployment Topology
 
 - **OSS / lean:** single Go binary + SQLite, agentless, on one Hetzner VPS. Daemon + embedded MCP + UI in one process.
-- **Studio / scale:** same binary, Postgres-backed, optionally multiple instances coordinating shared state; managed multi-customer layer above.
+- **Studio / scale:** a separate commercial layer (open-core boundary). The OSS binary does not grow a Postgres Store or a host agent for that path.
 
 ---
 
@@ -269,10 +266,7 @@ That RFC is the near-roadmap. Do not add Argo checkboxes outside it.
 
 Still true, and in scope there:
 
-- **Docs = daemon.** Postgres, mnemos, host agent, standalone MCP, and
-  decisionkit-driven UI scores are not wired. Either wire (trust pass) or
-  strike the claim.
-- **Metric-based analysis** — library exists; daemon must opt in explicitly.
+- **Metric-based analysis** — opt-in via `ROLLOPS_ANALYSIS=1`; default off.
   v1 rollback stays observability-free unless analysis is enabled.
 - **Git webhook listener** — HMAC verify exists; the daemon has no route
   (Phase D). Poll is the only trigger today.

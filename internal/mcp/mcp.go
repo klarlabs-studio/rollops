@@ -1,7 +1,7 @@
 // Package mcp is the agent surface: an MCP server (mcp-go) exposing the engine
 // operations 1:1 as tools — rollouts.plan, rollouts.apply, rollouts.status,
-// rollouts.rollback. It is embedded in the daemon by default but runnable
-// standalone. The agent endpoint can deploy, so it is privileged: every tool
+// rollouts.rollback. It is embedded in the daemon; there is no standalone MCP
+// binary. The agent endpoint can deploy, so it is privileged: every tool
 // authorizes through the same RBAC policy as the other interfaces, against the
 // identity the MCP connection authenticated as.
 package mcp
@@ -308,8 +308,8 @@ func (t *Tools) action(ctx context.Context, rolloutID string, perm security.Perm
 	return ActionOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note}, nil
 }
 
-// NewServer builds an MCP server with the rollout tools registered. Serve it via
-// mcp.ServeStdio / ServeHTTP (embedded in the daemon or standalone).
+// NewServer builds an MCP server with the rollout tools registered. The daemon
+// serves it over the MCP listener (embedded); there is no standalone binary.
 func NewServer(t *Tools) *mcpserver.Server {
 	srv := mcpserver.NewServer(mcpserver.ServerInfo{
 		Name:         "rollops",

@@ -28,9 +28,9 @@ type RepoSpec struct {
 }
 
 // Watcher watches N repos and reconciles each on every tick — the always-on
-// brain. Each tick pulls the latest desired state from Git (immediate via
-// webhook, periodic via this poll which doubles as the drift heartbeat) and
-// reconciles. Repos are independent and serialized per repo.
+// brain. Each tick pulls the latest desired state from Git (poll, which
+// doubles as the drift heartbeat) and reconciles. A GitHub webhook that calls
+// Tick is Phase D of make-it-real. Repos are independent and serialized per repo.
 type Watcher struct {
 	rec       *Reconciler
 	baseDir   string

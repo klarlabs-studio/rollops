@@ -1,9 +1,9 @@
-// Package store defines the pluggable persistence boundary for runtime state.
+// Package store defines the persistence boundary for runtime state.
 //
 // The Store is NOT the source of truth for desired state — Git is. It holds
-// observed state, in-flight rollouts, schedules, and history. Backends:
-// SQLite (default, single-file, single-binary friendly), Postgres (studio
-// scale, shared state), and mnemos (optional bitemporal history).
+// observed state, in-flight rollouts, schedules, freeze, and history. The
+// shipped backend is SQLite (single-file, single-binary friendly). Postgres
+// and mnemos backends are not implemented.
 package store
 
 import (
@@ -18,8 +18,9 @@ import (
 // ErrNotFound is returned by lookups when the requested record does not exist.
 var ErrNotFound = errors.New("store: not found")
 
-// Store persists runtime rollout state behind a single interface so the
-// backend (SQLite / Postgres / mnemos) is a deployment choice, not a coupling.
+// Store persists runtime rollout state behind a single interface so a
+// future backend can swap without changing callers. SQLite is the only
+// shipped implementation.
 type Store interface {
 	// SaveRollout persists a rollout's current statekit state. Called on every
 	// transition so an interrupted rollout resumes or rolls back deterministically.
@@ -80,8 +81,8 @@ type FreezeState struct {
 
 // LeaseStore is an optional runtime coordination extension for stores that can
 // provide cross-process leases. It is deliberately separate from Store so simple
-// backends can remain lean while SQLite/Postgres deployments can coordinate
-// multiple rollopsd instances.
+// backends can remain lean while SQLite (and a future shared backend) can
+// coordinate multiple rollopsd instances.
 type LeaseStore interface {
 	AcquireLease(ctx context.Context, key, owner string, ttl time.Duration, now time.Time) (bool, error)
 	ReleaseLease(ctx context.Context, key, owner string) error

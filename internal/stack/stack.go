@@ -7,10 +7,10 @@
 //	statekit    rollout lifecycle statechart
 //	axi         step execution kernel (imported as go.klarlabs.de/axi)
 //	fortify     resilience: retry / circuit-breaker / rate-limit / bulkhead
-//	decisionkit blast-radius risk scoring (risk subpackage)
+//	decisionkit reserved pin (commitment/deadline risk; blast-radius is internal/risk)
 //	bolt        structured, compliance-grade audit + event logging
 //	mcp         MCP server for the agent surface (imported as go.klarlabs.de/mcp)
-//	mnemos      optional bitemporal Store backend
+//	mnemos      reserved pin (not a Store backend)
 package stack
 
 import (

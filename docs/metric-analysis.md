@@ -2,8 +2,10 @@
 
 Metric analysis is a stable optional Phase 2 feature. It adds a fourth
 post-deploy gate after target health, smoke tests, and step execution errors.
-It is disabled by default so the v1 path remains observability-free unless an
-operator explicitly enables analysis in engine wiring.
+It is disabled by default so the v1 path remains observability-free. Set
+`ROLLOPS_ANALYSIS=1` on the daemon (or one-shot CLI via the shared boot path)
+to evaluate `spec.analysis`. Without that flag the YAML block is captured and
+ignored.
 
 ## Contract
 

@@ -12,15 +12,12 @@ wedge. Do not add Argo checkboxes outside that RFC.
 
 **Last Session Summary (2026-08-14):** Product review, then a plan to make the
 gaps real. Encoded as Roady features `real-trust` / `real-agent` /
-`real-canary` / `real-gitops`. First Phase A slice is **verified in Roady**:
-freeze persists in SQLite (`runtime_freeze`), `internal/boot` is shared by
-CLI and daemon, Apply writes `Rollout.RiskScore` and the UI says blast-radius.
-Second slice also verified: Vault+Env chain, `ROLLOPS_ANALYSIS` opt-in, and
-callers fill `RiskInputs`. Third slice verified: traffic SetWeight fails the
-step, image-auto `current` requires scanner==Git pin (#98), one-shot engine
-shares freeze/secrets/audit/artifact gate. 129/142 tasks verified. Next
-ready: gRPC TLS client (last Phase A wire), then honesty docs. Do not start
-Phase C stepper before honesty docs.
+`real-canary` / `real-gitops`. Phase A is **complete in Roady** (trust pass):
+freeze persists, shared `internal/boot`, risk score on the rollout, Vault+Env,
+`ROLLOPS_ANALYSIS` opt-in, callers fill `RiskInputs`, traffic fail-closed,
+image-auto `current` iff scanner==Git pin, CLI policy parity, gRPC TLS client,
+honesty docs. Next is Phase B (agent dogfood). Do not start Phase C stepper
+before B.
 
 ---
 

@@ -122,6 +122,27 @@ production point the `rollopsd-ca` `Issuer` at your real CA — Vault, an
 intermediate-CA Issuer, or step-ca — so server and client certs chain to a trust
 root you control.
 
+## CLI client (`ROLLOPS_DAEMON`)
+
+The one-shot CLI talks to a running daemon over gRPC when `ROLLOPS_DAEMON` is
+set. It uses the **same** `ROLLOPS_TLS_*` variables as rollopsd:
+
+- Unset → plaintext (the loopback dev default).
+- `ROLLOPS_TLS_CERT` (+ `ROLLOPS_TLS_KEY`) → TLS 1.3; the cert PEM is trusted
+  as the server root (self-signed dogfood keypair, or a concatenated chain).
+- `ROLLOPS_TLS_CLIENT_CA` set → the same keypair is presented as the client
+  certificate so mTLS CLI calls work without a second identity.
+
+```sh
+export ROLLOPS_DAEMON=rollopsd.example:8090
+export ROLLOPS_TOKEN=...
+export ROLLOPS_TLS_CERT=/etc/rollops/tls/tls.crt
+export ROLLOPS_TLS_KEY=/etc/rollops/tls/tls.key
+# mTLS:
+export ROLLOPS_TLS_CLIENT_CA=/etc/rollops/tls/ca.crt
+bin/rollops status <rollout-id>
+```
+
 ## Issuing client certificates for CLIs and agents
 
 With mTLS enabled, any client of the REST API / gRPC / MCP surfaces must present
