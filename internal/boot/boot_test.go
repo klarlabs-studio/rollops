@@ -150,3 +150,39 @@ func TestOptions_WiresVaultFromEnv(t *testing.T) {
 		t.Errorf("expected Vault chain log, got %q", got)
 	}
 }
+
+func TestOptions_WiresAnalysisFromEnv(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "an.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	var log bytes.Buffer
+	_, err = Config{
+		Getenv: getenv(map[string]string{"ROLLOPS_ANALYSIS": "1"}),
+		Store:  db,
+		Log:    &log,
+	}.Options(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "metric analysis enabled") {
+		t.Errorf("expected analysis startup log, got %q", log.String())
+	}
+}
+
+func TestOptions_AnalysisOffByDefault(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	var log bytes.Buffer
+	_, err = Config{Getenv: getenv(nil), Store: db, Log: &log}.Options(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(log.String(), "metric analysis enabled") {
+		t.Error("analysis must stay off unless ROLLOPS_ANALYSIS is set")
+	}
+}

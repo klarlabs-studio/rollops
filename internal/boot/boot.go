@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/audit"
@@ -85,6 +86,10 @@ func (c Config) Options(ctx context.Context) ([]engine.Option, error) {
 	if c.getenv("VAULT_ADDR") != "" {
 		c.logf("rollops: secret chain Vault+Env (%s)\n", c.getenv("VAULT_ADDR"))
 	}
+	if analysisEnabled(c.getenv("ROLLOPS_ANALYSIS")) {
+		opts = append(opts, engine.WithMetricAnalysis())
+		c.logf("rollops: metric analysis enabled (observability-free default is off)\n")
+	}
 	if key := c.getenv("ROLLOPS_COSIGN_KEY"); key != "" {
 		opts = append(opts, engine.WithArtifactGate(security.ArtifactGate{
 			Mode:     security.VerifyEnforce,
@@ -112,4 +117,13 @@ func logOrDiscard(w io.Writer) io.Writer {
 		return io.Discard
 	}
 	return w
+}
+
+func analysisEnabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
