@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 382,
+  "version": 391,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1245,9 +1245,15 @@
       "elapsed_minutes": 7
     },
     "task-real-risk-inputs-from-callers": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "68d1e5517531e84b9940d77678fa1a0bf4d8e393"
+      ],
+      "started_at": "2026-08-14T15:10:27.034348101Z",
+      "completed_at": "2026-08-14T15:14:16.174875251Z",
+      "elapsed_minutes": 3
     },
     "task-real-rolloutset-list": {
       "status": "pending",
@@ -1270,14 +1276,26 @@
       "elapsed_minutes": 0
     },
     "task-real-wire-metric-analysis": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "11caff0a2de7b35b09189edd0df46c4ab81b0f01"
+      ],
+      "started_at": "2026-08-14T15:10:27.009849368Z",
+      "completed_at": "2026-08-14T15:14:16.157681855Z",
+      "elapsed_minutes": 3
     },
     "task-real-wire-vault": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "2d30a08cee1c568af1b326d98412c1dcf32aec35"
+      ],
+      "started_at": "2026-08-14T15:10:26.986797549Z",
+      "completed_at": "2026-08-14T15:14:16.139135087Z",
+      "elapsed_minutes": 3
     },
     "task-reconcile-loop-on-poll-tick-and": {
       "status": "verified",
@@ -1442,5 +1460,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T15:09:33.846170472Z"
+  "updated_at": "2026-08-14T15:14:16.218570504Z"
 }

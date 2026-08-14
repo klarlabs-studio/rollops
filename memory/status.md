@@ -15,8 +15,9 @@ gaps real. Encoded as Roady features `real-trust` / `real-agent` /
 `real-canary` / `real-gitops`. First Phase A slice is **verified in Roady**:
 freeze persists in SQLite (`runtime_freeze`), `internal/boot` is shared by
 CLI and daemon, Apply writes `Rollout.RiskScore` and the UI says blast-radius.
-123/142 tasks verified. Next ready (max WIP 3): Vault chain, metric analysis,
-RiskInputs from callers — plus TLS client, traffic fail-closed, #98 invariant.
+Second slice also verified: Vault+Env chain, `ROLLOPS_ANALYSIS` opt-in, and
+callers fill `RiskInputs`. 126/142 tasks verified. Next ready (max WIP 3):
+CLI policy parity, TLS client, traffic fail-closed, #98 invariant.
 
 ---
 
