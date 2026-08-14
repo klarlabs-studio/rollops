@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 const canaryTrafficYAML = `
@@ -78,5 +81,54 @@ func TestApply_DrivesTrafficRouterPerStep(t *testing.T) {
 	}
 	if r.Phase != rollout.PhaseVerifying {
 		t.Errorf("phase = %q", r.Phase)
+	}
+}
+
+type failingRouter struct{ err error }
+
+func (f failingRouter) SetWeight(context.Context, trafficrouting.Change) error { return f.err }
+
+func TestApply_TrafficFailureAbortsTheStep(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake, WithTrafficRouterBuilder(func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) {
+		return failingRouter{err: errors.New("httproute rejected")}, nil
+	}))
+	c, err := config.Load([]byte(canaryTrafficYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err == nil || !strings.Contains(err.Error(), "trafficrouter") {
+		t.Fatalf("traffic failure must abort apply, got %v", err)
+	}
+	if r != nil && r.Phase == rollout.PhaseVerifying {
+		t.Error("a canary that did not shift traffic must not reach verifying")
+	}
+}
+
+func TestApply_TrafficFailureAutoRollsBack(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	e, _ := newEngine(t, fake, WithIDGen(incIDs()), WithTrafficRouterBuilder(func(context.Context, *config.TrafficRouting) (trafficrouting.Router, error) {
+		return failingRouter{err: errors.New("gateway 409")}, nil
+	}))
+	ctx := context.Background()
+	prior, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t), Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err != nil {
+		t.Fatalf("prior apply: %v", err)
+	}
+	c, err := config.Load([]byte(canaryTrafficYAML + "\n  rollback:\n    auto: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad, err := e.Apply(ctx, ApplyRequest{Config: c, Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err == nil {
+		t.Fatal("traffic failure must error")
+	}
+	if bad == nil || bad.Phase != rollout.PhaseRolledBack {
+		t.Fatalf("phase = %v, want rolled-back", bad)
+	}
+	last := fake.applied[len(fake.applied)-1]
+	if last.Checksum != prior.Desired.Checksum {
+		t.Errorf("last applied = %q, want prior %q", last.Checksum, prior.Desired.Checksum)
 	}
 }

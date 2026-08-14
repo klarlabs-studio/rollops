@@ -77,7 +77,7 @@ type Executor struct {
 	// OnStep is called after each step passes its health gate with the 1-based
 	// step index, the plan's total, and the step itself — the persistence hook
 	// for live step progress.
-	OnStep func(i, total int, s Step)
+	OnStep func(i, total int, s Step) error
 }
 
 // Run executes each step: deploy at the step weight, settle, then gate on
@@ -100,7 +100,9 @@ func (e Executor) Run(ctx context.Context, p Plan) error {
 			}
 		}
 		if e.OnStep != nil {
-			e.OnStep(i+1, len(p.Steps), step)
+			if err := e.OnStep(i+1, len(p.Steps), step); err != nil {
+				return fmt.Errorf("progressive: %s step %d/%d (%d%%): %w", p.Strategy, i+1, len(p.Steps), step.Weight, err)
+			}
 		}
 	}
 	return nil

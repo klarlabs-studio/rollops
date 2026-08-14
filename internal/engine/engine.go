@@ -193,14 +193,18 @@ func WithMetricsProviderBuilder(f func(context.Context, *config.Analysis) (analy
 }
 
 // driveTraffic shifts the configured percentage of traffic to the canary backend
-// through a freshly launched traffic-router plugin, then closes it. Best-effort:
-// a routing failure is audited and never aborts the rollout (the health gate
-// remains the source of truth), mirroring feature-flag delivery.
-func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.TrafficRouting, weight int) {
+// through a freshly launched traffic-router plugin, then closes it. A routing
+// failure aborts the current step — a canary that did not shift traffic must
+// not bake and promote. Callers that must not fail (rollback reset) ignore the
+// error. Feature-flag apply stays best-effort; it is a different failure domain.
+func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.TrafficRouting, weight int) error {
+	if tr == nil {
+		return nil
+	}
 	router, err := e.routerBuild(ctx, tr)
 	if err != nil {
 		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "trafficrouter build failed: " + err.Error()})
-		return
+		return fmt.Errorf("trafficrouter build: %w", err)
 	}
 	if c, ok := router.(interface{ Close() error }); ok {
 		defer func() { _ = c.Close() }()
@@ -211,9 +215,10 @@ func (e *Engine) driveTraffic(ctx context.Context, ref string, tr *config.Traffi
 		StableService: tr.StableService, CanaryService: tr.CanaryService, Weight: weight,
 	}); err != nil {
 		e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: "trafficrouter apply failed: " + err.Error()})
-		return
+		return fmt.Errorf("trafficrouter apply: %w", err)
 	}
 	e.record(audit.Entry{Action: audit.ActionApply, TargetRef: ref, Detail: fmt.Sprintf("trafficrouter %q → canary %d%%", tr.Route, weight)})
+	return nil
 }
 
 // flagsEnabled reports whether feature-flag coupling fires for the given phase
@@ -888,7 +893,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		// API) see live "canary 2/3 (50%)" state; each save also appends a
 		// timeline entry. Best-effort: a persistence hiccup must not abort a
 		// healthy step sequence.
-		OnStep: func(i, total int, s progressive.Step) {
+		OnStep: func(i, total int, s progressive.Step) error {
 			r.StepIndex, r.StepTotal, r.StepWeight = i, total, s.Weight
 			r.Note = fmt.Sprintf("%s step %d/%d (%d%%) passed health gate", plan.Strategy, i, total, s.Weight)
 			r.UpdatedAt = e.now()
@@ -896,15 +901,20 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.Note = ""
 			// Shift real network traffic to the canary backend at this step's
 			// weight, so a weighted canary means actual traffic routing (Gateway
-			// API, Istio, …), not just a health-gated bake.
+			// API, Istio, …), not just a health-gated bake. A routing failure
+			// aborts the step — baking a canary that did not take traffic is a lie.
 			if cfg.Spec.TrafficRouting != nil {
-				e.driveTraffic(ctx, ref, cfg.Spec.TrafficRouting, s.Weight)
+				if err := e.driveTraffic(ctx, ref, cfg.Spec.TrafficRouting, s.Weight); err != nil {
+					return err
+				}
 			}
 			// Drive the coupled feature flag to match the traffic weight, so
-			// the flag rollout tracks the canary in lockstep.
+			// the flag rollout tracks the canary in lockstep. Best-effort:
+			// an app-layer flag is a different failure domain from the mesh.
 			if flagsEnabled(cfg.Spec.FeatureFlags, "step") {
 				e.driveFlag(ctx, ref, cfg.Spec.FeatureFlags, s.Weight)
 			}
+			return nil
 		},
 	}
 	if runErr := exec.Run(ctx, plan); runErr != nil {
@@ -1662,7 +1672,7 @@ func (e *Engine) resetDelivery(ctx context.Context, r *rollout.Rollout) {
 	if len(r.DeliveryTraffic) > 0 {
 		var tr config.TrafficRouting
 		if err := json.Unmarshal(r.DeliveryTraffic, &tr); err == nil {
-			e.driveTraffic(ctx, r.TargetRef, &tr, 0)
+			_ = e.driveTraffic(ctx, r.TargetRef, &tr, 0)
 		}
 	}
 	if len(r.DeliveryFlag) > 0 {
