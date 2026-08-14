@@ -260,17 +260,17 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 
 ## 17. Open Items / Revisit as it grows
 
-Active work is the **Make it real** program (`docs/design/make-it-real.md`,
-Roady features `real-trust` / `real-agent` / `real-canary` / `real-gitops`).
-That RFC is the near-roadmap. Do not add Argo checkboxes outside it.
+The **Make it real** program (`docs/design/make-it-real.md`) is executed
+(Roady `real-trust` / `real-agent` / `real-canary` / `real-gitops`, 142/142
+verified). Do not add Argo checkboxes outside it.
 
-Still true, and in scope there:
+Still open, not in that program:
 
 - **Metric-based analysis** — opt-in via `ROLLOPS_ANALYSIS=1`; default off.
   v1 rollback stays observability-free unless analysis is enabled.
-- **Git webhook listener** — `POST /v1/hooks/github` HMAC-ticks the watcher;
-  poll remains the safety net.
-- **Canary pause/resume/abort** — engine, CLI, HTTP, gRPC, MCP, and UI.
+- Config schema versioning beyond v1, plugin gRPC protocol evolution,
+  multi-instance coordination beyond Store leases, UI act-vs-observe scope,
+  concrete RBAC taxonomy.
 
 Out of this program (do not start): plugin keyless/Rekor, ApplicationSet
 matrix, Jsonnet, app-of-apps, host agent, Postgres/mnemos backends, studio

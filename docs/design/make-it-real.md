@@ -1,6 +1,6 @@
 # RFC: Make it real
 
-Status: **Approved for execution** — this is the near-roadmap.
+Status: **Executed** — Phases A–D verified in Roady (142/142).
 Date: 2026-08-14.
 Companion: `.roady/spec.yaml` features `real-trust`, `real-agent`, `real-canary`, `real-gitops`.
 

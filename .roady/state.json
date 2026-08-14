@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 435,
+  "version": 439,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1163,11 +1163,15 @@
       "elapsed_minutes": 5
     },
     "task-real-dependson-wait": {
-      "status": "in_progress",
+      "status": "verified",
       "path": "",
       "owner": "Cursor Agent",
+      "evidence": [
+        "af9f8b1"
+      ],
       "started_at": "2026-08-14T17:48:16.641052751Z",
-      "elapsed_minutes": 0
+      "completed_at": "2026-08-14T17:54:53.382060687Z",
+      "elapsed_minutes": 6
     },
     "task-real-deploy-agent-rbac": {
       "status": "verified",
@@ -1225,11 +1229,15 @@
       "elapsed_minutes": 3
     },
     "task-real-ignore-differences": {
-      "status": "in_progress",
+      "status": "verified",
       "path": "",
       "owner": "Cursor Agent",
+      "evidence": [
+        "bdddc8d"
+      ],
       "started_at": "2026-08-14T17:48:16.625495521Z",
-      "elapsed_minutes": 0
+      "completed_at": "2026-08-14T17:54:53.350055054Z",
+      "elapsed_minutes": 6
     },
     "task-real-imageauto-current-invariant": {
       "status": "verified",
@@ -1548,5 +1556,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T17:48:16.641052751Z"
+  "updated_at": "2026-08-14T17:54:53.398547255Z"
 }
