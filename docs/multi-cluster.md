@@ -41,8 +41,9 @@ spec:
 - `context` selects a context within whichever kubeconfig applies.
 
 Each target's reconcile, drift detection, progressive steps, health gates, and
-rollback run independently against its own cluster. Cross-cluster ordering uses
-the same `dependsOn` and environment-promotion mechanics as any other targets.
+rollback run independently against its own cluster. Cross-cluster (and
+in-repo) ordering: if B `dependsOn` A, reconcile skips B this tick until A is
+promoted — logged, not fatal to the rest of the repo.
 
 ## RolloutSet list generator
 

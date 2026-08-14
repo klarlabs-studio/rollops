@@ -112,6 +112,36 @@ func (r *Reconciler) finalize(ctx context.Context, c *config.Config, by rollout.
 	return Outcome{Drift: drifted, Reconciled: true, Plan: plan, Rollout: &final}, nil
 }
 
+// waitingOn returns a dependsOn target ref that is not currently promoted, or
+// "" if every dependency is promoted (or there are none). A missing rollout
+// is not promoted. Errors from the store are returned so a lookup failure is
+// not silently treated as "ready".
+func (r *Reconciler) waitingOn(ctx context.Context, c *config.Config) (string, error) {
+	for _, dep := range c.Spec.DependsOn {
+		ok, err := r.isPromoted(ctx, dep)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return dep, nil
+		}
+	}
+	return "", nil
+}
+
+func (r *Reconciler) isPromoted(ctx context.Context, targetRef string) (bool, error) {
+	rs, err := r.eng.List(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	for _, rl := range rs { // newest first
+		if rl.TargetRef == targetRef {
+			return rl.Phase == rollout.PhasePromoted, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *Reconciler) record(e audit.Entry) {
 	if r.audit != nil {
 		r.audit.Record(e)

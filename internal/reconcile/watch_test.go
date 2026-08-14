@@ -193,6 +193,125 @@ template:
 	}
 }
 
+func TestWatcher_DependsOnWaitsUntilPromoted(t *testing.T) {
+	files := map[string]string{
+		"app.yaml": `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: app }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+  dependsOn: [demo/prod/db]
+`,
+		"db.yaml": `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: db }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/db
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+`,
+	}
+	// app.yaml sorts before db.yaml — without topo-sort + wait, app would apply first.
+	upstream := makeRepoFiles(t, files)
+	appTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	dbTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "dep.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "demo/prod/app":
+			return appTgt, nil
+		case "demo/prod/db":
+			return dbTgt, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(store, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "."}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 2 {
+		t.Fatalf("want 2 outcomes, got %d: %+v", len(out), out)
+	}
+	for _, o := range out {
+		if o.Err != nil {
+			t.Errorf("%s: %v", o.Repo, o.Err)
+		}
+	}
+	if len(dbTgt.applied) != 1 {
+		t.Errorf("db should apply first, applied=%d", len(dbTgt.applied))
+	}
+	if len(appTgt.applied) != 1 {
+		t.Errorf("app should apply after db promoted in the same tick, applied=%d", len(appTgt.applied))
+	}
+}
+
+func TestWatcher_DependsOnSkipsWhenMissing(t *testing.T) {
+	const appYAML = `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: app }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+  dependsOn: [demo/prod/db]
+`
+	upstream := makeRepo(t, appYAML)
+	appTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	var logs []string
+	w := newWatcher(t, appTgt)
+	w.logf = func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 1 {
+		t.Fatalf("want 1 outcome, got %d", len(out))
+	}
+	if out[0].Err != nil {
+		t.Fatalf("skip must not be fatal: %v", out[0].Err)
+	}
+	if len(appTgt.applied) != 0 {
+		t.Fatalf("app must not apply while db is not promoted, applied=%d", len(appTgt.applied))
+	}
+	found := false
+	for _, l := range logs {
+		if strings.Contains(l, "dependsOn") && strings.Contains(l, "demo/prod/db") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("skip must be logged, got %v", logs)
+	}
+}
+
 func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
 	cfg := func(name string) string {
 		return strings.ReplaceAll(repoConfigV1, "demo/prod/app", "demo/prod/"+name)
