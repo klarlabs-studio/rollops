@@ -82,7 +82,8 @@ The kill-switch (blocks every apply) is toggled through any interface, gated by
 - gRPC: `Freeze(active, reason)`; REST: `POST /v1/freeze {"active":true,"reason":"…"}`
 - MCP: `rollouts.freeze` tool; UI: the freeze toggle on the dashboard
 
-Each toggle is audited (`ActionFreeze`). The state is held in memory — it does
-**not** survive a daemon restart (re-engage after a restart if an incident is
-still open). While frozen, `Apply` returns `ErrFrozen`; promote/rollback are not
-blocked (recovery must stay possible).
+Each toggle is audited (`ActionFreeze`). The state is persisted in the SQLite
+Store and restored at boot — a restart does not lift the kill-switch. While
+frozen, `Apply` returns `ErrFrozen`; promote/rollback are not blocked (recovery
+must stay possible). Agents cannot lift the freeze (no `rollouts.freeze` on the
+bootstrap `agent:*` role).

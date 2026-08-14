@@ -16,8 +16,8 @@ gaps real. Encoded as Roady features `real-trust` / `real-agent` /
 freeze persists, shared `internal/boot`, risk score on the rollout, Vault+Env,
 `ROLLOPS_ANALYSIS` opt-in, callers fill `RiskInputs`, traffic fail-closed,
 image-auto `current` iff scanner==Git pin, CLI policy parity, gRPC TLS client,
-honesty docs. Next is Phase B (agent dogfood). Do not start Phase C stepper
-before B.
+honesty docs. 131/142 tasks verified. Next is Phase B (agent dogfood). Do not
+start Phase C stepper before B.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 400,
+  "version": 406,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1184,9 +1184,15 @@
       "elapsed_minutes": 7
     },
     "task-real-grpc-tls-client": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "a33573b6f56186fa24787ec18a5a8ffce481888b"
+      ],
+      "started_at": "2026-08-14T15:27:31.716598156Z",
+      "completed_at": "2026-08-14T15:28:56.007922494Z",
+      "elapsed_minutes": 1
     },
     "task-real-honest-strategy-names": {
       "status": "pending",
@@ -1194,9 +1200,15 @@
       "elapsed_minutes": 0
     },
     "task-real-honesty-docs": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "8b77e8e4cfa45411d562d1a4d83ded88eb562bce"
+      ],
+      "started_at": "2026-08-14T15:29:01.546681192Z",
+      "completed_at": "2026-08-14T15:32:12.673705041Z",
+      "elapsed_minutes": 3
     },
     "task-real-ignore-differences": {
       "status": "pending",
@@ -1478,5 +1490,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T15:26:45.507935949Z"
+  "updated_at": "2026-08-14T15:32:12.692107231Z"
 }
