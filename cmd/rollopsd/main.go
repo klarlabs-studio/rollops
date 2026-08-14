@@ -27,18 +27,16 @@ import (
 
 	"go.klarlabs.de/rollops/internal/api"
 	"go.klarlabs.de/rollops/internal/audit"
+	"go.klarlabs.de/rollops/internal/boot"
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/git"
-	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/grpcapi"
 	"go.klarlabs.de/rollops/internal/imageupdate"
 	"go.klarlabs.de/rollops/internal/mcp"
 	"go.klarlabs.de/rollops/internal/metrics"
-	"go.klarlabs.de/rollops/internal/notify"
 	"go.klarlabs.de/rollops/internal/reconcile"
 	"go.klarlabs.de/rollops/internal/rollout"
-	"go.klarlabs.de/rollops/internal/secrets"
 	"go.klarlabs.de/rollops/internal/security"
 	"go.klarlabs.de/rollops/internal/servertls"
 	"go.klarlabs.de/rollops/internal/store"
@@ -79,50 +77,9 @@ func run(args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	// Full enforced pipeline: audit every action, hard agent guardrails, and
-	// secret resolution at execution time. Artifact provenance is enabled when a
-	// cosign key is configured.
-	aud := audit.New(os.Stderr)
-	guard := &security.Guardrails{
-		Floor:      security.DefaultPolicyFloor(),
-		Freeze:     security.NewFreeze(),
-		AgentLimit: security.NewAgentLimiter(20, time.Minute),
-	}
-	engOpts := []engine.Option{
-		engine.WithAudit(aud),
-		engine.WithGuardrails(guard),
-		engine.WithSecrets(secrets.EnvProvider{Prefix: "ROLLOPS_SECRET_"}),
-		engine.WithLeaseOwner(envOr("ROLLOPS_INSTANCE_ID", "rollopsd")),
-	}
-	if key := os.Getenv("ROLLOPS_COSIGN_KEY"); key != "" {
-		engOpts = append(engOpts, engine.WithArtifactGate(security.ArtifactGate{
-			Mode:     security.VerifyEnforce,
-			Verifier: security.CosignVerifier{KeyPath: key},
-		}))
-	}
-	if n, _ := notify.FromEnv(os.Getenv); n != nil {
-		engOpts = append(engOpts, engine.WithNotifier(n))
-	}
-	// External governance (opt-in, default off). With ROLLOPS_GOVERNANCE_URL set, an
-	// apply is refused unless an outside system says it may proceed — and refused too
-	// if that system cannot be reached, because a gate that evaporates on a bad
-	// network is absent exactly when a rushed deploy is most likely. Logged on
-	// startup, since a fail-closed dependency on the deploy path should never be a
-	// surprise discovered during an incident.
-	if g := governance.FromEnv(os.Getenv); g != nil {
-		engOpts = append(engOpts, engine.WithGovernance(g))
-		fmt.Fprintf(os.Stderr, "rollopsd: external governance: %s (fail-closed)\n",
-			os.Getenv("ROLLOPS_GOVERNANCE_URL"))
-	}
-	// Multi-tenant confinement (opt-in, default off). In the "one repo per
-	// customer" model repo config is untrusted; these allowlists stop a poisoned
-	// repo from running arbitrary commands on the host or escaping its namespace /
-	// cluster scope. The kubernetes target reads the same env for its own checks.
-	confinement := security.ConfinementFromEnv(os.Getenv)
-	engOpts = append(engOpts, engine.WithConfinement(confinement))
-	fmt.Fprintf(os.Stderr, "rollopsd: multi-tenant confinement: %s\n", confinement.LogSummary())
-	if !confinement.Active() {
-		fmt.Fprintln(os.Stderr, "rollopsd: multi-tenant confinement is OFF (trusted-repo mode); for untrusted/multi-tenant repos set ROLLOPS_ALLOWED_COMMANDS, ROLLOPS_ALLOWED_NAMESPACES, and/or ROLLOPS_CONFINE_TARGET_CLUSTER=1")
+	engOpts, err := boot.Config{Getenv: os.Getenv, Store: db, Log: os.Stderr}.Options(context.Background())
+	if err != nil {
+		return err
 	}
 	eng := engine.New(db, target.Builtin(), engOpts...)
 
@@ -246,6 +203,7 @@ func run(args []string) error {
 	if specs, err := loadWatchSpecs(os.Getenv("ROLLOPS_WATCH")); err != nil {
 		return err
 	} else if len(specs) > 0 {
+		aud := audit.New(os.Stderr)
 		rec := reconcile.New(eng, aud)
 		workdir := envOr("ROLLOPS_WORKDIR", filepath.Join(os.TempDir(), "rollops-repos"))
 		watcherOpts := []reconcile.WatcherOption{
