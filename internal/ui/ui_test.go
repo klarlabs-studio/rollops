@@ -139,6 +139,12 @@ func TestSPA_ServesIndexAndAssets(t *testing.T) {
 	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "Timeline") {
 		t.Errorf("app.js bundle lacks rollout timeline (%d)", rr.Code)
 	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || strings.Contains(rr.Body.String(), "decisionkit") {
+		t.Error("app.js must not label the blast-radius score as decisionkit")
+	}
+	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "blast-radius") {
+		t.Error("app.js bundle lacks blast-radius risk label")
+	}
 }
 
 func TestSPA_SecurityHeaders(t *testing.T) {

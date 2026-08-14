@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
+    "build": "node --experimental-strip-types --no-warnings build.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

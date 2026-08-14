@@ -99,11 +99,11 @@ func TestEvaluateRisk_HistoricalRollbackRaisesScore(t *testing.T) {
 // Risk decision feeds Apply: a gated rollout halts at awaiting-approval.
 func TestEvaluateRisk_FeedsApply(t *testing.T) {
 	fake := &fakeTarget{}
-	e, _ := newEngine(t, fake)
+	e, db := newEngine(t, fake)
 	c := loadRisky(t)
 	d, _ := e.EvaluateRisk(context.Background(), c, RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9})
 
-	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, NeedsApproval: d.NeedsApproval})
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, NeedsApproval: d.NeedsApproval, Risk: RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +112,16 @@ func TestEvaluateRisk_FeedsApply(t *testing.T) {
 	}
 	if len(fake.applied) != 0 {
 		t.Error("gated rollout must not touch the target")
+	}
+	if r.RiskScore <= 0 {
+		t.Errorf("gated apply must persist a blast-radius score, got %v", r.RiskScore)
+	}
+	got, err := db.LoadRollout(context.Background(), r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RiskScore != r.RiskScore {
+		t.Errorf("stored RiskScore = %v, want %v", got.RiskScore, r.RiskScore)
 	}
 }
 

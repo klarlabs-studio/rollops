@@ -48,7 +48,7 @@ interface ApplicationRow {
   sync: 'Synced' | 'OutOfSync';
   health: 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown';
   risk: 'Low' | 'Medium' | 'High';
-  riskScore: number; // real decisionkit score (0 when the risk gate is off)
+  riskScore: number; // blast-radius score from the risk gate (0 when ungated)
   desired: string;
   observed: string;
   rolloutID: string;
@@ -378,7 +378,7 @@ const App = defineComponent({
       return i >= 0 ? by.slice(i + 1) : by;
     },
     riskOf(score: number): 'Low' | 'Medium' | 'High' {
-      // decisionkit blast-radius scale: approval threshold conventionally 0.5.
+      // Blast-radius scale: approval threshold is conventionally 0.5.
       return score < 0.34 ? 'Low' : score < 0.67 ? 'Medium' : 'High';
     },
     toggleFacet(f: string): void {
@@ -437,7 +437,7 @@ const App = defineComponent({
             : phase === 'promoted'
               ? 'Healthy'
               : 'Unknown';
-        // Real decisionkit score when the risk gate ran; situational heuristic
+        // Persisted blast-radius score when the risk gate ran; situational heuristic
         // (drift / degraded / in-flight) when ungated.
         const score = r?.risk ?? 0;
         const risk: ApplicationRow['risk'] =

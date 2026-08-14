@@ -189,7 +189,7 @@ type rolloutJSON struct {
 	Strategy   string  `json:"strategy"`
 	By         string  `json:"by"`
 	ByKind     string  `json:"byKind"`     // human | agent | ci
-	Risk       float64 `json:"risk"`       // decisionkit blast-radius score, 0 when ungated
+	Risk       float64 `json:"risk"`       // blast-radius score from the risk gate, 0 when ungated
 	At         string  `json:"at"`         // last transition, RFC 3339
 	StepIndex  int     `json:"stepIndex"`  // progressive step passed (1-based, 0 = not stepping)
 	StepTotal  int     `json:"stepTotal"`  // total steps in the strategy plan

@@ -663,11 +663,13 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	}
 
 	// 2. Risk gate (only when configured — threshold>0 or a sensitive expr).
+	var riskScore float64
 	if cfg.Spec.Risk.Threshold > 0 || cfg.Spec.Risk.Sensitive != "" {
 		d, err := e.EvaluateRisk(ctx, cfg, req.Risk)
 		if err != nil {
 			return nil, err
 		}
+		riskScore = d.Score
 		needApproval = needApproval || d.NeedsApproval
 	}
 
@@ -769,6 +771,7 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		Phase:     lc.Phase(), // deploying, or awaiting-approval if gated
 		Strategy:  strategyFrom(cfg),
 		Desired:   m,
+		RiskScore: riskScore,
 		Initiator: req.Initiator,
 		CreatedAt: now,
 		UpdatedAt: now,

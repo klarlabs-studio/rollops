@@ -70,7 +70,7 @@ export const template = `
             <span :class="cls(a.phase)">{{ a.phase }}</span>
             <span v-if="a.active && a.stepTotal" class="step-mini mono" :title="a.strategy+' step '+a.stepIndex+'/'+a.stepTotal+' at '+a.stepWeight+'%'">{{ a.stepIndex }}/{{ a.stepTotal }} · {{ a.stepWeight }}%</span>
           </td>
-          <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (decisionkit)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
+          <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (blast-radius)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
           <td class="mono">{{ short(a.desired) }}</td>
           <td class="mono">{{ short(a.observed) }}</td>
           <td><span v-if="a.by" class="actor" :title="a.byKind || 'actor'"><span class="actor-ic" aria-hidden="true">{{ actorIcon(a.byKind) }}</span><span class="mono">{{ actorName(a.by) }}</span></span></td>
@@ -113,7 +113,7 @@ export const template = `
         <div class="stat"><div class="sl">Sync</div><div class="sv"><span class="badge" :class="synced?'sync':'drift'">{{ synced?'Synced':'OutOfSync' }}</span></div></div>
         <div class="stat"><div class="sl">Strategy</div><div class="sv">{{ detail.rollout.strategy }} <span class="gitsrc" title="Strategy is desired state — defined in the rollout config in Git. To change it, edit the config and Sync. (GitOps: Git is the source of truth.)">⌥ from Git</span></div></div>
         <div class="stat"><div class="sl">Desired</div><div class="sv mono">{{ short(detail.rollout.desired) }}</div></div>
-        <div class="stat" v-if="detail.rollout.risk>0"><div class="sl">Risk</div><div class="sv"><span :class="riskClass(riskOf(detail.rollout.risk))" :title="'decisionkit score'">{{ riskOf(detail.rollout.risk) }} {{ detail.rollout.risk.toFixed(2) }}</span></div></div>
+        <div class="stat" v-if="detail.rollout.risk>0"><div class="sl">Risk</div><div class="sv"><span :class="riskClass(riskOf(detail.rollout.risk))" :title="'blast-radius score'">{{ riskOf(detail.rollout.risk) }} {{ detail.rollout.risk.toFixed(2) }}</span></div></div>
         <div class="stat" v-if="detail.rollout.at"><div class="sl">Updated</div><div class="sv mono" :title="absTime(detail.rollout.at)">{{ ago(detail.rollout.at) }}</div></div>
         <span class="spacer"></span>
         <div class="actions">
