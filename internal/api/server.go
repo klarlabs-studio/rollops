@@ -74,6 +74,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/approve", s.handleApprove)
 	mux.HandleFunc("POST /v1/reject", s.handleReject)
 	mux.HandleFunc("POST /v1/promote", s.handlePromote)
+	mux.HandleFunc("POST /v1/pause", s.handlePause)
+	mux.HandleFunc("POST /v1/resume", s.handleResume)
+	mux.HandleFunc("POST /v1/abort", s.handleAbort)
 	mux.HandleFunc("POST /v1/verify", s.handleVerify)
 	mux.HandleFunc("POST /v1/freeze", s.handleFreeze)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
@@ -187,6 +190,24 @@ func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 	s.rolloutAction(w, r, security.PermPromote, func(ctx context.Context, id string, by rollout.Identity, force bool) (rollout.Rollout, error) {
 		return s.eng.Promote(ctx, id, by, force)
+	})
+}
+
+func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermApply, func(ctx context.Context, id string, by rollout.Identity, _ bool) (rollout.Rollout, error) {
+		return s.eng.Pause(ctx, id, by)
+	})
+}
+
+func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermApply, func(ctx context.Context, id string, by rollout.Identity, _ bool) (rollout.Rollout, error) {
+		return s.eng.Resume(ctx, id, by)
+	})
+}
+
+func (s *Server) handleAbort(w http.ResponseWriter, r *http.Request) {
+	s.rolloutAction(w, r, security.PermApply, func(ctx context.Context, id string, by rollout.Identity, _ bool) (rollout.Rollout, error) {
+		return s.eng.Abort(ctx, id, by)
 	})
 }
 

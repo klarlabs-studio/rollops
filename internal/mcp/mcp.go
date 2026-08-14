@@ -1,6 +1,7 @@
 // Package mcp is the agent surface: an MCP server (mcp-go) exposing the engine
 // operations 1:1 as tools — rollouts.plan, rollouts.apply, rollouts.status,
-// rollouts.list, rollouts.history, rollouts.drift, rollouts.rollback. It is
+// rollouts.list, rollouts.history, rollouts.drift, rollouts.rollback,
+// rollouts.pause, rollouts.resume, rollouts.abort. It is
 // embedded in the daemon; there is no standalone MCP binary. The agent endpoint
 // can deploy, so it is privileged: every tool authorizes through the same RBAC
 // policy as the other interfaces, against the identity the MCP connection
@@ -332,6 +333,28 @@ func (t *Tools) Promote(ctx context.Context, in PromoteInput) (ActionOutput, err
 	})
 }
 
+// Pause implements rollouts.pause. Authorized as apply: holding a canary is
+// a deploy-control action, not a distinct permission.
+func (t *Tools) Pause(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermApply, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Pause(ctx, rid, by)
+	})
+}
+
+// Resume implements rollouts.resume. Authorized as apply.
+func (t *Tools) Resume(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermApply, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Resume(ctx, rid, by)
+	})
+}
+
+// Abort implements rollouts.abort. Authorized as apply; abort rolls the canary back.
+func (t *Tools) Abort(ctx context.Context, in ActionInput) (ActionOutput, error) {
+	return t.action(ctx, in.RolloutID, security.PermApply, func(rid string, by rollout.Identity) (rollout.Rollout, error) {
+		return t.eng.Abort(ctx, rid, by)
+	})
+}
+
 // GateOutput is one post-deploy gate's outcome in a dry-run verification.
 type GateOutput struct {
 	Gate   string `json:"gate"`
@@ -451,6 +474,9 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.approve").Description("Approve a rollout awaiting approval (deploys it)").Handler(t.Approve)
 	srv.Tool("rollouts.reject").Description("Reject a rollout awaiting approval").Handler(t.Reject)
 	srv.Tool("rollouts.promote").Description("Promote a rollout past its post-deploy gate (health, smoke, metric analysis). Set force to override a failing gate").Handler(t.Promote)
+	srv.Tool("rollouts.pause").Description("Hold an in-flight canary at its current step. Authorized as rollouts.apply").Handler(t.Pause)
+	srv.Tool("rollouts.resume").Description("Continue an operator-paused canary. Authorized as rollouts.apply").Handler(t.Resume)
+	srv.Tool("rollouts.abort").Description("Stop an in-flight canary and roll it back. Authorized as rollouts.apply").Handler(t.Abort)
 	srv.Tool("rollouts.verify").Description("Dry-run a rollout's post-deploy gate (health, smoke, metric analysis) and report each one. Changes nothing — use before rollouts.promote").Handler(t.Verify)
 	srv.Tool("rollouts.freeze").Description("Engage or lift the emergency freeze that blocks all applies").Handler(t.Freeze)
 	srv.Tool("rollouts.status").Description("Get the current state of a rollout by id").Handler(t.Status)

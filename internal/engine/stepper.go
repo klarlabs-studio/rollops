@@ -284,3 +284,163 @@ func (e *Engine) failProgressive(ctx context.Context, lc *rollout.Lifecycle, r *
 	e.notifyDeployment(ctx, notify.Failed, *r, runErr.Error())
 	return r, fmt.Errorf("engine: apply: %w", runErr)
 }
+
+// Pause holds an in-flight canary at its current step. Tick is a no-op until
+// Resume. Authorized as apply on the surfaces; this method is the engine core.
+func (e *Engine) Pause(ctx context.Context, rolloutID string, by rollout.Identity) (rollout.Rollout, error) {
+	r, release, err := e.holdTarget(ctx, rolloutID)
+	if err != nil {
+		return r, err
+	}
+	defer release()
+	if r.Phase != rollout.PhaseDeploying {
+		return r, fmt.Errorf("engine: pause: rollout %s is %s, want deploying", r.ID, r.Phase)
+	}
+	s, persisted, err := e.restoreControlStepper(r)
+	if err != nil {
+		return r, err
+	}
+	defer s.Stop()
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return r, err
+	}
+	s.Pause()
+	if _, err := lc.Send(rollout.EventPause); err != nil {
+		return r, err
+	}
+	return e.saveControl(ctx, &r, lc, s, persisted.Plan, persisted.EnteredAt, by, audit.ActionApply, "paused")
+}
+
+// Resume continues an operator-paused canary. The current-step bake restarts
+// from now so a hold does not silently consume the pause duration.
+func (e *Engine) Resume(ctx context.Context, rolloutID string, by rollout.Identity) (rollout.Rollout, error) {
+	r, release, err := e.holdTarget(ctx, rolloutID)
+	if err != nil {
+		return r, err
+	}
+	defer release()
+	if r.Phase != rollout.PhasePaused {
+		return r, fmt.Errorf("engine: resume: rollout %s is %s, want paused", r.ID, r.Phase)
+	}
+	s, persisted, err := e.restoreControlStepper(r)
+	if err != nil {
+		return r, err
+	}
+	defer s.Stop()
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return r, err
+	}
+	s.Resume()
+	if _, err := lc.Send(rollout.EventResume); err != nil {
+		return r, err
+	}
+	return e.saveControl(ctx, &r, lc, s, persisted.Plan, e.now(), by, audit.ActionApply, "resumed")
+}
+
+// Abort stops an in-flight canary and rolls it back. A prior distinct manifest
+// is re-applied when one exists; otherwise the rollout is marked rolled-back
+// without a second apply. Not valid from verifying/promoted — those use
+// Rollback / RollbackLast.
+func (e *Engine) Abort(ctx context.Context, rolloutID string, by rollout.Identity) (rollout.Rollout, error) {
+	r, release, err := e.holdTarget(ctx, rolloutID)
+	if err != nil {
+		return r, err
+	}
+	defer release()
+	switch r.Phase {
+	case rollout.PhaseDeploying, rollout.PhasePaused:
+	default:
+		return r, fmt.Errorf("engine: abort: rollout %s is %s, not an in-flight canary", r.ID, r.Phase)
+	}
+	if len(r.StepperSnap) > 0 {
+		s, _, rerr := e.restoreControlStepper(r)
+		if rerr == nil {
+			s.Abort()
+			s.Stop()
+		}
+	}
+	r.StepperSnap = nil
+	if prior, ok := e.priorManifest(ctx, r.TargetRef, r.Desired.Checksum); ok {
+		prior.Root = r.Desired.Root
+		rb, rbErr := e.applyRollback(ctx, &r, prior, "aborted by operator", nil, true)
+		if rbErr != nil {
+			return rb, rbErr
+		}
+		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: rb.ID, TargetRef: rb.TargetRef, Phase: string(rb.Phase), Actor: by, Detail: "aborted"})
+		e.notifyDeployment(ctx, notify.RolledBack, rb, "aborted by operator")
+		return rb, nil
+	}
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return r, err
+	}
+	if _, err := lc.Send(rollout.EventRollback); err != nil {
+		return r, err
+	}
+	e.resetDelivery(ctx, &r)
+	r.Phase = lc.Phase()
+	r.Note = "aborted by operator"
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return r, err
+	}
+	e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: r.TargetRef, Phase: string(r.Phase), Actor: by, Detail: "aborted"})
+	e.notifyDeployment(ctx, notify.RolledBack, r, "aborted by operator")
+	return r, nil
+}
+
+func (e *Engine) holdTarget(ctx context.Context, rolloutID string) (rollout.Rollout, func(), error) {
+	r, err := e.store.LoadRollout(ctx, rolloutID)
+	if err != nil {
+		return r, nil, err
+	}
+	release, ok, err := e.acquireTarget(ctx, r.TargetRef)
+	if err != nil {
+		return r, nil, err
+	}
+	if !ok {
+		return r, nil, ErrTargetBusy
+	}
+	return r, release, nil
+}
+
+// restoreControlStepper rebuilds the canary machine with a nil health gate so
+// operator pause/resume/abort cannot be diverted by a health check.
+func (e *Engine) restoreControlStepper(r rollout.Rollout) (*progressive.Stepper, stepperPersist, error) {
+	if len(r.StepperSnap) == 0 {
+		return nil, stepperPersist{}, fmt.Errorf("engine: rollout %s has no stepper snapshot", r.ID)
+	}
+	var persisted stepperPersist
+	if err := json.Unmarshal(r.StepperSnap, &persisted); err != nil {
+		return nil, persisted, fmt.Errorf("engine: stepper snapshot: %w", err)
+	}
+	machine, err := progressive.BuildStepMachine(persisted.Plan, nil)
+	if err != nil {
+		return nil, persisted, err
+	}
+	persisted.Snap.PendingTimers = nil
+	clk := statekit.NewFakeClock(e.now())
+	s, err := progressive.RestoreStepper(machine, persisted.Snap, statekit.WithClock[progressive.StepContext](clk))
+	if err != nil {
+		return nil, persisted, fmt.Errorf("engine: restore stepper: %w", err)
+	}
+	return s, persisted, nil
+}
+
+func (e *Engine) saveControl(ctx context.Context, r *rollout.Rollout, lc *rollout.Lifecycle, s *progressive.Stepper, plan progressive.Plan, enteredAt time.Time, by rollout.Identity, action audit.Action, detail string) (rollout.Rollout, error) {
+	blob, err := json.Marshal(stepperPersist{Plan: plan, Snap: s.Snapshot(), EnteredAt: enteredAt})
+	if err != nil {
+		return *r, fmt.Errorf("engine: stepper snapshot: %w", err)
+	}
+	r.StepperSnap = blob
+	r.Phase = lc.Phase()
+	r.Note = detail
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, *r); err != nil {
+		return *r, err
+	}
+	e.record(audit.Entry{Action: action, RolloutID: r.ID, TargetRef: r.TargetRef, Phase: string(r.Phase), Actor: by, Detail: detail})
+	return *r, nil
+}

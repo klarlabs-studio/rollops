@@ -70,6 +70,8 @@ plans first.
 2. **`rollouts.status`** / **`rollouts.list`** / **`rollouts.history`** /
    **`rollouts.drift`** — inspect. `agent:*` can do this without the deploy grant.
 3. **`rollouts.apply`** — deploys. Needs `agent-deploy` (or a narrower grant).
+   Pause/resume/abort an in-flight canary use this same grant (`rollouts.pause` /
+   `rollouts.resume` / `rollouts.abort`).
 4. **`rollouts.verify`** — dry-run the post-deploy gate (health, smoke, analysis).
    Authorized as `rollouts.promote`; changes nothing. See [verify](verify.md).
 5. **`rollouts.rollback`** — previous desired state for a target.

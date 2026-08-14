@@ -181,6 +181,27 @@ func (s *Server) Promote(ctx context.Context, req *rollopsv1.RolloutActionReques
 	})
 }
 
+// Pause holds an in-flight canary. Authorized as apply, scoped to the target.
+func (s *Server) Pause(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Pause(ctx, req.GetId(), by)
+	})
+}
+
+// Resume continues an operator-paused canary. Authorized as apply.
+func (s *Server) Resume(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Resume(ctx, req.GetId(), by)
+	})
+}
+
+// Abort stops an in-flight canary and rolls it back. Authorized as apply.
+func (s *Server) Abort(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Abort(ctx, req.GetId(), by)
+	})
+}
+
 // Verify implements the Verify RPC: a dry run of the post-deploy gate that
 // changes nothing. Authorized as PermPromote, not a read permission — the gates
 // really run, and a configured smoke test executes a command on the daemon

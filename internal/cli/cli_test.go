@@ -147,6 +147,15 @@ func (statusNoteOps) Approve(context.Context, string) (rollout.Rollout, error) {
 func (statusNoteOps) Reject(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
+func (statusNoteOps) Pause(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Resume(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Abort(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
 func (statusNoteOps) RollbackLast(context.Context, string, bool) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }

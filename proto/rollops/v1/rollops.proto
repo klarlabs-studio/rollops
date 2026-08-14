@@ -25,6 +25,12 @@ service RolloutService {
   // Promote marks a verified rollout promoted, gated on the post-deploy checks
   // (health, smoke, metric analysis). Set force to override a failing gate.
   rpc Promote(RolloutActionRequest) returns (RolloutActionResponse);
+  // Pause holds an in-flight canary at its current step. Authorized as apply.
+  rpc Pause(RolloutActionRequest) returns (RolloutActionResponse);
+  // Resume continues an operator-paused canary. Authorized as apply.
+  rpc Resume(RolloutActionRequest) returns (RolloutActionResponse);
+  // Abort stops an in-flight canary and rolls it back. Authorized as apply.
+  rpc Abort(RolloutActionRequest) returns (RolloutActionResponse);
   // Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
   // reports each one. It changes nothing: no phase transition, no promotion,
   // no rollback. The gates themselves do run — a configured smoke test executes
@@ -88,12 +94,12 @@ message RollbackResponse {
 }
 
 // RolloutActionRequest identifies a rollout by id for
-// approve/reject/promote/verify.
+// approve/reject/promote/verify/pause/resume/abort.
 message RolloutActionRequest {
   string id = 1;
   // force applies to Promote only: override the post-deploy gates (health,
   // smoke, metric analysis) and promote anyway. The bypass is audited.
-  // Approve/Reject/Verify ignore it.
+  // Approve/Reject/Verify/Pause/Resume/Abort ignore it.
   bool force = 2;
 }
 

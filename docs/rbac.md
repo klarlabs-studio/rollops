@@ -6,7 +6,8 @@ is **deny-by-default**: an identity with no matching grant is forbidden.
 
 ## Model
 
-- **Permissions**: `rollouts.status`, `rollouts.plan`, `rollouts.apply`,
+- **Permissions**: `rollouts.status`, `rollouts.plan`, `rollouts.apply`
+  (also pause/resume/abort of an in-flight canary),
   `rollouts.approve` (gates approve **and** reject), `rollouts.promote`,
   `rollouts.rollback`, `rollouts.schedule`, `rollouts.freeze`.
 - **Scope**: `{env, targetRef}`. An empty field on a *grant* is a wildcard. The

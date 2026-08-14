@@ -26,6 +26,9 @@ const (
 	RolloutService_Approve_FullMethodName  = "/rollops.v1.RolloutService/Approve"
 	RolloutService_Reject_FullMethodName   = "/rollops.v1.RolloutService/Reject"
 	RolloutService_Promote_FullMethodName  = "/rollops.v1.RolloutService/Promote"
+	RolloutService_Pause_FullMethodName    = "/rollops.v1.RolloutService/Pause"
+	RolloutService_Resume_FullMethodName   = "/rollops.v1.RolloutService/Resume"
+	RolloutService_Abort_FullMethodName    = "/rollops.v1.RolloutService/Abort"
 	RolloutService_Verify_FullMethodName   = "/rollops.v1.RolloutService/Verify"
 	RolloutService_Freeze_FullMethodName   = "/rollops.v1.RolloutService/Freeze"
 )
@@ -55,6 +58,12 @@ type RolloutServiceClient interface {
 	// Promote marks a verified rollout promoted, gated on the post-deploy checks
 	// (health, smoke, metric analysis). Set force to override a failing gate.
 	Promote(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Pause holds an in-flight canary at its current step. Authorized as apply.
+	Pause(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Resume continues an operator-paused canary. Authorized as apply.
+	Resume(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
+	// Abort stops an in-flight canary and rolls it back. Authorized as apply.
+	Abort(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error)
 	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
 	// reports each one. It changes nothing: no phase transition, no promotion,
 	// no rollback. The gates themselves do run — a configured smoke test executes
@@ -142,6 +151,36 @@ func (c *rolloutServiceClient) Promote(ctx context.Context, in *RolloutActionReq
 	return out, nil
 }
 
+func (c *rolloutServiceClient) Pause(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Pause_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rolloutServiceClient) Resume(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Resume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rolloutServiceClient) Abort(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*RolloutActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RolloutActionResponse)
+	err := c.cc.Invoke(ctx, RolloutService_Abort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *rolloutServiceClient) Verify(ctx context.Context, in *RolloutActionRequest, opts ...grpc.CallOption) (*VerifyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VerifyResponse)
@@ -187,6 +226,12 @@ type RolloutServiceServer interface {
 	// Promote marks a verified rollout promoted, gated on the post-deploy checks
 	// (health, smoke, metric analysis). Set force to override a failing gate.
 	Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Pause holds an in-flight canary at its current step. Authorized as apply.
+	Pause(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Resume continues an operator-paused canary. Authorized as apply.
+	Resume(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
+	// Abort stops an in-flight canary and rolls it back. Authorized as apply.
+	Abort(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error)
 	// Verify DRY-RUNS the post-deploy gate (health, smoke, metric analysis) and
 	// reports each one. It changes nothing: no phase transition, no promotion,
 	// no rollback. The gates themselves do run — a configured smoke test executes
@@ -224,6 +269,15 @@ func (UnimplementedRolloutServiceServer) Reject(context.Context, *RolloutActionR
 }
 func (UnimplementedRolloutServiceServer) Promote(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Promote not implemented")
+}
+func (UnimplementedRolloutServiceServer) Pause(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Pause not implemented")
+}
+func (UnimplementedRolloutServiceServer) Resume(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Resume not implemented")
+}
+func (UnimplementedRolloutServiceServer) Abort(context.Context, *RolloutActionRequest) (*RolloutActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Abort not implemented")
 }
 func (UnimplementedRolloutServiceServer) Verify(context.Context, *RolloutActionRequest) (*VerifyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Verify not implemented")
@@ -378,6 +432,60 @@ func _RolloutService_Promote_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RolloutService_Pause_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Pause(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Pause_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Pause(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RolloutService_Resume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Resume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Resume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Resume(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RolloutService_Abort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RolloutActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RolloutServiceServer).Abort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RolloutService_Abort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RolloutServiceServer).Abort(ctx, req.(*RolloutActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _RolloutService_Verify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RolloutActionRequest)
 	if err := dec(in); err != nil {
@@ -448,6 +556,18 @@ var RolloutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Promote",
 			Handler:    _RolloutService_Promote_Handler,
+		},
+		{
+			MethodName: "Pause",
+			Handler:    _RolloutService_Pause_Handler,
+		},
+		{
+			MethodName: "Resume",
+			Handler:    _RolloutService_Resume_Handler,
+		},
+		{
+			MethodName: "Abort",
+			Handler:    _RolloutService_Abort_Handler,
 		},
 		{
 			MethodName: "Verify",

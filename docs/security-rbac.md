@@ -23,7 +23,7 @@ daemon, but the Rollops authorization check still happens inside the daemon.
 |---|---|
 | `rollouts.status` | Read rollout status/history. |
 | `rollouts.plan` | Compute a plan/diff from a rollout config. |
-| `rollouts.apply` | Deploy desired state from a rollout config. |
+| `rollouts.apply` | Deploy desired state; pause, resume, and abort an in-flight canary (scoped to the target). |
 | `rollouts.approve` | Approve a rollout held by the policy floor or risk gate. |
 | `rollouts.rollback` | Roll back a target to the previous desired state. |
 | `rollouts.schedule` | Create or fire scheduled rollout work. |
