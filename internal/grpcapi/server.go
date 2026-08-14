@@ -115,7 +115,7 @@ func (s *Server) Apply(ctx context.Context, req *rollopsv1.ApplyRequest) (*rollo
 	if _, err := s.eng.Plan(ctx, c); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	rl, err := s.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true})
+	rl, err := s.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		if err == engine.ErrTargetBusy {
 			return nil, status.Error(codes.Aborted, err.Error())

@@ -164,3 +164,50 @@ func TestReject_RollsBackWithoutDeploy(t *testing.T) {
 		t.Error("reject must not deploy")
 	}
 }
+
+func TestRiskFromConfig_FillsEnvAndDefaultsChangeToConfig(t *testing.T) {
+	c := loadRisky(t)
+	c.Spec.Target.Env = "prod"
+	in := RiskFromConfig(c)
+	if in.Environment != "prod" || in.ChangeType != "config" || in.BlastRadius != 0 {
+		t.Errorf("got %+v", in)
+	}
+}
+
+func TestRiskFromConfig_MigrateIsSchema(t *testing.T) {
+	c := loadRisky(t)
+	c.Spec.Database = &config.Database{Migrate: &config.DatabaseRollback{Command: []string{"migrate", "up"}}}
+	in := RiskFromConfig(c)
+	if in.ChangeType != "schema" {
+		t.Errorf("change = %q, want schema", in.ChangeType)
+	}
+}
+
+func TestRiskFromConfig_BlastRadiusFromDeps(t *testing.T) {
+	c := loadRisky(t)
+	in := RiskFromConfig(c, rollout.Dependency{From: c.Spec.Target.Ref, To: "payments/prod/worker"})
+	if in.BlastRadius != 1 {
+		t.Errorf("blast = %d, want 1", in.BlastRadius)
+	}
+}
+
+func TestApply_UsesRiskFromConfigSignals(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	c := loadRisky(t)
+	c.Spec.Target.Env = "prod"
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, Risk: RiskFromConfig(c)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.RiskScore <= 0 {
+		t.Errorf("prod+critical apply must store a score, got %v", r.RiskScore)
+	}
+	got, err := db.LoadRollout(context.Background(), r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RiskScore != r.RiskScore {
+		t.Errorf("stored %v want %v", got.RiskScore, r.RiskScore)
+	}
+}

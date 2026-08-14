@@ -143,7 +143,7 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	rl, err := s.eng.Apply(r.Context(), engine.ApplyRequest{Config: c, Initiator: id, Planned: true})
+	rl, err := s.eng.Apply(r.Context(), engine.ApplyRequest{Config: c, Initiator: id, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		if errors.Is(err, engine.ErrTargetBusy) {
 			writeErr(w, http.StatusConflict, err.Error())

@@ -207,7 +207,7 @@ func (a *App) apply(ctx context.Context, args []string) error {
 	if _, err := a.Ops.Plan(ctx, c); err != nil {
 		return err
 	}
-	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true})
+	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		return err
 	}

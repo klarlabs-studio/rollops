@@ -124,7 +124,7 @@ func (t *Tools) Apply(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
 	if _, err := t.eng.Plan(ctx, c); err != nil {
 		return ApplyOutput{}, err
 	}
-	r, err := t.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true})
+	r, err := t.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		return ApplyOutput{}, err
 	}

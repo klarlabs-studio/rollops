@@ -557,6 +557,26 @@ type RiskInputs struct {
 	BlastRadius int
 }
 
+// RiskFromConfig fills the signals Apply cannot invent: environment from
+// spec.target.env, change-type schema when a database migrate hook is present
+// otherwise config, blast radius from the dependency graph when the caller
+// has one. Zero blast radius is honest when there is no graph.
+func RiskFromConfig(c *config.Config, deps ...rollout.Dependency) RiskInputs {
+	in := RiskInputs{
+		ChangeType:  "config",
+		Environment: c.Spec.Target.Env,
+	}
+	if c.Spec.DatabaseMigrate() != nil {
+		in.ChangeType = "schema"
+	}
+	if len(deps) > 0 {
+		nodes := []string{c.Spec.Target.Ref}
+		g := depgraph.New(nodes, deps)
+		in.BlastRadius = g.BlastRadius(c.Spec.Target.Ref)
+	}
+	return in
+}
+
 // EvaluateRisk runs the blast-radius gate for a config + rollout-time inputs.
 // Callers set ApplyRequest.NeedsApproval from the returned Decision.
 func (e *Engine) EvaluateRisk(ctx context.Context, c *config.Config, in RiskInputs) (risk.Decision, error) {

@@ -62,7 +62,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		Detail:    plan.Summary,
 	})
 
-	rl, err := r.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: by, Planned: true})
+	rl, err := r.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: by, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		return Outcome{Drift: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: apply: %w", err)
 	}
