@@ -124,6 +124,8 @@ sudo scripts/install-systemd.sh
 ```
 
 See `docs/deploy-systemd.md` for the unit, env file, and first-start checklist.
+See `docs/agent-operator.md` for the MCP dogfood path (`ROLLOPS_MCP_ADDR`, tokens
+file, opt-in `agent-deploy` grant, plan → apply → verify → rollback).
 See `docs/security-rbac.md` for the bootstrap roles and permission taxonomy.
 See `docs/tls.md` for native TLS 1.3 + mTLS (zero-trust transport, cert-manager, client certs).
 See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.

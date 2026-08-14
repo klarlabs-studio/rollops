@@ -24,9 +24,9 @@ host agent, Postgres, studio billing are out of scope.
 
 ### Phase B — Agent-native dogfood
 
-- [ ] Opt-in `agent:deploy` role (do not widen default `agent:*`)
-- [ ] MCP `list` / `history` / `drift`
-- [ ] Agent operator runbook (`ROLLOPS_MCP_ADDR` + tokens file + grant)
+- [x] Opt-in `agent:deploy` role (do not widen default `agent:*`)
+- [x] MCP `list` / `history` / `drift`
+- [x] Agent operator runbook (`ROLLOPS_MCP_ADDR` + tokens file + grant)
 
 ### Phase C — Canary as a verb
 

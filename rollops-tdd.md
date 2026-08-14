@@ -272,8 +272,6 @@ Still true, and in scope there:
   (Phase D). Poll is the only trigger today.
 - **Canary pause/resume** — `Stepper` exists and is unused; engine still
   blocks in `Executor` (Phase C).
-- **RBAC model evolution** — first taxonomy exists; add opt-in `agent:deploy`
-  without widening default `agent:*`.
 
 Out of this program (do not start): plugin keyless/Rekor, ApplicationSet
 matrix, Jsonnet, app-of-apps, host agent, Postgres/mnemos backends, studio

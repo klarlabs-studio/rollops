@@ -35,6 +35,9 @@ question, answered by the RBAC policy (`ROLLOPS_POLICY_FILE`) binding
 `agent:<name>` to a role. Tokens are credentials; roles are authorization. Keep
 them apart — rotating a credential should not touch a permission.
 
+For the operator path that turns MCP on and grants one agent deploy, see
+[Agent operator runbook](agent-operator.md).
+
 ## Why a file is preferred
 
 - **Subprocess inheritance.** The daemon runs commands from repo config (smoke

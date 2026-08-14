@@ -66,6 +66,7 @@ ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=<admin-token> rollops doctor
   enabled: it rejects every call until `ROLLOPS_MCP_TOKENS` (a JSON
   `{token: agent-name}` map) is set and callers present `Authorization: Bearer
   <token>`. Each token resolves to a distinct identity for per-caller RBAC.
+  The operator path is [agent-operator.md](agent-operator.md).
 
 Put TLS, mTLS, SSO, or public routing at the reverse proxy/host boundary. The
 daemon itself still requires tokens/basic auth for its interfaces.
