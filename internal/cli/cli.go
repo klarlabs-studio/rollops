@@ -414,6 +414,9 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		} else {
 			cfg = c
 			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
+			if note := cfg.HonestStrategy(); note != "" {
+				_, _ = fmt.Fprintf(a.Out, "strategy: %s\n", note)
+			}
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")

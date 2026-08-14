@@ -191,6 +191,27 @@ type StrategyStep struct {
 	Pause  string `yaml:"pause,omitempty" json:"pause,omitempty"`   // duration between steps
 }
 
+// HonestStrategy names what this config will actually do when strategy.type
+// overclaims. Canary without trafficRouting and featureFlags is a health-gated
+// bake, not a traffic split. Blue-green without traffic routing is a full
+// cutover, not two-stack. Empty means the type name is already honest.
+func (c *Config) HonestStrategy() string {
+	if c == nil {
+		return ""
+	}
+	switch c.Spec.Strategy.Type {
+	case "canary":
+		if c.Spec.TrafficRouting == nil && c.Spec.FeatureFlags == nil {
+			return "canary — health-gated bake, not a traffic split"
+		}
+	case "blue-green":
+		if c.Spec.TrafficRouting == nil {
+			return "blue-green — full cutover, not two-stack blue-green"
+		}
+	}
+	return ""
+}
+
 // Risk configures the decision-kit gate. Sensitive is a CEL expression that,
 // when true, forces human approval regardless of the computed score.
 type Risk struct {

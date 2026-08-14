@@ -388,6 +388,8 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	}
 	p := newPlan(c.Spec.Target.Ref, m, cur, deepDrift)
 	p.Rendered = rendered
+	p.StrategyNote = c.HonestStrategy()
+	p.Summary = p.render()
 	if driftAlert {
 		p.DriftAlert = true
 		p.Summary = p.render()
@@ -466,6 +468,11 @@ type Plan struct {
 	DriftAlert bool   // detect-verification found live drift, but it is NOT auto-corrected (alert only)
 	Migration  string // pending database migration ("migrate (when): cmd"), empty when none
 	Rendered   []byte // rendered manifest when resolved from a referenced source (manifestFrom); nil otherwise
+	// StrategyNote is the honest delivery name when strategy.type overclaims:
+	// canary without trafficRouting/featureFlags is a health-gated bake;
+	// blue-green without traffic routing is a full cutover. Empty when the
+	// type name already matches what will run.
+	StrategyNote string
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
@@ -489,6 +496,9 @@ func (p *Plan) render() string {
 		if p.Migration != "" {
 			base += "\n  + database " + p.Migration
 		}
+		if p.StrategyNote != "" {
+			base += "\n  strategy: " + p.StrategyNote
+		}
 		return base
 	}
 	switch p.Action {
@@ -505,6 +515,9 @@ func (p *Plan) render() string {
 	}
 	if p.Migration != "" {
 		base += "\n  + database " + p.Migration
+	}
+	if p.StrategyNote != "" {
+		base += "\n  strategy: " + p.StrategyNote
 	}
 	return base
 }
