@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 431,
+  "version": 435,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1163,8 +1163,10 @@
       "elapsed_minutes": 5
     },
     "task-real-dependson-wait": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T17:48:16.641052751Z",
       "elapsed_minutes": 0
     },
     "task-real-deploy-agent-rbac": {
@@ -1223,8 +1225,10 @@
       "elapsed_minutes": 3
     },
     "task-real-ignore-differences": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T17:48:16.625495521Z",
       "elapsed_minutes": 0
     },
     "task-real-imageauto-current-invariant": {
@@ -1316,11 +1320,15 @@
       "elapsed_minutes": 3
     },
     "task-real-rolloutset-list": {
-      "status": "in_progress",
+      "status": "verified",
       "path": "",
       "owner": "Cursor Agent",
+      "evidence": [
+        "6486923"
+      ],
       "started_at": "2026-08-14T17:36:44.306819762Z",
-      "elapsed_minutes": 0
+      "completed_at": "2026-08-14T17:48:16.590679Z",
+      "elapsed_minutes": 11
     },
     "task-real-stepper-tick": {
       "status": "verified",
@@ -1540,5 +1548,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T17:42:32.385080793Z"
+  "updated_at": "2026-08-14T17:48:16.641052751Z"
 }
