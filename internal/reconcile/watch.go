@@ -42,7 +42,26 @@ type Watcher struct {
 	now       func() time.Time
 	logf      func(format string, args ...any)
 	imageAuto *ImageAuto
+
+	// awaiting counts CONSECUTIVE cycles a config has spent waiting on Git,
+	// keyed by "repo/path". See stuckAfterCycles.
+	awaiting map[string]int
 }
+
+// stuckAfterCycles is how many consecutive waiting cycles turn a proposal from
+// "in flight" into something worth acting on.
+//
+// #98 watched a target report the same idle-looking verdict for ~1,100
+// consecutive reconciles over 18.5 hours while serving a stale image. Naming the
+// wait every cycle (which the AwaitingGit branch below does) makes it visible,
+// but cycle 1 and cycle 1,100 still read identically — and it is the second one
+// that means something is wrong. A count is what separates them.
+//
+// Ten cycles is the default reconcile interval (60s) times ten: long enough that
+// a proposal which auto-merges in seconds never trips it, short enough that a
+// stuck one is named in minutes rather than after somebody fetches the site and
+// notices an article missing.
+const stuckAfterCycles = 10
 
 type watched struct {
 	spec RepoSpec
@@ -198,12 +217,14 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 					w.logf("image automation %s/%s: %v (continuing)", r.spec.Name, nc.Path, ierr)
 				}
 			case status.Outcome.Deployed():
+				w.clearAwaiting(r.spec.Name, nc.Path)
 				cfg = bumped
 				decisions = append(decisions, name+"="+string(status.Outcome)+status.Short())
 				if w.logf != nil {
 					w.logf("image automation %s/%s: bumped to %s", r.spec.Name, nc.Path, ref)
 				}
 			case status.Outcome.AwaitingGit():
+				cycles := w.noteAwaiting(r.spec.Name, nc.Path)
 				// A newer image exists that Git has not adopted. This used to be
 				// reported as `current` — the same word as "nothing to do" — so a
 				// proposal that never merged looked identical to a healthy target
@@ -213,11 +234,20 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 				if w.logf != nil {
 					w.logf("image automation %s/%s: %s — a newer image is waiting on Git, not deployed (registry offers %s, Git pins %s)",
 						r.spec.Name, nc.Path, status.Outcome, shortDigest(status.Resolved), shortDigest(status.Pinned))
+					// Escalate once the wait stops looking like one. Repeating the
+					// line above forever is what made an 18-hour stall read the same
+					// as a proposal opened a minute ago (#98).
+					if cycles >= stuckAfterCycles {
+						w.logf("image automation %s/%s: STUCK — %s for %d consecutive reconciles; the registry has offered %s that long and Git still pins %s. Check the proposal merged.",
+							r.spec.Name, nc.Path, status.Outcome, cycles,
+							shortDigest(status.Resolved), shortDigest(status.Pinned))
+					}
 				}
 			default:
 				// current / disabled. current carries what was resolved, so a
 				// stale resolution is visible rather than implied: a verdict
 				// recorded without its observation cannot be checked later.
+				w.clearAwaiting(r.spec.Name, nc.Path)
 				decisions = append(decisions, name+"="+string(status.Outcome)+status.Short())
 			}
 		}
@@ -299,4 +329,28 @@ func (l *repoLocks) tryAcquire(key string) (func(), bool) {
 		delete(l.held, key)
 		l.mu <- struct{}{}
 	}, true
+}
+
+// noteAwaiting records another consecutive cycle spent waiting on Git and
+// returns the running count.
+//
+// Deliberately consecutive rather than cumulative: a target that alternates
+// between waiting and deploying is working, and should never accumulate its way
+// into an alert. Only an unbroken run means nothing is moving.
+func (w *Watcher) noteAwaiting(repo, path string) int {
+	if w.awaiting == nil {
+		w.awaiting = make(map[string]int)
+	}
+	k := repo + "/" + path
+	w.awaiting[k]++
+	return w.awaiting[k]
+}
+
+// clearAwaiting resets the streak once a config reaches an outcome that is
+// genuinely idle or genuinely done.
+func (w *Watcher) clearAwaiting(repo, path string) {
+	if w.awaiting == nil {
+		return
+	}
+	delete(w.awaiting, repo+"/"+path)
 }
