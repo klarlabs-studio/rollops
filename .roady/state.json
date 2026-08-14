@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 421,
+  "version": 424,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1266,9 +1266,15 @@
       "elapsed_minutes": 14
     },
     "task-real-pause-resume-abort-ui": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "4e20903"
+      ],
+      "started_at": "2026-08-14T17:24:22.074154367Z",
+      "completed_at": "2026-08-14T17:25:46.701807752Z",
+      "elapsed_minutes": 1
     },
     "task-real-persist-freeze": {
       "status": "verified",
@@ -1520,5 +1526,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T16:21:06.653545849Z"
+  "updated_at": "2026-08-14T17:25:46.725447863Z"
 }
