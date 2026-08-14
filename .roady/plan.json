@@ -905,15 +905,311 @@
       "source": {}
     },
     {
-      "id": "t-engine-locks",
-      "title": "Advisory locks + reconcile serialization",
-      "description": "Per-target advisory locks; per-repo reconcile serialization with configurable parallelism.",
+      "id": "task-per-repo-least-privilege-git-auth-(deploy-keys-/-github-app)-for-the-reconcile-watch",
+      "title": "Implement Per-repo least-privilege git auth (deploy keys / GitHub App) for the reconcile watch",
+      "description": "Implement the feature: Per-repo least-privilege git auth (deploy keys / GitHub App) for the reconcile watch. Replace the single broad classic PAT (currently used for ROLLOPS_WATCH across klarlabs-studio + felixgeelhaar repos) with least-privilege, per-repo credentials. Two viable designs: (a) per-repo SSH deploy keys — the watch already supports `deployKeyPath`, so wire one key per repo (mount a Secret per repo, switch URLs to git+ssh, read+write scoped to that single repo); naturally multi-org. (b) GitHub App installation tokens — install the App on the org + personal account, mint short-lived per-installation tokens (least privilege, auto-rotating, multi-owner); the git layer's Auth would gain an App-token provider and the watch config a per-repo/app reference. Motivation: a fine-grained PAT is scoped to ONE owner (can't span klarlabs-studio + felixgeelhaar), and a classic PAT is broad (all the operator's repos) — both poor for a daemon that writes image-automation bumps back to many repos across orgs. Acceptance: each watched repo authenticates with a credential scoped to just that repo; no single token grants access beyond what a repo needs; tokens never written to disk or logs (redaction already shipped); rotation is per-repo. Surfaced while dogfooding the keel→Rollops fleet cutover (a broad PAT leaked into pod logs on a clone crash; fine-grained PAT 403'd on cross-org repos).",
       "priority": "medium",
-      "estimate": "2d",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "per-repo-least-privilege-git-auth-(deploy-keys-/-github-app)-for-the-reconcile-watch",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-extract-engine-boot",
+      "title": "Shared engine boot for CLI and daemon (Make it real — trust pass (docs = daemon))",
+      "description": "Extract daemon engine option assembly (audit, guardrails, secrets, governance, artifact gate, notifier, confinement, leases) into a shared boot package used by cmd/rollopsd and the one-shot CLI. One-shot apply against a frozen SQLite file must be refused. Test from a fake env.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-persist-risk-score",
+      "title": "Persist EvaluateRisk onto the rollout (Make it real — trust pass (docs = daemon))",
+      "description": "Engine.Apply writes the risk Decision score onto Rollout.RiskScore. UI shows that number. Drop the decisionkit label unless decisionkit is actually called; keep the homegrown scorer.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-risk-inputs-from-callers",
+      "title": "Callers pass RiskInputs instead of zeros (Make it real — trust pass (docs = daemon))",
+      "description": "Reconcile, CLI, HTTP, gRPC, and MCP fill RiskInputs — env from spec.target.env, change-type from plan/hooks, blast radius from depgraph when available. Empty inputs must not be the production path.",
+      "priority": "high",
+      "estimate": "",
       "depends_on": [
-        "t-engine-api"
+        "task-real-persist-risk-score"
       ],
-      "feature_id": "engine-library",
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-wire-metric-analysis",
+      "title": "Daemon evaluates spec.analysis when enabled (Make it real — trust pass (docs = daemon))",
+      "description": "rollopsd enables WithMetricAnalysis / Prometheus or metricprovider plugin when ROLLOPS_ANALYSIS is set or equivalent. Default remains off (observability-free v1). Startup log. Promote fails on a breaching provider.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-extract-engine-boot"
+      ],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-wire-vault",
+      "title": "Daemon constructs Vault plus Env secret chain (Make it real — trust pass (docs = daemon))",
+      "description": "secrets.FromEnv builds Chain{Vault, Env} when VAULT_ADDR is set, else Env only. Token from VAULT_TOKEN or VAULT_TOKEN_FILE, never logged. Unset VAULT_ADDR leaves behaviour unchanged.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-extract-engine-boot"
+      ],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-persist-freeze",
+      "title": "Freeze survives daemon restart (Make it real — trust pass (docs = daemon))",
+      "description": "Persist freeze active/reason/by/at in the Store. Daemon loads it at boot; Engage and Lift write through. One-shot CLI sees the same row. Agents cannot Lift (existing RBAC).",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-cli-policy-parity",
+      "title": "One-shot CLI cannot skip freeze secrets audit (Make it real — trust pass (docs = daemon))",
+      "description": "After shared boot, one-shot apply/rollback/freeze uses the same guardrails, secrets, audit, and artifact gate as the daemon when the same env/DB are present.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-extract-engine-boot",
+        "task-real-persist-freeze",
+        "task-real-wire-vault"
+      ],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-grpc-tls-client",
+      "title": "CLI gRPC client uses TLS when the daemon does (Make it real — trust pass (docs = daemon))",
+      "description": "grpcapi client stops always dialing insecure. With ROLLOPS_TLS_* set, ROLLOPS_DAEMON CLI uses servertls. Loopback plaintext remains the dev default.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-traffic-fail-closed",
+      "title": "Traffic SetWeight failure aborts the step (Make it real — trust pass (docs = daemon))",
+      "description": "driveTraffic errors fail Apply / the current progressive step and can auto-rollback. Feature-flag apply_flag stays best-effort and audited.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-imageauto-current-invariant",
+      "title": "Image-automation current means scanner equals Git pin (Make it real — trust pass (docs = daemon))",
+      "description": "current is only legal when scanner identity equals the Git-pinned identity. File-already-pins is a distinct outcome. Scanner-moved plus patch-unchanged is error, never current. Regression test closes issue 98 on the invariant.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-honesty-docs",
+      "title": "Docs and UI match rollopsd behaviour (Make it real — trust pass (docs = daemon))",
+      "description": "After the wires, README, TDD, wiki, vision status, UI copy, store/MCP package comments stop claiming Postgres, mnemos, host agent, standalone MCP, decisionkit UI scores, or unwired analysis. Webhook wording waits for Phase D. Vision is no longer Concept/pre-MVP.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-persist-risk-score",
+        "task-real-risk-inputs-from-callers",
+        "task-real-wire-metric-analysis",
+        "task-real-wire-vault",
+        "task-real-persist-freeze",
+        "task-real-cli-policy-parity",
+        "task-real-grpc-tls-client",
+        "task-real-traffic-fail-closed",
+        "task-real-imageauto-current-invariant"
+      ],
+      "feature_id": "real-trust",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-deploy-agent-rbac",
+      "title": "Documented opt-in agent deploy role (Make it real — agent-native dogfood)",
+      "description": "Add agent:deploy (plan/apply/rollback/status/verify — not freeze lift, not approve) as an example grant in docs/security-rbac.md and a policy snippet. Default agent:* stays plan+status.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-agent",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-mcp-observe-tools",
+      "title": "MCP list history and drift tools (Make it real — agent-native dogfood)",
+      "description": "Add rollouts.list, rollouts.history, rollouts.drift, authorized as status. Apply remains plan-before-apply.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-agent",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-mcp-runbook",
+      "title": "Agent operator runbook (Make it real — agent-native dogfood)",
+      "description": "Short docs page — enable ROLLOPS_MCP_ADDR, tokens file, policy grant, example flow plan then status then apply then verify then rollback. Cluster enable stays operator work.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-deploy-agent-rbac",
+        "task-real-mcp-observe-tools"
+      ],
+      "feature_id": "real-agent",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-stepper-tick",
+      "title": "Tick-driven canary stepper with snapshot restore (Make it real — canary as a verb)",
+      "description": "Apply deploys once, starts Stepper, persists snapshot, returns. Reconcile tick advances health and SetWeight. Crash restores snapshot. Tests complete a short pause across two ticks, not one blocking Apply.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-traffic-fail-closed"
+      ],
+      "feature_id": "real-canary",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-pause-resume-abort-api",
+      "title": "Pause resume abort on CLI HTTP gRPC MCP (Make it real — canary as a verb)",
+      "description": "Engine methods plus all operator surfaces. Authorize as apply scoped to target ref. Abort rolls back. Table tests per surface.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-stepper-tick"
+      ],
+      "feature_id": "real-canary",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-pause-resume-abort-ui",
+      "title": "Pause resume abort in the web console (Make it real — canary as a verb)",
+      "description": "In-flight canary shows pause/resume/abort. UI never force-promotes. Bundle test asserts the controls.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [
+        "task-real-pause-resume-abort-api"
+      ],
+      "feature_id": "real-canary",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-honest-strategy-names",
+      "title": "doctor and plan name bake and cutover honestly (Make it real — canary as a verb)",
+      "description": "canary without trafficRouting or featureFlags is a health-gated bake in plan/doctor summary. blue-green without traffic routing is a full cutover. Real two-stack blue-green stays out of scope.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [],
+      "feature_id": "real-canary",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-webhook-listener",
+      "title": "GitHub HMAC webhook triggers reconcile (Make it real — GitOps wedge)",
+      "description": "POST hook route verifies git.VerifySignature and calls watcher.Tick. Secret from ROLLOPS_WEBHOOK_SECRET; unset means 404. Invalid signature 401 and does not Tick. Poll remains the safety net.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-gitops",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-rolloutset-list",
+      "title": "RolloutSet list generator expands in memory (Make it real — GitOps wedge)",
+      "description": "kind RolloutSet with a list generator and template expands at watch load into ordinary RolloutConfigs with deterministic unique target.ref. Each reconciles independently. No engine/store change. Cluster/matrix generators are out of scope.",
+      "priority": "high",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-gitops",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-ignore-differences",
+      "title": "Kubernetes ignoreDifferences for drift (Make it real — GitOps wedge)",
+      "description": "Target spec lists field paths ignored in Observe/Diff so HPA replicas and webhook defaults do not flap. Apply stays client-side kubectl apply. Ignored-only diff is not drift; other fields still are.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-gitops",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "task-real-dependson-wait",
+      "title": "Reconcile waits on dependsOn (Make it real — GitOps wedge)",
+      "description": "If B dependsOn A and A is not promoted, skip B this tick (logged, not fatal to the rest of the repo). A promoted unblocks B. DAG already feeds risk; this is deploy order.",
+      "priority": "medium",
+      "estimate": "",
+      "depends_on": [
+        "task-real-honesty-docs"
+      ],
+      "feature_id": "real-gitops",
+      "origin": "heuristic",
+      "source": {}
+    },
+    {
+      "id": "t-reconcile",
+      "title": "Reconcile loop + drift",
+      "description": "Read desired from Git, Observe targets, fingerprint diff; detect/alert/reconcile; configurable verification depth.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-git",
+        "t-target-ssh"
+      ],
+      "feature_id": "reconcile-drift",
       "source": {}
     },
     {
@@ -924,6 +1220,196 @@
       "estimate": "1d",
       "depends_on": [],
       "feature_id": "store-backend",
+      "source": {
+        "doc": "rollops-tdd.md"
+      }
+    },
+    {
+      "id": "t-env-promo",
+      "title": "Environment promotion",
+      "description": "Staged dev→staging→prod path + independent per-env configs; everything configurable.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api",
+        "t-config-schema"
+      ],
+      "feature_id": "environment-promotion",
+      "source": {}
+    },
+    {
+      "id": "t-plugin-grpc",
+      "title": "gRPC plugin protocol",
+      "description": "go-plugin-style gRPC contract + versioning for third-party targets.",
+      "priority": "medium",
+      "estimate": "3d",
+      "depends_on": [
+        "t-conformance"
+      ],
+      "feature_id": "target-contract",
+      "source": {}
+    },
+    {
+      "id": "t-target-ftp",
+      "title": "FTP target (dumb)",
+      "description": "First-party FTP target with stamped-manifest drift verification.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-conformance",
+        "t-step-exec"
+      ],
+      "feature_id": "first-party-targets",
+      "source": {}
+    },
+    {
+      "id": "t-security-rbac",
+      "title": "RBAC taxonomy + auth",
+      "description": "Scoped roles bound to human/CI/agent identities; rollouts.apply-to-prod distinct from rollouts.status.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-audit"
+      ],
+      "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-rollback",
+      "title": "Rollback (manual/agent/auto)",
+      "description": "Auto signals: Health fail, smoke-test fail, step error/timeout. Roll back by re-applying prior manifest.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-lifecycle",
+        "t-step-exec",
+        "t-target-ssh"
+      ],
+      "feature_id": "rollback",
+      "source": {}
+    },
+    {
+      "id": "t-engine-plandiff",
+      "title": "plan/diff before apply",
+      "description": "Compute and surface a plan/diff to humans and agents before anything is applied.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "engine-library",
+      "source": {}
+    },
+    {
+      "id": "t-git",
+      "title": "Git integration (webhook + poll)",
+      "description": "HMAC-verified GitHub webhook + periodic poll (drift heartbeat); per-repo GitHub App/deploy-key auth.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-config-perrepo"
+      ],
+      "feature_id": "git-integration",
+      "source": {}
+    },
+    {
+      "id": "t-audit",
+      "title": "bolt audit + secret redaction",
+      "description": "Structured bolt audit for all actions; redact secret material at the logging boundary; immutable attribution.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api",
+        "t-secrets"
+      ],
+      "feature_id": "audit",
+      "source": {}
+    },
+    {
+      "id": "t-secrets",
+      "title": "SecretProvider + vault",
+      "description": "Never store secrets locally; vault integration; workload-identity auth with vault-managed bootstrap fallback.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "secrets",
+      "source": {}
+    },
+    {
+      "id": "t-guardrails",
+      "title": "Agent guardrails",
+      "description": "Non-bypassable policy floor + emergency freeze kill-switch + fortify agent rate-limit. Hard limits, not advisory.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-risk-approval",
+        "t-security-rbac"
+      ],
+      "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-risk-gate",
+      "title": "decisionkit 5-signal risk score",
+      "description": "Compute blast-radius score: target criticality, environment, change type, blast radius, rollout strategy.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-lifecycle",
+        "t-config-cel"
+      ],
+      "feature_id": "risk-gate",
+      "source": {}
+    },
+    {
+      "id": "t-step-exec",
+      "title": "Step execution (axi + fortify)",
+      "description": "Execute Target ops through axi (sandboxed, audited), wrapped in fortify (retry/CB/rate-limit/bulkhead).",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-target-contract"
+      ],
+      "feature_id": "step-execution",
+      "source": {}
+    },
+    {
+      "id": "t-ui",
+      "title": "UI dashboard (read-and-act)",
+      "description": "Live rollout state, history, pending approvals, drift status over the REST gateway.",
+      "priority": "medium",
+      "estimate": "5d",
+      "depends_on": [
+        "t-daemon-api"
+      ],
+      "feature_id": "ui-dashboard",
+      "source": {}
+    },
+    {
+      "id": "t-target-ssh",
+      "title": "SSH/VM target (dumb)",
+      "description": "First-party SSH/VM target with stamped-manifest/checksum drift verification. Leanest end-to-end proof.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-conformance",
+        "t-step-exec"
+      ],
+      "feature_id": "first-party-targets",
+      "source": {}
+    },
+    {
+      "id": "t-target-contract",
+      "title": "Target interface + types (scaffolded)",
+      "description": "Public Target contract (Apply/Observe/Health) + Manifest/Result/Fingerprint/HealthStatus. Done in scaffold.",
+      "priority": "high",
+      "estimate": "1d",
+      "depends_on": [],
+      "feature_id": "target-contract",
       "source": {
         "doc": "rollops-tdd.md"
       }
@@ -942,94 +1428,6 @@
       "source": {}
     },
     {
-      "id": "t-step-exec",
-      "title": "Step execution (axi + fortify)",
-      "description": "Execute Target ops through axi (sandboxed, audited), wrapped in fortify (retry/CB/rate-limit/bulkhead).",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-target-contract"
-      ],
-      "feature_id": "step-execution",
-      "source": {}
-    },
-    {
-      "id": "t-target-ssh",
-      "title": "SSH/VM target (dumb)",
-      "description": "First-party SSH/VM target with stamped-manifest/checksum drift verification. Leanest end-to-end proof.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-conformance",
-        "t-step-exec"
-      ],
-      "feature_id": "first-party-targets",
-      "source": {}
-    },
-    {
-      "id": "t-engine-plandiff",
-      "title": "plan/diff before apply",
-      "description": "Compute and surface a plan/diff to humans and agents before anything is applied.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "engine-library",
-      "source": {}
-    },
-    {
-      "id": "t-ui",
-      "title": "UI dashboard (read-and-act)",
-      "description": "Live rollout state, history, pending approvals, drift status over the REST gateway.",
-      "priority": "medium",
-      "estimate": "5d",
-      "depends_on": [
-        "t-daemon-api"
-      ],
-      "feature_id": "ui-dashboard",
-      "source": {}
-    },
-    {
-      "id": "t-risk-gate",
-      "title": "decisionkit 5-signal risk score",
-      "description": "Compute blast-radius score: target criticality, environment, change type, blast radius, rollout strategy.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-lifecycle",
-        "t-config-cel"
-      ],
-      "feature_id": "risk-gate",
-      "source": {}
-    },
-    {
-      "id": "t-guardrails",
-      "title": "Agent guardrails",
-      "description": "Non-bypassable policy floor + emergency freeze kill-switch + fortify agent rate-limit. Hard limits, not advisory.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-risk-approval",
-        "t-security-rbac"
-      ],
-      "feature_id": "security-trust",
-      "source": {}
-    },
-    {
-      "id": "t-risk-approval",
-      "title": "Single approval gate",
-      "description": "CEL-configurable threshold; below auto-proceeds, above/sensitive needs one approval (approve/reject/block).",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-risk-gate"
-      ],
-      "feature_id": "risk-gate",
-      "source": {}
-    },
-    {
       "id": "t-config-perrepo",
       "title": "Per-repo config at branch + path",
       "description": "Resolve each repo's config at a configurable branch and path (Git multi-tenancy).",
@@ -1039,174 +1437,6 @@
         "t-config-schema"
       ],
       "feature_id": "config-model",
-      "source": {}
-    },
-    {
-      "id": "t-security-rbac",
-      "title": "RBAC taxonomy + auth",
-      "description": "Scoped roles bound to human/CI/agent identities; rollouts.apply-to-prod distinct from rollouts.status.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-audit"
-      ],
-      "feature_id": "security-trust",
-      "source": {}
-    },
-    {
-      "id": "t-target-k8s",
-      "title": "Kubernetes target (rich)",
-      "description": "First-party Kubernetes target with native Observe against live state. No core K8s dependency leaks.",
-      "priority": "medium",
-      "estimate": "4d",
-      "depends_on": [
-        "t-conformance",
-        "t-step-exec"
-      ],
-      "feature_id": "first-party-targets",
-      "source": {}
-    },
-    {
-      "id": "t-artifact",
-      "title": "Artifact provenance verify",
-      "description": "cosign/SLSA signature + provenance verification per target, configurable, secure default. Critical for agent rollouts.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-step-exec",
-        "t-security-rbac"
-      ],
-      "feature_id": "security-trust",
-      "source": {}
-    },
-    {
-      "id": "t-conformance",
-      "title": "Target conformance suite",
-      "description": "Shared suite proving idempotency, fingerprint stability, health semantics — every target must pass.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-target-contract"
-      ],
-      "feature_id": "target-contract",
-      "source": {}
-    },
-    {
-      "id": "t-mcp",
-      "title": "MCP server (mcp-go)",
-      "description": "Tools 1:1 to engine ops; embedded-in-daemon + standalone; authenticated + RBAC-scoped like every interface.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-security-rbac"
-      ],
-      "feature_id": "mcp-server",
-      "source": {}
-    },
-    {
-      "id": "t-target-contract",
-      "title": "Target interface + types (scaffolded)",
-      "description": "Public Target contract (Apply/Observe/Health) + Manifest/Result/Fingerprint/HealthStatus. Done in scaffold.",
-      "priority": "high",
-      "estimate": "1d",
-      "depends_on": [],
-      "feature_id": "target-contract",
-      "source": {
-        "doc": "rollops-tdd.md"
-      }
-    },
-    {
-      "id": "t-audit",
-      "title": "bolt audit + secret redaction",
-      "description": "Structured bolt audit for all actions; redact secret material at the logging boundary; immutable attribution.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api",
-        "t-secrets"
-      ],
-      "feature_id": "audit",
-      "source": {}
-    },
-    {
-      "id": "t-cli",
-      "title": "CLI (one-shot + daemon client)",
-      "description": "Identical command surface; in-process engine or gRPC client. Cannot bypass gate or RBAC.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-security-rbac"
-      ],
-      "feature_id": "cli",
-      "source": {}
-    },
-    {
-      "id": "t-rollback",
-      "title": "Rollback (manual/agent/auto)",
-      "description": "Auto signals: Health fail, smoke-test fail, step error/timeout. Roll back by re-applying prior manifest.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-lifecycle",
-        "t-step-exec",
-        "t-target-ssh"
-      ],
-      "feature_id": "rollback",
-      "source": {}
-    },
-    {
-      "id": "t-lifecycle",
-      "title": "Rollout statechart (statekit)",
-      "description": "Model the rollout lifecycle as a statekit statechart with all phases and transitions, persisted per transition.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-store-sqlite"
-      ],
-      "feature_id": "rollout-lifecycle",
-      "source": {}
-    },
-    {
-      "id": "t-schedule",
-      "title": "Scheduled deployments",
-      "description": "ScheduledRollout queue in the Store; due-schedule firing on reconcile tick (human or agent).",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-store-sqlite",
-        "t-engine-api"
-      ],
-      "feature_id": "scheduling",
-      "source": {}
-    },
-    {
-      "id": "t-reconcile",
-      "title": "Reconcile loop + drift",
-      "description": "Read desired from Git, Observe targets, fingerprint diff; detect/alert/reconcile; configurable verification depth.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api",
-        "t-git",
-        "t-target-ssh"
-      ],
-      "feature_id": "reconcile-drift",
-      "source": {}
-    },
-    {
-      "id": "t-secrets",
-      "title": "SecretProvider + vault",
-      "description": "Never store secrets locally; vault integration; workload-identity auth with vault-managed bootstrap fallback.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-engine-api"
-      ],
-      "feature_id": "secrets",
       "source": {}
     },
     {
@@ -1224,6 +1454,19 @@
       "source": {}
     },
     {
+      "id": "t-cli",
+      "title": "CLI (one-shot + daemon client)",
+      "description": "Identical command surface; in-process engine or gRPC client. Cannot bypass gate or RBAC.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-security-rbac"
+      ],
+      "feature_id": "cli",
+      "source": {}
+    },
+    {
       "id": "t-engine-api",
       "title": "Engine API surface",
       "description": "Central engine library: plan/apply/verify/promote/rollback/observe/schedule. Transport- and storage-agnostic.",
@@ -1235,30 +1478,6 @@
         "t-target-contract"
       ],
       "feature_id": "engine-library",
-      "source": {}
-    },
-    {
-      "id": "t-selfobs",
-      "title": "Self-observability",
-      "description": "Daemon health endpoints + Prometheus metrics: reconcile latency, drift count, rollout outcomes.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-daemon-api"
-      ],
-      "feature_id": "self-observability",
-      "source": {}
-    },
-    {
-      "id": "t-store-sqlite",
-      "title": "SQLite Store backend + migrations",
-      "description": "Implement store.Store on SQLite with migrations; crash-safe per-transition persist.",
-      "priority": "high",
-      "estimate": "3d",
-      "depends_on": [
-        "t-store-iface"
-      ],
-      "feature_id": "store-backend",
       "source": {}
     },
     {
@@ -1274,15 +1493,64 @@
       "source": {}
     },
     {
-      "id": "t-plugin-grpc",
-      "title": "gRPC plugin protocol",
-      "description": "go-plugin-style gRPC contract + versioning for third-party targets.",
+      "id": "t-selfobs",
+      "title": "Self-observability",
+      "description": "Daemon health endpoints + Prometheus metrics: reconcile latency, drift count, rollout outcomes.",
       "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-daemon-api"
+      ],
+      "feature_id": "self-observability",
+      "source": {}
+    },
+    {
+      "id": "t-config-validate",
+      "title": "Loud Go-side config validation",
+      "description": "Go validation that rejects malformed config loudly — no silent typos.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-config-schema"
+      ],
+      "feature_id": "config-model",
+      "source": {}
+    },
+    {
+      "id": "t-store-sqlite",
+      "title": "SQLite Store backend + migrations",
+      "description": "Implement store.Store on SQLite with migrations; crash-safe per-transition persist.",
+      "priority": "high",
       "estimate": "3d",
       "depends_on": [
-        "t-conformance"
+        "t-store-iface"
       ],
-      "feature_id": "target-contract",
+      "feature_id": "store-backend",
+      "source": {}
+    },
+    {
+      "id": "t-target-k8s",
+      "title": "Kubernetes target (rich)",
+      "description": "First-party Kubernetes target with native Observe against live state. No core K8s dependency leaks.",
+      "priority": "medium",
+      "estimate": "4d",
+      "depends_on": [
+        "t-conformance",
+        "t-step-exec"
+      ],
+      "feature_id": "first-party-targets",
+      "source": {}
+    },
+    {
+      "id": "t-engine-locks",
+      "title": "Advisory locks + reconcile serialization",
+      "description": "Per-target advisory locks; per-repo reconcile serialization with configurable parallelism.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-engine-api"
+      ],
+      "feature_id": "engine-library",
       "source": {}
     },
     {
@@ -1296,6 +1564,81 @@
       "source": {
         "doc": "rollops-tdd.md"
       }
+    },
+    {
+      "id": "t-lifecycle",
+      "title": "Rollout statechart (statekit)",
+      "description": "Model the rollout lifecycle as a statekit statechart with all phases and transitions, persisted per transition.",
+      "priority": "high",
+      "estimate": "3d",
+      "depends_on": [
+        "t-engine-api",
+        "t-store-sqlite"
+      ],
+      "feature_id": "rollout-lifecycle",
+      "source": {}
+    },
+    {
+      "id": "t-artifact",
+      "title": "Artifact provenance verify",
+      "description": "cosign/SLSA signature + provenance verification per target, configurable, secure default. Critical for agent rollouts.",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-step-exec",
+        "t-security-rbac"
+      ],
+      "feature_id": "security-trust",
+      "source": {}
+    },
+    {
+      "id": "t-config-cel",
+      "title": "Embed CEL for conditional logic",
+      "description": "CEL evaluation for risk conditions, promotion criteria, rollback triggers. No bespoke DSL.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-config-schema"
+      ],
+      "feature_id": "config-model",
+      "source": {}
+    },
+    {
+      "id": "t-conformance",
+      "title": "Target conformance suite",
+      "description": "Shared suite proving idempotency, fingerprint stability, health semantics — every target must pass.",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-target-contract"
+      ],
+      "feature_id": "target-contract",
+      "source": {}
+    },
+    {
+      "id": "t-schedule",
+      "title": "Scheduled deployments",
+      "description": "ScheduledRollout queue in the Store; due-schedule firing on reconcile tick (human or agent).",
+      "priority": "medium",
+      "estimate": "2d",
+      "depends_on": [
+        "t-store-sqlite",
+        "t-engine-api"
+      ],
+      "feature_id": "scheduling",
+      "source": {}
+    },
+    {
+      "id": "t-risk-approval",
+      "title": "Single approval gate",
+      "description": "CEL-configurable threshold; below auto-proceeds, above/sensitive needs one approval (approve/reject/block).",
+      "priority": "high",
+      "estimate": "2d",
+      "depends_on": [
+        "t-risk-gate"
+      ],
+      "feature_id": "risk-gate",
+      "source": {}
     },
     {
       "id": "t-daemon-api",
@@ -1312,69 +1655,20 @@
       "source": {}
     },
     {
-      "id": "t-config-cel",
-      "title": "Embed CEL for conditional logic",
-      "description": "CEL evaluation for risk conditions, promotion criteria, rollback triggers. No bespoke DSL.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-config-schema"
-      ],
-      "feature_id": "config-model",
-      "source": {}
-    },
-    {
-      "id": "t-target-ftp",
-      "title": "FTP target (dumb)",
-      "description": "First-party FTP target with stamped-manifest drift verification.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-conformance",
-        "t-step-exec"
-      ],
-      "feature_id": "first-party-targets",
-      "source": {}
-    },
-    {
-      "id": "t-config-validate",
-      "title": "Loud Go-side config validation",
-      "description": "Go validation that rejects malformed config loudly — no silent typos.",
-      "priority": "high",
-      "estimate": "2d",
-      "depends_on": [
-        "t-config-schema"
-      ],
-      "feature_id": "config-model",
-      "source": {}
-    },
-    {
-      "id": "t-env-promo",
-      "title": "Environment promotion",
-      "description": "Staged dev→staging→prod path + independent per-env configs; everything configurable.",
-      "priority": "medium",
-      "estimate": "2d",
-      "depends_on": [
-        "t-engine-api",
-        "t-config-schema"
-      ],
-      "feature_id": "environment-promotion",
-      "source": {}
-    },
-    {
-      "id": "t-git",
-      "title": "Git integration (webhook + poll)",
-      "description": "HMAC-verified GitHub webhook + periodic poll (drift heartbeat); per-repo GitHub App/deploy-key auth.",
+      "id": "t-mcp",
+      "title": "MCP server (mcp-go)",
+      "description": "Tools 1:1 to engine ops; embedded-in-daemon + standalone; authenticated + RBAC-scoped like every interface.",
       "priority": "high",
       "estimate": "3d",
       "depends_on": [
-        "t-config-perrepo"
+        "t-engine-api",
+        "t-security-rbac"
       ],
-      "feature_id": "git-integration",
+      "feature_id": "mcp-server",
       "source": {}
     }
   ],
   "approval_status": "approved",
   "created_at": "2026-06-08T16:36:09.998175+02:00",
-  "updated_at": "2026-06-11T12:50:53.757205+02:00"
+  "updated_at": "2026-08-14T14:59:33.625862633Z"
 }

@@ -1,8 +1,22 @@
 # Status — Rollops
 
-*Updated: 2026-07-19*
+*Updated: 2026-08-14*
 
 ## Current State
+
+Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
+in-cluster pin was v0.26.0). It operates the creator's GitOps fleet. The
+**near-roadmap is Make it real** (`docs/design/make-it-real.md`): wire advertised
+behaviour, then dogfood MCP, then controllable canaries, then a small GitOps
+wedge. Do not add Argo checkboxes outside that RFC.
+
+**Last Session Summary (2026-08-14):** Product review, then a plan to make the
+gaps real. Encoded as Roady features `real-trust` / `real-agent` /
+`real-canary` / `real-gitops`. No runtime code in this session.
+
+---
+
+## Historical — 2026-07-19
 
 Rollops is **released at v0.26.0** and operating its creator's entire production
 cluster (GitOps fleet, one in-cluster `rollopsd`, ns `rollops-system`, watching 11

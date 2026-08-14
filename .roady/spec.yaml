@@ -618,6 +618,158 @@ features:
       title: Per-repo least-privilege git auth (deploy keys / GitHub App) for the reconcile watch
       description: 'Replace the single broad classic PAT (currently used for ROLLOPS_WATCH across klarlabs-studio + felixgeelhaar repos) with least-privilege, per-repo credentials. Two viable designs: (a) per-repo SSH deploy keys — the watch already supports `deployKeyPath`, so wire one key per repo (mount a Secret per repo, switch URLs to git+ssh, read+write scoped to that single repo); naturally multi-org. (b) GitHub App installation tokens — install the App on the org + personal account, mint short-lived per-installation tokens (least privilege, auto-rotating, multi-owner); the git layer''s Auth would gain an App-token provider and the watch config a per-repo/app reference. Motivation: a fine-grained PAT is scoped to ONE owner (can''t span klarlabs-studio + felixgeelhaar), and a classic PAT is broad (all the operator''s repos) — both poor for a daemon that writes image-automation bumps back to many repos across orgs. Acceptance: each watched repo authenticates with a credential scoped to just that repo; no single token grants access beyond what a repo needs; tokens never written to disk or logs (redaction already shipped); rotation is per-repo. Surfaced while dogfooding the keel→Rollops fleet cutover (a broad PAT leaked into pod logs on a clone crash; fine-grained PAT 403''d on cross-org repos).'
       requirements: []
+    - id: real-trust
+      title: Make it real — trust pass (docs = daemon)
+      description: Close the honesty gap. Every advertised capability is wired into rollopsd or struck from docs/UI. Persist risk scores and freeze; wire analysis and Vault; CLI cannot bypass daemon policy; traffic SetWeight failures abort the step; image-automation current is only legal when scanner identity equals the Git pin. Canonical RFC docs/design/make-it-real.md Phase A.
+      requirements:
+        - id: real-extract-engine-boot
+          title: Shared engine boot for CLI and daemon
+          description: Extract daemon engine option assembly (audit, guardrails, secrets, governance, artifact gate, notifier, confinement, leases) into a shared boot package used by cmd/rollopsd and the one-shot CLI. One-shot apply against a frozen SQLite file must be refused. Test from a fake env.
+          priority: high
+          depends_on: []
+        - id: real-persist-risk-score
+          title: Persist EvaluateRisk onto the rollout
+          description: Engine.Apply writes the risk Decision score onto Rollout.RiskScore. UI shows that number. Drop the decisionkit label unless decisionkit is actually called; keep the homegrown scorer.
+          priority: high
+          depends_on: []
+        - id: real-risk-inputs-from-callers
+          title: Callers pass RiskInputs instead of zeros
+          description: Reconcile, CLI, HTTP, gRPC, and MCP fill RiskInputs — env from spec.target.env, change-type from plan/hooks, blast radius from depgraph when available. Empty inputs must not be the production path.
+          priority: high
+          depends_on:
+            - real-persist-risk-score
+        - id: real-wire-metric-analysis
+          title: Daemon evaluates spec.analysis when enabled
+          description: rollopsd enables WithMetricAnalysis / Prometheus or metricprovider plugin when ROLLOPS_ANALYSIS is set or equivalent. Default remains off (observability-free v1). Startup log. Promote fails on a breaching provider.
+          priority: high
+          depends_on:
+            - real-extract-engine-boot
+        - id: real-wire-vault
+          title: Daemon constructs Vault plus Env secret chain
+          description: secrets.FromEnv builds Chain{Vault, Env} when VAULT_ADDR is set, else Env only. Token from VAULT_TOKEN or VAULT_TOKEN_FILE, never logged. Unset VAULT_ADDR leaves behaviour unchanged.
+          priority: high
+          depends_on:
+            - real-extract-engine-boot
+        - id: real-persist-freeze
+          title: Freeze survives daemon restart
+          description: Persist freeze active/reason/by/at in the Store. Daemon loads it at boot; Engage and Lift write through. One-shot CLI sees the same row. Agents cannot Lift (existing RBAC).
+          priority: high
+          depends_on: []
+        - id: real-cli-policy-parity
+          title: One-shot CLI cannot skip freeze secrets audit
+          description: After shared boot, one-shot apply/rollback/freeze uses the same guardrails, secrets, audit, and artifact gate as the daemon when the same env/DB are present.
+          priority: high
+          depends_on:
+            - real-extract-engine-boot
+            - real-persist-freeze
+            - real-wire-vault
+        - id: real-grpc-tls-client
+          title: CLI gRPC client uses TLS when the daemon does
+          description: grpcapi client stops always dialing insecure. With ROLLOPS_TLS_* set, ROLLOPS_DAEMON CLI uses servertls. Loopback plaintext remains the dev default.
+          priority: medium
+          depends_on: []
+        - id: real-traffic-fail-closed
+          title: Traffic SetWeight failure aborts the step
+          description: driveTraffic errors fail Apply / the current progressive step and can auto-rollback. Feature-flag apply_flag stays best-effort and audited.
+          priority: high
+          depends_on: []
+        - id: real-imageauto-current-invariant
+          title: Image-automation current means scanner equals Git pin
+          description: current is only legal when scanner identity equals the Git-pinned identity. File-already-pins is a distinct outcome. Scanner-moved plus patch-unchanged is error, never current. Regression test closes issue 98 on the invariant.
+          priority: high
+          depends_on: []
+        - id: real-honesty-docs
+          title: Docs and UI match rollopsd behaviour
+          description: After the wires, README, TDD, wiki, vision status, UI copy, store/MCP package comments stop claiming Postgres, mnemos, host agent, standalone MCP, decisionkit UI scores, or unwired analysis. Webhook wording waits for Phase D. Vision is no longer Concept/pre-MVP.
+          priority: high
+          depends_on:
+            - real-persist-risk-score
+            - real-risk-inputs-from-callers
+            - real-wire-metric-analysis
+            - real-wire-vault
+            - real-persist-freeze
+            - real-cli-policy-parity
+            - real-grpc-tls-client
+            - real-traffic-fail-closed
+            - real-imageauto-current-invariant
+    - id: real-agent
+      title: Make it real — agent-native dogfood
+      description: Make MCP a production operator surface. Opt-in deploy-agent RBAC, observe tools, and a 15-minute runbook. Do not widen default agent:* (plan+status only). Canonical RFC docs/design/make-it-real.md Phase B. Starts after honesty docs so the runbook describes a product that does not lie.
+      requirements:
+        - id: real-deploy-agent-rbac
+          title: Documented opt-in agent deploy role
+          description: Add agent:deploy (plan/apply/rollback/status/verify — not freeze lift, not approve) as an example grant in docs/security-rbac.md and a policy snippet. Default agent:* stays plan+status.
+          priority: high
+          depends_on:
+            - real-honesty-docs
+        - id: real-mcp-observe-tools
+          title: MCP list history and drift tools
+          description: Add rollouts.list, rollouts.history, rollouts.drift, authorized as status. Apply remains plan-before-apply.
+          priority: medium
+          depends_on:
+            - real-honesty-docs
+        - id: real-mcp-runbook
+          title: Agent operator runbook
+          description: Short docs page — enable ROLLOPS_MCP_ADDR, tokens file, policy grant, example flow plan then status then apply then verify then rollback. Cluster enable stays operator work.
+          priority: high
+          depends_on:
+            - real-deploy-agent-rbac
+            - real-mcp-observe-tools
+    - id: real-canary
+      title: Make it real — canary as a verb
+      description: Drive progressive delivery through the existing Stepper (pause/resume/abort/promote, snapshot restore) instead of blocking Executor sleeps. Expose pause/resume/abort on CLI, HTTP, gRPC, MCP, and UI. doctor/plan name bake vs traffic canary and cutover vs blue-green honestly. Canonical RFC docs/design/make-it-real.md Phase C.
+      requirements:
+        - id: real-stepper-tick
+          title: Tick-driven canary stepper with snapshot restore
+          description: Apply deploys once, starts Stepper, persists snapshot, returns. Reconcile tick advances health and SetWeight. Crash restores snapshot. Tests complete a short pause across two ticks, not one blocking Apply.
+          priority: high
+          depends_on:
+            - real-traffic-fail-closed
+        - id: real-pause-resume-abort-api
+          title: Pause resume abort on CLI HTTP gRPC MCP
+          description: Engine methods plus all operator surfaces. Authorize as apply scoped to target ref. Abort rolls back. Table tests per surface.
+          priority: high
+          depends_on:
+            - real-stepper-tick
+        - id: real-pause-resume-abort-ui
+          title: Pause resume abort in the web console
+          description: In-flight canary shows pause/resume/abort. UI never force-promotes. Bundle test asserts the controls.
+          priority: medium
+          depends_on:
+            - real-pause-resume-abort-api
+        - id: real-honest-strategy-names
+          title: doctor and plan name bake and cutover honestly
+          description: canary without trafficRouting or featureFlags is a health-gated bake in plan/doctor summary. blue-green without traffic routing is a full cutover. Real two-stack blue-green stays out of scope.
+          priority: medium
+          depends_on: []
+    - id: real-gitops
+      title: Make it real — GitOps wedge
+      description: Minimum to migrate a small Argo install without ApplicationSets. HMAC webhook listener, RolloutSet list generator (in-memory expansion), kubernetes ignoreDifferences, and dependsOn that waits in reconcile. Canonical RFC docs/design/make-it-real.md Phase D and docs/design/multi-cluster-scale.md Phase 1 only.
+      requirements:
+        - id: real-webhook-listener
+          title: GitHub HMAC webhook triggers reconcile
+          description: POST hook route verifies git.VerifySignature and calls watcher.Tick. Secret from ROLLOPS_WEBHOOK_SECRET; unset means 404. Invalid signature 401 and does not Tick. Poll remains the safety net.
+          priority: high
+          depends_on:
+            - real-honesty-docs
+        - id: real-rolloutset-list
+          title: RolloutSet list generator expands in memory
+          description: kind RolloutSet with a list generator and template expands at watch load into ordinary RolloutConfigs with deterministic unique target.ref. Each reconciles independently. No engine/store change. Cluster/matrix generators are out of scope.
+          priority: high
+          depends_on:
+            - real-honesty-docs
+        - id: real-ignore-differences
+          title: Kubernetes ignoreDifferences for drift
+          description: Target spec lists field paths ignored in Observe/Diff so HPA replicas and webhook defaults do not flap. Apply stays client-side kubectl apply. Ignored-only diff is not drift; other fields still are.
+          priority: medium
+          depends_on:
+            - real-honesty-docs
+        - id: real-dependson-wait
+          title: Reconcile waits on dependsOn
+          description: If B dependsOn A and A is not promoted, skip B this tick (logged, not fatal to the rest of the repo). A promoted unblocks B. DAG already feeds risk; this is deploy order.
+          priority: medium
+          depends_on:
+            - real-honesty-docs
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.
@@ -636,5 +788,7 @@ constraints:
     - id: lean-single-binary
       description: Single Go binary + SQLite is the common case. First-party targets compiled in. Every feature justifies its weight.
     - id: build-on-stack
-      description: Reuse statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos rather than reinventing.
+      description: Reuse statekit, axi-go, fortify, decision-kit, bolt, mcp-go, mnemos rather than reinventing. Blank-import pins that are not called are a honesty bug — use or drop.
+    - id: make-it-real-out-of-scope
+      description: This program does not add Jsonnet, app-of-apps, ApplicationSet matrix/git generators, Helm install (stay on helm template), host agent/pull mode, Postgres/mnemos Store backends, studio billing/tenancy, Istio/NGINX/SMI, replica-weighted canary, or multi-stage approval chains. Gateway API remains the rich traffic path. Stop when the RFC done-when list is met.
 version: 0.1.0

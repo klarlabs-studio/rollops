@@ -1,11 +1,20 @@
 
+## Make it real (near roadmap)
+
+Canonical: `docs/design/make-it-real.md`. Roady features `real-trust`,
+`real-agent`, `real-canary`, `real-gitops`.
+
+Phase 1 of this RFC (list generator only) is **in** that program. Cluster
+generator, matrix/git, and fleet status rollup stay here as later work.
+
+---
+
 ## Multi-cluster at scale (RolloutSet generators)
 
 Deploy a service across N clusters without per-cluster boilerplate, ArgoCD
-ApplicationSet-style. Scoped in `docs/design/multi-cluster-scale.md` (draft RFC):
-recommended approach is a `RolloutSet` kind + cluster registry that expands
-in-memory to N ordinary configs (no engine/store change). Phased: list generator
-→ cluster generator → matrix/git + fleet status rollup. Not yet approved.
+ApplicationSet-style. Scoped in `docs/design/multi-cluster-scale.md`.
+**List generator is in Make it real (D2).** Cluster generator, matrix/git,
+and fleet status rollup remain later work.
 
 ---
 

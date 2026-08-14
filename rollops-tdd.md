@@ -263,7 +263,24 @@ Core entities: `Rollout`, `TargetState`, `ScheduledRollout`, `RolloutRecord`, `D
 
 ## 17. Open Items / Revisit as it grows
 
-- **Production plugin transport** — the protocol seam is versioned; the subprocess/gRPC adapter needs hardening before third-party plugin support is declared stable.
-- **Metric-based analysis (Phase 2)** — implemented as an experimental opt-in seam; keep disabled in v1 defaults so rollback remains observability-free.
-- **Multi-instance coordination** — leader election / locking once the studio layer runs more than one daemon against shared Postgres.
-- **RBAC model evolution** — the first concrete role/permission taxonomy exists; keep refining bindings for human, CI, and agent identities from dogfood evidence.
+Active work is the **Make it real** program (`docs/design/make-it-real.md`,
+Roady features `real-trust` / `real-agent` / `real-canary` / `real-gitops`).
+That RFC is the near-roadmap. Do not add Argo checkboxes outside it.
+
+Still true, and in scope there:
+
+- **Docs = daemon.** Postgres, mnemos, host agent, standalone MCP, and
+  decisionkit-driven UI scores are not wired. Either wire (trust pass) or
+  strike the claim.
+- **Metric-based analysis** — library exists; daemon must opt in explicitly.
+  v1 rollback stays observability-free unless analysis is enabled.
+- **Git webhook listener** — HMAC verify exists; the daemon has no route
+  (Phase D). Poll is the only trigger today.
+- **Canary pause/resume** — `Stepper` exists and is unused; engine still
+  blocks in `Executor` (Phase C).
+- **RBAC model evolution** — first taxonomy exists; add opt-in `agent:deploy`
+  without widening default `agent:*`.
+
+Out of this program (do not start): plugin keyless/Rekor, ApplicationSet
+matrix, Jsonnet, app-of-apps, host agent, Postgres/mnemos backends, studio
+billing, Istio/NGINX/SMI.

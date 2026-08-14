@@ -5,7 +5,29 @@
 > `[OPEN]`/`[WAITING]` markers in the 2026-06-14 and 2026-07-17 blocks are
 > historical, NOT live. Trust this list.
 
-## ACTUALLY OPEN (as of 2026-07-19)
+## ACTUALLY OPEN (as of 2026-08-14)
+
+0. **[OPEN — PRODUCT] Make it real.** Canonical RFC
+   `docs/design/make-it-real.md`. Roady features `real-trust` → `real-agent`
+   → `real-canary` → `real-gitops`. This is the near-roadmap. Do not add
+   Argo checkboxes outside it. First ready work is Phase A (shared boot,
+   persist risk, wire analysis/Vault, persist freeze, traffic fail-closed,
+   image-auto `current` invariant). Honesty docs are last in A; Phase B
+   must not start before that.
+1. **[OPEN] Image automation #98** — stall after a mutable tag moves is
+   unexplained; v0.29/v0.30 made verdicts legible. The RFC's A8 closes it
+   on the invariant (`current` iff scanner identity equals Git pin) even
+   without reproducing the 18h hang.
+2. **[OPEN — HIGHEST VALUE outside this repo] agent-go has 42 CRITICAL
+   dependency vulnerabilities** (+14 high). Found 2026-07-19. Triage them
+   in agent-go, not here.
+3. **[OPEN] Drop `go.sum` excludes across the 28 repos** — unblocked by
+   nox v1.10.0. agent-go LAST. Not a rollops code task.
+4. **[OPEN] relicta is broken in the nox repo** — `relicta notes` / `approve`.
+   Fix before the next nox cut.
+5. **`k3s-ghcr-pull` expires 2026-08-29** — rotate before end of Aug 2026.
+
+## ACTUALLY OPEN (as of 2026-07-19) — superseded where it collides with the list above
 
 0. **[OPEN — HIGHEST VALUE] agent-go has 42 CRITICAL dependency vulnerabilities**
    (+14 high). Found 2026-07-19 by the canary run before bumping the shared nox

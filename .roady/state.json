@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 367,
+  "version": 373,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -784,7 +784,7 @@
       "elapsed_minutes": 0
     },
     "task-manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "felixgeelhaar",
       "started_at": "2026-06-11T12:51:21.418341+02:00",
@@ -1088,6 +1088,14 @@
       "completed_at": "2026-06-09T21:13:34.749712+02:00",
       "elapsed_minutes": 0
     },
+    "task-per-repo-least-privilege-git-auth-(deploy-keys-/-github-app)-for-the-reconcile-watch": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T14:59:46.473784407Z",
+      "completed_at": "2026-08-14T14:59:46.487818756Z",
+      "elapsed_minutes": 0
+    },
     "task-per-target-advisory-locks-per-repo": {
       "status": "verified",
       "path": "",
@@ -1141,6 +1149,116 @@
       ],
       "started_at": "2026-06-09T21:13:35.90796+02:00",
       "completed_at": "2026-06-09T21:13:35.915513+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-real-cli-policy-parity": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-dependson-wait": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-deploy-agent-rbac": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-extract-engine-boot": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-grpc-tls-client": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-honest-strategy-names": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-honesty-docs": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-ignore-differences": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-imageauto-current-invariant": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-mcp-observe-tools": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-mcp-runbook": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-pause-resume-abort-api": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-pause-resume-abort-ui": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-persist-freeze": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-persist-risk-score": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-risk-inputs-from-callers": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-rolloutset-list": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-stepper-tick": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-traffic-fail-closed": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-webhook-listener": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-wire-metric-analysis": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
+    "task-real-wire-vault": {
+      "status": "pending",
+      "path": "",
       "elapsed_minutes": 0
     },
     "task-reconcile-loop-on-poll-tick-and": {
@@ -1265,7 +1383,7 @@
       "elapsed_minutes": 0
     },
     "task-target-plugin-process-lifecycle-+-distribution": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "felixgeelhaar",
       "started_at": "2026-06-11T07:32:35.58245+02:00",
@@ -1306,5 +1424,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-11T13:50:08.152371+02:00"
+  "updated_at": "2026-08-14T14:59:46.504684421Z"
 }
