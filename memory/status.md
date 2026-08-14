@@ -16,10 +16,10 @@ gaps real. Encoded as Roady features `real-trust` / `real-agent` /
 freeze persists, shared `internal/boot`, risk score on the rollout, Vault+Env,
 `ROLLOPS_ANALYSIS` opt-in, callers fill `RiskInputs`, traffic fail-closed,
 image-auto `current` iff scanner==Git pin, CLI policy parity, gRPC TLS client,
-honesty docs. 134/142 tasks verified. Phase B (agent dogfood) is closed:
-opt-in `agent-deploy`, MCP list/history/drift, operator runbook. Next is
-Phase C (canary as a verb) — stepper, pause/resume/abort, honest strategy
-names.
+honesty docs. Phase B (agent dogfood) is closed: opt-in `agent-deploy`, MCP
+list/history/drift, operator runbook. Phase C1 is in: tick-driven `Stepper`
+with snapshot restore (Apply no longer `time.Sleep`s a canary pause). Next
+is pause/resume/abort on every surface, then honest strategy names.
 
 ---
 

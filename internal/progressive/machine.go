@@ -28,6 +28,7 @@ const (
 	EvResume  = "RESUME"
 	EvPromote = "PROMOTE"
 	EvAbort   = "ABORT"
+	EvNext    = "NEXT" // advance immediately (zero-pause steps; After(0) is not delayed)
 )
 
 // Machine state ids that the engine observes.
@@ -88,6 +89,7 @@ func BuildStepMachine(plan Plan, health StepHealth) (*statekit.MachineConfig[Ste
 			Always().Target(statekit.StateID(StateAborted)).Guard("failed").
 			// healthy → advance after the configured pause.
 			After(plan.Steps[i].Pause).Target(next).Guard("ok").
+			On(EvNext).Target(next).Guard("ok").
 			On(EvPause).Target(statekit.StateID(pausedID(i))).
 			On(EvPromote).Target(statekit.StateID(StateComplete)).
 			On(EvAbort).Target(statekit.StateID(StateAborted)).
@@ -125,6 +127,18 @@ func NewStepper(m *statekit.MachineConfig[StepContext], opts ...statekit.Option[
 	return &Stepper{interp: interp}
 }
 
+// RestoreStepper reconstructs a canary machine from a snapshot without
+// re-running entry actions. Clear PendingTimers on the snapshot before calling
+// so delayed transitions re-arm on the injected Clock (statekit restore
+// otherwise uses wall-clock AfterFunc).
+func RestoreStepper(m *statekit.MachineConfig[StepContext], snap statekit.Snapshot[StepContext], opts ...statekit.Option[StepContext]) (*Stepper, error) {
+	interp := statekit.NewInterpreter(m, opts...)
+	if err := interp.Restore(snap); err != nil {
+		return nil, err
+	}
+	return &Stepper{interp: interp}, nil
+}
+
 func (s *Stepper) send(ev string) { s.interp.Send(statekit.Event{Type: statekit.EventType(ev)}) }
 
 // Pause holds the canary at the current step. Resume continues, Promote skips to
@@ -133,6 +147,10 @@ func (s *Stepper) Pause()   { s.send(EvPause) }
 func (s *Stepper) Resume()  { s.send(EvResume) }
 func (s *Stepper) Promote() { s.send(EvPromote) }
 func (s *Stepper) Abort()   { s.send(EvAbort) }
+
+// Next advances a zero-pause step. statekit treats After(0) as not delayed, so
+// the engine uses this event to drain bake-less plans in a single Apply.
+func (s *Stepper) Next() { s.send(EvNext) }
 
 // State returns the current state id (e.g. "step1", "paused0", "complete").
 func (s *Stepper) State() string { return string(s.interp.State().Value) }
@@ -153,3 +171,7 @@ func (s *Stepper) Snapshot() statekit.Snapshot[StepContext] { return s.interp.Sn
 func (s *Stepper) Restore(snap statekit.Snapshot[StepContext]) error {
 	return s.interp.Restore(snap)
 }
+
+// Stop cancels pending delayed-transition timers. Call after Snapshot when the
+// engine is about to persist and drop the in-process machine.
+func (s *Stepper) Stop() { s.interp.Stop() }

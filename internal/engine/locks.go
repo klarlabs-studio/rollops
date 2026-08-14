@@ -44,6 +44,10 @@ func (k *keyedLocks) TryAcquire(key string) (release func(), ok bool) {
 	}, true
 }
 
+// acquireTarget takes the in-process lock and the Store lease for targetRef.
+// Apply and Tick re-acquire per call and release when they return — occupancy
+// between ticks is the deploying/paused phase, not a held lease. A second Apply
+// against an in-flight canary is refused as ErrTargetBusy.
 func (e *Engine) acquireTarget(ctx context.Context, targetRef string) (func(), bool, error) {
 	localRelease, ok := e.locks.TryAcquire(targetRef)
 	if !ok {

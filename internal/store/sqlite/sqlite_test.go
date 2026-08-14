@@ -128,6 +128,23 @@ func TestSaveLoadRollout_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveLoadRollout_StepperSnapRoundTrip(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+	in := sampleRollout("r-stepper", rollout.PhaseDeploying)
+	in.StepperSnap = []byte(`{"plan":{"strategy":"canary"},"entered_at":"2026-06-08T12:00:00Z"}`)
+	if err := db.SaveRollout(ctx, in); err != nil {
+		t.Fatalf("SaveRollout: %v", err)
+	}
+	got, err := db.LoadRollout(ctx, "r-stepper")
+	if err != nil {
+		t.Fatalf("LoadRollout: %v", err)
+	}
+	if string(got.StepperSnap) != string(in.StepperSnap) {
+		t.Errorf("stepper snap = %q, want %q", got.StepperSnap, in.StepperSnap)
+	}
+}
+
 // TestOpen_MigratesExistingDBForAnalysis proves the 0008 migration is
 // re-runnable: a database opened before the analysis column existed (simulated
 // by a second Open on the same file) upgrades cleanly and round-trips a rollout

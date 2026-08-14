@@ -55,6 +55,9 @@ var migration0009 string
 //go:embed migrations/0010_freeze.sql
 var migration0010 string
 
+//go:embed migrations/0011_stepper_snap.sql
+var migration0011 string
+
 const timeFormat = time.RFC3339Nano
 
 // Store is the SQLite-backed implementation of store.Store.
@@ -101,6 +104,10 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(migration0010); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: migrate 0010: %w", err)
+	}
+	if err := applyAddColumns(db, migration0011); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlite: migrate 0011: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -153,8 +160,8 @@ func (s *Store) SaveRollout(ctx context.Context, r rollout.Rollout) error {
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO rollouts (id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, note, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO rollouts (id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, stepper_snap, note, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			phase=excluded.phase, strategy=excluded.strategy, manifest=excluded.manifest,
 			risk_score=excluded.risk_score, step_index=excluded.step_index,
@@ -164,11 +171,13 @@ func (s *Store) SaveRollout(ctx context.Context, r rollout.Rollout) error {
 			db_migrate_timeout=excluded.db_migrate_timeout, db_migrate_when=excluded.db_migrate_when,
 			delivery_traffic=excluded.delivery_traffic, delivery_flag=excluded.delivery_flag,
 			analysis=excluded.analysis, smoke_test=excluded.smoke_test,
+			stepper_snap=excluded.stepper_snap,
 			note=excluded.note, updated_at=excluded.updated_at`,
 		r.ID, r.TargetRef, string(r.Phase), string(r.Strategy), manifest, r.RiskScore,
 		r.Initiator.Kind, r.Initiator.Name, r.StepIndex, r.StepTotal, r.StepWeight,
 		dbCmd, r.DBRollbackTimeout, migCmd, r.DBBackwardCompatible, r.DBMigrateTimeout, r.DBMigrateWhen,
 		string(r.DeliveryTraffic), string(r.DeliveryFlag), string(r.Analysis), string(r.SmokeTest),
+		string(r.StepperSnap),
 		r.Note, r.CreatedAt.Format(timeFormat), r.UpdatedAt.Format(timeFormat))
 	if err != nil {
 		return fmt.Errorf("sqlite: save rollout: %w", err)
@@ -230,12 +239,13 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 		dbCmd, migCmd                 string
 		deliveryTraffic, deliveryFlag string
 		analysis, smokeTest           string
+		stepperSnap                   string
 		created, updated              string
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, note, created_at, updated_at
+		SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, stepper_snap, note, created_at, updated_at
 		FROM rollouts WHERE id = ?`, id).
-		Scan(&r.ID, &r.TargetRef, &phase, &strategy, &manifest, &r.RiskScore, &r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &deliveryTraffic, &deliveryFlag, &analysis, &smokeTest, &r.Note, &created, &updated)
+		Scan(&r.ID, &r.TargetRef, &phase, &strategy, &manifest, &r.RiskScore, &r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &deliveryTraffic, &deliveryFlag, &analysis, &smokeTest, &stepperSnap, &r.Note, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return rollout.Rollout{}, store.ErrNotFound
 	}
@@ -248,6 +258,7 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 	r.DeliveryFlag = blobBytes(deliveryFlag)
 	r.Analysis = blobBytes(analysis)
 	r.SmokeTest = blobBytes(smokeTest)
+	r.StepperSnap = blobBytes(stepperSnap)
 	if r.DBRollbackCmd, err = decodeDBCmd(dbCmd); err != nil {
 		return rollout.Rollout{}, fmt.Errorf("sqlite: unmarshal db rollback cmd: %w", err)
 	}
@@ -268,7 +279,7 @@ func (s *Store) LoadRollout(ctx context.Context, id string) (rollout.Rollout, er
 
 // ListRollouts returns the most recent rollouts, newest first.
 func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout, error) {
-	q := `SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, note, created_at, updated_at
+	q := `SELECT id, target_ref, phase, strategy, manifest, risk_score, initiator_kind, initiator_name, step_index, step_total, step_weight, db_rollback_cmd, db_rollback_timeout, db_migrate_cmd, db_backward_compatible, db_migrate_timeout, db_migrate_when, delivery_traffic, delivery_flag, analysis, smoke_test, stepper_snap, note, created_at, updated_at
 		FROM rollouts ORDER BY updated_at DESC`
 	args := []any{}
 	if limit > 0 {
@@ -290,10 +301,11 @@ func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout,
 			dbCmd, migCmd                 string
 			deliveryTraffic, deliveryFlag string
 			analysis, smokeTest           string
+			stepperSnap                   string
 			created, updated              string
 		)
 		if err := rows.Scan(&r.ID, &r.TargetRef, &phase, &strategy, &manifest, &r.RiskScore,
-			&r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &deliveryTraffic, &deliveryFlag, &analysis, &smokeTest, &r.Note, &created, &updated); err != nil {
+			&r.Initiator.Kind, &r.Initiator.Name, &r.StepIndex, &r.StepTotal, &r.StepWeight, &dbCmd, &r.DBRollbackTimeout, &migCmd, &r.DBBackwardCompatible, &r.DBMigrateTimeout, &r.DBMigrateWhen, &deliveryTraffic, &deliveryFlag, &analysis, &smokeTest, &stepperSnap, &r.Note, &created, &updated); err != nil {
 			return nil, fmt.Errorf("sqlite: scan rollout: %w", err)
 		}
 		r.Phase = rollout.Phase(phase)
@@ -302,6 +314,7 @@ func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout,
 		r.DeliveryFlag = blobBytes(deliveryFlag)
 		r.Analysis = blobBytes(analysis)
 		r.SmokeTest = blobBytes(smokeTest)
+		r.StepperSnap = blobBytes(stepperSnap)
 		r.DBRollbackCmd, _ = decodeDBCmd(dbCmd)
 		r.DBMigrateCmd, _ = decodeDBCmd(migCmd)
 		_ = json.Unmarshal(manifest, &r.Desired)

@@ -71,9 +71,49 @@ func TestStepper_Promote(t *testing.T) {
 	}
 }
 
+func TestStepper_ZeroPauseAdvancesOnNext(t *testing.T) {
+	plan := Plan{Strategy: "canary", Steps: []Step{{Weight: 10}, {Weight: 100}}}
+	s := newStepper(t, plan, nil, nil)
+	if s.State() != "step0" || s.Context().Weight != 10 {
+		t.Fatalf("start = %s w=%d", s.State(), s.Context().Weight)
+	}
+	s.Next()
+	if s.State() != "step1" || s.Context().Weight != 100 {
+		t.Fatalf("next = %s w=%d, want step1 w=100", s.State(), s.Context().Weight)
+	}
+	s.Next()
+	if !s.Complete() {
+		t.Fatalf("next last = %s, want complete", s.State())
+	}
+}
+
 func TestStepper_HealthAbort(t *testing.T) {
 	s := newStepper(t, twoStep(), func(int, int) bool { return false }, nil)
 	if !s.Aborted() {
 		t.Fatalf("unhealthy entry = %s, want aborted", s.State())
+	}
+}
+
+func TestStepper_RestoreClearedTimersAdvanceOnFakeClock(t *testing.T) {
+	clk := statekit.NewFakeClock(time.Unix(0, 0))
+	s := newStepper(t, twoStep(), nil, clk)
+	snap := s.Snapshot()
+	s.Stop()
+	snap.PendingTimers = nil // re-arm on the new FakeClock
+	clk2 := statekit.NewFakeClock(time.Unix(0, 0))
+	m, err := BuildStepMachine(twoStep(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := RestoreStepper(m, snap, statekit.WithClock[StepContext](clk2))
+	if err != nil {
+		t.Fatalf("RestoreStepper: %v", err)
+	}
+	if s2.State() != "step0" {
+		t.Fatalf("restored = %s, want step0", s2.State())
+	}
+	clk2.Advance(2 * time.Second)
+	if s2.State() != "step1" || s2.Context().Weight != 100 {
+		t.Fatalf("after restore+advance = %s w=%d, want step1 w=100", s2.State(), s2.Context().Weight)
 	}
 }

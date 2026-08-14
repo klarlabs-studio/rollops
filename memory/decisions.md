@@ -605,9 +605,11 @@ is poll-only. Canonical RFC: `docs/design/make-it-real.md`.
   different shape (commitment/deadline). Use or drop the pin; do not label UI
   scores "decisionkit" until a call exists. `Rollout.RiskScore` must actually
   be written by Apply.
-- **Canary pause/resume is a stepper swap, not a button.** Engine uses blocking
-  `Executor`; `Stepper` is unused. Phase C makes Apply tick-driven with
-  snapshot restore, then exposes pause/resume/abort on every surface.
+- **Canary pause/resume is a stepper swap, not a button.** C1 landed:
+  Apply deploys once, starts a `Stepper`, persists snapshot, returns
+  `deploying` while a pause remains. `Tick` (reconcile) advances; crash
+  restores the snapshot. Lease is re-acquired per tick; occupancy between
+  ticks is the deploying/paused phase. C2 exposes pause/resume/abort.
 - **RolloutSet list generator is approved** (multi-cluster RFC Phase 1). Cluster
   generator and matrix stay draft.
 - **#98 closes on an invariant**, not on reproducing the 18h stall: `current`

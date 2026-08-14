@@ -32,7 +32,6 @@ import (
 	"go.klarlabs.de/rollops/internal/governance"
 	"go.klarlabs.de/rollops/internal/metricplugin"
 	"go.klarlabs.de/rollops/internal/notify"
-	"go.klarlabs.de/rollops/internal/progressive"
 	"go.klarlabs.de/rollops/internal/risk"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/secrets"
@@ -661,8 +660,10 @@ type ApplyRequest struct {
 // Apply deploys the desired state to the target and persists the rollout,
 // driving phases through the statekit lifecycle so every transition is legal.
 // On target failure the rollout is recorded as rolled-back and the error
-// returned; on success it advances to verifying. If the gate requires approval
-// the rollout halts at awaiting-approval and the target is not touched.
+// returned. Zero-pause plans drain in this call and advance to verifying;
+// a positive canary pause persists a stepper snapshot and returns deploying
+// so Tick (and the reconcile loop) can finish the bake. If the gate requires
+// approval the rollout halts at awaiting-approval and the target is not touched.
 func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout, error) {
 	cfg := req.Config
 	ref := cfg.Spec.Target.Ref
@@ -735,6 +736,12 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		return nil, ErrTargetBusy
 	}
 	defer release()
+
+	if _, found, err := e.InFlight(ctx, ref); err != nil {
+		return nil, err
+	} else if found {
+		return nil, ErrTargetBusy
+	}
 
 	root := req.Root
 	if root == "" {
@@ -855,118 +862,14 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 		return &r, nil // halt: gate requires human approval, target untouched
 	}
 
-	// 6. Progressive deploy: apply the desired state once, then advance through
-	//    the strategy's steps health-gated (canary/rolling bake; blue-green is a
-	//    single step). The Target contract is weightless, so re-applying per step
-	//    would be a no-op; the value is the per-step health gate.
-	plan := progressive.PlanFor(cfg.Spec.Strategy)
-	deployed := false
-	exec := progressive.Executor{
-		Deploy: func(ctx context.Context, _ int) error {
-			if deployed {
-				return nil
-			}
-			deployed = true
-			// Pre-deploy forward migration runs once, before the new manifest is
-			// applied, so the schema is ready for the new version (expand). A
-			// migration failure aborts the deploy — the target is never touched.
-			// A post-promote migration is deferred to promoteWithNote instead.
-			if mig := cfg.Spec.DatabaseMigrate(); mig != nil && cfg.Spec.DatabaseMigrateWhen() == config.MigratePreDeploy {
-				if err := e.runDatabaseCommand(ctx, mig); err != nil {
-					return fmt.Errorf("database migrate: %w", err)
-				}
-			}
-			_, derr := tgt.Apply(ctx, m)
-			return derr
-		},
-		Health: func(ctx context.Context) error {
-			hs, herr := tgt.Health(ctx)
-			if herr != nil {
-				return herr
-			}
-			if hs.State == pt.HealthUnhealthy {
-				return fmt.Errorf("unhealthy: %s", hs.Reason)
-			}
-			return nil
-		},
-		// Persist step progress as it advances so operator surfaces (UI, CLI,
-		// API) see live "canary 2/3 (50%)" state; each save also appends a
-		// timeline entry. Best-effort: a persistence hiccup must not abort a
-		// healthy step sequence.
-		OnStep: func(i, total int, s progressive.Step) error {
-			r.StepIndex, r.StepTotal, r.StepWeight = i, total, s.Weight
-			r.Note = fmt.Sprintf("%s step %d/%d (%d%%) passed health gate", plan.Strategy, i, total, s.Weight)
-			r.UpdatedAt = e.now()
-			_ = e.store.SaveRollout(ctx, r)
-			r.Note = ""
-			// Shift real network traffic to the canary backend at this step's
-			// weight, so a weighted canary means actual traffic routing (Gateway
-			// API, Istio, …), not just a health-gated bake. A routing failure
-			// aborts the step — baking a canary that did not take traffic is a lie.
-			if cfg.Spec.TrafficRouting != nil {
-				if err := e.driveTraffic(ctx, ref, cfg.Spec.TrafficRouting, s.Weight); err != nil {
-					return err
-				}
-			}
-			// Drive the coupled feature flag to match the traffic weight, so
-			// the flag rollout tracks the canary in lockstep. Best-effort:
-			// an app-layer flag is a different failure domain from the mesh.
-			if flagsEnabled(cfg.Spec.FeatureFlags, "step") {
-				e.driveFlag(ctx, ref, cfg.Spec.FeatureFlags, s.Weight)
-			}
-			return nil
-		},
+	// 6. Progressive deploy: apply the desired state once, then drive the
+	//    canary Stepper. Zero-pause plans drain here and return verifying;
+	//    a positive pause persists a snapshot and returns deploying so Tick
+	//    (reconcile) can finish the bake without blocking this call.
+	if err := e.deployOnce(ctx, cfg, tgt, m); err != nil {
+		return e.failProgressive(ctx, lc, &r, cfg, m, err, req.Initiator)
 	}
-	if runErr := exec.Run(ctx, plan); runErr != nil {
-		// Crashloop-on-arrival: the new manifest is live but failed the health
-		// gate, and the shifted traffic/flag are pointed at the broken version.
-		// When auto-rollback is enabled and a prior good manifest exists, revert
-		// the delivery plane AND the manifest to it rather than merely marking the
-		// rollout rolled-back and leaving the broken version serving. The target
-		// lock is already held (defer release above), so applyRollback runs the
-		// lock-free rollback core directly — calling the lock-acquiring
-		// rollbackWithDatabase here would deadlock on ErrTargetBusy.
-		if cfg.Spec.Rollback.Auto {
-			if prior, ok := e.priorManifest(ctx, ref, m.Checksum); ok {
-				// A prior loaded from history has no Root (never persisted).
-				// Referenced sources carry their captured Rendered bytes and
-				// restore those verbatim (no re-render, no Root needed); the
-				// re-root here only helps inline/flat sources and legacy history
-				// entries that predate captured Rendered.
-				prior.Root = m.Root
-				// r is still in `deploying`; applyRollback drives deploying →
-				// rolled-back via EventRollback (a legal transition) and resets
-				// delivery from the descriptors persisted above. Force past the
-				// backward-compat gate: the deploy already failed, so leaving the
-				// bad version up is worse.
-				rb, rbErr := e.applyRollback(ctx, &r, prior, "auto-rollback on deploy failure: "+runErr.Error(), cfg.Spec.DatabaseRollbackHook(), true)
-				if rbErr == nil {
-					e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: rb.ID, TargetRef: ref, Phase: string(rb.Phase), Actor: req.Initiator, Detail: "auto-rollback: " + runErr.Error()})
-					e.notifyDeployment(ctx, notify.RolledBack, rb, runErr.Error())
-					return &rb, fmt.Errorf("engine: apply: %w (auto-rolled back to prior manifest)", runErr)
-				}
-				// The rollback itself failed — fall through to the mark-rolled-back
-				// path so behaviour is never worse than before this fix.
-			}
-		}
-		_, _ = lc.Send(rollout.EventError)
-		r.Phase = lc.Phase()
-		r.UpdatedAt = e.now()
-		_ = e.store.SaveRollout(ctx, r)
-		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: runErr.Error()})
-		e.notifyDeployment(ctx, notify.Failed, r, runErr.Error())
-		return &r, fmt.Errorf("engine: apply: %w", runErr)
-	}
-	if _, err := lc.Send(rollout.EventDeployed); err != nil {
-		return nil, err
-	}
-	r.Phase = lc.Phase()
-	r.UpdatedAt = e.now()
-	if err := e.store.SaveRollout(ctx, r); err != nil {
-		return nil, err
-	}
-	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator, Detail: "deployed (" + plan.Strategy + ")"})
-	return &r, nil
+	return e.startStepper(ctx, lc, &r, cfg, tgt, req.Initiator)
 }
 
 // VerifyOutcome reports how the post-deploy gate resolved.

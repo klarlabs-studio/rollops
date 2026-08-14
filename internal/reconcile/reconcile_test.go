@@ -186,3 +186,78 @@ func TestReconcile_InSyncNoop(t *testing.T) {
 		t.Errorf("in-sync reconcile must not re-apply: %d -> %d", applied, len(fake.applied))
 	}
 }
+
+func TestReconcile_TicksInFlightCanary(t *testing.T) {
+	fake := &fakeTarget{}
+	db, err := sqlite.Open(t.TempDir() + "/r.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	eng := engine.New(db, reg,
+		engine.WithClock(func() time.Time { return now }),
+		engine.WithIDGen(func() string { return "ro-canary" }),
+	)
+	rec := New(eng, nil)
+	yaml := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec:
+      x: 1
+  strategy:
+    type: canary
+    steps:
+      - weight: 10
+        pause: 50ms
+      - weight: 100
+        pause: 50ms
+`
+	c, err := config.Load([]byte(yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	out, err := rec.Reconcile(ctx, c, actor)
+	if err != nil {
+		t.Fatalf("first Reconcile: %v", err)
+	}
+	if out.Rollout == nil || out.Rollout.Phase != rollout.PhaseDeploying {
+		t.Fatalf("first Reconcile phase = %v, want deploying", out.Rollout)
+	}
+	if out.Reconciled {
+		t.Fatal("must not verify/promote while the canary is still baking")
+	}
+	applied := len(fake.applied)
+
+	now = now.Add(50 * time.Millisecond)
+	out, err = rec.Reconcile(ctx, c, actor)
+	if err != nil {
+		t.Fatalf("second Reconcile: %v", err)
+	}
+	if out.Rollout == nil || out.Rollout.Phase != rollout.PhaseDeploying {
+		t.Fatalf("second Reconcile phase = %v, want deploying", out.Rollout)
+	}
+	if len(fake.applied) != applied {
+		t.Fatalf("in-flight tick must not re-apply, got %d", len(fake.applied))
+	}
+
+	now = now.Add(50 * time.Millisecond)
+	out, err = rec.Reconcile(ctx, c, actor)
+	if err != nil {
+		t.Fatalf("third Reconcile: %v", err)
+	}
+	if !out.Reconciled || out.Rollout == nil || out.Rollout.Phase != rollout.PhasePromoted {
+		t.Fatalf("third Reconcile = drift=%v reconciled=%v phase=%v, want promoted", out.Drift, out.Reconciled, out.Rollout)
+	}
+}

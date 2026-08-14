@@ -8,12 +8,10 @@
 ## ACTUALLY OPEN (as of 2026-08-14)
 
 0. **[OPEN — PRODUCT] Make it real.** Canonical RFC
-   `docs/design/make-it-real.md`. Roady features `real-trust` → `real-agent`
-   → `real-canary` → `real-gitops`. This is the near-roadmap. Do not add
-   Argo checkboxes outside it. First ready work is Phase A (shared boot,
-   persist risk, wire analysis/Vault, persist freeze, traffic fail-closed,
-   image-auto `current` invariant). Honesty docs are last in A; Phase B
-   must not start before that.
+   `docs/design/make-it-real.md`. Phases A and B are closed. C1 (tick-driven
+   stepper) is in. Next: C2 pause/resume/abort, then C3 honest strategy
+   names. Do not start Phase D before C. Do not add Argo checkboxes
+   outside the RFC.
 1. **[OPEN] Image automation #98** — stall after a mutable tag moves is
    unexplained; v0.29/v0.30 made verdicts legible. The RFC's A8 closes it
    on the invariant (`current` iff scanner identity equals Git pin) even

@@ -30,7 +30,7 @@ host agent, Postgres, studio billing are out of scope.
 
 ### Phase C — Canary as a verb
 
-- [ ] Tick-driven `Stepper` with snapshot restore (replace blocking `Executor`)
+- [x] Tick-driven `Stepper` with snapshot restore (replace blocking `Executor`)
 - [ ] Pause / resume / abort on CLI, HTTP, gRPC, MCP
 - [ ] Same controls in `/ui`
 - [ ] `doctor`/`plan` name bake vs traffic canary and cutover vs blue-green
