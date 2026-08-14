@@ -1,0 +1,139 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const rolloutSetYAML = `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east, kubeconfig: /etc/rollops/east, context: east }
+        - { name: west, kubeconfig: /etc/rollops/west, context: west }
+template:
+  spec:
+    target:
+      kind: kubernetes
+      ref: "web@{{name}}"
+      criticality: low
+      spec:
+        kubeconfig: "{{kubeconfig}}"
+        context: "{{context}}"
+        namespace: web
+        resource: deployment/web
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: {name: web}
+          spec: {replicas: 1}
+    strategy: { type: rolling }
+`
+
+func TestExpandRolloutSet_ListTwoElements(t *testing.T) {
+	got, err := expandRolloutSet([]byte(rolloutSetYAML), "web.yaml")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d configs, want 2", len(got))
+	}
+	refs := map[string]bool{}
+	for _, nc := range got {
+		if nc.Path != "web.yaml" {
+			t.Errorf("path = %q, want the source file (Git holds the template)", nc.Path)
+		}
+		if nc.Config.Kind != Kind {
+			t.Errorf("kind = %q, want RolloutConfig", nc.Config.Kind)
+		}
+		ref := nc.Config.Spec.Target.Ref
+		if refs[ref] {
+			t.Errorf("duplicate ref %q", ref)
+		}
+		refs[ref] = true
+		if nc.Config.Spec.Target.Kind != "kubernetes" {
+			t.Errorf("target.kind = %q", nc.Config.Spec.Target.Kind)
+		}
+	}
+	if !refs["web@east"] || !refs["web@west"] {
+		t.Errorf("refs = %v, want web@east and web@west", refs)
+	}
+	for _, nc := range got {
+		kc, _ := nc.Config.Spec.Target.Spec["kubeconfig"].(string)
+		ctx, _ := nc.Config.Spec.Target.Spec["context"].(string)
+		switch nc.Config.Spec.Target.Ref {
+		case "web@east":
+			if kc != "/etc/rollops/east" || ctx != "east" {
+				t.Errorf("east kubeconfig/context = %q %q", kc, ctx)
+			}
+		case "web@west":
+			if kc != "/etc/rollops/west" || ctx != "west" {
+				t.Errorf("west kubeconfig/context = %q %q", kc, ctx)
+			}
+		}
+	}
+}
+
+func TestExpandRolloutSet_RejectsClusterGenerator(t *testing.T) {
+	src := strings.Replace(rolloutSetYAML, "- list:", "- cluster:\n      selector: { matchLabels: { tier: prod } }\n  - list:", 1)
+	_, err := expandRolloutSet([]byte(src), "web.yaml")
+	if err == nil || !strings.Contains(err.Error(), "cluster generator") {
+		t.Fatalf("want cluster-generator error, got %v", err)
+	}
+}
+
+func TestExpandRolloutSet_UnknownPlaceholder(t *testing.T) {
+	src := strings.Replace(rolloutSetYAML, "{{context}}", "{{nope}}", 1)
+	_, err := expandRolloutSet([]byte(src), "web.yaml")
+	if err == nil || !strings.Contains(err.Error(), "{{nope}}") {
+		t.Fatalf("want unknown placeholder error, got %v", err)
+	}
+}
+
+func TestExpandRolloutSet_DuplicateRefs(t *testing.T) {
+	src := strings.Replace(rolloutSetYAML, "name: west", "name: east", 1)
+	_, err := expandRolloutSet([]byte(src), "web.yaml")
+	if err == nil || !strings.Contains(err.Error(), "duplicate target.ref") {
+		t.Fatalf("want duplicate ref error, got %v", err)
+	}
+}
+
+func TestLoadAllFromDir_ExpandsRolloutSet(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "web.yaml"), []byte(rolloutSetYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadAllFromDir(dir, RepoRef{Path: "web.yaml"})
+	if err != nil {
+		t.Fatalf("LoadAllFromDir: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d, want 2 expanded configs", len(got))
+	}
+}
+
+func TestLoadAllFromDir_SetAmongConfigs(t *testing.T) {
+	dir := t.TempDir()
+	apps := filepath.Join(dir, "apps")
+	if err := os.MkdirAll(apps, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apps, "web.yaml"), []byte(rolloutSetYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apps, "solo.yaml"), []byte(validYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadAllFromDir(dir, RepoRef{Path: "apps"})
+	if err != nil {
+		t.Fatalf("LoadAllFromDir: %v", err)
+	}
+	if len(got) != 3 { // 2 from the set + 1 solo
+		t.Fatalf("got %d configs, want 3", len(got))
+	}
+}

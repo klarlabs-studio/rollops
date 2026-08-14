@@ -44,6 +44,38 @@ Each target's reconcile, drift detection, progressive steps, health gates, and
 rollback run independently against its own cluster. Cross-cluster ordering uses
 the same `dependsOn` and environment-promotion mechanics as any other targets.
 
+## RolloutSet list generator
+
+To avoid N copies of the same config, commit one `kind: RolloutSet` with a
+**list** generator. The watcher expands it in memory into ordinary
+`RolloutConfig`s (Git holds the template; generated configs are not written
+back). Each element must produce a unique `target.ref`. Cluster and matrix
+generators are not in this build.
+
+```yaml
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east, kubeconfig: /etc/rollops/east, context: east }
+        - { name: west, kubeconfig: /etc/rollops/west, context: west }
+template:
+  spec:
+    target:
+      kind: kubernetes
+      ref: "web@{{name}}"
+      criticality: low
+      spec:
+        kubeconfig: "{{kubeconfig}}"
+        context: "{{context}}"
+        namespace: web
+        resource: deployment/web
+        manifestFrom: { path: deploy/web.yaml }
+    strategy: { type: rolling }
+```
+
 ## Fleet view
 
 This is per-target, infrastructure-agnostic multi-cluster — deliberately leaner

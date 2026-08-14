@@ -131,6 +131,68 @@ func TestWatcher_TickReconcilesFromGit(t *testing.T) {
 	}
 }
 
+func TestWatcher_RolloutSetReconcilesIndependently(t *testing.T) {
+	const setYAML = `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east }
+        - { name: west }
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec: { x: 1 }
+    strategy: { type: rolling }
+`
+	upstream := makeRepo(t, setYAML)
+	east := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	west := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "set.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "web@east":
+			return east, nil
+		case "web@west":
+			return west, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 2 {
+		t.Fatalf("want 2 independent reconciles, got %d: %+v", len(out), out)
+	}
+	for _, o := range out {
+		if o.Err != nil {
+			t.Errorf("%s: %v", o.Repo, o.Err)
+		}
+	}
+	if len(east.applied) != 1 || len(west.applied) != 1 {
+		t.Errorf("each generated config must reconcile on its own: east=%d west=%d", len(east.applied), len(west.applied))
+	}
+}
+
 func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
 	cfg := func(name string) string {
 		return strings.ReplaceAll(repoConfigV1, "demo/prod/app", "demo/prod/"+name)

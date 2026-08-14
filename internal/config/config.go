@@ -23,7 +23,8 @@ import (
 // rather than silently mis-parsed.
 const SchemaVersion = "rollops.klarlabs.de/v1"
 
-// Kind is the single document kind in v1.
+// Kind is the RolloutConfig document kind. KindRolloutSet is also accepted at
+// load time and expands into ordinary RolloutConfigs (see expandRolloutSet).
 const Kind = "RolloutConfig"
 
 // SchemaJSON is the published JSON Schema for the config surface, embedded so
