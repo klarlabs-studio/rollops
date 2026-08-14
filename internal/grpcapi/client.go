@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v3"
@@ -13,6 +14,7 @@ import (
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/grpcapi/rollopsv1"
 	"go.klarlabs.de/rollops/internal/rollout"
+	"go.klarlabs.de/rollops/internal/servertls"
 )
 
 // Client is the CLI's daemon-mode adapter: it implements the same operation
@@ -25,9 +27,25 @@ type Client struct {
 	conn  *grpc.ClientConn
 }
 
-// Dial connects to a daemon at addr with a bearer token.
+// Dial connects to a daemon at addr with a bearer token. With ROLLOPS_TLS_*
+// set it uses the same servertls material as rollopsd; otherwise it dials
+// plaintext (the loopback dev default).
 func Dial(addr, token string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	tlsCfg, err := servertls.FromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("grpc: tls: %w", err)
+	}
+	var creds credentials.TransportCredentials
+	if tlsCfg == nil {
+		creds = insecure.NewCredentials()
+	} else {
+		tc, err := tlsCfg.ClientTLS()
+		if err != nil {
+			return nil, fmt.Errorf("grpc: client tls: %w", err)
+		}
+		creds = credentials.NewTLS(tc)
+	}
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("grpc: dial %s: %w", addr, err)
 	}

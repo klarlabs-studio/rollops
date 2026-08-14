@@ -66,6 +66,37 @@ func FromEnv() (*Config, error) {
 	return &Config{certFile: cert, keyFile: key, clientCAFile: clientCA}, nil
 }
 
+// ClientTLS returns a *tls.Config for a client talking to rollopsd. The server
+// certificate PEM is trusted as a root (the self-signed dogfood keypair, or a
+// chain the operator concatenated). When a client CA is configured, the same
+// keypair is presented as the client certificate so mTLS CLI calls work with
+// the same ROLLOPS_TLS_* material. Nil-safe: a nil Config means plaintext.
+func (c *Config) ClientTLS() (*tls.Config, error) {
+	if c == nil {
+		return nil, nil
+	}
+	pem, err := os.ReadFile(c.certFile)
+	if err != nil {
+		return nil, fmt.Errorf("read tls cert %q: %w", c.certFile, err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("tls cert %q contains no valid certificates", c.certFile)
+	}
+	cfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		RootCAs:    pool,
+	}
+	if c.HasClientCA() {
+		pair, err := c.loadCertificate()
+		if err != nil {
+			return nil, err
+		}
+		cfg.Certificates = []tls.Certificate{*pair}
+	}
+	return cfg, nil
+}
+
 // HasClientCA reports whether a client-CA bundle is configured, i.e. whether
 // mutual TLS is available on this daemon. Nil-safe.
 func (c *Config) HasClientCA() bool {
