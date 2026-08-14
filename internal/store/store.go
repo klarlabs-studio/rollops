@@ -59,6 +59,23 @@ type Store interface {
 
 	// History returns the audit/history records for a target, newest first.
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)
+
+	// SaveFreeze persists the emergency kill-switch. A restart must restore
+	// this row — an in-memory freeze that dies with the process is not a freeze.
+	SaveFreeze(ctx context.Context, f FreezeState) error
+
+	// LoadFreeze returns the persisted kill-switch. Missing row is inactive
+	// (zero value), not ErrNotFound, so boot can restore unconditionally.
+	LoadFreeze(ctx context.Context) (FreezeState, error)
+}
+
+// FreezeState is the durable emergency kill-switch. Git does not hold this —
+// it is operator runtime state, like an in-flight rollout.
+type FreezeState struct {
+	Active bool
+	Reason string
+	By     rollout.Identity
+	At     time.Time
 }
 
 // LeaseStore is an optional runtime coordination extension for stores that can

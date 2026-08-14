@@ -377,3 +377,76 @@ func TestSchedules_DueFiltering(t *testing.T) {
 		t.Errorf("schedule fields not round-tripped: %+v", due[0])
 	}
 }
+
+func TestFreeze_RoundTripAndMissingIsInactive(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+
+	got, err := db.LoadFreeze(ctx)
+	if err != nil {
+		t.Fatalf("LoadFreeze empty: %v", err)
+	}
+	if got.Active {
+		t.Fatal("missing freeze row must be inactive")
+	}
+
+	at := time.Date(2026, 8, 14, 15, 0, 0, 0, time.UTC)
+	in := store.FreezeState{
+		Active: true,
+		Reason: "incident-42",
+		By:     rollout.Identity{Kind: "human", Name: "felix"},
+		At:     at,
+	}
+	if err := db.SaveFreeze(ctx, in); err != nil {
+		t.Fatalf("SaveFreeze: %v", err)
+	}
+	got, err = db.LoadFreeze(ctx)
+	if err != nil {
+		t.Fatalf("LoadFreeze: %v", err)
+	}
+	if !got.Active || got.Reason != "incident-42" || got.By.Name != "felix" || !got.At.Equal(at) {
+		t.Errorf("got %+v", got)
+	}
+
+	in.Active = false
+	in.Reason = ""
+	if err := db.SaveFreeze(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = db.LoadFreeze(ctx)
+	if got.Active {
+		t.Error("lifted freeze must persist inactive")
+	}
+}
+
+func TestOpen_MigratesExistingDBForFreeze(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.db")
+	ctx := context.Background()
+
+	db1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := db1.SaveRollout(ctx, sampleRollout("r0", rollout.PhaseDeploying)); err != nil {
+		t.Fatal(err)
+	}
+	_ = db1.Close()
+
+	db2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	got, err := db2.LoadFreeze(ctx)
+	if err != nil {
+		t.Fatalf("LoadFreeze after migrate: %v", err)
+	}
+	if got.Active {
+		t.Error("pre-0010 database must load as inactive freeze")
+	}
+	if err := db2.SaveFreeze(ctx, store.FreezeState{Active: true, Reason: "cutover"}); err != nil {
+		t.Fatal(err)
+	}
+}

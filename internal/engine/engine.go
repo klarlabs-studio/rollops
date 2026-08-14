@@ -1463,11 +1463,20 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string, by rollout.Ident
 }
 
 // Freeze engages or lifts the emergency kill-switch: while engaged, every apply
-// is blocked by the guardrails. Returns the resulting state. The freeze is held
-// in-memory (it does not survive a daemon restart), audited on every toggle.
+// is blocked by the guardrails. The new state is written to the Store before the
+// in-memory switch flips, so a crash mid-toggle cannot silently lift a freeze
+// (persist-then-engage) and a failed persist leaves the previous in-memory
+// state. Returns the resulting state.
 func (e *Engine) Freeze(ctx context.Context, on bool, by rollout.Identity, reason string) (active bool, activeReason string, err error) {
 	if e.guardrails == nil || e.guardrails.Freeze == nil {
 		return false, "", fmt.Errorf("engine: freeze is not configured")
+	}
+	state := store.FreezeState{Active: on, Reason: reason, By: by, At: e.now()}
+	if !on {
+		state.Reason = ""
+	}
+	if err := e.store.SaveFreeze(ctx, state); err != nil {
+		return false, "", fmt.Errorf("engine: persist freeze: %w", err)
 	}
 	if on {
 		e.guardrails.Freeze.Engage(by, reason)

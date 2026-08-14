@@ -52,6 +52,9 @@ var migration0008 string
 //go:embed migrations/0009_smoke_test.sql
 var migration0009 string
 
+//go:embed migrations/0010_freeze.sql
+var migration0010 string
+
 const timeFormat = time.RFC3339Nano
 
 // Store is the SQLite-backed implementation of store.Store.
@@ -94,6 +97,10 @@ func Open(path string) (*Store, error) {
 			_ = db.Close()
 			return nil, fmt.Errorf("sqlite: migrate %s: %w", m.name, err)
 		}
+	}
+	if _, err := db.Exec(migration0010); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlite: migrate 0010: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -450,6 +457,56 @@ func (s *Store) History(ctx context.Context, targetRef string) ([]rollout.Rollou
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+const freezeRowID = 1
+
+// SaveFreeze upserts the single kill-switch row.
+func (s *Store) SaveFreeze(ctx context.Context, f store.FreezeState) error {
+	active := 0
+	if f.Active {
+		active = 1
+	}
+	at := f.At.UTC().Format(timeFormat)
+	if f.At.IsZero() {
+		at = ""
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO runtime_freeze (id, active, reason, by_kind, by_name, at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			active=excluded.active, reason=excluded.reason,
+			by_kind=excluded.by_kind, by_name=excluded.by_name, at=excluded.at`,
+		freezeRowID, active, f.Reason, f.By.Kind, f.By.Name, at)
+	if err != nil {
+		return fmt.Errorf("sqlite: save freeze: %w", err)
+	}
+	return nil
+}
+
+// LoadFreeze returns the persisted kill-switch, or a zero value if none.
+func (s *Store) LoadFreeze(ctx context.Context) (store.FreezeState, error) {
+	var (
+		f      store.FreezeState
+		active int
+		at     string
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT active, reason, by_kind, by_name, at FROM runtime_freeze WHERE id = ?`, freezeRowID).
+		Scan(&active, &f.Reason, &f.By.Kind, &f.By.Name, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.FreezeState{}, nil
+	}
+	if err != nil {
+		return store.FreezeState{}, fmt.Errorf("sqlite: load freeze: %w", err)
+	}
+	f.Active = active != 0
+	if at != "" {
+		if f.At, err = time.Parse(timeFormat, at); err != nil {
+			return store.FreezeState{}, fmt.Errorf("sqlite: parse freeze at: %w", err)
+		}
+	}
+	return f, nil
 }
 
 // AcquireLease takes or renews a runtime lease. A lease can be acquired when it
