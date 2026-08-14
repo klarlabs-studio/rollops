@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 418,
+  "version": 419,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1255,8 +1255,10 @@
       "elapsed_minutes": 0
     },
     "task-real-pause-resume-abort-api": {
-      "status": "pending",
+      "status": "in_progress",
       "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T16:06:22.631360408Z",
       "elapsed_minutes": 0
     },
     "task-real-pause-resume-abort-ui": {
@@ -1514,5 +1516,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T16:05:30.059782698Z"
+  "updated_at": "2026-08-14T16:06:22.631360408Z"
 }
