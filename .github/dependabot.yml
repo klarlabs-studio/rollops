@@ -1,38 +1,33 @@
-# Dependency updates, so the digest pins in the Dockerfile have something that moves them.
+# Docker base-image digests ONLY. Everything else moved to nox.
 #
-# Dependabot rather than Renovate deliberately. Renovate is the better tool for digest pinning,
-# and it needs its GitHub App installed on the organization — so a committed renovate.json would
-# sit inert until somebody did that, and the pins would silently stop receiving security patches
-# while looking maintained. Dependabot is built into GitHub and works from this file alone.
+# nox is this org's dependency and supply-chain gate (see nox-remediate.yml), and
+# it genuinely replaces two of the three ecosystems this file used to carry:
+#
+#   gomod          -> `nox fix` upgrades OSV-vulnerable go packages
+#   github-actions -> `nox fix --actions` bumps outdated pins AND SHA-pins
+#                     mutable tag refs, which is the same job with a stricter
+#                     result
+#
+# It does NOT replace the docker updater, and that is not an oversight in nox —
+# it is the shape of the problem. Nox has rules that push you toward pinning a
+# base image by digest (CONT-001 "base image not pinned to specific digest",
+# CONT-002, IAC-002), and none that notice the pin has since gone stale. Pinning
+# is what freezes `FROM ...@sha256:...` at whatever was current the day it was
+# written, unpatched CVEs included. Something has to move it, and nox has no
+# remediation path that does.
+#
+# Dependabot rather than Renovate, still deliberately: Renovate is the better
+# digest tool but needs its GitHub App installed on the organization, so a
+# committed renovate.json would sit inert while the pins looked maintained.
+#
+# Note the trade this makes on Go: nox upgrades packages that are
+# OSV-VULNERABLE, where dependabot's gomod group did routine minor/patch bumps
+# regardless. Routine freshness is what we give up; security coverage is not.
 version: 2
 updates:
-  # The reason this file exists. Without it, `FROM ...@sha256:...` freezes the base image at
-  # whatever was current the day it was pinned, including its unpatched CVEs.
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
-
-  - package-ecosystem: gomod
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      # Patch and minor bumps arrive as one pull request rather than a dozen. Majors stay
-      # separate because they are the ones that need reading.
-      go-minor-and-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-
-  # The workflows pin actions by commit SHA, which has the same staleness problem as a digest
-  # and the same fix.
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: "chore(ci)"
