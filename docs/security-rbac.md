@@ -35,16 +35,18 @@ authorize against the rollout target ref.
 
 ## Bootstrap Defaults
 
-`security.DefaultRBACPolicy()` installs two roles:
+`security.DefaultRBACPolicy()` installs three roles:
 
 | Role | Binding | Grants |
 |---|---|---|
-| `admin` | `human:admin` | plan, apply, approve, rollback, status, schedule, freeze |
+| `admin` | `human:admin` | plan, apply, approve, promote (verify), rollback, status, schedule, freeze |
 | `agent` | `agent:*` | plan, status |
+| `agent-deploy` | *unbound* | plan, apply, rollback, status, promote (verify). **Not** freeze, **not** approve |
 
-Agents are deliberately plan/status-only in the bootstrap policy. Granting an
-agent deploy or rollback rights is an operator decision and should be scoped to
-the narrowest target refs possible.
+Agents are deliberately plan/status-only in the bootstrap policy. `agent-deploy`
+is the documented opt-in (`agent:deploy`): bind a named agent to it in
+`ROLLOPS_POLICY_FILE`. Do **not** bind `agent:*` to `agent-deploy`. `rollouts.verify`
+shares `rollouts.promote` because the dry-run actually runs smoke/analysis.
 
 ## Recommended First Policy
 
@@ -56,6 +58,16 @@ For a single VPS install:
 - Let agents plan and inspect first.
 - Add target-scoped agent apply grants only after dogfooding the target's
   rollback and conformance behavior.
+
+Opt-in deploy for one named agent (the built-in `agent-deploy` role is already
+defined; the file only binds it):
+
+```yaml
+# docs/rbac-agent-deploy.yaml — set ROLLOPS_POLICY_FILE to this path
+bindings:
+  - subject: agent:nomi
+    roles: [agent-deploy]
+```
 
 Example target-scoped extension in Go:
 

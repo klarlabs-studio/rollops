@@ -1,8 +1,9 @@
 package security
 
 const (
-	RoleAdmin = "admin"
-	RoleAgent = "agent"
+	RoleAdmin       = "admin"
+	RoleAgent       = "agent"
+	RoleAgentDeploy = "agent-deploy"
 )
 
 // DefaultRBACPolicy returns the daemon bootstrap policy.
@@ -11,7 +12,8 @@ const (
 // "human:admin" is bound only when the daemon receives ROLLOPS_ADMIN_TOKEN.
 // Agents are read/plan-only by default; deploy and rollback grants should be
 // added deliberately by the operator once the deployment's target scopes are
-// known.
+// known. RoleAgentDeploy exists unbound so a policy file can opt one agent in
+// without widening agent:*.
 func DefaultRBACPolicy() *Policy {
 	policy := NewPolicy()
 	policy.DefineRole(Role{Name: RoleAdmin, Grants: []Grant{
@@ -31,6 +33,14 @@ func DefaultRBACPolicy() *Policy {
 		{Perm: PermStatus},
 	}})
 	policy.Bind("agent:*", RoleAgent)
+
+	policy.DefineRole(Role{Name: RoleAgentDeploy, Grants: []Grant{
+		{Perm: PermPlan},
+		{Perm: PermApply},
+		{Perm: PermRollback},
+		{Perm: PermStatus},
+		{Perm: PermPromote}, // rollouts.verify is authorized as promote
+	}})
 
 	return policy
 }
