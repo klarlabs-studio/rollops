@@ -12,11 +12,11 @@ host agent, Postgres, studio billing are out of scope.
 
 ### Phase A — Trust pass (docs = daemon)
 
-- [ ] Shared engine boot (`internal/boot`) for CLI and daemon
-- [ ] Persist `EvaluateRisk` onto `Rollout.RiskScore`; callers pass `RiskInputs`
+- [x] Shared engine boot (`internal/boot`) for CLI and daemon
+- [x] Persist `EvaluateRisk` onto `Rollout.RiskScore`; callers still pass zeros
 - [ ] Wire metric analysis in `rollopsd` (opt-in, default off)
 - [ ] Wire Vault+Env secret chain from `VAULT_ADDR`
-- [ ] Persist freeze across restart
+- [x] Persist freeze across restart
 - [ ] CLI cannot skip freeze/secrets/audit; gRPC client uses TLS when daemon does
 - [ ] Traffic `SetWeight` failure aborts the step
 - [ ] Image-automation `current` only when scanner identity equals Git pin (#98)

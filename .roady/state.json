@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 373,
+  "version": 382,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1167,9 +1167,15 @@
       "elapsed_minutes": 0
     },
     "task-real-extract-engine-boot": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "f7166ca5dba407c60ba5f74b0b499480e75fcbb4"
+      ],
+      "started_at": "2026-08-14T15:02:25.002964502Z",
+      "completed_at": "2026-08-14T15:09:33.768512407Z",
+      "elapsed_minutes": 7
     },
     "task-real-grpc-tls-client": {
       "status": "pending",
@@ -1217,14 +1223,26 @@
       "elapsed_minutes": 0
     },
     "task-real-persist-freeze": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "f0d383ab96e6d4dd73f6fbd8379016f4f4a7acdd"
+      ],
+      "started_at": "2026-08-14T15:02:25.049754456Z",
+      "completed_at": "2026-08-14T15:09:33.747709725Z",
+      "elapsed_minutes": 7
     },
     "task-real-persist-risk-score": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "bb16ef65ea91470931428dc6ec4851278a3dcd75"
+      ],
+      "started_at": "2026-08-14T15:02:25.027187981Z",
+      "completed_at": "2026-08-14T15:09:33.787722172Z",
+      "elapsed_minutes": 7
     },
     "task-real-risk-inputs-from-callers": {
       "status": "pending",
@@ -1424,5 +1442,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T14:59:46.504684421Z"
+  "updated_at": "2026-08-14T15:09:33.846170472Z"
 }

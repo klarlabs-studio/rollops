@@ -12,7 +12,11 @@ wedge. Do not add Argo checkboxes outside that RFC.
 
 **Last Session Summary (2026-08-14):** Product review, then a plan to make the
 gaps real. Encoded as Roady features `real-trust` / `real-agent` /
-`real-canary` / `real-gitops`. No runtime code in this session.
+`real-canary` / `real-gitops`. First Phase A slice is **verified in Roady**:
+freeze persists in SQLite (`runtime_freeze`), `internal/boot` is shared by
+CLI and daemon, Apply writes `Rollout.RiskScore` and the UI says blast-radius.
+123/142 tasks verified. Next ready (max WIP 3): Vault chain, metric analysis,
+RiskInputs from callers — plus TLS client, traffic fail-closed, #98 invariant.
 
 ---
 
