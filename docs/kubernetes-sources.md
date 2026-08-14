@@ -197,3 +197,25 @@ spec:
 `full` runs a `kubectl diff` when the marker says "in sync"; a non-empty diff is
 reported as an update (`live drifted from desired …`). Use it where out-of-band
 changes must be caught at the cost of a diff per plan.
+
+## ignoreDifferences
+
+Kubernetes controllers (HPA, webhooks) write fields that are not in Git. List
+JSON pointers or dotted paths to ignore in the live Diff so those writes are
+not drift. Apply stays `kubectl apply`; this only changes whether a diff counts.
+
+```yaml
+spec:
+  verification: detect
+  target:
+    kind: kubernetes
+    spec:
+      resource: deployment/web
+      namespace: prod
+      ignoreDifferences:
+        - /spec/replicas
+        - spec.template.spec.containers.0.resources
+```
+
+An ignored-only difference is not drift. Any other field still is. The checksum
+stamp (Observe) is unchanged.

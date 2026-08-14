@@ -121,6 +121,14 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+func (k *kubectlCluster) LiveYAML(ctx context.Context) ([]byte, error) {
+	out, err := k.run(ctx, nil, "get", k.resource, "-o", "yaml")
+	if err != nil {
+		return nil, nil // absent → empty; Diff falls through
+	}
+	return []byte(out), nil
+}
+
 // rolloutKinds are the workload kinds `kubectl rollout status` understands.
 var rolloutKinds = map[string]bool{
 	"deployment": true, "deploy": true, "deployments": true,
