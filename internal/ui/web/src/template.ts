@@ -21,7 +21,7 @@ export const template = `
       <button class="chip" :class="{on:facet==='promoted'}" @click="toggleFacet('promoted')">promoted <b class="ok">{{ dash.counts.promoted||0 }}</b></button>
       <button class="chip" :class="{on:facet==='awaiting'}" @click="toggleFacet('awaiting')">awaiting <b class="warn">{{ dash.counts['awaiting-approval']||0 }}</b></button>
       <button class="chip" :class="{on:facet==='degraded'}" @click="toggleFacet('degraded')">rolled-back <b class="bad">{{ dash.counts['rolled-back']||0 }}</b></button>
-      <button class="chip" :class="{on:facet==='active'}" @click="toggleFacet('active')">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.verifying||0) }}</b></button>
+          <button class="chip" :class="{on:facet==='active'}" @click="toggleFacet('active')">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.paused||0)+(dash.counts.verifying||0) }}</b></button>
       <button class="chip" :class="{on:facet==='drift'}" @click="toggleFacet('drift')">drifted <b :class="hasDrift?'bad':''">{{ driftCount }}</b></button>
     </div>
     <div class="filter">
@@ -43,6 +43,11 @@ export const template = `
           <span v-if="a.kind==='approval' && a.rolloutID" class="att-actions">
             <button class="ok" :disabled="busy" @click="approve(a.rolloutID)">Approve</button>
             <button class="bad" :disabled="busy" @click="reject(a.rolloutID)">Reject</button>
+          </span>
+          <span v-else-if="a.kind==='active' && a.rolloutID && (a.phase==='deploying' || a.phase==='paused')" class="att-actions">
+            <button v-if="a.phase==='deploying'" :disabled="busy" @click="pause(a.rolloutID)">Pause canary</button>
+            <button v-if="a.phase==='paused'" :disabled="busy" @click="resume(a.rolloutID)">Resume canary</button>
+            <button class="bad" :disabled="busy" @click="abort(a.rolloutID)">Abort canary</button>
           </span>
           <span v-else-if="a.kind==='drift'" class="att-actions">
             <button v-if="dashCanSync" class="sync" :disabled="busy" @click="sync">Sync</button>
@@ -120,6 +125,9 @@ export const template = `
           <button v-if="detail.awaiting" class="ok" :disabled="busy" @click="approve(detail.rollout.id)">Approve</button>
           <button v-if="detail.awaiting" class="bad" :disabled="busy" @click="reject(detail.rollout.id)">Reject</button>
           <button v-if="detail.rollout.phase==='verifying'" class="ok" :disabled="busy" @click="promote(detail.rollout.id)">✓ Promote</button>
+          <button v-if="detail.rollout.phase==='deploying'" :disabled="busy" @click="pause(detail.rollout.id)">Pause canary</button>
+          <button v-if="detail.rollout.phase==='paused'" :disabled="busy" @click="resume(detail.rollout.id)">Resume canary</button>
+          <button v-if="detail.rollout.phase==='deploying' || detail.rollout.phase==='paused'" class="bad" :disabled="busy" @click="abort(detail.rollout.id)">Abort canary</button>
           <button class="bad" :disabled="busy" @click="rollback(ref)">↩ Rollback</button>
           <span class="vsplit"></span>
           <button :class="{active:mode==='graph'}" @click="mode='graph'" title="Tree view">⤳</button>
@@ -151,7 +159,7 @@ export const template = `
         </div>
         <div class="summary-card">
           <div class="sl">Operator action</div>
-          <div class="sv">{{ detail.awaiting ? 'Approval required' : (synced ? 'No action' : 'Sync or rollback') }}</div>
+          <div class="sv">{{ detail.awaiting ? 'Approval required' : (detail.rollout.phase==='deploying' ? 'Pause or abort canary' : (detail.rollout.phase==='paused' ? 'Resume or abort canary' : (synced ? 'No action' : 'Sync or rollback'))) }}</div>
           <div class="hint">RBAC-checked operation surface</div>
         </div>
       </div>

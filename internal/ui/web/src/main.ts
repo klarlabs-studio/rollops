@@ -1,7 +1,7 @@
 // Rollops web console — Vue 3 SPA in TypeScript over the JSON API. Every
 // response is validated with Zod (schemas.ts). Interactive, no page reloads:
 // drill into a target, explore the ArgoCD-style resource DAG (zoom/pan), run
-// approve/reject/rollback/sync, with live 4s polling.
+// approve/reject/pause/resume/abort/rollback/sync, with live 4s polling.
 import { createApp, defineComponent } from 'vue';
 import { stratify, tree, type HierarchyNode } from 'd3-hierarchy';
 import { linkHorizontal } from 'd3-shape';
@@ -277,6 +277,15 @@ const App = defineComponent({
     },
     promote(id: string): void {
       void this.act('/ui/api/promote', { id }, 'promoted').then(() => this.burst());
+    },
+    pause(id: string): void {
+      void this.act('/ui/api/pause', { id }, 'paused').then(() => this.burst());
+    },
+    resume(id: string): void {
+      void this.act('/ui/api/resume', { id }, 'resumed').then(() => this.burst());
+    },
+    abort(id: string): void {
+      void this.act('/ui/api/abort', { id }, 'aborted').then(() => this.burst());
     },
     rollback(t: string): void {
       this.confirmTarget = t;

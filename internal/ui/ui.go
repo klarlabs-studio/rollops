@@ -1,8 +1,8 @@
 // Package ui is the Rollops web console: a Vue 3 single-page app (embedded,
 // self-contained — no Node build, no CDN) over a small JSON API. It shows live
 // rollout state, per-target drift, an expandable resource tree, the desired→live
-// diff, and history, and lets an operator approve/reject/rollback/sync — all
-// interactive, no page reloads.
+// diff, and history, and lets an operator approve/reject/pause/resume/abort/
+// rollback/sync — all interactive, no page reloads.
 package ui
 
 import (
@@ -38,6 +38,9 @@ type Backend interface {
 	Approve(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	Promote(ctx context.Context, id string, by rollout.Identity, force bool) (rollout.Rollout, error)
+	Pause(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
+	Resume(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
+	Abort(ctx context.Context, id string, by rollout.Identity) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 	Freeze(ctx context.Context, on bool, by rollout.Identity, reason string) (bool, string, error)
 	FreezeStatus() (active bool, reason string)
@@ -134,6 +137,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/api/approve", s.apiApprove)
 	mux.HandleFunc("POST /ui/api/reject", s.apiReject)
 	mux.HandleFunc("POST /ui/api/promote", s.apiPromote)
+	mux.HandleFunc("POST /ui/api/pause", s.apiPause)
+	mux.HandleFunc("POST /ui/api/resume", s.apiResume)
+	mux.HandleFunc("POST /ui/api/abort", s.apiAbort)
 	mux.HandleFunc("POST /ui/api/freeze", s.apiFreeze)
 	mux.HandleFunc("POST /ui/api/rollback", s.apiRollback)
 	mux.HandleFunc("POST /ui/api/sync", s.apiSync)
@@ -405,6 +411,16 @@ func (s *Server) apiPromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) apiPause(w http.ResponseWriter, r *http.Request) {
+	s.actByID(w, r, security.PermApply, s.be.Pause)
+}
+func (s *Server) apiResume(w http.ResponseWriter, r *http.Request) {
+	s.actByID(w, r, security.PermApply, s.be.Resume)
+}
+func (s *Server) apiAbort(w http.ResponseWriter, r *http.Request) {
+	s.actByID(w, r, security.PermApply, s.be.Abort)
 }
 
 // actByID is the shared approve/reject flow: authenticate, decode {id}, scope

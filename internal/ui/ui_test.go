@@ -25,6 +25,10 @@ type fakeBackend struct {
 	approvedBy       rollout.Identity
 	rejected         string
 	promoted         string
+	promotedForce    bool
+	paused           string
+	resumed          string
+	aborted          string
 	rolledBackTarget string
 	frozen           bool
 	frozenBy         rollout.Identity
@@ -54,9 +58,21 @@ func (f *fakeBackend) Reject(_ context.Context, id string, _ rollout.Identity) (
 	f.rejected = id
 	return rollout.Rollout{ID: id, Phase: rollout.PhaseRolledBack}, nil
 }
-func (f *fakeBackend) Promote(_ context.Context, id string, _ rollout.Identity, _ bool) (rollout.Rollout, error) {
-	f.promoted = id
+func (f *fakeBackend) Promote(_ context.Context, id string, _ rollout.Identity, force bool) (rollout.Rollout, error) {
+	f.promoted, f.promotedForce = id, force
 	return rollout.Rollout{ID: id, Phase: rollout.PhasePromoted}, nil
+}
+func (f *fakeBackend) Pause(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
+	f.paused = id
+	return rollout.Rollout{ID: id, Phase: rollout.PhasePaused}, nil
+}
+func (f *fakeBackend) Resume(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
+	f.resumed = id
+	return rollout.Rollout{ID: id, Phase: rollout.PhaseDeploying}, nil
+}
+func (f *fakeBackend) Abort(_ context.Context, id string, _ rollout.Identity) (rollout.Rollout, error) {
+	f.aborted = id
+	return rollout.Rollout{ID: id, Phase: rollout.PhaseRolledBack}, nil
 }
 func (f *fakeBackend) Freeze(_ context.Context, on bool, by rollout.Identity, reason string) (bool, string, error) {
 	f.frozen, f.frozenBy, f.freezeReason = on, by, reason
@@ -144,6 +160,12 @@ func TestSPA_ServesIndexAndAssets(t *testing.T) {
 	}
 	if rr := do(h, "GET", "/ui/app.js", ""); rr.Code != 200 || !strings.Contains(rr.Body.String(), "blast-radius") {
 		t.Error("app.js bundle lacks blast-radius risk label")
+	}
+	bundle := do(h, "GET", "/ui/app.js", "").Body.String()
+	for _, want := range []string{"Pause canary", "Resume canary", "Abort canary"} {
+		if !strings.Contains(bundle, want) {
+			t.Errorf("app.js bundle lacks in-flight canary control %q", want)
+		}
 	}
 }
 
@@ -242,6 +264,9 @@ func actionsBackend() *fakeBackend {
 		{ID: "ro-7", TargetRef: "a/prod/api"},
 		{ID: "ro-8", TargetRef: "a/prod/api"},
 		{ID: "ro-9", TargetRef: "a/prod/api"},
+		{ID: "ro-10", TargetRef: "a/prod/api"},
+		{ID: "ro-11", TargetRef: "a/prod/api"},
+		{ID: "ro-12", TargetRef: "a/prod/api"},
 	}}
 }
 
@@ -261,6 +286,18 @@ func TestAPI_Actions(t *testing.T) {
 	if rr := doAs(h, privileged, "/ui/api/promote", `{"id":"ro-9"}`); rr.Code != 200 || be.promoted != "ro-9" {
 		t.Errorf("promote = %d promoted=%q", rr.Code, be.promoted)
 	}
+	if be.promotedForce {
+		t.Error("console promote must not pass force")
+	}
+	if rr := doAs(h, privileged, "/ui/api/pause", `{"id":"ro-10"}`); rr.Code != 200 || be.paused != "ro-10" {
+		t.Errorf("pause = %d paused=%q", rr.Code, be.paused)
+	}
+	if rr := doAs(h, privileged, "/ui/api/resume", `{"id":"ro-11"}`); rr.Code != 200 || be.resumed != "ro-11" {
+		t.Errorf("resume = %d resumed=%q", rr.Code, be.resumed)
+	}
+	if rr := doAs(h, privileged, "/ui/api/abort", `{"id":"ro-12"}`); rr.Code != 200 || be.aborted != "ro-12" {
+		t.Errorf("abort = %d aborted=%q", rr.Code, be.aborted)
+	}
 	if rr := doAs(h, privileged, "/ui/api/freeze", `{"active":true,"reason":"incident"}`); rr.Code != 200 || !be.frozen {
 		t.Errorf("freeze = %d frozen=%v", rr.Code, be.frozen)
 	}
@@ -275,6 +312,19 @@ func TestAPI_Actions(t *testing.T) {
 	}
 }
 
+// TestAPI_PromoteIgnoresForceInBody pins the existing rule: the console never
+// force-promotes, even if a client sends force in the JSON body.
+func TestAPI_PromoteIgnoresForceInBody(t *testing.T) {
+	be := actionsBackend()
+	h := srv(be, WithPolicy(testPolicy()))
+	if rr := doAs(h, privileged, "/ui/api/promote", `{"id":"ro-9","force":true}`); rr.Code != 200 {
+		t.Fatalf("promote = %d: %s", rr.Code, rr.Body)
+	}
+	if be.promotedForce {
+		t.Fatal("POST /ui/api/promote must call Promote with force=false")
+	}
+}
+
 // TestAPI_RBAC_DeniesUnprivileged proves a viewer (PermStatus only) is refused
 // every mutating action, and that the backend is never touched.
 func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
@@ -284,6 +334,9 @@ func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
 		{"/ui/api/approve", `{"id":"ro-7"}`},
 		{"/ui/api/reject", `{"id":"ro-8"}`},
 		{"/ui/api/promote", `{"id":"ro-9"}`},
+		{"/ui/api/pause", `{"id":"ro-10"}`},
+		{"/ui/api/resume", `{"id":"ro-11"}`},
+		{"/ui/api/abort", `{"id":"ro-12"}`},
 		{"/ui/api/freeze", `{"active":true,"reason":"x"}`},
 		{"/ui/api/rollback", `{"target":"a/prod/api"}`},
 		{"/ui/api/sync", `{}`},
@@ -293,7 +346,7 @@ func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
 			t.Errorf("%s as viewer = %d, want 403", c.path, rr.Code)
 		}
 	}
-	if be.approved != "" || be.rejected != "" || be.promoted != "" || be.frozen || be.rolledBackTarget != "" {
+	if be.approved != "" || be.rejected != "" || be.promoted != "" || be.paused != "" || be.resumed != "" || be.aborted != "" || be.frozen || be.rolledBackTarget != "" {
 		t.Errorf("unprivileged request reached the backend: %+v", be)
 	}
 }
@@ -303,7 +356,7 @@ func TestAPI_RBAC_DeniesUnprivileged(t *testing.T) {
 func TestAPI_RBAC_RequiresIdentity(t *testing.T) {
 	be := actionsBackend()
 	h := srv(be, WithPolicy(testPolicy()))
-	for _, path := range []string{"/ui/api/approve", "/ui/api/reject", "/ui/api/promote", "/ui/api/freeze", "/ui/api/rollback", "/ui/api/sync"} {
+	for _, path := range []string{"/ui/api/approve", "/ui/api/reject", "/ui/api/promote", "/ui/api/pause", "/ui/api/resume", "/ui/api/abort", "/ui/api/freeze", "/ui/api/rollback", "/ui/api/sync"} {
 		if rr := do(h, "POST", path, `{"id":"ro-7","target":"a/prod/api"}`); rr.Code != http.StatusUnauthorized {
 			t.Errorf("%s without identity = %d, want 401", path, rr.Code)
 		}
