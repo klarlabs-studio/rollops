@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 424,
+  "version": 427,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -1201,9 +1201,15 @@
       "elapsed_minutes": 1
     },
     "task-real-honest-strategy-names": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
-      "elapsed_minutes": 0
+      "owner": "cursor",
+      "evidence": [
+        "926a231"
+      ],
+      "started_at": "2026-08-14T17:28:20.491604007Z",
+      "completed_at": "2026-08-14T17:30:17.619360121Z",
+      "elapsed_minutes": 1
     },
     "task-real-honesty-docs": {
       "status": "verified",
@@ -1526,5 +1532,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T17:25:46.725447863Z"
+  "updated_at": "2026-08-14T17:30:17.638282165Z"
 }
