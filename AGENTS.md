@@ -18,6 +18,8 @@ to ArgoCD/Flux; no Kubernetes dependency; runs on a bare Hetzner VPS.
 - **Packages by domain, not layer.** Keep functions small, names self-documenting.
 - **Lean is a feature.** Every addition justifies its weight. Single binary + SQLite is the common case.
 - Plan through **Roady** before implementing; capture sessions to `memory/`.
+- **Warden locally.** Same gate as CI: `warden run pre-commit` (lint) and
+  `warden run pre-push` (race tests + lint). Do not `--no-verify`.
 
 ## Constraints (from vision/TDD)
 
