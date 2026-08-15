@@ -231,7 +231,7 @@ func TestNewServer_RegistersTools(t *testing.T) {
 	srv := NewServer(tl)
 	for _, name := range []string{
 		"rollouts.plan", "rollouts.apply", "rollouts.rollback", "rollouts.status",
-		"rollouts.list", "rollouts.history", "rollouts.drift",
+		"rollouts.list", "rollouts.history", "rollouts.drift", "rollouts.fleet",
 	} {
 		if _, ok := srv.GetTool(name); !ok {
 			t.Errorf("tool %q not registered", name)
@@ -265,6 +265,27 @@ func TestTools_ListHistoryDrift(t *testing.T) {
 	}
 	if len(drift.Items) != 1 || drift.Items[0].Target != "demo/staging/app" {
 		t.Errorf("drift = %+v", drift)
+	}
+	fleet, err := tl.Fleet(ctx, FleetInput{Filter: "demo/staging/app"})
+	if err != nil {
+		t.Fatalf("Fleet: %v", err)
+	}
+	if fleet.Total != 1 || fleet.Name != "demo/staging/app" || len(fleet.Members) != 1 {
+		t.Errorf("fleet = %+v", fleet)
+	}
+	if _, err := tl.Fleet(ctx, FleetInput{}); err == nil {
+		t.Fatal("empty filter must fail")
+	}
+}
+
+func TestTools_FleetDeniedWithoutStatus(t *testing.T) {
+	tl := newTools(t)
+	pol := security.NewPolicy()
+	pol.DefineRole(security.Role{Name: "planner", Grants: []security.Grant{{Perm: security.PermPlan}}})
+	pol.Bind("agent:planner", "planner")
+	tl.policy = pol
+	if _, err := tl.Fleet(asAgent("planner"), FleetInput{Filter: "web"}); err == nil {
+		t.Fatal("plan-only agent must not fleet")
 	}
 }
 
