@@ -1,8 +1,29 @@
 # Status — Rollops
 
-*Updated: 2026-07-19*
+*Updated: 2026-08-14*
 
 ## Current State
+
+Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
+in-cluster pin was v0.26.0). It operates the creator's GitOps fleet.
+
+**Make it real is executed** (`docs/design/make-it-real.md`, Roady 142/142).
+Advertised behaviour matches `rollopsd`: freeze persist, shared boot, risk on
+the rollout, Vault+Env, opt-in analysis, honest `current`, agent-deploy + MCP
+observe tools, tick-driven canary with pause/resume/abort, HMAC webhook,
+`RolloutSet` list, `ignoreDifferences`, `dependsOn` waits. Do not add Argo
+checkboxes. Next is TDD §17 leftovers (schema versioning, plugin protocol,
+analysis P2, multi-instance, UI act-vs-observe, RBAC taxonomy) — plan those
+in Roady before coding.
+
+**Last Session Summary (2026-08-14):** Closed Phases C2–D after C1. Warden
+pre-push green on HEAD; CI 7/7. Four historical chore commits lack notes
+(pre-commit only; Cursor overrides `core.hooksPath` so `git push` does not
+run pre-push — always `warden run pre-push` explicitly).
+
+---
+
+## Historical — 2026-07-19
 
 Rollops is **released at v0.26.0** and operating its creator's entire production
 cluster (GitOps fleet, one in-cluster `rollopsd`, ns `rollops-system`, watching 11

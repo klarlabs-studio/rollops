@@ -99,9 +99,10 @@ type NamedConfig struct {
 // LoadAllFromDir loads every rollout config addressed by r.Path. When r.Path is a
 // single file it returns that one config; when it is a directory it loads all
 // *.yaml / *.yml files in it (sorted, non-recursive), so one repo path can hold
-// many apps — the keel-style "manage everything" layout. Each file is validated;
-// one bad file fails the whole load so a broken config never silently drops an
-// app from reconciliation.
+// many apps — the keel-style "manage everything" layout. A kind: RolloutSet file
+// expands in memory into N ordinary RolloutConfigs (list generator only). Each
+// file is validated; one bad file fails the whole load so a broken config never
+// silently drops an app from reconciliation.
 func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 	r = r.WithDefaults()
 	full := filepath.Join(dir, filepath.Clean("/" + r.Path)[1:]) // prevent path escape
@@ -114,11 +115,7 @@ func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("config: read %s: %w", r.Path, err)
 		}
-		c, err := Load(data)
-		if err != nil {
-			return nil, fmt.Errorf("config: %s: %w", r.Path, err)
-		}
-		return []NamedConfig{{Path: r.Path, Config: c}}, nil
+		return loadDocuments(data, r.Path)
 	}
 	entries, err := os.ReadDir(full)
 	if err != nil {
@@ -137,11 +134,11 @@ func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("config: read %s/%s: %w", r.Path, name, err)
 		}
-		c, err := Load(data)
+		docs, err := loadDocuments(data, filepath.Join(r.Path, name))
 		if err != nil {
-			return nil, fmt.Errorf("config: %s/%s: %w", r.Path, name, err)
+			return nil, err
 		}
-		out = append(out, NamedConfig{Path: filepath.Join(r.Path, name), Config: c})
+		out = append(out, docs...)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("config: no .yaml configs in %s", r.Path)

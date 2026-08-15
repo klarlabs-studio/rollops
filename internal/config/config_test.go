@@ -265,3 +265,39 @@ func TestImagePolicy_WritebackMode(t *testing.T) {
 		t.Error("an unrecognised value must fall back to push, not silently disable writeback")
 	}
 }
+
+func TestHonestStrategy(t *testing.T) {
+	bake := &Config{}
+	bake.Spec.Strategy.Type = "canary"
+	if !strings.Contains(bake.HonestStrategy(), "health-gated bake") {
+		t.Errorf("bare canary = %q, want health-gated bake", bake.HonestStrategy())
+	}
+	split := &Config{}
+	split.Spec.Strategy.Type = "canary"
+	split.Spec.TrafficRouting = &TrafficRouting{}
+	if split.HonestStrategy() != "" {
+		t.Errorf("canary with trafficRouting = %q, want empty", split.HonestStrategy())
+	}
+	flagged := &Config{}
+	flagged.Spec.Strategy.Type = "canary"
+	flagged.Spec.FeatureFlags = &FeatureFlags{}
+	if flagged.HonestStrategy() != "" {
+		t.Errorf("canary with featureFlags = %q, want empty", flagged.HonestStrategy())
+	}
+	cut := &Config{}
+	cut.Spec.Strategy.Type = "blue-green"
+	if !strings.Contains(cut.HonestStrategy(), "full cutover") {
+		t.Errorf("bare blue-green = %q, want full cutover", cut.HonestStrategy())
+	}
+	routedBG := &Config{}
+	routedBG.Spec.Strategy.Type = "blue-green"
+	routedBG.Spec.TrafficRouting = &TrafficRouting{}
+	if routedBG.HonestStrategy() != "" {
+		t.Errorf("blue-green with trafficRouting = %q, want empty", routedBG.HonestStrategy())
+	}
+	rolling := &Config{}
+	rolling.Spec.Strategy.Type = "rolling"
+	if rolling.HonestStrategy() != "" {
+		t.Errorf("rolling = %q, want empty", rolling.HonestStrategy())
+	}
+}

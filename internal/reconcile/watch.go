@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/depgraph"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/git"
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -28,9 +29,11 @@ type RepoSpec struct {
 }
 
 // Watcher watches N repos and reconciles each on every tick — the always-on
-// brain. Each tick pulls the latest desired state from Git (immediate via
-// webhook, periodic via this poll which doubles as the drift heartbeat) and
-// reconciles. Repos are independent and serialized per repo.
+// brain. Each tick pulls the latest desired state from Git (poll, which
+// doubles as the drift heartbeat) and reconciles. A GitHub HMAC webhook
+// calls TickHint for the matching repo (or every watched repo when the
+// payload does not name one). Poll remains the safety net. Repos are
+// independent and serialized per repo.
 type Watcher struct {
 	rec       *Reconciler
 	baseDir   string
@@ -132,6 +135,13 @@ type RepoOutcome struct {
 // Tick pulls and reconciles every watched repo once. Per-repo errors are
 // captured in the result, not fatal to the others.
 func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
+	return w.TickHint(ctx, "")
+}
+
+// TickHint is Tick filtered by a GitHub webhook repo hint (owner/repo or a
+// remote URL). An empty or unmatched hint ticks every watched repo — still
+// bounded by the watch list, never an unbounded fan-out.
+func (w *Watcher) TickHint(ctx context.Context, repoHint string) []RepoOutcome {
 	if w.leases != nil {
 		ok, err := w.leases.AcquireLease(ctx, "reconcile:leader", w.owner, w.leaseTTL, w.now().UTC())
 		if err != nil {
@@ -141,11 +151,28 @@ func (w *Watcher) Tick(ctx context.Context) []RepoOutcome {
 			return []RepoOutcome{{Err: ErrNotLeader}}
 		}
 	}
-	out := make([]RepoOutcome, 0, len(w.repos))
-	for _, r := range w.repos {
+	repos := w.matching(repoHint)
+	out := make([]RepoOutcome, 0, len(repos))
+	for _, r := range repos {
 		out = append(out, w.tickOne(ctx, r)...)
 	}
 	return out
+}
+
+func (w *Watcher) matching(hint string) []watched {
+	if strings.TrimSpace(hint) == "" {
+		return w.repos
+	}
+	matched := make([]watched, 0, 1)
+	for _, r := range w.repos {
+		if git.SameRepo(r.spec.URL, hint) {
+			matched = append(matched, r)
+		}
+	}
+	if len(matched) == 0 {
+		return w.repos
+	}
+	return matched
 }
 
 func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
@@ -258,13 +285,72 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	}
 
 	out := make([]RepoOutcome, 0, len(configs))
-	for i, nc := range configs {
+	for _, p := range orderByDependsOn(configs, cfgs) {
+		if wait, werr := w.rec.waitingOn(ctx, p.cfg); werr != nil {
+			out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Err: werr})
+			continue
+		} else if wait != "" {
+			if w.logf != nil {
+				w.logf("reconcile %s/%s: skipping this tick — dependsOn %q is not promoted", r.spec.Name, p.nc.Path, wait)
+			}
+			out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed})
+			continue
+		}
 		// Relative referenced manifest sources resolve against the config file's
 		// own directory within the checkout — not the daemon CWD — so a rendered
 		// kustomize/helm/path points at the polled desired state.
-		root := filepath.Join(r.src.Dir(), filepath.Dir(nc.Path))
-		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), cfgs[i], r.spec.Initiator)
-		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + nc.Path, Changed: changed, Outcome: o, Err: rerr})
+		root := filepath.Join(r.src.Dir(), filepath.Dir(p.nc.Path))
+		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), p.cfg, r.spec.Initiator)
+		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Outcome: o, Err: rerr})
+	}
+	return out
+}
+
+type cfgPair struct {
+	nc  config.NamedConfig
+	cfg *config.Config
+}
+
+// orderByDependsOn topological-sorts configs in a repo so a dependency is
+// reconciled before its dependents in the same tick. A cycle keeps file order.
+func orderByDependsOn(ncs []config.NamedConfig, cfgs []*config.Config) []cfgPair {
+	pairs := make([]cfgPair, 0, len(ncs))
+	byRef := make(map[string]cfgPair, len(ncs))
+	nodes := make([]string, 0, len(ncs))
+	var deps []rollout.Dependency
+	for i, nc := range ncs {
+		p := cfgPair{nc: nc, cfg: cfgs[i]}
+		pairs = append(pairs, p)
+		ref := cfgs[i].Spec.Target.Ref
+		byRef[ref] = p
+		nodes = append(nodes, ref)
+		for _, d := range cfgs[i].Spec.DependsOn {
+			deps = append(deps, rollout.Dependency{From: d, To: ref})
+		}
+	}
+	if len(deps) == 0 {
+		return pairs
+	}
+	layers, err := depgraph.New(nodes, deps).Layers()
+	if err != nil {
+		return pairs
+	}
+	out := make([]cfgPair, 0, len(pairs))
+	seen := make(map[string]bool, len(pairs))
+	for _, layer := range layers {
+		for _, ref := range layer {
+			p, ok := byRef[ref]
+			if !ok || seen[ref] {
+				continue
+			}
+			out = append(out, p)
+			seen[ref] = true
+		}
+	}
+	for _, p := range pairs {
+		if !seen[p.cfg.Spec.Target.Ref] {
+			out = append(out, p)
+		}
 	}
 	return out
 }

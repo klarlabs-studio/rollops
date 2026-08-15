@@ -41,6 +41,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		return Outcome{}, fmt.Errorf("reconcile: plan: %w", err)
 	}
 	if !plan.Changed {
+		// An in-flight canary must keep ticking even when Git and the target
+		// already match — Plan.Changed is false after the first Apply, but the
+		// bake is not done.
+		if inf, ok, err := r.eng.InFlight(ctx, c.Spec.Target.Ref); err != nil {
+			return Outcome{}, err
+		} else if ok {
+			rl, err := r.eng.Tick(ctx, inf.ID, c)
+			if err != nil {
+				return Outcome{Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: tick: %w", err)
+			}
+			return r.finalize(ctx, c, by, plan, false, rl)
+		}
 		// detect mode: live drift found but intentionally not auto-corrected —
 		// record an alert so operators see it, then stop (no apply).
 		if plan.DriftAlert {
@@ -62,28 +74,31 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		Detail:    plan.Summary,
 	})
 
-	rl, err := r.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: by, Planned: true})
+	rl, err := r.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: by, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		return Outcome{Drift: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: apply: %w", err)
 	}
+	return r.finalize(ctx, c, by, plan, true, rl)
+}
 
-	// Halted at the approval gate — nothing more to do this tick.
-	if rl.Phase == rollout.PhaseAwaitingApproval {
-		return Outcome{Drift: true, Plan: plan, Rollout: rl}, nil
+// finalize runs the post-deploy gate only once the stepper has reached
+// verifying. deploying/paused/awaiting-approval halt this tick.
+func (r *Reconciler) finalize(ctx context.Context, c *config.Config, by rollout.Identity, plan *engine.Plan, drifted bool, rl *rollout.Rollout) (Outcome, error) {
+	if rl == nil {
+		return Outcome{Drift: drifted, Plan: plan}, nil
+	}
+	switch rl.Phase {
+	case rollout.PhaseAwaitingApproval, rollout.PhaseDeploying, rollout.PhasePaused:
+		return Outcome{Drift: drifted, Plan: plan, Rollout: rl}, nil
 	}
 
-	// Finalize: post-deploy health/smoke gate promotes or auto-rolls-back. The
-	// prior handed to VerifyOrRollback must be the last-known-good manifest, not
-	// rl.Desired (the manifest we just applied) — otherwise a failed post-deploy
-	// gate would "roll back" to the broken version. Fall back to rl.Desired only
-	// when the target has no distinct prior state (first deploy).
 	prior := rl.Desired
 	if p, ok := r.eng.PriorManifest(ctx, rl.TargetRef, rl.Desired.Checksum); ok {
 		prior = p
 	}
 	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, prior, c)
 	if err != nil {
-		return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
+		return Outcome{Drift: drifted, Reconciled: true, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
 	}
 	final := out.Rollout
 	r.record(audit.Entry{
@@ -94,7 +109,37 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 		Actor:     by,
 		Detail:    "reconciled drift",
 	})
-	return Outcome{Drift: true, Reconciled: true, Plan: plan, Rollout: &final}, nil
+	return Outcome{Drift: drifted, Reconciled: true, Plan: plan, Rollout: &final}, nil
+}
+
+// waitingOn returns a dependsOn target ref that is not currently promoted, or
+// "" if every dependency is promoted (or there are none). A missing rollout
+// is not promoted. Errors from the store are returned so a lookup failure is
+// not silently treated as "ready".
+func (r *Reconciler) waitingOn(ctx context.Context, c *config.Config) (string, error) {
+	for _, dep := range c.Spec.DependsOn {
+		ok, err := r.isPromoted(ctx, dep)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return dep, nil
+		}
+	}
+	return "", nil
+}
+
+func (r *Reconciler) isPromoted(ctx context.Context, targetRef string) (bool, error) {
+	rs, err := r.eng.List(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	for _, rl := range rs { // newest first
+		if rl.TargetRef == targetRef {
+			return rl.Phase == rollout.PhasePromoted, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *Reconciler) record(e audit.Entry) {

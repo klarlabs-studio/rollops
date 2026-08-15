@@ -147,6 +147,15 @@ func (statusNoteOps) Approve(context.Context, string) (rollout.Rollout, error) {
 func (statusNoteOps) Reject(context.Context, string) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
+func (statusNoteOps) Pause(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Resume(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
+func (statusNoteOps) Abort(context.Context, string) (rollout.Rollout, error) {
+	return rollout.Rollout{}, nil
+}
 func (statusNoteOps) RollbackLast(context.Context, string, bool) (rollout.Rollout, error) {
 	return rollout.Rollout{}, nil
 }
@@ -232,6 +241,38 @@ func TestCLI_DoctorLocal(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "config: ok") || !strings.Contains(out, "database: ok") {
 		t.Errorf("doctor output = %q", out)
+	}
+}
+
+func TestCLI_DoctorHonestStrategy(t *testing.T) {
+	app, buf, _ := newApp(t)
+	app.Doctor.DBPath = filepath.Join(t.TempDir(), "doctor.db")
+	canary := filepath.Join(t.TempDir(), "canary.yaml")
+	if err := os.WriteFile(canary, []byte(`
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: {x: 1}
+  strategy:
+    type: canary
+    steps:
+      - weight: 10
+        pause: 1s
+      - weight: 100
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"doctor", canary}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if !strings.Contains(buf.String(), "health-gated bake") {
+		t.Errorf("doctor output = %q, want health-gated bake", buf.String())
 	}
 }
 

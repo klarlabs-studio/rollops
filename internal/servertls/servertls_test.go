@@ -142,6 +142,52 @@ func TestServerTLS_LoadsKeypairAndPinsTLS13(t *testing.T) {
 	}
 }
 
+func TestClientTLS_TrustsServerCertAndPinsTLS13(t *testing.T) {
+	dir := t.TempDir()
+	certPEM, keyPEM, _ := genKeypair(t, "localhost")
+	certPath, keyPath := writeKeypair(t, dir, certPEM, keyPEM)
+	cfg := &Config{certFile: certPath, keyFile: keyPath}
+	tc, err := cfg.ClientTLS()
+	if err != nil {
+		t.Fatalf("ClientTLS: %v", err)
+	}
+	if tc.MinVersion != tls.VersionTLS13 {
+		t.Errorf("MinVersion = %x, want TLS1.3", tc.MinVersion)
+	}
+	if tc.RootCAs == nil {
+		t.Fatal("RootCAs must trust the server certificate")
+	}
+	if len(tc.Certificates) != 0 {
+		t.Error("without client CA the CLI must not present a client certificate")
+	}
+}
+
+func TestClientTLS_PresentsKeypairWhenClientCASet(t *testing.T) {
+	dir := t.TempDir()
+	certPEM, keyPEM, _ := genKeypair(t, "localhost")
+	certPath, keyPath := writeKeypair(t, dir, certPEM, keyPEM)
+	caPath := filepath.Join(dir, "ca.crt")
+	if err := os.WriteFile(caPath, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{certFile: certPath, keyFile: keyPath, clientCAFile: caPath}
+	tc, err := cfg.ClientTLS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tc.Certificates) != 1 {
+		t.Fatalf("mTLS client must present the keypair, got %d certs", len(tc.Certificates))
+	}
+}
+
+func TestClientTLS_NilIsPlaintext(t *testing.T) {
+	var c *Config
+	tc, err := c.ClientTLS()
+	if err != nil || tc != nil {
+		t.Fatalf("nil Config ClientTLS = (%v, %v), want (nil, nil)", tc, err)
+	}
+}
+
 func TestServerTLS_MissingKeypairErrors(t *testing.T) {
 	cfg := &Config{certFile: "/nonexistent/tls.crt", keyFile: "/nonexistent/tls.key"}
 	if _, err := cfg.ServerTLS(false); err == nil {

@@ -21,7 +21,7 @@ export const template = `
       <button class="chip" :class="{on:facet==='promoted'}" @click="toggleFacet('promoted')">promoted <b class="ok">{{ dash.counts.promoted||0 }}</b></button>
       <button class="chip" :class="{on:facet==='awaiting'}" @click="toggleFacet('awaiting')">awaiting <b class="warn">{{ dash.counts['awaiting-approval']||0 }}</b></button>
       <button class="chip" :class="{on:facet==='degraded'}" @click="toggleFacet('degraded')">rolled-back <b class="bad">{{ dash.counts['rolled-back']||0 }}</b></button>
-      <button class="chip" :class="{on:facet==='active'}" @click="toggleFacet('active')">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.verifying||0) }}</b></button>
+          <button class="chip" :class="{on:facet==='active'}" @click="toggleFacet('active')">in-flight <b>{{ (dash.counts.deploying||0)+(dash.counts.paused||0)+(dash.counts.verifying||0) }}</b></button>
       <button class="chip" :class="{on:facet==='drift'}" @click="toggleFacet('drift')">drifted <b :class="hasDrift?'bad':''">{{ driftCount }}</b></button>
     </div>
     <div class="filter">
@@ -43,6 +43,11 @@ export const template = `
           <span v-if="a.kind==='approval' && a.rolloutID" class="att-actions">
             <button class="ok" :disabled="busy" @click="approve(a.rolloutID)">Approve</button>
             <button class="bad" :disabled="busy" @click="reject(a.rolloutID)">Reject</button>
+          </span>
+          <span v-else-if="a.kind==='active' && a.rolloutID && (a.phase==='deploying' || a.phase==='paused')" class="att-actions">
+            <button v-if="a.phase==='deploying'" :disabled="busy" @click="pause(a.rolloutID)">Pause canary</button>
+            <button v-if="a.phase==='paused'" :disabled="busy" @click="resume(a.rolloutID)">Resume canary</button>
+            <button class="bad" :disabled="busy" @click="abort(a.rolloutID)">Abort canary</button>
           </span>
           <span v-else-if="a.kind==='drift'" class="att-actions">
             <button v-if="dashCanSync" class="sync" :disabled="busy" @click="sync">Sync</button>
@@ -70,7 +75,7 @@ export const template = `
             <span :class="cls(a.phase)">{{ a.phase }}</span>
             <span v-if="a.active && a.stepTotal" class="step-mini mono" :title="a.strategy+' step '+a.stepIndex+'/'+a.stepTotal+' at '+a.stepWeight+'%'">{{ a.stepIndex }}/{{ a.stepTotal }} · {{ a.stepWeight }}%</span>
           </td>
-          <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (decisionkit)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
+          <td><span :class="riskClass(a.risk)" :title="a.riskScore>0 ? 'risk score '+a.riskScore.toFixed(2)+' (blast-radius)' : 'situational (risk gate off)'">{{ a.risk }}<span v-if="a.riskScore>0" class="risk-score">{{ a.riskScore.toFixed(2) }}</span></span></td>
           <td class="mono">{{ short(a.desired) }}</td>
           <td class="mono">{{ short(a.observed) }}</td>
           <td><span v-if="a.by" class="actor" :title="a.byKind || 'actor'"><span class="actor-ic" aria-hidden="true">{{ actorIcon(a.byKind) }}</span><span class="mono">{{ actorName(a.by) }}</span></span></td>
@@ -113,13 +118,16 @@ export const template = `
         <div class="stat"><div class="sl">Sync</div><div class="sv"><span class="badge" :class="synced?'sync':'drift'">{{ synced?'Synced':'OutOfSync' }}</span></div></div>
         <div class="stat"><div class="sl">Strategy</div><div class="sv">{{ detail.rollout.strategy }} <span class="gitsrc" title="Strategy is desired state — defined in the rollout config in Git. To change it, edit the config and Sync. (GitOps: Git is the source of truth.)">⌥ from Git</span></div></div>
         <div class="stat"><div class="sl">Desired</div><div class="sv mono">{{ short(detail.rollout.desired) }}</div></div>
-        <div class="stat" v-if="detail.rollout.risk>0"><div class="sl">Risk</div><div class="sv"><span :class="riskClass(riskOf(detail.rollout.risk))" :title="'decisionkit score'">{{ riskOf(detail.rollout.risk) }} {{ detail.rollout.risk.toFixed(2) }}</span></div></div>
+        <div class="stat" v-if="detail.rollout.risk>0"><div class="sl">Risk</div><div class="sv"><span :class="riskClass(riskOf(detail.rollout.risk))" :title="'blast-radius score'">{{ riskOf(detail.rollout.risk) }} {{ detail.rollout.risk.toFixed(2) }}</span></div></div>
         <div class="stat" v-if="detail.rollout.at"><div class="sl">Updated</div><div class="sv mono" :title="absTime(detail.rollout.at)">{{ ago(detail.rollout.at) }}</div></div>
         <span class="spacer"></span>
         <div class="actions">
           <button v-if="detail.awaiting" class="ok" :disabled="busy" @click="approve(detail.rollout.id)">Approve</button>
           <button v-if="detail.awaiting" class="bad" :disabled="busy" @click="reject(detail.rollout.id)">Reject</button>
           <button v-if="detail.rollout.phase==='verifying'" class="ok" :disabled="busy" @click="promote(detail.rollout.id)">✓ Promote</button>
+          <button v-if="detail.rollout.phase==='deploying'" :disabled="busy" @click="pause(detail.rollout.id)">Pause canary</button>
+          <button v-if="detail.rollout.phase==='paused'" :disabled="busy" @click="resume(detail.rollout.id)">Resume canary</button>
+          <button v-if="detail.rollout.phase==='deploying' || detail.rollout.phase==='paused'" class="bad" :disabled="busy" @click="abort(detail.rollout.id)">Abort canary</button>
           <button class="bad" :disabled="busy" @click="rollback(ref)">↩ Rollback</button>
           <span class="vsplit"></span>
           <button :class="{active:mode==='graph'}" @click="mode='graph'" title="Tree view">⤳</button>
@@ -151,7 +159,7 @@ export const template = `
         </div>
         <div class="summary-card">
           <div class="sl">Operator action</div>
-          <div class="sv">{{ detail.awaiting ? 'Approval required' : (synced ? 'No action' : 'Sync or rollback') }}</div>
+          <div class="sv">{{ detail.awaiting ? 'Approval required' : (detail.rollout.phase==='deploying' ? 'Pause or abort canary' : (detail.rollout.phase==='paused' ? 'Resume or abort canary' : (synced ? 'No action' : 'Sync or rollback'))) }}</div>
           <div class="hint">RBAC-checked operation surface</div>
         </div>
       </div>

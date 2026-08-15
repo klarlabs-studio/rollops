@@ -115,7 +115,7 @@ func (s *Server) Apply(ctx context.Context, req *rollopsv1.ApplyRequest) (*rollo
 	if _, err := s.eng.Plan(ctx, c); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	rl, err := s.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true})
+	rl, err := s.eng.Apply(ctx, engine.ApplyRequest{Config: c, Initiator: id, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		if err == engine.ErrTargetBusy {
 			return nil, status.Error(codes.Aborted, err.Error())
@@ -178,6 +178,27 @@ func (s *Server) Reject(ctx context.Context, req *rollopsv1.RolloutActionRequest
 func (s *Server) Promote(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
 	return s.rolloutAction(ctx, req.GetId(), security.PermPromote, func(by rollout.Identity) (rollout.Rollout, error) {
 		return s.eng.Promote(ctx, req.GetId(), by, req.GetForce())
+	})
+}
+
+// Pause holds an in-flight canary. Authorized as apply, scoped to the target.
+func (s *Server) Pause(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Pause(ctx, req.GetId(), by)
+	})
+}
+
+// Resume continues an operator-paused canary. Authorized as apply.
+func (s *Server) Resume(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Resume(ctx, req.GetId(), by)
+	})
+}
+
+// Abort stops an in-flight canary and rolls it back. Authorized as apply.
+func (s *Server) Abort(ctx context.Context, req *rollopsv1.RolloutActionRequest) (*rollopsv1.RolloutActionResponse, error) {
+	return s.rolloutAction(ctx, req.GetId(), security.PermApply, func(by rollout.Identity) (rollout.Rollout, error) {
+		return s.eng.Abort(ctx, req.GetId(), by)
 	})
 }
 

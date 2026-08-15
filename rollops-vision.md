@@ -1,7 +1,7 @@
 # Rollops — Vision Document
 
 *Rollout operations for the agentic web*
-**Umbrella:** Klarlatz · **Status:** Concept / pre-MVP
+**Umbrella:** Klarlatz · **Status:** Dogfooded OSS (v0.30.0)
 
 ---
 
@@ -44,7 +44,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 - **Not another Kubernetes / orchestrator.** Rollops configures and drives deployment *through* existing infrastructure; it does not replace the runtime.
 - **Not coupled to Obvia.** Observability integration is deliberately left out of the MVP. Technology may be reused later; the dependency is not baked in yet.
 - **Not a feature-flag platform.** Application-level flags (LaunchDarkly/Flagsmith/Statsig) stay a separate concern. Integration hooks are a future consideration, not v1.
-- **Not tightly coupled to Relicta.** Risk evaluation uses decision-kit directly; a deeper Relicta change-governance binding is optional and deferred.
+- **Not tightly coupled to Relicta.** Risk evaluation is the homegrown blast-radius gate; a deeper Relicta change-governance binding is optional and deferred.
 - **Not enterprise-first.** The design center is the solo builder and small team, not large-org governance theater.
 
 ---
@@ -60,7 +60,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 ## How it fits the stack
 
 - **Layer:** Developer tooling (alongside scout, coverctl, tokenops), under the **Klarlatz** umbrella.
-- **decision-kit** — calculates the blast-radius / risk score that drives the approval gate.
+- **Blast-radius risk gate** (`internal/risk`) — calculates the score that drives the approval gate. decision-kit is pinned but not the scorer.
 - **bolt** — structured, compliance-grade audit logging across layers.
 - **MCP (mcp-go)** — the agent interface; how Nomi and other agents operate Rollops natively.
 - Dogfood targets at launch: **Armada, Obvia, Pet Medical, Brotwerk, IRI.**
@@ -93,7 +93,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 - **Config format: declarative YAML + strict schema, CEL for logic.** YAML is the surface format — fluently written by both humans and agents — backed by a published schema and Go-side validation that rejects malformed config loudly. Conditional logic (risk thresholds, gate conditions) uses embedded CEL (Common Expression Language) rather than a bespoke DSL. Relicta's governance DSL stays separate; the two concerns evolve independently.
 - **Three interfaces** — CLI (automation/humans), UI (visibility), **MCP (agents)**.
 - **Progressive delivery** — canary, blue-green, and rolling strategies with configurable traffic shifting.
-- **Risk-based approval gate** — decision-kit computes a blast-radius risk score from five observability-free signals: **target criticality** (operator-configured weight per service), **environment** (prod > staging > dev), **change type** (config < code < schema/DB migration), **blast radius** (count of downstream dependents from the dependency graph), and **rollout strategy** (full cutover riskier than a small canary). Below threshold proceeds automatically; above threshold or sensitive-flagged requires a **single human approval** (approve / reject / block). Sensible safe defaults; no multi-stage approval chains in v1.
+- **Risk-based approval gate** — a homegrown blast-radius score from five observability-free signals: **target criticality** (operator-configured weight per service), **environment** (prod > staging > dev), **change type** (config < code < schema/DB migration), **blast radius** (count of downstream dependents from the dependency graph), and **rollout strategy** (full cutover riskier than a small canary). Below threshold proceeds automatically; above threshold or sensitive-flagged requires a **single human approval** (approve / reject / block). Sensible safe defaults; no multi-stage approval chains in v1. The UI shows this number as a blast-radius score, not as decision-kit.
 - **Drift handling** — continuously **detect, alert, and reconcile** actual vs. declared state.
 - **Rollback strategies** — manual, automatic, and agent-driven. The v1 auto-rollback signal is observability-free: an operator-defined **health check** (HTTP / TCP / command exit), a **post-deploy smoke test** ("run this, expect exit 0"), or a **rollout step error / timeout**. Any failing fires the rollback. Metric-based analysis is deferred to Phase 2.
 - **Audit & compliance logging** — built in from day one via bolt; structured and traceable across multiple layers so anyone can understand what happened and why.
@@ -130,7 +130,7 @@ Brand DNA carries through: **Smart, Präzise, Wertig, Verlässlich.**
 
 ## Open-Core Boundary
 
-- **OSS core (single-tenant, self-hosted):** engine, CLI, MCP server, target plugins, progressive delivery, drift reconciliation, rollback, YAML/CEL config, Git-based multi-tenancy, and decision-kit risk scoring (decision-kit and bolt are already open). Anyone can run Rollops against as many repos as they want, for free.
+- **OSS core (single-tenant, self-hosted):** engine, CLI, embedded MCP server, target plugins, progressive delivery, drift reconciliation, rollback, YAML/CEL config, Git-based multi-tenancy, and blast-radius risk scoring (bolt is already open). Anyone can run Rollops against as many repos as they want, for free. SQLite is the runtime Store. Postgres, mnemos, a host agent, and a standalone MCP binary are not shipped.
 - **Studio / commercial layer:** managed coordination *at scale* — one pane of glass orchestrating many customers, hosted dashboard, tenancy controls, billing. This is the "manage fifty customers easily" value, following the same open-core split as Argo/Codefresh and Flux/Weave.
 
 ---

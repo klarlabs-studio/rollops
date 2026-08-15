@@ -6,7 +6,8 @@ is **deny-by-default**: an identity with no matching grant is forbidden.
 
 ## Model
 
-- **Permissions**: `rollouts.status`, `rollouts.plan`, `rollouts.apply`,
+- **Permissions**: `rollouts.status`, `rollouts.plan`, `rollouts.apply`
+  (also pause/resume/abort of an in-flight canary),
   `rollouts.approve` (gates approve **and** reject), `rollouts.promote`,
   `rollouts.rollback`, `rollouts.schedule`, `rollouts.freeze`.
 - **Scope**: `{env, targetRef}`. An empty field on a *grant* is a wildcard. The
@@ -17,8 +18,10 @@ is **deny-by-default**: an identity with no matching grant is forbidden.
   `ci:<name>`, a `<kind>:*` wildcard, or `group:<name>` (from OIDC `groups`).
 
 Bootstrap defaults (`DefaultRBACPolicy`): `admin` (all perms, bound to
-`human:admin` when `ROLLOPS_ADMIN_TOKEN` is set) and `agent` (plan + status,
-bound to `agent:*`).
+`human:admin` when `ROLLOPS_ADMIN_TOKEN` is set), `agent` (plan + status,
+bound to `agent:*`), and unbound `agent-deploy` (plan, apply, rollback, status,
+promote/verify — not freeze, not approve). Bind a named agent to `agent-deploy`
+in the policy file; do not bind `agent:*`.
 
 ## Operator policy file
 
@@ -41,6 +44,8 @@ bindings:
     roles: [backend-deployer]
   - subject: human:alice
     roles: [admin]
+  - subject: agent:nomi
+    roles: [agent-deploy]   # opt-in deploy; do not bind agent:*
 ```
 
 Validation: every grant `perm` must be a known permission; every binding `role`

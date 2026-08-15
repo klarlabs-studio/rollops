@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -67,6 +68,28 @@ func TestApply_DrivesFeatureFlagPerStep(t *testing.T) {
 	}
 	if r.Phase != rollout.PhaseVerifying {
 		t.Errorf("phase = %q", r.Phase)
+	}
+}
+
+type failingFlagProvider struct{ err error }
+
+func (f failingFlagProvider) ApplyFlag(context.Context, featureflags.Change) error { return f.err }
+
+func TestApply_FlagFailureDoesNotAbort(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake, WithFlagProviderBuilder(func(context.Context, *config.FeatureFlags) (featureflags.Provider, error) {
+		return failingFlagProvider{err: errors.New("flagsmith 503")}, nil
+	}))
+	c, err := config.Load([]byte(canaryFlagYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err != nil {
+		t.Fatalf("flag failure must not abort apply: %v", err)
+	}
+	if r.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want verifying", r.Phase)
 	}
 }
 

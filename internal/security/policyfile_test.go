@@ -1,6 +1,7 @@
 package security
 
 import (
+	"os"
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/rollout"
@@ -125,5 +126,24 @@ func TestApplyPolicyFile_EmptyIsNoop(t *testing.T) {
 	// Defaults still intact.
 	if err := p.Authorize(rollout.Identity{Kind: "human", Name: "admin"}, PermApply, Scope{}); err != nil {
 		t.Errorf("default admin still works: %v", err)
+	}
+}
+
+func TestApplyPolicyFile_ShippedAgentDeploySnippet(t *testing.T) {
+	data, err := os.ReadFile("../../docs/rbac-agent-deploy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := DefaultRBACPolicy()
+	if err := ApplyPolicyFile(p, data); err != nil {
+		t.Fatal(err)
+	}
+	nomi := rollout.Identity{Kind: "agent", Name: "nomi"}
+	other := rollout.Identity{Kind: "agent", Name: "other"}
+	if !p.Can(nomi, PermApply, Scope{}) {
+		t.Error("nomi bound to agent-deploy should apply")
+	}
+	if p.Can(other, PermApply, Scope{}) {
+		t.Error("unbound agents must stay plan+status")
 	}
 }

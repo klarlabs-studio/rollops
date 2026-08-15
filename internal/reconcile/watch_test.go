@@ -131,6 +131,252 @@ func TestWatcher_TickReconcilesFromGit(t *testing.T) {
 	}
 }
 
+func TestWatcher_RolloutSetReconcilesIndependently(t *testing.T) {
+	const setYAML = `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east }
+        - { name: west }
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec: { x: 1 }
+    strategy: { type: rolling }
+`
+	upstream := makeRepo(t, setYAML)
+	east := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	west := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "set.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "web@east":
+			return east, nil
+		case "web@west":
+			return west, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 2 {
+		t.Fatalf("want 2 independent reconciles, got %d: %+v", len(out), out)
+	}
+	for _, o := range out {
+		if o.Err != nil {
+			t.Errorf("%s: %v", o.Repo, o.Err)
+		}
+	}
+	if len(east.applied) != 1 || len(west.applied) != 1 {
+		t.Errorf("each generated config must reconcile on its own: east=%d west=%d", len(east.applied), len(west.applied))
+	}
+}
+
+func TestWatcher_DependsOnWaitsUntilPromoted(t *testing.T) {
+	files := map[string]string{
+		"app.yaml": `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: app }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+  dependsOn: [demo/prod/db]
+`,
+		"db.yaml": `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: db }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/db
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+`,
+	}
+	// app.yaml sorts before db.yaml — without topo-sort + wait, app would apply first.
+	upstream := makeRepoFiles(t, files)
+	appTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	dbTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "dep.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "demo/prod/app":
+			return appTgt, nil
+		case "demo/prod/db":
+			return dbTgt, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(store, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "."}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 2 {
+		t.Fatalf("want 2 outcomes, got %d: %+v", len(out), out)
+	}
+	for _, o := range out {
+		if o.Err != nil {
+			t.Errorf("%s: %v", o.Repo, o.Err)
+		}
+	}
+	if len(dbTgt.applied) != 1 {
+		t.Errorf("db should apply first, applied=%d", len(dbTgt.applied))
+	}
+	if len(appTgt.applied) != 1 {
+		t.Errorf("app should apply after db promoted in the same tick, applied=%d", len(appTgt.applied))
+	}
+}
+
+func TestWatcher_DependsOnSkipsWhenMissing(t *testing.T) {
+	const appYAML = `apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: app }
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+  dependsOn: [demo/prod/db]
+`
+	upstream := makeRepo(t, appYAML)
+	appTgt := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	var logs []string
+	w := newWatcher(t, appTgt)
+	w.logf = func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", filepath.Join(t.TempDir(), "co"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	out := w.Tick(context.Background())
+	if len(out) != 1 {
+		t.Fatalf("want 1 outcome, got %d", len(out))
+	}
+	if out[0].Err != nil {
+		t.Fatalf("skip must not be fatal: %v", out[0].Err)
+	}
+	if len(appTgt.applied) != 0 {
+		t.Fatalf("app must not apply while db is not promoted, applied=%d", len(appTgt.applied))
+	}
+	found := false
+	for _, l := range logs {
+		if strings.Contains(l, "dependsOn") && strings.Contains(l, "demo/prod/db") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("skip must be logged, got %v", logs)
+	}
+}
+
+func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
+	cfg := func(name string) string {
+		return strings.ReplaceAll(repoConfigV1, "demo/prod/app", "demo/prod/"+name)
+	}
+	upA := makeRepo(t, cfg("east"))
+	upB := makeRepo(t, cfg("west"))
+	east := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	west := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "hint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+		switch tgt.Ref {
+		case "demo/prod/east":
+			return east, nil
+		case "demo/prod/west":
+			return west, nil
+		default:
+			return &fakeTarget{}, nil
+		}
+	})
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	id := 0
+	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks()}
+
+	srcA, err := git.Clone(context.Background(), "file://"+upA, "main", filepath.Join(t.TempDir(), "east"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcB, err := git.Clone(context.Background(), "file://"+upB, "main", filepath.Join(t.TempDir(), "west"), git.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.AddExisting(RepoSpec{
+		Name: "east", URL: "https://github.com/acme/east.git",
+		Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"},
+	}, srcA)
+	w.AddExisting(RepoSpec{
+		Name: "west", URL: "https://github.com/acme/west.git",
+		Ref: config.RepoRef{Path: "rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"},
+	}, srcB)
+
+	if out := w.TickHint(context.Background(), "acme/east"); len(out) != 1 || out[0].Repo != "east/rollops.yaml" {
+		t.Fatalf("matching hint should tick only east, got %+v", out)
+	}
+	if len(east.applied) != 1 {
+		t.Errorf("east applied=%d, want 1", len(east.applied))
+	}
+	if len(west.applied) != 0 {
+		t.Errorf("west must not tick for an east hint, applied=%d", len(west.applied))
+	}
+
+	if out := w.TickHint(context.Background(), "unknown/repo"); len(out) != 2 {
+		t.Fatalf("unknown hint should tick every watched repo, got %d: %+v", len(out), out)
+	}
+	if len(west.applied) != 1 {
+		t.Errorf("unknown hint should still tick west (bounded by watch list), applied=%d", len(west.applied))
+	}
+}
+
 func TestWatcher_PicksUpNewCommit(t *testing.T) {
 	upstream := makeRepo(t, repoConfigV1)
 	fake := &fakeTarget{}

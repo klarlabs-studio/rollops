@@ -584,3 +584,37 @@ images provably multi-arch and sharpened the contradiction.
 One thing this does not do: publish a multi-arch manifest. The release workflow still builds a
 single platform, so the fix makes an arm64 image *possible* rather than *published*. Adding
 buildx with a platform matrix to release.yml is its own change.
+
+## 2026-08-14 — Make it real is the near-roadmap
+
+Competitive review (end-to-end of v0.30.0) found the product is past MVP and
+under-positioned: library code the daemon never turns on, docs/UI claims the
+runtime does not keep, MCP off in dogfood, canary is a bake timer, Git trigger
+is poll-only. Canonical RFC: `docs/design/make-it-real.md`.
+
+- **Category is not "Argo but smaller."** GitOps for mixed infrastructure where
+  agents and humans share one audited engine. Kubernetes is a target. Stop when
+  the RFC done-when list is met; Jsonnet/app-of-apps/ApplicationSet matrix/host
+  agent/Postgres/studio billing/Istio are out of this program.
+- **Honesty before features.** Phase A wires analysis, Vault, persisted risk
+  score, persisted freeze, CLI/daemon policy parity, traffic fail-closed, and
+  the image-auto `current` invariant, then strikes remaining over-claims. Phase
+  B (agent runbook) must not start until that docs pass — otherwise we document
+  a product that still lies.
+- **Homegrown risk scorer stays.** decisionkit is a blank import scoring a
+  different shape (commitment/deadline). Use or drop the pin; do not label UI
+  scores "decisionkit" until a call exists. `Rollout.RiskScore` must actually
+  be written by Apply.
+- **Canary pause/resume is a stepper swap, not a button.** C1 landed:
+  Apply deploys once, starts a `Stepper`, persists snapshot, returns
+  `deploying` while a pause remains. `Tick` (reconcile) advances; crash
+  restores the snapshot. Lease is re-acquired per tick; occupancy between
+  ticks is the deploying/paused phase. C2 exposes pause/resume/abort.
+- **RolloutSet list generator is approved** (multi-cluster RFC Phase 1). Cluster
+  generator and matrix stay draft.
+- **#98 closes on an invariant**, not on reproducing the 18h stall: `current`
+  is only legal when scanner identity equals the Git pin.
+- **Feature-flag apply stays best-effort**; traffic `SetWeight` becomes
+  fail-closed. Different failure domains (app-layer vs whether the canary
+  actually shifted).
+

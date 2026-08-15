@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.klarlabs.de/rollops/internal/boot"
 	"go.klarlabs.de/rollops/internal/cli"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/governance"
@@ -75,14 +76,11 @@ func run(args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	// The in-process engine honors external governance too. Wiring it only into the
-	// daemon would leave `rollops apply` on a laptop as the way around the gate, and a
-	// gate you can walk around is not one.
-	var engOpts []engine.Option
-	if g := governance.FromEnv(os.Getenv); g != nil {
-		engOpts = append(engOpts, engine.WithGovernance(g))
+	opts, err := boot.Config{Getenv: os.Getenv, Store: db, Log: os.Stderr}.Options(context.Background())
+	if err != nil {
+		return err
 	}
-	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin(), engOpts...), Actor: app.Actor}
+	app.Ops = cli.EngineOps{Engine: engine.New(db, target.Builtin(), opts...), Actor: app.Actor}
 	return app.Run(context.Background(), args)
 }
 

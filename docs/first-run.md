@@ -85,3 +85,5 @@ sudo scripts/install-systemd.sh
 ```
 
 See `docs/deploy-systemd.md` for the full systemd checklist.
+
+To let a named agent operate through MCP, see `docs/agent-operator.md`.

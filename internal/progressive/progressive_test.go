@@ -44,7 +44,7 @@ func TestExecutor_OnStepReportsProgress(t *testing.T) {
 		Deploy: func(context.Context, int) error { return nil },
 		Health: func(context.Context) error { return nil },
 		Sleep:  func(time.Duration) {},
-		OnStep: func(i, total int, s Step) { calls = append(calls, call{i, total, s.Weight}) },
+		OnStep: func(i, total int, s Step) error { calls = append(calls, call{i, total, s.Weight}); return nil },
 	}
 	if err := exec.Run(context.Background(), PlanFor(config.Strategy{Type: "canary", Steps: []config.StrategyStep{{Weight: 10}, {Weight: 50}}})); err != nil {
 		t.Fatal(err)
@@ -104,5 +104,22 @@ func TestExecutor_DeployFailureAborts(t *testing.T) {
 	}
 	if err := exec.Run(context.Background(), PlanFor(config.Strategy{Type: "blue-green"})); err == nil {
 		t.Fatal("expected abort on deploy failure")
+	}
+}
+
+func TestExecutor_OnStepErrorAborts(t *testing.T) {
+	var deploys int
+	exec := Executor{
+		Deploy: func(context.Context, int) error { deploys++; return nil },
+		Health: func(context.Context) error { return nil },
+		Sleep:  func(time.Duration) {},
+		OnStep: func(int, int, Step) error { return errors.New("trafficrouter apply failed") },
+	}
+	err := exec.Run(context.Background(), PlanFor(config.Strategy{Type: "canary", Steps: []config.StrategyStep{{Weight: 10}, {Weight: 100}}}))
+	if err == nil {
+		t.Fatal("expected abort when OnStep fails")
+	}
+	if deploys != 1 {
+		t.Errorf("should abort after first step's OnStep; deploys=%d", deploys)
 	}
 }

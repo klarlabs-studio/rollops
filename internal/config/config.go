@@ -23,7 +23,8 @@ import (
 // rather than silently mis-parsed.
 const SchemaVersion = "rollops.klarlabs.de/v1"
 
-// Kind is the single document kind in v1.
+// Kind is the RolloutConfig document kind. KindRolloutSet is also accepted at
+// load time and expands into ordinary RolloutConfigs (see expandRolloutSet).
 const Kind = "RolloutConfig"
 
 // SchemaJSON is the published JSON Schema for the config surface, embedded so
@@ -189,6 +190,27 @@ type Strategy struct {
 type StrategyStep struct {
 	Weight int    `yaml:"weight,omitempty" json:"weight,omitempty"` // canary traffic percent
 	Pause  string `yaml:"pause,omitempty" json:"pause,omitempty"`   // duration between steps
+}
+
+// HonestStrategy names what this config will actually do when strategy.type
+// overclaims. Canary without trafficRouting and featureFlags is a health-gated
+// bake, not a traffic split. Blue-green without traffic routing is a full
+// cutover, not two-stack. Empty means the type name is already honest.
+func (c *Config) HonestStrategy() string {
+	if c == nil {
+		return ""
+	}
+	switch c.Spec.Strategy.Type {
+	case "canary":
+		if c.Spec.TrafficRouting == nil && c.Spec.FeatureFlags == nil {
+			return "canary — health-gated bake, not a traffic split"
+		}
+	case "blue-green":
+		if c.Spec.TrafficRouting == nil {
+			return "blue-green — full cutover, not two-stack blue-green"
+		}
+	}
+	return ""
 }
 
 // Risk configures the decision-kit gate. Sensitive is a CEL expression that,

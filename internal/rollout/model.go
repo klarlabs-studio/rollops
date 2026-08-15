@@ -112,8 +112,12 @@ type Rollout struct {
 	// config. Empty means no smoke test was configured. Mirrors the analysis
 	// capture above.
 	SmokeTest []byte
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// StepperSnap is opaque JSON of an in-flight canary machine (resolved plan,
+	// statekit snapshot, step entered-at). Empty when the rollout is not
+	// tick-driven — settled, awaiting approval, or predating the stepper.
+	StepperSnap []byte
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Identity is the immutable attribution of who initiated an action —

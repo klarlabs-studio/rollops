@@ -1,0 +1,8 @@
+# Opt-in agent:deploy. Layer onto bootstrap with ROLLOPS_POLICY_FILE.
+#
+# Default agent:* stays plan+status. This binds one named agent to the
+# built-in agent-deploy role (plan, apply, rollback, status, promote/verify).
+# Do not bind agent:* — that would let every MCP token deploy.
+bindings:
+  - subject: agent:nomi
+    roles: [agent-deploy]

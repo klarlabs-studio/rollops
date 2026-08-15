@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 367,
+  "version": 439,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -784,7 +784,7 @@
       "elapsed_minutes": 0
     },
     "task-manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "felixgeelhaar",
       "started_at": "2026-06-11T12:51:21.418341+02:00",
@@ -1088,6 +1088,14 @@
       "completed_at": "2026-06-09T21:13:34.749712+02:00",
       "elapsed_minutes": 0
     },
+    "task-per-repo-least-privilege-git-auth-(deploy-keys-/-github-app)-for-the-reconcile-watch": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-14T14:59:46.473784407Z",
+      "completed_at": "2026-08-14T14:59:46.487818756Z",
+      "elapsed_minutes": 0
+    },
     "task-per-target-advisory-locks-per-repo": {
       "status": "verified",
       "path": "",
@@ -1142,6 +1150,248 @@
       "started_at": "2026-06-09T21:13:35.90796+02:00",
       "completed_at": "2026-06-09T21:13:35.915513+02:00",
       "elapsed_minutes": 0
+    },
+    "task-real-cli-policy-parity": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "ec28ef21b77507589bb5f550027695f989a8e4c1"
+      ],
+      "started_at": "2026-08-14T15:20:53.760395464Z",
+      "completed_at": "2026-08-14T15:26:45.462302745Z",
+      "elapsed_minutes": 5
+    },
+    "task-real-dependson-wait": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "af9f8b1"
+      ],
+      "started_at": "2026-08-14T17:48:16.641052751Z",
+      "completed_at": "2026-08-14T17:54:53.382060687Z",
+      "elapsed_minutes": 6
+    },
+    "task-real-deploy-agent-rbac": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "7a29d06"
+      ],
+      "started_at": "2026-08-14T15:33:51.630522546Z",
+      "completed_at": "2026-08-14T15:35:30.165822825Z",
+      "elapsed_minutes": 1
+    },
+    "task-real-extract-engine-boot": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "f7166ca5dba407c60ba5f74b0b499480e75fcbb4"
+      ],
+      "started_at": "2026-08-14T15:02:25.002964502Z",
+      "completed_at": "2026-08-14T15:09:33.768512407Z",
+      "elapsed_minutes": 7
+    },
+    "task-real-grpc-tls-client": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "a33573b6f56186fa24787ec18a5a8ffce481888b"
+      ],
+      "started_at": "2026-08-14T15:27:31.716598156Z",
+      "completed_at": "2026-08-14T15:28:56.007922494Z",
+      "elapsed_minutes": 1
+    },
+    "task-real-honest-strategy-names": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "926a231"
+      ],
+      "started_at": "2026-08-14T17:28:20.491604007Z",
+      "completed_at": "2026-08-14T17:30:17.619360121Z",
+      "elapsed_minutes": 1
+    },
+    "task-real-honesty-docs": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "8b77e8e4cfa45411d562d1a4d83ded88eb562bce"
+      ],
+      "started_at": "2026-08-14T15:29:01.546681192Z",
+      "completed_at": "2026-08-14T15:32:12.673705041Z",
+      "elapsed_minutes": 3
+    },
+    "task-real-ignore-differences": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "bdddc8d"
+      ],
+      "started_at": "2026-08-14T17:48:16.625495521Z",
+      "completed_at": "2026-08-14T17:54:53.350055054Z",
+      "elapsed_minutes": 6
+    },
+    "task-real-imageauto-current-invariant": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "17f21f5eae54abf199856b340262e504787c2271"
+      ],
+      "started_at": "2026-08-14T15:20:53.8131534Z",
+      "completed_at": "2026-08-14T15:26:45.442853857Z",
+      "elapsed_minutes": 5
+    },
+    "task-real-mcp-observe-tools": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "2fff172"
+      ],
+      "started_at": "2026-08-14T15:33:51.657496746Z",
+      "completed_at": "2026-08-14T15:35:30.198978019Z",
+      "elapsed_minutes": 1
+    },
+    "task-real-mcp-runbook": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "b45f5032477f213714cdb60d142eb8c4fe13a0d8"
+      ],
+      "started_at": "2026-08-14T15:35:30.247506091Z",
+      "completed_at": "2026-08-14T15:36:12.638797883Z",
+      "elapsed_minutes": 0
+    },
+    "task-real-pause-resume-abort-api": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "5b909a3"
+      ],
+      "started_at": "2026-08-14T16:06:22.631360408Z",
+      "completed_at": "2026-08-14T16:20:57.409086936Z",
+      "elapsed_minutes": 14
+    },
+    "task-real-pause-resume-abort-ui": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "4e20903"
+      ],
+      "started_at": "2026-08-14T17:24:22.074154367Z",
+      "completed_at": "2026-08-14T17:25:46.701807752Z",
+      "elapsed_minutes": 1
+    },
+    "task-real-persist-freeze": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "f0d383ab96e6d4dd73f6fbd8379016f4f4a7acdd"
+      ],
+      "started_at": "2026-08-14T15:02:25.049754456Z",
+      "completed_at": "2026-08-14T15:09:33.747709725Z",
+      "elapsed_minutes": 7
+    },
+    "task-real-persist-risk-score": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "bb16ef65ea91470931428dc6ec4851278a3dcd75"
+      ],
+      "started_at": "2026-08-14T15:02:25.027187981Z",
+      "completed_at": "2026-08-14T15:09:33.787722172Z",
+      "elapsed_minutes": 7
+    },
+    "task-real-risk-inputs-from-callers": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "68d1e5517531e84b9940d77678fa1a0bf4d8e393"
+      ],
+      "started_at": "2026-08-14T15:10:27.034348101Z",
+      "completed_at": "2026-08-14T15:14:16.174875251Z",
+      "elapsed_minutes": 3
+    },
+    "task-real-rolloutset-list": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "6486923"
+      ],
+      "started_at": "2026-08-14T17:36:44.306819762Z",
+      "completed_at": "2026-08-14T17:48:16.590679Z",
+      "elapsed_minutes": 11
+    },
+    "task-real-stepper-tick": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "796d89b"
+      ],
+      "started_at": "2026-08-14T15:52:30.979275094Z",
+      "completed_at": "2026-08-14T16:05:30.041395309Z",
+      "elapsed_minutes": 12
+    },
+    "task-real-traffic-fail-closed": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "32f134c0699ca31f719317b99b28b401d98adefc"
+      ],
+      "started_at": "2026-08-14T15:20:53.786944892Z",
+      "completed_at": "2026-08-14T15:26:45.422588397Z",
+      "elapsed_minutes": 5
+    },
+    "task-real-webhook-listener": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "565ba0d"
+      ],
+      "started_at": "2026-08-14T17:36:44.28888657Z",
+      "completed_at": "2026-08-14T17:42:32.362160259Z",
+      "elapsed_minutes": 5
+    },
+    "task-real-wire-metric-analysis": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "11caff0a2de7b35b09189edd0df46c4ab81b0f01"
+      ],
+      "started_at": "2026-08-14T15:10:27.009849368Z",
+      "completed_at": "2026-08-14T15:14:16.157681855Z",
+      "elapsed_minutes": 3
+    },
+    "task-real-wire-vault": {
+      "status": "verified",
+      "path": "",
+      "owner": "cursor",
+      "evidence": [
+        "2d30a08cee1c568af1b326d98412c1dcf32aec35"
+      ],
+      "started_at": "2026-08-14T15:10:26.986797549Z",
+      "completed_at": "2026-08-14T15:14:16.139135087Z",
+      "elapsed_minutes": 3
     },
     "task-reconcile-loop-on-poll-tick-and": {
       "status": "verified",
@@ -1265,7 +1515,7 @@
       "elapsed_minutes": 0
     },
     "task-target-plugin-process-lifecycle-+-distribution": {
-      "status": "done",
+      "status": "verified",
       "path": "",
       "owner": "felixgeelhaar",
       "started_at": "2026-06-11T07:32:35.58245+02:00",
@@ -1306,5 +1556,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-06-11T13:50:08.152371+02:00"
+  "updated_at": "2026-08-14T17:54:53.398547255Z"
 }

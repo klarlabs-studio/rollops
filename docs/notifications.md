@@ -81,6 +81,10 @@ When `ROLLOPS_WEBHOOK_SECRET` is set, each request includes an
 `X-Rollops-Signature: sha256=<hex>` header — the HMAC-SHA256 of the raw
 body keyed with the secret. Verify it before trusting the payload.
 
+The same variable enables inbound GitHub webhooks (`POST /v1/hooks/github`,
+see `docs/git-auth.md`). A missing secret 404s that route; a bad signature
+is 401 and does not reconcile.
+
 ## Verifying a channel
 
 With the variables exported, run:

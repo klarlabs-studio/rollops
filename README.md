@@ -1,6 +1,6 @@
 # Rollops
 
-*Rollout operations for the agentic web* · **Umbrella:** Klarlatz · **Status:** MVP implementation
+*Rollout operations for the agentic web* · **Umbrella:** Klarlatz · **Status:** Dogfooded OSS
 
 A lightweight, infrastructure-agnostic rollout orchestration system — a leaner
 alternative to ArgoCD/Flux built so **agents, not just humans, are first-class
@@ -33,11 +33,11 @@ internal/
   engine        plan/apply/verify/promote/rollback/observe/schedule
   rollout       core runtime entities + statekit lifecycle
   reconcile     reconcile loop, drift detect/alert/reconcile
-  risk          decision-kit risk gate (observability-free + optional history)
+  risk          blast-radius risk gate (observability-free + optional history)
   target        target registry + first-party targets (k8s/ssh/ftp) + plugin
-  store         Store interface + sqlite (default) / postgres / mnemos
+  store         Store interface + sqlite (runtime state only)
   config        YAML + strict schema + CEL
-  git           webhook+poll triggers, per-repo multi-tenancy
+  git           poll + HMAC GitHub webhook (poll is the safety net)
   secrets       SecretProvider (vault integration; never local)
   audit         bolt audit log with secret redaction
   mcp           mcp-go server (tools 1:1 to engine ops)
@@ -54,20 +54,20 @@ pkg/conformance shared conformance suite (every target must pass)
 | Rollout lifecycle | statekit |
 | Step execution | axi-go |
 | Resilience (retry/CB/rate/bulkhead) | fortify |
-| Risk scoring | decision-kit |
+| Risk scoring | blast-radius gate (`internal/risk`) |
 | Audit / events | bolt |
-| Agent interface | mcp-go |
-| Bitemporal history (optional) | mnemos |
+| Agent interface | mcp-go (embedded in the daemon) |
 
 ## Status
 
-**P0 OSS core implemented** (37/37 planned tasks). Engine, risk gate, dependency
-DAG, SSH/FTP/Kubernetes targets + plugin seam, progressive delivery,
+**P0 OSS core implemented** and dogfooded. Engine, risk gate, dependency DAG,
+SSH/FTP/Kubernetes targets + plugin seam, progressive delivery,
 observability-free auto-rollback, secrets/audit/RBAC/guardrails/artifact
-verification, Git watch-loop, and the four product surfaces (CLI, HTTP/JSON +
-gRPC daemon, MCP, UI) are present. Metric-based analysis is a stable optional
-Phase 2 feature and is disabled unless explicitly enabled in engine wiring. See
-`memory/status.md` for the detailed map and remaining follow-ups.
+verification, Git poll watch-loop, and the four product surfaces (CLI, HTTP/JSON
++ gRPC daemon, embedded MCP, UI) are present. Metric-based analysis is a stable
+optional Phase 2 feature: set `ROLLOPS_ANALYSIS=1` to evaluate `spec.analysis`
+(default off). Runtime state is SQLite; there is no Postgres or mnemos Store
+backend. See `memory/status.md` for the detailed map and remaining follow-ups.
 
 ## Quickstart
 
@@ -90,7 +90,8 @@ make run-daemon
 #   POST /v1/plan /v1/apply /v1/rollback   (Authorization: Bearer <token>)
 #   GET  /ui                  (basic auth: ROLLOPS_UI_USER/PASSWORD)
 
-# CLI in daemon mode (same plan/apply/status/rollback commands, driven over gRPC):
+# CLI in daemon mode (same plan/apply/status/rollback commands, driven over gRPC).
+# Loopback is plaintext; set ROLLOPS_TLS_* to match a TLS daemon (docs/tls.md):
 ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops doctor
 ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops status <id>
 ```
@@ -123,6 +124,8 @@ sudo scripts/install-systemd.sh
 ```
 
 See `docs/deploy-systemd.md` for the unit, env file, and first-start checklist.
+See `docs/agent-operator.md` for the MCP dogfood path (`ROLLOPS_MCP_ADDR`, tokens
+file, opt-in `agent-deploy` grant, plan → apply → verify → rollback).
 See `docs/security-rbac.md` for the bootstrap roles and permission taxonomy.
 See `docs/tls.md` for native TLS 1.3 + mTLS (zero-trust transport, cert-manager, client certs).
 See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.

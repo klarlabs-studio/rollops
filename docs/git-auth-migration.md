@@ -48,7 +48,9 @@ Do this **twice**, once per org (`klarlabs-studio`, `felixgeelhaar`):
    - Permissions: **Repository → Contents: Read and write** (write is required —
      image automation commits digest/semver bumps back and pushes;
      `internal/reconcile/imageauto.go`). **Metadata: Read** (implicit).
-   - No webhook (the daemon **polls**; it does not receive webhooks for reconcile).
+   - No GitHub *App* webhook (clone/push uses installation tokens). Optional
+     *repository* webhooks can POST to `rollopsd` `POST /v1/hooks/github`
+     (HMAC via `ROLLOPS_WEBHOOK_SECRET`); poll remains the safety net.
    - Where can it be installed: *Only on this account*.
    - Generate a **private key** (PEM) — download once. Note the **App ID**.
 2. **Install the App** on its org, scoped to *Only select repositories* = the

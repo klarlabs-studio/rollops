@@ -1,7 +1,7 @@
 // Rollops web console — Vue 3 SPA in TypeScript over the JSON API. Every
 // response is validated with Zod (schemas.ts). Interactive, no page reloads:
 // drill into a target, explore the ArgoCD-style resource DAG (zoom/pan), run
-// approve/reject/rollback/sync, with live 4s polling.
+// approve/reject/pause/resume/abort/rollback/sync, with live 4s polling.
 import { createApp, defineComponent } from 'vue';
 import { stratify, tree, type HierarchyNode } from 'd3-hierarchy';
 import { linkHorizontal } from 'd3-shape';
@@ -48,7 +48,7 @@ interface ApplicationRow {
   sync: 'Synced' | 'OutOfSync';
   health: 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown';
   risk: 'Low' | 'Medium' | 'High';
-  riskScore: number; // real decisionkit score (0 when the risk gate is off)
+  riskScore: number; // blast-radius score from the risk gate (0 when ungated)
   desired: string;
   observed: string;
   rolloutID: string;
@@ -278,6 +278,15 @@ const App = defineComponent({
     promote(id: string): void {
       void this.act('/ui/api/promote', { id }, 'promoted').then(() => this.burst());
     },
+    pause(id: string): void {
+      void this.act('/ui/api/pause', { id }, 'paused').then(() => this.burst());
+    },
+    resume(id: string): void {
+      void this.act('/ui/api/resume', { id }, 'resumed').then(() => this.burst());
+    },
+    abort(id: string): void {
+      void this.act('/ui/api/abort', { id }, 'aborted').then(() => this.burst());
+    },
     rollback(t: string): void {
       this.confirmTarget = t;
       this.confirmForce = false;
@@ -378,7 +387,7 @@ const App = defineComponent({
       return i >= 0 ? by.slice(i + 1) : by;
     },
     riskOf(score: number): 'Low' | 'Medium' | 'High' {
-      // decisionkit blast-radius scale: approval threshold conventionally 0.5.
+      // Blast-radius scale: approval threshold is conventionally 0.5.
       return score < 0.34 ? 'Low' : score < 0.67 ? 'Medium' : 'High';
     },
     toggleFacet(f: string): void {
@@ -437,7 +446,7 @@ const App = defineComponent({
             : phase === 'promoted'
               ? 'Healthy'
               : 'Unknown';
-        // Real decisionkit score when the risk gate ran; situational heuristic
+        // Persisted blast-radius score when the risk gate ran; situational heuristic
         // (drift / degraded / in-flight) when ungated.
         const score = r?.risk ?? 0;
         const risk: ApplicationRow['risk'] =

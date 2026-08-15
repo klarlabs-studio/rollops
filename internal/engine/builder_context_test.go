@@ -44,9 +44,7 @@ func TestTheTrafficRouterBuilderReceivesTheCallersContext(t *testing.T) {
 	cfg.Spec.TrafficRouting = &config.TrafficRouting{Provider: "gateway"}
 
 	ctx := context.WithValue(context.Background(), marker, "yes")
-	// driveTraffic is best-effort and swallows builder failures, so the rollout outcome is
-	// irrelevant here — only what the builder was handed.
-	e.driveTraffic(ctx, "demo/prod/app", cfg.Spec.TrafficRouting, 50)
+	_ = e.driveTraffic(ctx, "demo/prod/app", cfg.Spec.TrafficRouting, 50)
 
 	if got == nil {
 		t.Fatal("the traffic-router builder was never called")
@@ -94,7 +92,9 @@ func TestACancelledRolloutIsVisibleToTheTrafficRouterBuilder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	e.driveTraffic(ctx, "demo/prod/app", &config.TrafficRouting{Provider: "gateway"}, 50)
+	if err := e.driveTraffic(ctx, "demo/prod/app", &config.TrafficRouting{Provider: "gateway"}, 50); err == nil {
+		t.Fatal("canceled driveTraffic must fail")
+	}
 
 	if seenErr == nil {
 		t.Error("the builder saw a live context after the caller cancelled: it would launch " +

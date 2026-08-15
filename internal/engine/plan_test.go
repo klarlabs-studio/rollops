@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.klarlabs.de/rollops/internal/config"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -59,5 +60,74 @@ func TestPlan_ActionUpdate(t *testing.T) {
 	}
 	if !strings.Contains(p.Summary, "update") || !strings.Contains(p.Summary, "→") {
 		t.Errorf("summary = %q", p.Summary)
+	}
+}
+
+func TestPlan_HonestStrategyNames(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	ctx := context.Background()
+
+	canary, err := config.Load([]byte(`
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: {x: 1}
+  strategy:
+    type: canary
+    steps:
+      - weight: 10
+        pause: 1s
+      - weight: 100
+`))
+	if err != nil {
+		t.Fatalf("load canary: %v", err)
+	}
+	p, err := e.Plan(ctx, canary)
+	if err != nil {
+		t.Fatalf("Plan canary: %v", err)
+	}
+	if !strings.Contains(p.Summary, "health-gated bake") {
+		t.Errorf("canary plan = %q, want health-gated bake", p.Summary)
+	}
+
+	bg, err := config.Load([]byte(`
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec: {x: 1}
+  strategy:
+    type: blue-green
+`))
+	if err != nil {
+		t.Fatalf("load blue-green: %v", err)
+	}
+	p, err = e.Plan(ctx, bg)
+	if err != nil {
+		t.Fatalf("Plan blue-green: %v", err)
+	}
+	if !strings.Contains(p.Summary, "full cutover") {
+		t.Errorf("blue-green plan = %q, want full cutover", p.Summary)
+	}
+
+	rolling := loadConfig(t)
+	p, err = e.Plan(ctx, rolling)
+	if err != nil {
+		t.Fatalf("Plan rolling: %v", err)
+	}
+	if strings.Contains(p.Summary, "health-gated bake") || strings.Contains(p.Summary, "full cutover") {
+		t.Errorf("rolling plan must not over-explain: %q", p.Summary)
 	}
 }

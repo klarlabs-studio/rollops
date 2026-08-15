@@ -13,7 +13,8 @@ type fakeCluster struct {
 	checksum string
 	applied  [][]byte
 	unready  bool
-	drift    bool // when true, Diff reports a non-empty diff (live ≠ desired)
+	drift    bool   // when true, Diff reports a non-empty diff (live ≠ desired)
+	liveYAML []byte // live object; LiveYAML returns this
 }
 
 func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string) error {
@@ -22,6 +23,7 @@ func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string)
 	return nil
 }
 func (c *fakeCluster) LiveChecksum(context.Context) (string, error) { return c.checksum, nil }
+func (c *fakeCluster) LiveYAML(context.Context) ([]byte, error)     { return c.liveYAML, nil }
 func (c *fakeCluster) Healthy(context.Context) (bool, string, error) {
 	if c.unready {
 		return false, "progressing", nil

@@ -98,9 +98,43 @@ func TestDefaultRBACPolicy_AgentIsPlanAndStatusOnly(t *testing.T) {
 	if !p.Can(agent, PermStatus, Scope{}) {
 		t.Error("agent should read status by default")
 	}
-	for _, perm := range []Permission{PermApply, PermRollback, PermApprove, PermSchedule, PermFreeze} {
+	for _, perm := range []Permission{PermApply, PermRollback, PermApprove, PermPromote, PermSchedule, PermFreeze} {
 		if p.Can(agent, perm, Scope{TargetRef: "svc/prod/api"}) {
 			t.Errorf("agent should not have %s by default", perm)
 		}
+	}
+}
+
+func TestDefaultRBACPolicy_AgentDeployIsOptIn(t *testing.T) {
+	p := DefaultRBACPolicy()
+	agent := rollout.Identity{Kind: "agent", Name: "nomi"}
+	if p.Can(agent, PermApply, Scope{}) {
+		t.Fatal("unbound agent-deploy must not widen agent:*")
+	}
+	p.Bind("agent:nomi", RoleAgentDeploy)
+	for _, perm := range []Permission{PermPlan, PermApply, PermRollback, PermStatus, PermPromote} {
+		if !p.Can(agent, perm, Scope{TargetRef: "svc/prod/api"}) {
+			t.Errorf("agent-deploy should grant %s", perm)
+		}
+	}
+	for _, perm := range []Permission{PermApprove, PermFreeze, PermSchedule} {
+		if p.Can(agent, perm, Scope{}) {
+			t.Errorf("agent-deploy must not grant %s", perm)
+		}
+	}
+}
+
+func TestApplyPolicyFile_BindsBuiltInAgentDeploy(t *testing.T) {
+	p := DefaultRBACPolicy()
+	doc := []byte("bindings:\n  - subject: agent:nomi\n    roles: [agent-deploy]\n")
+	if err := ApplyPolicyFile(p, doc); err != nil {
+		t.Fatal(err)
+	}
+	agent := rollout.Identity{Kind: "agent", Name: "nomi"}
+	if !p.Can(agent, PermApply, Scope{}) {
+		t.Error("policy file should bind the built-in agent-deploy role")
+	}
+	if p.Can(agent, PermApprove, Scope{}) {
+		t.Error("agent-deploy must still not approve")
 	}
 }

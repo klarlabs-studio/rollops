@@ -699,3 +699,44 @@ func TestImageAuto_StatusShowsResolvedDifferingFromPinned(t *testing.T) {
 		t.Errorf("resolved/pinned = %q/%q, want sha256:newer/sha256:old", status.Resolved, status.Pinned)
 	}
 }
+
+// #98: current is only legal when scanner identity equals the Git pin.
+// Scanner digest B + file pin A + patch reporting no change is an error, never current.
+func TestImageAuto_ScannerMovedPatchUnchangedIsError(t *testing.T) {
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest@sha256:old", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true", 1)
+
+	src := newGitRepo(t, cfgYAML)
+	already := strings.Replace(cfgYAML, "sha256:old", "sha256:newer", 1)
+	if err := os.WriteFile(filepath.Join(src.Dir(), "apps/web.yaml"), []byte(already), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ref, status, err := ImageAuto{Scanner: fakeDigest("sha256:newer")}.
+		Process(context.Background(), src, config.NamedConfig{Path: "apps/web.yaml", Config: cfg})
+	if err == nil {
+		t.Fatal("scanner B, Git pin A, patch unchanged must error")
+	}
+	if ref != "" {
+		t.Errorf("must not deploy, got ref=%q", ref)
+	}
+	if status.Outcome == ImageOutcomeCurrent {
+		t.Error("#98: current is illegal when scanner identity != Git pin")
+	}
+	if status.Outcome != ImageOutcomeError {
+		t.Errorf("outcome = %q, want error", status.Outcome)
+	}
+}
+
+func TestRequireCurrentIdentities(t *testing.T) {
+	if err := requireCurrentIdentities(ImageStatus{Resolved: "sha256:a", Pinned: "sha256:a"}); err != nil {
+		t.Fatalf("matching identities: %v", err)
+	}
+	if err := requireCurrentIdentities(ImageStatus{Resolved: "sha256:b", Pinned: "sha256:a"}); err == nil {
+		t.Fatal("mismatch must error")
+	}
+}

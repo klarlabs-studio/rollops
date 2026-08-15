@@ -85,3 +85,32 @@ func (c Chain) Resolve(ctx context.Context, ref string) (Secret, error) {
 	}
 	return Secret{}, last
 }
+
+// FromEnv builds the production secret chain. Unset VAULT_ADDR leaves Env-only
+// behaviour unchanged. When VAULT_ADDR is set, Vault is tried first and Env is
+// the fallback. The token is VAULT_TOKEN, or the contents of VAULT_TOKEN_FILE;
+// neither is logged here — callers must not print the provider.
+func FromEnv(getenv func(string) string) (Provider, error) {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	env := EnvProvider{Prefix: "ROLLOPS_SECRET_"}
+	addr := strings.TrimSpace(getenv("VAULT_ADDR"))
+	if addr == "" {
+		return env, nil
+	}
+	token := strings.TrimSpace(getenv("VAULT_TOKEN"))
+	if token == "" {
+		if path := strings.TrimSpace(getenv("VAULT_TOKEN_FILE")); path != "" {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("secrets: read VAULT_TOKEN_FILE: %w", err)
+			}
+			token = strings.TrimSpace(string(b))
+		}
+	}
+	return Chain{Providers: []Provider{
+		VaultProvider{Addr: addr, Token: token},
+		env,
+	}}, nil
+}

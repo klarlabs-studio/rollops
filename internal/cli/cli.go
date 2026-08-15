@@ -33,6 +33,9 @@ type Operations interface {
 	Verify(ctx context.Context, id string) (engine.VerifyReport, error)
 	Approve(ctx context.Context, id string) (rollout.Rollout, error)
 	Reject(ctx context.Context, id string) (rollout.Rollout, error)
+	Pause(ctx context.Context, id string) (rollout.Rollout, error)
+	Resume(ctx context.Context, id string) (rollout.Rollout, error)
+	Abort(ctx context.Context, id string) (rollout.Rollout, error)
 	RollbackLast(ctx context.Context, targetRef string, force bool) (rollout.Rollout, error)
 	Freeze(ctx context.Context, on bool, reason string) (bool, string, error)
 }
@@ -60,6 +63,21 @@ func (o EngineOps) Approve(ctx context.Context, id string) (rollout.Rollout, err
 // Reject rejects a rollout, attributed to the local actor.
 func (o EngineOps) Reject(ctx context.Context, id string) (rollout.Rollout, error) {
 	return o.Engine.Reject(ctx, id, o.Actor)
+}
+
+// Pause holds an in-flight canary, attributed to the local actor.
+func (o EngineOps) Pause(ctx context.Context, id string) (rollout.Rollout, error) {
+	return o.Engine.Pause(ctx, id, o.Actor)
+}
+
+// Resume continues an operator-paused canary, attributed to the local actor.
+func (o EngineOps) Resume(ctx context.Context, id string) (rollout.Rollout, error) {
+	return o.Engine.Resume(ctx, id, o.Actor)
+}
+
+// Abort stops an in-flight canary and rolls it back, attributed to the local actor.
+func (o EngineOps) Abort(ctx context.Context, id string) (rollout.Rollout, error) {
+	return o.Engine.Abort(ctx, id, o.Actor)
 }
 
 // Freeze toggles the emergency kill-switch, attributed to the local actor.
@@ -159,6 +177,12 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.approve(ctx, rest)
 	case "reject":
 		return a.reject(ctx, rest)
+	case "pause":
+		return a.pause(ctx, rest)
+	case "resume":
+		return a.resume(ctx, rest)
+	case "abort":
+		return a.abort(ctx, rest)
 	case "rollback":
 		return a.rollback(ctx, rest)
 	case "freeze":
@@ -174,7 +198,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		return a.usage()
 	default:
-		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, approve, reject, rollback, freeze, unfreeze, doctor, plugin, version)", cmd)
+		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, pause, resume, abort, approve, reject, rollback, freeze, unfreeze, doctor, plugin, version)", cmd)
 	}
 }
 
@@ -207,7 +231,7 @@ func (a *App) apply(ctx context.Context, args []string) error {
 	if _, err := a.Ops.Plan(ctx, c); err != nil {
 		return err
 	}
-	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true})
+	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
 		return err
 	}
@@ -292,6 +316,30 @@ func (a *App) verify(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (a *App) pause(ctx context.Context, args []string) error {
+	return a.rolloutIDCmd(ctx, args, "pause", a.Ops.Pause)
+}
+
+func (a *App) resume(ctx context.Context, args []string) error {
+	return a.rolloutIDCmd(ctx, args, "resume", a.Ops.Resume)
+}
+
+func (a *App) abort(ctx context.Context, args []string) error {
+	return a.rolloutIDCmd(ctx, args, "abort", a.Ops.Abort)
+}
+
+func (a *App) rolloutIDCmd(ctx context.Context, args []string, name string, op func(context.Context, string) (rollout.Rollout, error)) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s: rollout id required", name)
+	}
+	r, err := op(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s\n", r.ID, r.Phase)
+	return nil
+}
+
 func (a *App) approve(ctx context.Context, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("approve: rollout id required")
@@ -366,6 +414,9 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		} else {
 			cfg = c
 			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
+			if note := cfg.HonestStrategy(); note != "" {
+				_, _ = fmt.Fprintf(a.Out, "strategy: %s\n", note)
+			}
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
@@ -477,7 +528,7 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 

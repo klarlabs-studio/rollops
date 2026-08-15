@@ -31,6 +31,9 @@ type Cluster interface {
 	// LiveChecksum reads the recorded checksum from the live cluster (empty if
 	// the resource is absent or unmanaged).
 	LiveChecksum(ctx context.Context) (string, error)
+	// LiveYAML is the live object as YAML (empty if absent). Used with
+	// ignoreDifferences so ignored field drift is not reported.
+	LiveYAML(ctx context.Context) ([]byte, error)
 	// Healthy reports rollout readiness.
 	Healthy(ctx context.Context) (bool, string, error)
 	// Diff returns the difference between the manifest and live state.
@@ -42,8 +45,9 @@ type Cluster interface {
 // Target deploys to a Kubernetes cluster through a Cluster. It renders the
 // desired manifest from raw YAML, a Helm chart, or a Kustomize overlay.
 type Target struct {
-	cl  Cluster
-	run cmdRunner // helm/kubectl renderer; injectable for tests
+	cl     Cluster
+	run    cmdRunner // helm/kubectl renderer; injectable for tests
+	ignore []string  // json-pointers / field paths ignored in Observe/Diff
 }
 
 // New constructs the real kubectl-backed target from config, applying the
@@ -64,7 +68,7 @@ func newTarget(cfg config.Target, conf security.Confinement) (pt.Target, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &Target{cl: cl, run: execRunner}, nil
+	return &Target{cl: cl, run: execRunner, ignore: parseIgnore(s)}, nil
 }
 
 func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
@@ -94,6 +98,8 @@ func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
 }
 
 // Observe reads the live checksum annotation — the rich drift signal.
+// ignoreDifferences does not change the stamp; it filters the live Diff used
+// for detect/full verification and Apply's no-op check.
 func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
 	cur, err := t.cl.LiveChecksum(ctx)
 	if err != nil {
@@ -103,10 +109,21 @@ func (t *Target) Observe(ctx context.Context) (pt.Fingerprint, error) {
 }
 
 // Diff implements target.Differ: the diff between desired and live cluster state.
+// Fields listed in spec.ignoreDifferences are stripped before the emptiness
+// check so HPA replicas and similar controller writes are not drift. Apply
+// stays kubectl apply; this only changes whether a diff counts.
 func (t *Target) Diff(ctx context.Context, desired pt.Manifest) (string, error) {
 	manifest, err := desiredManifest(ctx, desired, t.run)
 	if err != nil {
 		return "", err
+	}
+	if len(t.ignore) > 0 {
+		if live, lerr := t.cl.LiveYAML(ctx); lerr == nil && strings.TrimSpace(string(live)) != "" {
+			same, serr := equivalentIgnoring(live, manifest, t.ignore)
+			if serr == nil && same {
+				return "", nil
+			}
+		}
 	}
 	return t.cl.Diff(ctx, manifest)
 }
