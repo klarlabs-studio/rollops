@@ -197,6 +197,8 @@ func waitReady(t *testing.T, addr string) {
 }
 
 // postProbe POSTs a tools/call for the probe tool, with an optional bearer token.
+// mcp v1.26+ ServeHTTP defaults to Streamable HTTP (stateless): Mcp-Method is
+// required on POST /mcp.
 func postProbe(t *testing.T, addr, token string) (int, string) {
 	t.Helper()
 	const body = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"probe","arguments":{}}}`
@@ -205,6 +207,8 @@ func postProbe(t *testing.T, addr, token string) (int, string) {
 		t.Fatalf("build request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Method", "tools/call")
+	req.Header.Set("MCP-Protocol-Version", "2025-11-25")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

@@ -15,7 +15,7 @@
 # Index digests, not per-architecture ones: both resolve to a manifest list covering amd64 and
 # arm64, so this does not quietly restrict where the image can be built.
 # golang:1.26-alpine
-FROM golang@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+FROM golang@sha256:70b46548e42db77e0966aaf3619fd068734dc6c77584d526b91126504fd95816 AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/rollopsd ./cmd/rollopsd
 
 # alpine:3.20
-FROM alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 # Supplied by BuildKit for the platform being built. Declared here because ARG scope is
 # per-stage: without this line TARGETARCH is empty in this stage and the kubectl download
 # below would silently build a URL with a missing path segment.
@@ -78,9 +78,9 @@ LABEL maintainer="klarlabs-studio"
 #
 # To bump: set the version and both checksums, from
 # https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256
-ARG KUBECTL_VERSION=v1.31.0
-ARG KUBECTL_SHA256_AMD64=7c27adc64a84d1c0cc3dcf7bf4b6e916cc00f3f576a2dbac51b318d926032437
-ARG KUBECTL_SHA256_ARM64=f42832db7d77897514639c6df38214a6d8ae1262ee34943364ec1ffaee6c009c
+ARG KUBECTL_VERSION=v1.31.14
+ARG KUBECTL_SHA256_AMD64=8791ec7c8966b61420d55103a5fb948de9f0ca3d7306d789734975ad9704bdb0
+ARG KUBECTL_SHA256_ARM64=3abb0c2d7121e1833831f56fd857a93de386e76d14b64baf86220d0afe495209
 RUN apk add --no-cache ca-certificates curl git \
  && case "${TARGETARCH}" in \
       amd64) KUBECTL_SHA256="${KUBECTL_SHA256_AMD64}" ;; \
