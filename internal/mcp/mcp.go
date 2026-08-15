@@ -1,7 +1,7 @@
 // Package mcp is the agent surface: an MCP server (mcp-go) exposing the engine
 // operations 1:1 as tools — rollouts.plan, rollouts.apply, rollouts.status,
-// rollouts.list, rollouts.history, rollouts.drift, rollouts.rollback,
-// rollouts.pause, rollouts.resume, rollouts.abort. It is
+// rollouts.list, rollouts.history, rollouts.drift, rollouts.fleet,
+// rollouts.rollback, rollouts.pause, rollouts.resume, rollouts.abort. It is
 // embedded in the daemon; there is no standalone MCP binary. The agent endpoint
 // can deploy, so it is privileged: every tool authorizes through the same RBAC
 // policy as the other interfaces, against the identity the MCP connection
@@ -271,6 +271,53 @@ func (t *Tools) Drift(ctx context.Context, _ DriftInput) (DriftOutput, error) {
 	return DriftOutput{Items: out}, nil
 }
 
+// FleetInput is the input to rollouts.fleet.
+type FleetInput struct {
+	Filter string `json:"filter" jsonschema:"RolloutSet-style set name (web) or prefix (web@)"`
+}
+
+// FleetMemberOut is one target's latest phase in a fleet rollup.
+type FleetMemberOut struct {
+	ID     string `json:"id"`
+	Target string `json:"target"`
+	Phase  string `json:"phase"`
+}
+
+// FleetOutput is the result of rollouts.fleet.
+type FleetOutput struct {
+	Name     string           `json:"name"`
+	Total    int              `json:"total"`
+	Promoted int              `json:"promoted"`
+	Active   int              `json:"active"`
+	Degraded int              `json:"degraded"`
+	Awaiting int              `json:"awaiting"`
+	Members  []FleetMemberOut `json:"members"`
+}
+
+// Fleet implements rollouts.fleet. Authorized as status.
+func (t *Tools) Fleet(ctx context.Context, in FleetInput) (FleetOutput, error) {
+	id, err := t.caller(ctx)
+	if err != nil {
+		return FleetOutput{}, err
+	}
+	if err := t.policy.Authorize(id, security.PermStatus, security.Scope{}); err != nil {
+		return FleetOutput{}, err
+	}
+	rep, err := t.eng.FleetStatus(ctx, in.Filter)
+	if err != nil {
+		return FleetOutput{}, err
+	}
+	members := make([]FleetMemberOut, 0, len(rep.Members))
+	for _, m := range rep.Members {
+		members = append(members, FleetMemberOut{ID: m.ID, Target: m.Target, Phase: string(m.Phase)})
+	}
+	return FleetOutput{
+		Name: rep.Name, Total: rep.Total, Promoted: rep.Promoted,
+		Active: rep.Active, Degraded: rep.Degraded, Awaiting: rep.Awaiting,
+		Members: members,
+	}, nil
+}
+
 // Rollback implements rollouts.rollback.
 func (t *Tools) Rollback(ctx context.Context, in RollbackInput) (RollbackOutput, error) {
 	id, err := t.caller(ctx)
@@ -483,4 +530,5 @@ func Register(srv *mcpserver.Server, t *Tools) {
 	srv.Tool("rollouts.list").Description("List recent rollouts, newest first").Handler(t.List)
 	srv.Tool("rollouts.history").Description("Read rollout history for a target").Handler(t.History)
 	srv.Tool("rollouts.drift").Description("Report desired-vs-observed drift for every target").Handler(t.Drift)
+	srv.Tool("rollouts.fleet").Description("Aggregate latest phases for a RolloutSet-style prefix (e.g. web or web@)").Handler(t.Fleet)
 }

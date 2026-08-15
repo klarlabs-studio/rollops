@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 452,
+  "version": 461,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -618,6 +618,17 @@
       "completed_at": "2026-06-09T21:13:34.885736+02:00",
       "elapsed_minutes": 0
     },
+    "task-engine-fleet-rollup": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "fd666e8 already shipped on cursor/fleet-status-30c0"
+      ],
+      "started_at": "2026-08-15T08:51:19.909535193Z",
+      "completed_at": "2026-08-15T08:51:19.922519814Z",
+      "elapsed_minutes": 0
+    },
     "task-execute-steps-through-axi-go-with": {
       "status": "verified",
       "path": "",
@@ -650,6 +661,17 @@
       "started_at": "2026-08-15T08:43:30.629933102Z",
       "completed_at": "2026-08-15T08:46:53.389829217Z",
       "elapsed_minutes": 3
+    },
+    "task-fleet-surfaces": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "fd666e8 gRPC/CLI/HTTP FleetStatus already on fleet-status branch"
+      ],
+      "started_at": "2026-08-15T08:51:28.438627553Z",
+      "completed_at": "2026-08-15T08:51:28.451827111Z",
+      "elapsed_minutes": 0
     },
     "task-ftp-target-with-stamped-manifest-drift": {
       "status": "verified",
@@ -822,6 +844,13 @@
       ],
       "started_at": "2026-06-09T21:13:35.282923+02:00",
       "completed_at": "2026-06-09T21:13:35.289962+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-mcp-rollouts-fleet": {
+      "status": "in_progress",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T08:51:15.563064333Z",
       "elapsed_minutes": 0
     },
     "task-mcp-tools-mapping-1-1-to": {
@@ -1589,5 +1618,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:46:53.407618112Z"
+  "updated_at": "2026-08-15T08:51:28.47060541Z"
 }

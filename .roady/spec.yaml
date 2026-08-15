@@ -817,13 +817,24 @@ features:
           title: Engine FleetRollup aggregates latest phases by prefix
           description: FleetRollup(filter) takes latest rollout per TargetRef matching filter (exact set name before @, or prefix with optional trailing @). Counts promoted/active/degraded/awaiting. No store schema change.
           priority: high
+          estimate: ""
           depends_on: []
         - id: fleet-surfaces
           title: Fleet status on gRPC CLI and HTTP
           description: Expose FleetStatus RPC (auth as status), rollops fleet CLI command, GET /v1/fleet?prefix=. Document in multi-cluster.md. Matrix/git out of scope.
           priority: high
+          estimate: ""
           depends_on:
             - engine-fleet-rollup
+    - id: mcp-fleet-status
+      title: MCP fleet status
+      description: Agent parity for multi-cluster Phase 3a. MCP tool rollouts.fleet wraps engine.FleetStatus with status auth. Docs in multi-cluster and agent-operator. No new permission.
+      requirements:
+        - id: mcp-rollouts-fleet
+          title: MCP rollouts.fleet wraps FleetStatus
+          description: Tool rollouts.fleet takes filter/prefix, authorizes as status, returns FleetReport shape. Documented next to list/history/drift. Sync promote into security-rbac permissions table.
+          priority: high
+          depends_on: []
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.

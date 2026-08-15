@@ -82,3 +82,9 @@ by choice.
 Multi-cluster RFC Phase 3a (lean). Aggregate latest-per-target rollout phases for a RolloutSet-style prefix (web@ → web: 9/10 promoted). Engine FleetRollup + gRPC/CLI/HTTP. No store schema change. Matrix/git generators and promotion waves remain out of scope (TDD forbids ApplicationSet matrix).
 
 ---
+
+## MCP fleet status
+
+Agent parity for multi-cluster Phase 3a. MCP tool rollouts.fleet wraps engine.FleetStatus with status auth. Docs in multi-cluster and agent-operator. No new permission.
+
+---

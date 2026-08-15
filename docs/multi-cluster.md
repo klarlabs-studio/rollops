@@ -128,9 +128,10 @@ rollops fleet web          # or: web@
 #   web@east	promoted	ro-…
 ```
 
-Same data over HTTP (`GET /v1/fleet?prefix=web`) and gRPC `FleetStatus`.
-Authorized as `status`. The denominator is store-observed targets only —
-clusters that have never applied are invisible until first reconcile.
+Same data over HTTP (`GET /v1/fleet?prefix=web`), gRPC `FleetStatus`, and MCP
+`rollouts.fleet` (authorized as `status`). The denominator is store-observed
+targets only — clusters that have never applied are invisible until first
+reconcile.
 
 Matrix/`git` generators and multi-daemon Studio fleet dashboards remain out of
 scope. This is one daemon’s prefix rollup, not a control plane.

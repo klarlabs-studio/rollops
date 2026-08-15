@@ -68,7 +68,9 @@ plans first.
 
 1. **`rollouts.plan`** — YAML in, summary out. Required before apply.
 2. **`rollouts.status`** / **`rollouts.list`** / **`rollouts.history`** /
-   **`rollouts.drift`** — inspect. `agent:*` can do this without the deploy grant.
+   **`rollouts.drift`** / **`rollouts.fleet`** — inspect. `agent:*` can do this
+   without the deploy grant. `fleet` takes a RolloutSet-style prefix (`web` /
+   `web@`) and returns promoted/active/degraded counts.
 3. **`rollouts.apply`** — deploys. Needs `agent-deploy` (or a narrower grant).
    Pause/resume/abort an in-flight canary use this same grant (`rollouts.pause` /
    `rollouts.resume` / `rollouts.abort`).
