@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -44,6 +45,63 @@ spec:
 	}
 	if !p.NeedsApproval {
 		t.Fatal("critical+prod+blue-green should need approval at threshold 0.5")
+	}
+	if p.RiskReason == "" {
+		t.Fatal("RiskReason should explain the gate")
+	}
+}
+
+func TestPlan_RecentFailuresFromHistory(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	ctx := context.Background()
+	c, err := config.Load([]byte(`
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: api
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/api
+    criticality: low
+    env: dev
+    spec:
+      x: 1
+  strategy:
+    type: rolling
+  risk:
+    threshold: 0.99
+    sensitive: 'recentFailures >= 1'
+    history:
+      lookback: 5
+      weight: 0.2
+      maxFailures: 3
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := e.Plan(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.RecentFailures != 0 || before.NeedsApproval {
+		t.Fatalf("no history: failures=%d need=%v", before.RecentFailures, before.NeedsApproval)
+	}
+	if err := db.SaveRollout(ctx, rollout.Rollout{
+		ID: "prior-rb", TargetRef: c.Spec.Target.Ref, Phase: rollout.PhaseRolledBack,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := e.Plan(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RecentFailures < 1 || !after.NeedsApproval || !after.Sensitive {
+		t.Fatalf("after rollback history: %+v", after)
+	}
+	if after.RiskReason == "" {
+		t.Fatal("expected RiskReason")
 	}
 }
 
