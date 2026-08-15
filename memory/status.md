@@ -4,17 +4,12 @@
 
 ## Current State
 
-Rollops is cutting **v0.31.0** (Make it real + multi-cluster Phase 2–3c). Tree
-includes #135–#140 on `main`; release branch pins deploy to `v0.31.0` and
-updates CHANGELOG. Cluster still on older pin until operator rolls after the
-ghcr image exists. Matrix/git generators stay out.
+Rollops is **released at v0.31.0**. Next program: **agent loop as product**
+(`docs/design/agent-loop-product.md`) — risk on plan/status for agents, public
+Claude/Cursor MCP path, cosign documented as agent-grade, hetero SSH+K8s
+examples. Roady 157/157.
 
-**Merged this cut:** #135 make-it-real · #136 clusters · #137 fleet · #138 MCP
-fleet · #139 plan/doctor/apply · #140 deploy pin to v0.30.0 (superseded by
-v0.31.0 pin on this release).
-
-**Operator after tag:** rotate `k3s-ghcr-pull` before 2026-08-29; roll cluster
-to `v0.31.0` when image is up.
+Matrix/git generators stay out. Rotate `k3s-ghcr-pull` before 2026-08-29.
 
 ---
 

@@ -1,5 +1,21 @@
 # Roadmap — Rollops
 
+## Current near roadmap — Agent loop as product
+
+Approved 2026-08-15. Canonical RFC: `docs/design/agent-loop-product.md`.
+Roady features: `agent-risk-surface` → `agent-loop-publish` →
+`agent-provenance-path` → `agent-hetero-demo`.
+
+- [x] Plan attaches risk; MCP/HTTP/gRPC/CLI expose score / needs_approval
+- [x] Status/apply carry risk_score (+ actor on status)
+- [x] Agent-operator is the Claude/Cursor public loop; examples/agent-loop
+- [x] Cosign documented as agent-grade opt-in
+- [x] examples/hetero SSH + Kubernetes
+
+**Executed 2026-08-15.** Stop. No matrix/git chase.
+
+---
+
 ## Current near roadmap — Make it real
 
 Approved 2026-08-14. Canonical RFC: `docs/design/make-it-real.md`.

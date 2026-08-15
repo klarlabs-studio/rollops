@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 470,
+  "version": 492,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -409,6 +409,14 @@
       "completed_at": "2026-06-08T21:32:23.526317+02:00",
       "elapsed_minutes": 3
     },
+    "task-agent-cosign-docs": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:14:29.127828745Z",
+      "completed_at": "2026-08-15T12:14:29.139613624Z",
+      "elapsed_minutes": 0
+    },
     "task-agent-driven-apply-requires-the-plan": {
       "status": "verified",
       "path": "",
@@ -418,6 +426,22 @@
       ],
       "started_at": "2026-06-09T21:13:34.979297+02:00",
       "completed_at": "2026-06-09T21:13:34.985869+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-agent-loop-examples-readme": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:14:29.083208366Z",
+      "completed_at": "2026-08-15T12:14:29.095798206Z",
+      "elapsed_minutes": 0
+    },
+    "task-agent-operator-full-loop": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:14:29.039963747Z",
+      "completed_at": "2026-08-15T12:14:29.052402024Z",
       "elapsed_minutes": 0
     },
     "task-artifact-signature-provenance-verification-cosign-slsa": {
@@ -760,6 +784,14 @@
       "started_at": "2026-06-09T21:13:36.02931+02:00",
       "completed_at": "2026-06-09T21:13:36.037119+02:00",
       "elapsed_minutes": 0
+    },
+    "task-hetero-examples": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:12:17.403108649Z",
+      "completed_at": "2026-08-15T12:14:29.169172746Z",
+      "elapsed_minutes": 2
     },
     "task-immutable-identity-attribution-for-every-action": {
       "status": "verified",
@@ -1184,6 +1216,14 @@
       "completed_at": "2026-06-09T21:13:35.378775+02:00",
       "elapsed_minutes": 0
     },
+    "task-plan-attaches-risk": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:11:50.345089154Z",
+      "completed_at": "2026-08-15T12:12:17.341731128Z",
+      "elapsed_minutes": 0
+    },
     "task-plan-diff-computed-and-surfaced-before": {
       "status": "verified",
       "path": "",
@@ -1204,6 +1244,14 @@
       ],
       "started_at": "2026-08-15T09:27:25.957539705Z",
       "completed_at": "2026-08-15T09:29:26.89788048Z",
+      "elapsed_minutes": 2
+    },
+    "task-plan-risk-all-surfaces": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:12:17.374243569Z",
+      "completed_at": "2026-08-15T12:14:28.977508532Z",
       "elapsed_minutes": 2
     },
     "task-prometheus-metrics-for-reconcile-latency-drift": {
@@ -1591,6 +1639,14 @@
       "completed_at": "2026-06-09T21:13:35.51499+02:00",
       "elapsed_minutes": 0
     },
+    "task-status-apply-risk-fields": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T12:12:17.3888338Z",
+      "completed_at": "2026-08-15T12:14:29.009439019Z",
+      "elapsed_minutes": 2
+    },
     "task-store-interface-done-in-scaffold": {
       "status": "verified",
       "path": "",
@@ -1644,5 +1700,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T09:29:26.916173223Z"
+  "updated_at": "2026-08-15T12:14:29.185816588Z"
 }

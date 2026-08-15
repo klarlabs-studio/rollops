@@ -1363,6 +1363,112 @@
         }
       ],
       "source": {}
+    },
+    {
+      "id": "agent-risk-surface",
+      "title": "Agent loop — risk on the agent surface",
+      "description": "Agents must see risk before apply. Engine.Plan attaches EvaluateRisk when spec.risk is configured; MCP/HTTP/gRPC/CLI expose score, needs_approval, sensitive; status/apply carry risk_score. Canonical RFC docs/design/agent-loop-product.md Phase A.",
+      "requirements": [
+        {
+          "id": "plan-attaches-risk",
+          "title": "Engine.Plan attaches risk decision when configured",
+          "description": "When threshold\u003e0 or sensitive expr set, Plan calls EvaluateRisk with RiskFromConfig (history when risk.history set). Fields RiskScore, NeedsApproval, Sensitive on Plan; zero/false when risk unconfigured. Table tests.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [],
+          "source": {}
+        },
+        {
+          "id": "plan-risk-all-surfaces",
+          "title": "Plan risk on MCP HTTP gRPC CLI",
+          "description": "Plan responses expose risk_score, needs_approval, sensitive. Proto fields on PlanResponse. CLI prints them. Tests per surface.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "plan-attaches-risk"
+          ],
+          "source": {}
+        },
+        {
+          "id": "status-apply-risk-fields",
+          "title": "Status and apply expose risk_score",
+          "description": "MCP/HTTP/gRPC status and apply responses include risk_score from the rollout; status includes actor_kind/actor_name when set. Proto StatusResponse/ApplyResponse fields as needed.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "plan-attaches-risk"
+          ],
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "agent-loop-publish",
+      "title": "Agent loop — publish the reproducible path",
+      "description": "Expand agent-operator into the public Claude/Cursor MCP dogfood path (client JSON, risk escalate, canary, history attribution). README hero link. examples/agent-loop snippets without secrets. RFC Phase B.",
+      "requirements": [
+        {
+          "id": "agent-operator-full-loop",
+          "title": "Agent-operator documents Claude Cursor full loop",
+          "description": "docs/agent-operator.md covers MCP client config for Cursor and Claude Desktop, plan then risk escalate, apply, canary pause/abort, history attribution, links to risk-history TLS cosign.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "plan-risk-all-surfaces",
+            "status-apply-risk-fields"
+          ],
+          "source": {}
+        },
+        {
+          "id": "agent-loop-examples-readme",
+          "title": "examples/agent-loop and README USP link",
+          "description": "examples/agent-loop holds tokens/policy/client snippets (placeholders only). README points at agent-operator as the agent USP path.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "agent-operator-full-loop"
+          ],
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "agent-provenance-path",
+      "title": "Agent loop — provenance on the agent path",
+      "description": "Document ROLLOPS_COSIGN_KEY VerifyEnforce as the agent-grade bar. Unset remains unsigned-OK. Honesty in runbook and example env. RFC Phase C. No forced default.",
+      "requirements": [
+        {
+          "id": "agent-cosign-docs",
+          "title": "Agent-grade cosign documented in runbook and examples",
+          "description": "agent-operator and examples/agent-loop state that ROLLOPS_COSIGN_KEY enables enforce; without it agents deploy without artifact verify. Boot behaviour unchanged.",
+          "priority": "medium",
+          "estimate": "",
+          "depends_on": [
+            "agent-operator-full-loop"
+          ],
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "agent-hetero-demo",
+      "title": "Agent loop — heterogeneous demo examples",
+      "description": "examples/hetero with one SSH and one Kubernetes RolloutConfig sharing a narrative. Linked from agent-operator and first-run. examples-check green. RFC Phase D.",
+      "requirements": [
+        {
+          "id": "hetero-examples",
+          "title": "SSH plus Kubernetes example pair",
+          "description": "examples/hetero/ssh and kubernetes YAML load under examples-check; short README; linked from agent-operator and first-run.",
+          "priority": "medium",
+          "estimate": "",
+          "depends_on": [],
+          "source": {}
+        }
+      ],
+      "source": {}
     }
   ],
   "constraints": [
@@ -1405,6 +1511,10 @@
     {
       "id": "make-it-real-out-of-scope",
       "description": "This program does not add Jsonnet, app-of-apps, ApplicationSet matrix/git generators, Helm install (stay on helm template), host agent/pull mode, Postgres/mnemos Store backends, studio billing/tenancy, Istio/NGINX/SMI, replica-weighted canary, or multi-stage approval chains. Gateway API remains the rich traffic path. Stop when the RFC done-when list is met."
+    },
+    {
+      "id": "agent-loop-out-of-scope",
+      "description": "Agent-loop-as-product does not add matrix/git generators, new MCP verbs beyond risk/attribution fields, forced cosign or risk.history defaults, Obvia analysis-on-by-default, host agent, or Studio. Stop when the RFC done-when list is met."
     }
   ],
   "version": "0.1.0"
