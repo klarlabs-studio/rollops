@@ -4,10 +4,9 @@
 
 ## Current State
 
-Rollops is cutting **v0.33.0** (move the needle — #144). Plan surfaces
-`recent_failures` + `reason`; proof at `docs/agent-walkthrough.md`. Deploy pin
-`v0.33.0`. Cluster auto-deploys after ghcr. Rotate `k3s-ghcr-pull` before
-2026-08-29. Outside repo: agent-go CRITICAL vulns.
+Rollops is cutting **v0.33.1** (deps refresh #146 on top of escalate-from-evidence).
+Deploy pin `v0.33.1`. Cluster auto-deploys after ghcr. Rotate `k3s-ghcr-pull`
+before 2026-08-29. Outside repo: agent-go CRITICAL vulns.
 
 ---
 

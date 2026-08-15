@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.33.1 - Dependency refresh
+
+Patch release so the tagged image matches `main` after #146.
+
+### Dependencies (#146)
+
+- Go: auth-go 0.7, fortify 1.10, mcp 1.27, statekit 1.13.3, x/crypto 0.55,
+  protobuf 1.36.12, plus transitive refresh.
+- UI lockfile within semver (vue / esbuild).
+- Docker: refreshed `golang:1.26-alpine` and `alpine:3.20` digests; kubectl
+  **v1.31.14**.
+- MCP Streamable HTTP: clients must send `Mcp-Method` and
+  `MCP-Protocol-Version` (documented in agent-operator).
+
+### Deploy pin
+
+`deploy/kubernetes/rollopsd.yaml` pins `ghcr.io/klarlabs-studio/rollopsd:v0.33.1`.
+
+
 ## v0.33.0 - Escalate from evidence
 
 Plan no longer returns a mystery boolean. Agents see *why* the gate fired.
