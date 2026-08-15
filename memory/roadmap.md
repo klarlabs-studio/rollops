@@ -46,6 +46,20 @@ host agent, Postgres, studio billing are out of scope.
 
 ---
 
+## Current near roadmap — Multi-cluster Phase 2
+
+Approved/executed 2026-08-15. Canonical RFC: `docs/design/multi-cluster-scale.md`.
+Roady feature: `rolloutset-cluster`.
+
+- [x] Cluster registry from `ROLLOPS_CLUSTERS` (`ParseClusters` / label select)
+- [x] `RolloutSet` `cluster` generator with `selector.matchLabels`
+- [x] Daemon loads registry before watcher; docs in `docs/multi-cluster.md`
+
+**Executed 2026-08-15.** Roady 144/144 for this feature. Matrix/git generators
+and fleet status rollup stay out of scope until a new approved plan.
+
+---
+
 ## Previous near roadmap — closed
 
 P0/Roady is complete, verified, and drift-free. Near-roadmap release polish and
