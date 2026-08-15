@@ -89,6 +89,10 @@ type historyOperations interface {
 	History(ctx context.Context, targetRef string) ([]rollout.RolloutRecord, error)
 }
 
+type fleetOperations interface {
+	FleetStatus(ctx context.Context, filter string) (engine.FleetReport, error)
+}
+
 // App is a configured CLI.
 type App struct {
 	Ops           Operations
@@ -169,6 +173,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.apply(ctx, rest)
 	case "status":
 		return a.status(ctx, rest)
+	case "fleet":
+		return a.fleet(ctx, rest)
 	case "promote":
 		return a.promote(ctx, rest)
 	case "verify":
@@ -198,7 +204,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		return a.usage()
 	default:
-		return fmt.Errorf("unknown command %q (try: plan, apply, status, promote, pause, resume, abort, approve, reject, rollback, freeze, unfreeze, doctor, plugin, version)", cmd)
+		return fmt.Errorf("unknown command %q (try: plan, apply, status, fleet, promote, pause, resume, abort, approve, reject, rollback, freeze, unfreeze, doctor, plugin, version)", cmd)
 	}
 }
 
@@ -260,6 +266,35 @@ func (a *App) status(ctx context.Context, args []string) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func (a *App) fleet(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("fleet: set name or prefix required (e.g. web or web@)")
+	}
+	f, ok := a.Ops.(fleetOperations)
+	if !ok {
+		return fmt.Errorf("fleet: not supported by this operations backend")
+	}
+	rep, err := f.FleetStatus(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(a.Out, "%s: %d/%d promoted", rep.Name, rep.Promoted, rep.Total)
+	if rep.Active > 0 {
+		_, _ = fmt.Fprintf(a.Out, " (%d active)", rep.Active)
+	}
+	if rep.Degraded > 0 {
+		_, _ = fmt.Fprintf(a.Out, " (%d degraded)", rep.Degraded)
+	}
+	if rep.Awaiting > 0 {
+		_, _ = fmt.Fprintf(a.Out, " (%d awaiting)", rep.Awaiting)
+	}
+	_, _ = fmt.Fprintln(a.Out)
+	for _, m := range rep.Members {
+		_, _ = fmt.Fprintf(a.Out, "  %s\t%s\t%s\n", m.Target, m.Phase, m.ID)
 	}
 	return nil
 }
@@ -528,7 +563,7 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  fleet <name|prefix>     aggregate latest phases for a RolloutSet-style prefix\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 

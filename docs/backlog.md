@@ -5,7 +5,7 @@ Canonical: `docs/design/make-it-real.md`. Roady features `real-trust`,
 `real-agent`, `real-canary`, `real-gitops`.
 
 Phase 1 of this RFC (list generator only) is **in** that program. Cluster
-generator, matrix/git, and fleet status rollup stay here as later work.
+generator and fleet status rollup shipped after; matrix/git stay later work.
 
 ---
 
@@ -13,8 +13,8 @@ generator, matrix/git, and fleet status rollup stay here as later work.
 
 Deploy a service across N clusters without per-cluster boilerplate, ArgoCD
 ApplicationSet-style. Scoped in `docs/design/multi-cluster-scale.md`.
-**List + cluster generators are in.** Matrix/git and fleet status rollup
-remain later work.
+**List + cluster generators and fleet status rollup are in.** Matrix/git
+generators and promotion waves remain later work.
 
 ---
 
@@ -74,5 +74,11 @@ by choice.
      returns on cancellation with an error that reads as cancellation rather than a
      timeout. BuildProvider gained a ctx for the same reason: the engine's two call sites
      had one in scope and were dropping it. -->
+
+---
+
+## Fleet status rollup
+
+Multi-cluster RFC Phase 3a (lean). Aggregate latest-per-target rollout phases for a RolloutSet-style prefix (web@ → web: 9/10 promoted). Engine FleetRollup + gRPC/CLI/HTTP. No store schema change. Matrix/git generators and promotion waves remain out of scope (TDD forbids ApplicationSet matrix).
 
 ---

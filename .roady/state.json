@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 447,
+  "version": 450,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -638,6 +638,13 @@
       ],
       "started_at": "2026-06-09T21:13:34.762768+02:00",
       "completed_at": "2026-06-09T21:13:34.768731+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-fleet-status-rollup": {
+      "status": "in_progress",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T08:43:30.629933102Z",
       "elapsed_minutes": 0
     },
     "task-ftp-target-with-stamped-manifest-drift": {
@@ -1578,5 +1585,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:11:07.934964221Z"
+  "updated_at": "2026-08-15T08:43:30.629933102Z"
 }

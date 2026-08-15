@@ -1,9 +1,10 @@
 # RFC: Multi-cluster at scale
 
 Status: **Phase 1 shipped** (Make it real D2). **Phase 2 shipped**
-(cluster registry + `RolloutSet` cluster generator). Matrix/git and fleet
-status rollup remain draft / not scheduled.
-Date: 2026-06-14 (Phase 1 approved 2026-08-14; Phase 2 shipped 2026-08-15).
+(cluster registry + `RolloutSet` cluster generator). **Phase 3a shipped**
+(fleet status rollup). Matrix/git generators and promotion waves remain draft /
+not scheduled (TDD forbids ApplicationSet matrix).
+Date: 2026-06-14 (Phase 1 approved 2026-08-14; Phase 2–3a shipped 2026-08-15).
 
 ## Problem
 
@@ -119,6 +120,8 @@ phases**:
 - **Phase 3** — `matrix`/`git-directory` generators; a fleet status rollup
   ("web: 9/10 clusters promoted") in CLI/UI; optional promotion *waves*
   (sequential cluster groups), reusing the existing `Environments` concept.
+  **Phase 3a (fleet status on CLI/gRPC/HTTP) shipped 2026-08-15.** Matrix/git
+  and waves stay deferred.
 
 ## Risks & non-goals
 

@@ -9,6 +9,9 @@
 
 0. **[DONE] Make it real.** RFC `docs/design/make-it-real.md` executed
    (Roady 142/142). PR #135 merges A–D. Do not add Argo checkboxes.
+0b. **[DONE] Multi-cluster Phase 2 + 3a.** Cluster registry + RolloutSet
+   cluster generator (#136); fleet status rollup (`rollops fleet` /
+   `GET /v1/fleet` / gRPC). Matrix/git generators still out (TDD).
 1. **[READY TO CLOSE] Image automation #98** — verdicts + digests (#100–#103),
    `current` iff scanner==Git pin (Make it real A8), and consecutive-awaiting
    STUCK escalation (`29e4b62` on main, now in #135). Original 18h hang not
