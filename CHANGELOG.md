@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.33.0 - Escalate from evidence
+
+Plan no longer returns a mystery boolean. Agents see *why* the gate fired.
+
+### Legible history on plan (#144)
+
+When `spec.risk.history` is configured, plan (MCP / HTTP / gRPC / CLI) returns
+`recent_failures` (rolled-back count in lookback) and a citeable `reason`
+alongside `risk_score` / `needs_approval` / `sensitive`.
+
+### Public proof walkthrough
+
+`docs/agent-walkthrough.md` is the stranger-facing Claude/Cursor narrative.
+Examples teach `sensitive: '… || recentFailures >= 2'` with history.
+
+### Deploy pin
+
+`deploy/kubernetes/rollopsd.yaml` pins `ghcr.io/klarlabs-studio/rollopsd:v0.33.0`.
+
+
 ## v0.32.0 - Agent loop as product
 
 Agents (and every other surface) can see risk *before* apply, and the Claude /
