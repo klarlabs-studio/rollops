@@ -138,10 +138,10 @@ func TestApplyPolicyFile_ShippedAgentDeploySnippet(t *testing.T) {
 	if err := ApplyPolicyFile(p, data); err != nil {
 		t.Fatal(err)
 	}
-	nomi := rollout.Identity{Kind: "agent", Name: "nomi"}
+	claude := rollout.Identity{Kind: "agent", Name: "claude"}
 	other := rollout.Identity{Kind: "agent", Name: "other"}
-	if !p.Can(nomi, PermApply, Scope{}) {
-		t.Error("nomi bound to agent-deploy should apply")
+	if !p.Can(claude, PermApply, Scope{}) {
+		t.Error("claude bound to agent-deploy should apply")
 	}
 	if p.Can(other, PermApply, Scope{}) {
 		t.Error("unbound agents must stay plan+status")

@@ -67,10 +67,14 @@ func (x *PlanRequest) GetConfig() string {
 }
 
 type PlanResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"` // create | update | noop
-	Changed       bool                   `protobuf:"varint,2,opt,name=changed,proto3" json:"changed,omitempty"`
-	Summary       string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Action  string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"` // create | update | noop
+	Changed bool                   `protobuf:"varint,2,opt,name=changed,proto3" json:"changed,omitempty"`
+	Summary string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
+	// Risk fields when spec.risk is configured; zero/false when unconfigured.
+	RiskScore     float64 `protobuf:"fixed64,4,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
+	NeedsApproval bool    `protobuf:"varint,5,opt,name=needs_approval,json=needsApproval,proto3" json:"needs_approval,omitempty"`
+	Sensitive     bool    `protobuf:"varint,6,opt,name=sensitive,proto3" json:"sensitive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -126,6 +130,27 @@ func (x *PlanResponse) GetSummary() string {
 	return ""
 }
 
+func (x *PlanResponse) GetRiskScore() float64 {
+	if x != nil {
+		return x.RiskScore
+	}
+	return 0
+}
+
+func (x *PlanResponse) GetNeedsApproval() bool {
+	if x != nil {
+		return x.NeedsApproval
+	}
+	return false
+}
+
+func (x *PlanResponse) GetSensitive() bool {
+	if x != nil {
+		return x.Sensitive
+	}
+	return false
+}
+
 type ApplyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Config        string                 `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
@@ -175,6 +200,7 @@ type ApplyResponse struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
 	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	RiskScore     float64                `protobuf:"fixed64,4,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -230,6 +256,13 @@ func (x *ApplyResponse) GetTarget() string {
 	return ""
 }
 
+func (x *ApplyResponse) GetRiskScore() float64 {
+	if x != nil {
+		return x.RiskScore
+	}
+	return 0
+}
+
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -283,10 +316,13 @@ type StatusResponse struct {
 	// Progressive step progress: the last step that passed its health gate
 	// (1-based), the plan's total, and the current traffic weight. All zero
 	// when the strategy has not started stepping.
-	StepIndex     int32  `protobuf:"varint,5,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
-	StepTotal     int32  `protobuf:"varint,6,opt,name=step_total,json=stepTotal,proto3" json:"step_total,omitempty"`
-	StepWeight    int32  `protobuf:"varint,7,opt,name=step_weight,json=stepWeight,proto3" json:"step_weight,omitempty"`
-	Note          string `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"` // latest transition note (e.g. "database rollback: succeeded")
+	StepIndex     int32   `protobuf:"varint,5,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
+	StepTotal     int32   `protobuf:"varint,6,opt,name=step_total,json=stepTotal,proto3" json:"step_total,omitempty"`
+	StepWeight    int32   `protobuf:"varint,7,opt,name=step_weight,json=stepWeight,proto3" json:"step_weight,omitempty"`
+	Note          string  `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"` // latest transition note (e.g. "database rollback: succeeded")
+	RiskScore     float64 `protobuf:"fixed64,9,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
+	ActorKind     string  `protobuf:"bytes,10,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
+	ActorName     string  `protobuf:"bytes,11,opt,name=actor_name,json=actorName,proto3" json:"actor_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -373,6 +409,27 @@ func (x *StatusResponse) GetStepWeight() int32 {
 func (x *StatusResponse) GetNote() string {
 	if x != nil {
 		return x.Note
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetRiskScore() float64 {
+	if x != nil {
+		return x.RiskScore
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetActorKind() string {
+	if x != nil {
+		return x.ActorKind
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetActorName() string {
+	if x != nil {
+		return x.ActorName
 	}
 	return ""
 }
@@ -1077,19 +1134,25 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x18rollops/v1/rollops.proto\x12\n" +
 	"rollops.v1\"%\n" +
 	"\vPlanRequest\x12\x16\n" +
-	"\x06config\x18\x01 \x01(\tR\x06config\"Z\n" +
+	"\x06config\x18\x01 \x01(\tR\x06config\"\xbe\x01\n" +
 	"\fPlanResponse\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x18\n" +
 	"\achanged\x18\x02 \x01(\bR\achanged\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\"&\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\x12\x1d\n" +
+	"\n" +
+	"risk_score\x18\x04 \x01(\x01R\triskScore\x12%\n" +
+	"\x0eneeds_approval\x18\x05 \x01(\bR\rneedsApproval\x12\x1c\n" +
+	"\tsensitive\x18\x06 \x01(\bR\tsensitive\"&\n" +
 	"\fApplyRequest\x12\x16\n" +
-	"\x06config\x18\x01 \x01(\tR\x06config\"M\n" +
+	"\x06config\x18\x01 \x01(\tR\x06config\"l\n" +
 	"\rApplyResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
-	"\x06target\x18\x03 \x01(\tR\x06target\"\x1f\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x1d\n" +
+	"\n" +
+	"risk_score\x18\x04 \x01(\x01R\triskScore\"\x1f\n" +
 	"\rStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xdd\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xba\x02\n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
@@ -1101,7 +1164,14 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"step_total\x18\x06 \x01(\x05R\tstepTotal\x12\x1f\n" +
 	"\vstep_weight\x18\a \x01(\x05R\n" +
 	"stepWeight\x12\x12\n" +
-	"\x04note\x18\b \x01(\tR\x04note\"?\n" +
+	"\x04note\x18\b \x01(\tR\x04note\x12\x1d\n" +
+	"\n" +
+	"risk_score\x18\t \x01(\x01R\triskScore\x12\x1d\n" +
+	"\n" +
+	"actor_kind\x18\n" +
+	" \x01(\tR\tactorKind\x12\x1d\n" +
+	"\n" +
+	"actor_name\x18\v \x01(\tR\tactorName\"?\n" +
 	"\x0fRollbackRequest\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"P\n" +

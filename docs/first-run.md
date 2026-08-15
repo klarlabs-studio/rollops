@@ -23,6 +23,16 @@ bin/rollops doctor examples/rollout-config.example.yaml
 In local mode, `doctor` validates the config and opens the configured SQLite
 store. It does not require a daemon.
 
+For mixed infrastructure (SSH + Kubernetes under one narrative):
+
+```sh
+bin/rollops doctor examples/hetero/ssh.yaml
+bin/rollops doctor examples/hetero/kubernetes.yaml
+```
+
+To let Claude or Cursor drive the same engine, see
+[agent-operator](agent-operator.md) and `examples/agent-loop/`.
+
 ## Plan A Rollout
 
 ```sh

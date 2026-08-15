@@ -1,0 +1,44 @@
+# Heterogeneous demo — Kubernetes half.
+# Pair with ssh.yaml under the same daemon watch.
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo-web
+  labels:
+    demo: hetero
+    tier: edge
+spec:
+  target:
+    kind: kubernetes
+    ref: demo/prod/web
+    criticality: medium
+    env: prod
+    spec:
+      context: minikube
+      namespace: rollops-demo
+      resource: deployment/web
+      manifest: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: web
+          namespace: rollops-demo
+        spec:
+          replicas: 1
+          selector:
+            matchLabels: {app: web}
+          template:
+            metadata:
+              labels: {app: web}
+            spec:
+              containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.9
+  strategy:
+    type: rolling
+  risk:
+    threshold: 0.7
+    history:
+      lookback: 10
+      weight: 0.15
+      maxFailures: 3

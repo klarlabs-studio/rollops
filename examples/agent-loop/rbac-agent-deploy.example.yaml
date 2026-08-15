@@ -1,0 +1,5 @@
+# Opt-in agent:deploy. Layer onto bootstrap with ROLLOPS_POLICY_FILE.
+# Subject must match the agent name in the MCP tokens file.
+bindings:
+  - subject: agent:claude
+    roles: [agent-deploy]

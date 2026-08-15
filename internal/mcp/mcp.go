@@ -46,9 +46,12 @@ type PlanInput struct {
 
 // PlanOutput is the result of rollouts.plan.
 type PlanOutput struct {
-	Action  string `json:"action"`
-	Changed bool   `json:"changed"`
-	Summary string `json:"summary"`
+	Action        string  `json:"action"`
+	Changed       bool    `json:"changed"`
+	Summary       string  `json:"summary"`
+	RiskScore     float64 `json:"risk_score,omitempty"`
+	NeedsApproval bool    `json:"needs_approval,omitempty"`
+	Sensitive     bool    `json:"sensitive,omitempty"`
 }
 
 // ApplyInput is the input to rollouts.apply.
@@ -58,9 +61,10 @@ type ApplyInput struct {
 
 // ApplyOutput is the result of rollouts.apply.
 type ApplyOutput struct {
-	RolloutID string `json:"rollout_id"`
-	Phase     string `json:"phase"`
-	Target    string `json:"target"`
+	RolloutID string  `json:"rollout_id"`
+	Phase     string  `json:"phase"`
+	Target    string  `json:"target"`
+	RiskScore float64 `json:"risk_score,omitempty"`
 }
 
 // StatusInput is the input to rollouts.status.
@@ -70,10 +74,13 @@ type StatusInput struct {
 
 // StatusOutput is the result of rollouts.status.
 type StatusOutput struct {
-	RolloutID string `json:"rollout_id"`
-	Phase     string `json:"phase"`
-	Target    string `json:"target"`
-	Note      string `json:"note,omitempty"`
+	RolloutID string  `json:"rollout_id"`
+	Phase     string  `json:"phase"`
+	Target    string  `json:"target"`
+	Note      string  `json:"note,omitempty"`
+	RiskScore float64 `json:"risk_score,omitempty"`
+	ActorKind string  `json:"actor_kind,omitempty"`
+	ActorName string  `json:"actor_name,omitempty"`
 }
 
 // RollbackInput is the input to rollouts.rollback.
@@ -108,6 +115,9 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 	var summaries []string
 	changed := false
 	action := ""
+	var riskScore float64
+	needsApproval := false
+	sensitive := false
 	for _, d := range docs {
 		if err := t.authz(id, security.PermPlan, d.Config); err != nil {
 			return PlanOutput{}, err
@@ -125,12 +135,20 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 		} else if action != string(p.Action) {
 			action = "mixed"
 		}
+		if p.RiskScore > riskScore {
+			riskScore = p.RiskScore
+		}
+		needsApproval = needsApproval || p.NeedsApproval
+		sensitive = sensitive || p.Sensitive
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
 		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
 	}
-	return PlanOutput{Action: action, Changed: changed, Summary: summary}, nil
+	return PlanOutput{
+		Action: action, Changed: changed, Summary: summary,
+		RiskScore: riskScore, NeedsApproval: needsApproval, Sensitive: sensitive,
+	}, nil
 }
 
 // Apply implements rollouts.apply. The agent must have planned first; the engine
@@ -159,7 +177,7 @@ func (t *Tools) Apply(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	return ApplyOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef}, nil
+	return ApplyOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, RiskScore: r.RiskScore}, nil
 }
 
 // Status implements rollouts.status.
@@ -175,7 +193,10 @@ func (t *Tools) Status(ctx context.Context, in StatusInput) (StatusOutput, error
 	if err != nil {
 		return StatusOutput{}, err
 	}
-	return StatusOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note}, nil
+	return StatusOutput{
+		RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note,
+		RiskScore: r.RiskScore, ActorKind: r.Initiator.Kind, ActorName: r.Initiator.Name,
+	}, nil
 }
 
 // ListInput is the input to rollouts.list.
@@ -203,7 +224,10 @@ func (t *Tools) List(ctx context.Context, in ListInput) (ListOutput, error) {
 	}
 	out := make([]StatusOutput, 0, len(rs))
 	for _, r := range rs {
-		out = append(out, StatusOutput{RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note})
+		out = append(out, StatusOutput{
+			RolloutID: r.ID, Phase: string(r.Phase), Target: r.TargetRef, Note: r.Note,
+			RiskScore: r.RiskScore, ActorKind: r.Initiator.Kind, ActorName: r.Initiator.Name,
+		})
 	}
 	return ListOutput{Rollouts: out}, nil
 }

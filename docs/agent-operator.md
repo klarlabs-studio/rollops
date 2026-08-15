@@ -1,7 +1,8 @@
 # Agent operator runbook
 
-This is the 15-minute path to let a named agent drive rollouts through the
-embedded MCP surface. Cluster/VPS wiring is operator work: set the env on the
+This is the public path to let a **named agent** (Claude, Cursor, or any MCP
+client) drive rollouts through the embedded MCP surface — the same loop you
+already dogfood. Cluster/VPS wiring is operator work: set the env on the
 running `rollopsd` and reload. This page is the contract those knobs implement.
 
 Default `agent:*` can **plan and status only**. Deploy is an opt-in grant.
@@ -34,11 +35,11 @@ ROLLOPS_MCP_TOKENS_FILE=/etc/rollops/mcp-tokens.json
 ```
 
 ```json
-{"<token-a>": "nomi"}
+{"<token-a>": "claude"}
 ```
 
 No tokens configured → every call is `403`. Rotation is `SIGHUP`. Details:
-[MCP tokens](mcp-tokens.md).
+[MCP tokens](mcp-tokens.md). Snippet: [examples/agent-loop/mcp-tokens.example.json](../examples/agent-loop/mcp-tokens.example.json).
 
 ## 3. Grant deploy (opt-in)
 
@@ -52,39 +53,80 @@ ROLLOPS_POLICY_FILE=/etc/rollops/rbac-agent-deploy.yaml
 
 ```yaml
 bindings:
-  - subject: agent:nomi
+  - subject: agent:claude
     roles: [agent-deploy]
 ```
 
-Shipped snippet: [rbac-agent-deploy.yaml](rbac-agent-deploy.yaml). Do **not**
-bind `agent:*` to `agent-deploy`. `SIGHUP` reloads the policy. See
-[RBAC](security-rbac.md).
+Shipped snippet: [rbac-agent-deploy.yaml](rbac-agent-deploy.yaml) (edit the
+subject to match your token name). Do **not** bind `agent:*` to `agent-deploy`.
+`SIGHUP` reloads the policy. See [RBAC](security-rbac.md).
 
-## 4. Tool flow
+## 4. Point Claude or Cursor at MCP
 
-Endpoint: `POST http://127.0.0.1:8091/mcp` (or `https://…` with TLS) with the
-bearer token. Observe tools are authorized as `rollouts.status`; apply still
-plans first.
+HTTP MCP endpoint: `POST http://127.0.0.1:8091/mcp` (or `https://…` with TLS)
+with `Authorization: Bearer <token>`.
 
-1. **`rollouts.plan`** — YAML in, summary out. Required before apply. Accepts a
-   `RolloutSet` and expands it to N target summaries (same as the watcher).
-   **`rollouts.apply` refuses a RolloutSet** — let reconcile fan out.
-2. **`rollouts.status`** / **`rollouts.list`** / **`rollouts.history`** /
-   **`rollouts.drift`** / **`rollouts.fleet`** — inspect. `agent:*` can do this
-   without the deploy grant. `fleet` takes a RolloutSet-style prefix (`web` /
-   `web@`) and returns promoted/active/degraded counts.
-3. **`rollouts.apply`** — deploys. Needs `agent-deploy` (or a narrower grant).
-   Pause/resume/abort an in-flight canary use this same grant (`rollouts.pause` /
-   `rollouts.resume` / `rollouts.abort`).
-4. **`rollouts.verify`** — dry-run the post-deploy gate (health, smoke, analysis).
-   Authorized as `rollouts.promote`; changes nothing. See [verify](verify.md).
-5. **`rollouts.rollback`** — previous desired state for a target.
+**Cursor** — project or user MCP config (example under
+`examples/agent-loop/cursor-mcp.example.json`):
 
-Promote after a passing verify is the same permission as verify. Freeze lift and
-approve stay human/admin.
+```json
+{
+  "mcpServers": {
+    "rollops": {
+      "url": "http://127.0.0.1:8091/mcp",
+      "headers": {
+        "Authorization": "Bearer <token-a>"
+      }
+    }
+  }
+}
+```
+
+**Claude Desktop** — same URL + bearer header in its MCP server entry (shape
+varies by Desktop version; use the HTTP/SSE transport your build documents).
+The contract is identical: one named token → one agent identity → RBAC.
+
+Never paste a live token into a chat transcript. Create the tokens file in your
+own terminal.
+
+## 5. Tool flow (the loop)
+
+Observe tools are authorized as `rollouts.status`; apply still plans first.
+
+1. **`rollouts.plan`** — YAML in. Returns `action`, `changed`, `summary`, and when
+   `spec.risk` is configured: **`risk_score`**, **`needs_approval`**, **`sensitive`**.
+   Accepts a `RolloutSet` and expands it (same as the watcher).
+2. **Escalate when `needs_approval` is true** — do not call apply. A human
+   approves (CLI/UI/HTTP); agents cannot approve. Policy floor and freeze still
+   bind regardless of score. Optional history signal: [risk history](risk-history.md).
+3. **`rollouts.apply`** — deploys when the gate allows (or lands
+   `awaiting_approval`). Needs `agent-deploy`. Refuses a `RolloutSet` — reconcile
+   owns fan-out. Response includes `risk_score`. Pause/resume/abort an in-flight
+   canary use this grant (`rollouts.pause` / `resume` / `abort`).
+4. **`rollouts.status`** / **`list`** / **`history`** / **`drift`** / **`fleet`** —
+   inspect. Status carries `risk_score` and actor; history shows who did what.
+5. **`rollouts.verify`** then promote — dry-run the post-deploy gate; promote
+   shares that permission. See [verify](verify.md).
+6. **`rollouts.rollback`** — previous desired state for a target.
+
+Freeze lift and approve stay human/admin.
+
+## 6. Agent-grade provenance (opt-in)
+
+When `ROLLOPS_COSIGN_KEY` is set, shared boot enables cosign **enforce** before
+deploy (CLI and daemon). Without it, agents can still deploy — artifacts are
+**not** provenance-checked. For an agent-grade bar, set the key on `rollopsd`
+and pin signed images. See boot / security docs; example comment in
+[examples/agent-loop/rollopsd.env.example](../examples/agent-loop/rollopsd.env.example).
+
+## 7. Mixed infrastructure
+
+Kubernetes is one target, not the universe. A side-by-side SSH + Kubernetes
+pair lives under [examples/hetero/](../examples/hetero/). Plan both with the
+same agent loop.
 
 ## Cluster
 
-On the in-cluster Deployment this is three env vars plus two mounted files
-(tokens JSON, policy YAML). Enabling it in the live fleet is an operator change,
-not a Rollops release step.
+On the in-cluster Deployment this is env vars plus mounted files (tokens JSON,
+policy YAML, optional cosign public key). Enabling it in the live fleet is an
+operator change, not a Rollops release step.

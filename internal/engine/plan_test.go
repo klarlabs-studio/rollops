@@ -9,6 +9,56 @@ import (
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
+func TestPlan_AttachesRiskWhenConfigured(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	risky := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: payments
+spec:
+  target:
+    kind: fake
+    ref: payments/prod/api
+    criticality: critical
+    env: prod
+    spec:
+      x: 1
+  strategy:
+    type: blue-green
+  risk:
+    threshold: 0.5
+    sensitive: 'changeType == "schema"'
+`
+	c, err := config.Load([]byte(risky))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := e.Plan(context.Background(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.RiskScore <= 0 {
+		t.Fatalf("RiskScore = %v, want > 0 when risk configured", p.RiskScore)
+	}
+	if !p.NeedsApproval {
+		t.Fatal("critical+prod+blue-green should need approval at threshold 0.5")
+	}
+}
+
+func TestPlan_NoRiskWhenUnconfigured(t *testing.T) {
+	fake := &fakeTarget{}
+	e, _ := newEngine(t, fake)
+	p, err := e.Plan(context.Background(), loadConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.RiskScore != 0 || p.NeedsApproval || p.Sensitive {
+		t.Fatalf("unconfigured risk: score=%v need=%v sens=%v", p.RiskScore, p.NeedsApproval, p.Sensitive)
+	}
+}
+
 func TestPlan_ActionCreate(t *testing.T) {
 	fake := &fakeTarget{} // no observed state
 	e, _ := newEngine(t, fake)

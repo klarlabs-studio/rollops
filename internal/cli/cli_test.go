@@ -95,6 +95,40 @@ func TestCLI_Plan(t *testing.T) {
 	}
 }
 
+func TestCLI_PlanPrintsRisk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "risky.yaml")
+	risky := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: payments
+spec:
+  target:
+    kind: fake
+    ref: payments/prod/api
+    criticality: critical
+    env: prod
+    spec:
+      x: 1
+  strategy:
+    type: blue-green
+  risk:
+    threshold: 0.5
+`
+	if err := os.WriteFile(path, []byte(risky), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app, buf, _ := newApp(t)
+	if err := app.Run(context.Background(), []string{"plan", path}); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "needs_approval=true") || !strings.Contains(out, "risk: score=") {
+		t.Fatalf("plan should print risk line, got %q", out)
+	}
+}
+
 func TestCLI_ApplyThenStatus(t *testing.T) {
 	app, buf, cfg := newApp(t)
 	if err := app.Run(context.Background(), []string{"apply", cfg}); err != nil {

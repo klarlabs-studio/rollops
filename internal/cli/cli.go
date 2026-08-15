@@ -223,6 +223,9 @@ func (a *App) plan(ctx context.Context, args []string) error {
 			return err
 		}
 		_, _ = fmt.Fprintln(a.Out, p.Summary)
+		if p.RiskScore > 0 || p.NeedsApproval || p.Sensitive {
+			_, _ = fmt.Fprintf(a.Out, "  risk: score=%.3f needs_approval=%v sensitive=%v\n", p.RiskScore, p.NeedsApproval, p.Sensitive)
+		}
 		if len(p.Rendered) > 0 {
 			_, _ = fmt.Fprintf(a.Out, "\n--- rendered manifest (%s) ---\n%s\n", d.Config.Spec.Target.Ref, p.Rendered)
 		}
