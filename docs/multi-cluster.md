@@ -116,10 +116,29 @@ template:
 Placeholders: `name`, `kubeconfig`, `context`, `cluster.name`,
 `cluster.kubeconfig`, `cluster.context`, and `cluster.labels.<key>`.
 
-## Fleet view
+## Fleet status
 
-This is per-target, infrastructure-agnostic multi-cluster — deliberately leaner
-than a cluster-registry control plane. Aggregating many daemons into one fleet
-dashboard (with RBAC, audit, and cross-tenant views) is the job of the
-commercial Studio layer; the OSS daemon stays a single, self-contained control
-loop over the clusters its targets name.
+After a RolloutSet expands to `web@east`, `web@west`, …, ask the daemon for an
+aggregate of the **latest** phase per matching target:
+
+```bash
+rollops fleet web          # or: web@
+# web: 9/10 promoted (1 active)
+#   web@awaiting	awaiting-approval	ro-…
+#   web@east	promoted	ro-…
+```
+
+Same data over HTTP (`GET /v1/fleet?prefix=web`) and gRPC `FleetStatus`.
+Authorized as `status`. The denominator is store-observed targets only —
+clusters that have never applied are invisible until first reconcile.
+
+Matrix/`git` generators and multi-daemon Studio fleet dashboards remain out of
+scope. This is one daemon’s prefix rollup, not a control plane.
+
+## Fleet view (Studio)
+
+Per-target multi-cluster is deliberately leaner than a cluster-registry control
+plane. Aggregating **many daemons** into one fleet dashboard (with RBAC, audit,
+and cross-tenant views) is the job of the commercial Studio layer; the OSS
+daemon stays a single, self-contained control loop over the clusters its targets
+name.

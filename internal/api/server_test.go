@@ -201,6 +201,26 @@ func TestAPI_Healthz(t *testing.T) {
 	}
 }
 
+func TestAPI_FleetStatus(t *testing.T) {
+	h := newServer(t)
+	if rr := do(h, "POST", "/v1/apply", "tok-felix", cfgYAML); rr.Code != http.StatusAccepted {
+		t.Fatalf("apply = %d %s", rr.Code, rr.Body.String())
+	}
+	rr := do(h, "GET", "/v1/fleet?prefix=demo/prod/app", "tok-felix", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("fleet = %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"total":1`) {
+		t.Fatalf("body = %s", rr.Body.String())
+	}
+	if rr := do(h, "GET", "/v1/fleet", "tok-felix", ""); rr.Code != http.StatusBadRequest {
+		t.Fatalf("empty prefix = %d", rr.Code)
+	}
+	if rr := do(h, "GET", "/v1/fleet?prefix=demo/prod/app", "tok-bot", ""); rr.Code != http.StatusOK {
+		t.Fatalf("viewer fleet = %d", rr.Code)
+	}
+}
+
 func TestTokenAuth_Identify(t *testing.T) {
 	ta := TokenAuth{
 		"tok-felix": {Kind: "human", Name: "felix"},

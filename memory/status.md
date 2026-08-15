@@ -8,14 +8,13 @@ Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
 in-cluster pin was v0.26.0). It operates the creator's GitOps fleet.
 
 **Make it real is executed** (`docs/design/make-it-real.md`). PR #135 still open.
-**Multi-cluster Phase 2 is executed** on `cursor/rolloutset-cluster-30c0`:
-`ROLLOPS_CLUSTERS` registry + `RolloutSet` cluster generator (Roady 144/144).
-Do not start matrix/git or fleet rollup without a new plan. Next candidates:
-TDD §17 leftovers — plan in Roady before coding.
+**Multi-cluster Phase 2 + 3a** on stacked branches: cluster registry/generator
+(#136) and fleet status rollup (`cursor/fleet-status-30c0`). Matrix/git stay
+out. Next candidates: TDD §17 leftovers — plan in Roady before coding.
 
-**Last Session Summary (2026-08-15):** Shipped cluster registry + RolloutSet
-cluster generator. Warden pre-push required before push (Cursor overrides
-`core.hooksPath`). Stack PR on make-it-real branch when #135 is unmerged.
+**Last Session Summary (2026-08-15):** Shipped Phase 2 then Phase 3a fleet
+rollup (`engine.FleetStatus`, gRPC/CLI/HTTP). Always `warden run pre-push`
+before push.
 
 ---
 
