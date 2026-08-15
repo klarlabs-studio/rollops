@@ -145,11 +145,12 @@ func HistoryScore(recentFailures, maxRecentFailures int) float64 {
 
 // Decision is the gate's verdict.
 type Decision struct {
-	Score         float64
-	Threshold     float64
-	NeedsApproval bool
-	Sensitive     bool // matched the sensitive CEL expression
-	Reason        string
+	Score          float64
+	Threshold      float64
+	NeedsApproval  bool
+	Sensitive      bool // matched the sensitive CEL expression
+	RecentFailures int  // rolled-back records inside risk.history lookback
+	Reason         string
 }
 
 // Gate evaluates Signals against a threshold and an optional CEL "sensitive"
@@ -168,7 +169,7 @@ func (g Gate) Evaluate(s Signals) (Decision, error) {
 		w = DefaultWeights()
 	}
 	score := Score(s, w)
-	d := Decision{Score: score, Threshold: g.Threshold}
+	d := Decision{Score: score, Threshold: g.Threshold, RecentFailures: s.RecentFailures}
 
 	if g.SensitiveExpr != "" {
 		sensitive, err := condition.Eval(g.SensitiveExpr, condition.Input{

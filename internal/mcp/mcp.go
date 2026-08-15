@@ -46,12 +46,14 @@ type PlanInput struct {
 
 // PlanOutput is the result of rollouts.plan.
 type PlanOutput struct {
-	Action        string  `json:"action"`
-	Changed       bool    `json:"changed"`
-	Summary       string  `json:"summary"`
-	RiskScore     float64 `json:"risk_score,omitempty"`
-	NeedsApproval bool    `json:"needs_approval,omitempty"`
-	Sensitive     bool    `json:"sensitive,omitempty"`
+	Action         string  `json:"action"`
+	Changed        bool    `json:"changed"`
+	Summary        string  `json:"summary"`
+	RiskScore      float64 `json:"risk_score,omitempty"`
+	NeedsApproval  bool    `json:"needs_approval,omitempty"`
+	Sensitive      bool    `json:"sensitive,omitempty"`
+	RecentFailures int     `json:"recent_failures,omitempty"`
+	Reason         string  `json:"reason,omitempty"`
 }
 
 // ApplyInput is the input to rollouts.apply.
@@ -118,6 +120,8 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 	var riskScore float64
 	needsApproval := false
 	sensitive := false
+	recentFailures := 0
+	reason := ""
 	for _, d := range docs {
 		if err := t.authz(id, security.PermPlan, d.Config); err != nil {
 			return PlanOutput{}, err
@@ -140,6 +144,12 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 		}
 		needsApproval = needsApproval || p.NeedsApproval
 		sensitive = sensitive || p.Sensitive
+		if p.RecentFailures > recentFailures {
+			recentFailures = p.RecentFailures
+		}
+		if p.RiskReason != "" {
+			reason = p.RiskReason
+		}
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
@@ -148,6 +158,7 @@ func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 	return PlanOutput{
 		Action: action, Changed: changed, Summary: summary,
 		RiskScore: riskScore, NeedsApproval: needsApproval, Sensitive: sensitive,
+		RecentFailures: recentFailures, Reason: reason,
 	}, nil
 }
 

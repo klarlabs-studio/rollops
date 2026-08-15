@@ -1,5 +1,17 @@
 # Roadmap — Rollops
 
+## Current near roadmap — Move the needle
+
+Approved/executed 2026-08-15. Canonical RFC: `docs/design/move-the-needle.md`.
+
+- [x] Plan exposes `recent_failures` + risk reason on all surfaces
+- [x] Public proof walkthrough (`docs/agent-walkthrough.md`)
+- [x] Examples teach history + `recentFailures` sensitive CEL
+
+**Stop.** Cosign-on-fleet, agent-go vulns, PAT rotate stay operator / other repos.
+
+---
+
 ## Current near roadmap — Agent loop as product
 
 Approved 2026-08-15. Canonical RFC: `docs/design/agent-loop-product.md`.

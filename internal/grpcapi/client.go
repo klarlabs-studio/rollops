@@ -72,6 +72,7 @@ func (c *Client) Plan(ctx context.Context, cfg *config.Config) (*engine.Plan, er
 	return &engine.Plan{
 		Action: engine.PlanAction(r.GetAction()), Changed: r.GetChanged(), Summary: r.GetSummary(),
 		RiskScore: r.GetRiskScore(), NeedsApproval: r.GetNeedsApproval(), Sensitive: r.GetSensitive(),
+		RecentFailures: int(r.GetRecentFailures()), RiskReason: r.GetReason(),
 	}, nil
 }
 

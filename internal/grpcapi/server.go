@@ -103,6 +103,8 @@ func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollops
 	var riskScore float64
 	needsApproval := false
 	sensitive := false
+	recentFailures := 0
+	reason := ""
 	for _, d := range docs {
 		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -125,6 +127,12 @@ func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollops
 		}
 		needsApproval = needsApproval || p.NeedsApproval
 		sensitive = sensitive || p.Sensitive
+		if p.RecentFailures > recentFailures {
+			recentFailures = p.RecentFailures
+		}
+		if p.RiskReason != "" {
+			reason = p.RiskReason
+		}
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
@@ -133,6 +141,7 @@ func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollops
 	return &rollopsv1.PlanResponse{
 		Action: action, Changed: changed, Summary: summary,
 		RiskScore: riskScore, NeedsApproval: needsApproval, Sensitive: sensitive,
+		RecentFailures: int32(recentFailures), Reason: reason,
 	}, nil
 }
 

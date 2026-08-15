@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 492,
+  "version": 505,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -444,6 +444,14 @@
       "completed_at": "2026-08-15T12:14:29.052402024Z",
       "elapsed_minutes": 0
     },
+    "task-agent-walkthrough-doc": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T16:24:00.291297237Z",
+      "completed_at": "2026-08-15T16:24:00.303739865Z",
+      "elapsed_minutes": 0
+    },
     "task-artifact-signature-provenance-verification-cosign-slsa": {
       "status": "verified",
       "path": "",
@@ -576,6 +584,14 @@
       "completed_at": "2026-06-09T21:13:34.866223+02:00",
       "elapsed_minutes": 0
     },
+    "task-decision-recent-failures": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T16:22:32.967183383Z",
+      "completed_at": "2026-08-15T16:24:00.214100699Z",
+      "elapsed_minutes": 1
+    },
     "task-define-config-schema-v1-with-a": {
       "status": "verified",
       "path": "",
@@ -652,6 +668,14 @@
       "started_at": "2026-08-15T08:51:19.909535193Z",
       "completed_at": "2026-08-15T08:51:19.922519814Z",
       "elapsed_minutes": 0
+    },
+    "task-examples-history-sensitive": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T16:22:32.987079618Z",
+      "completed_at": "2026-08-15T16:24:00.332664856Z",
+      "elapsed_minutes": 1
     },
     "task-execute-steps-through-axi-go-with": {
       "status": "verified",
@@ -1246,6 +1270,14 @@
       "completed_at": "2026-08-15T09:29:26.89788048Z",
       "elapsed_minutes": 2
     },
+    "task-plan-history-all-surfaces": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T16:24:00.247600076Z",
+      "completed_at": "2026-08-15T16:24:00.260583432Z",
+      "elapsed_minutes": 0
+    },
     "task-plan-risk-all-surfaces": {
       "status": "verified",
       "path": "",
@@ -1700,5 +1732,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T12:14:29.185816588Z"
+  "updated_at": "2026-08-15T16:24:00.34932329Z"
 }

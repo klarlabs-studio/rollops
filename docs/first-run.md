@@ -31,7 +31,8 @@ bin/rollops doctor examples/hetero/kubernetes.yaml
 ```
 
 To let Claude or Cursor drive the same engine, see
-[agent-operator](agent-operator.md) and `examples/agent-loop/`.
+[agent-walkthrough](agent-walkthrough.md) (proof) and
+[agent-operator](agent-operator.md) (knobs), plus `examples/agent-loop/`.
 
 ## Plan A Rollout
 

@@ -110,6 +110,9 @@ spec:
 	if p.RiskScore <= 0 || !p.NeedsApproval {
 		t.Fatalf("plan risk = score=%v need=%v, want score>0 and needs_approval", p.RiskScore, p.NeedsApproval)
 	}
+	if p.Reason == "" {
+		t.Fatal("plan should include reason")
+	}
 	a, err := tl.Apply(ctx, ApplyInput{Config: risky})
 	if err != nil {
 		t.Fatal(err)

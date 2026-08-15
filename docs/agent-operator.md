@@ -1,9 +1,13 @@
 # Agent operator runbook
 
-This is the public path to let a **named agent** (Claude, Cursor, or any MCP
-client) drive rollouts through the embedded MCP surface — the same loop you
-already dogfood. Cluster/VPS wiring is operator work: set the env on the
-running `rollopsd` and reload. This page is the contract those knobs implement.
+This is the **operator contract** (tokens, policy, TLS, tool list). For the
+narrative proof strangers should follow, see
+[agent-walkthrough](agent-walkthrough.md).
+
+This page lets a **named agent** (Claude, Cursor, or any MCP client) drive
+rollouts through the embedded MCP surface — the same loop you already dogfood.
+Cluster/VPS wiring is operator work: set the env on the running `rollopsd` and
+reload.
 
 Default `agent:*` can **plan and status only**. Deploy is an opt-in grant.
 
@@ -94,11 +98,14 @@ own terminal.
 Observe tools are authorized as `rollouts.status`; apply still plans first.
 
 1. **`rollouts.plan`** — YAML in. Returns `action`, `changed`, `summary`, and when
-   `spec.risk` is configured: **`risk_score`**, **`needs_approval`**, **`sensitive`**.
-   Accepts a `RolloutSet` and expands it (same as the watcher).
-2. **Escalate when `needs_approval` is true** — do not call apply. A human
-   approves (CLI/UI/HTTP); agents cannot approve. Policy floor and freeze still
-   bind regardless of score. Optional history signal: [risk history](risk-history.md).
+   `spec.risk` is configured: **`risk_score`**, **`needs_approval`**, **`sensitive`**,
+   **`recent_failures`**, **`reason`**. Accepts a `RolloutSet` and expands it
+   (same as the watcher).
+2. **Escalate when `needs_approval` is true** — do not call apply. Cite
+   `recent_failures` / `reason`. A human approves (CLI/UI/HTTP); agents cannot
+   approve. Policy floor and freeze still bind regardless of score. Optional
+   history signal: [risk history](risk-history.md). Walkthrough:
+   [agent-walkthrough](agent-walkthrough.md).
 3. **`rollouts.apply`** — deploys when the gate allows (or lands
    `awaiting_approval`). Needs `agent-deploy`. Refuses a `RolloutSet` — reconcile
    owns fan-out. Response includes `risk_score`. Pause/resume/abort an in-flight

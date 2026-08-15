@@ -409,6 +409,8 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 		p.RiskScore = d.Score
 		p.NeedsApproval = d.NeedsApproval
 		p.Sensitive = d.Sensitive
+		p.RecentFailures = d.RecentFailures
+		p.RiskReason = d.Reason
 	}
 	return p, nil
 }
@@ -490,6 +492,11 @@ type Plan struct {
 	RiskScore     float64
 	NeedsApproval bool
 	Sensitive     bool
+	// RecentFailures is the rolled-back count inside risk.history lookback
+	// (0 when history is not configured). RiskReason is the gate's citeable
+	// explanation for agents.
+	RecentFailures int
+	RiskReason     string
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {

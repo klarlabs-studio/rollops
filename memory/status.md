@@ -4,10 +4,13 @@
 
 ## Current State
 
-Rollops is cutting **v0.32.0** (agent loop as product — #142). Deploy pin
-moves to `v0.32.0`; CHANGELOG records risk-visible plan and the public
-Claude/Cursor path. Cluster auto-deploys from the pin after the ghcr image
-exists. Matrix/git stay out. Rotate `k3s-ghcr-pull` before 2026-08-29.
+Rollops is **released at v0.32.0**. **Move the needle** executed
+(`docs/design/move-the-needle.md`): plan surfaces `recent_failures` + reason;
+public proof at `docs/agent-walkthrough.md`; examples teach history-sensitive
+CEL. Matrix/git stay out.
+
+Still operator: rotate `k3s-ghcr-pull` before 2026-08-29. Outside repo:
+agent-go CRITICAL vulns, go.sum excludes, relicta/nox.
 
 ---
 

@@ -56,6 +56,8 @@ message PlanResponse {
   double risk_score = 4;
   bool needs_approval = 5;
   bool sensitive = 6;
+  int32 recent_failures = 7; // rolled-back count inside risk.history lookback
+  string reason = 8;         // citeable gate explanation for agents
 }
 
 message ApplyRequest {
