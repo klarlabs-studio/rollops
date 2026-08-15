@@ -4,17 +4,17 @@
 
 ## Current State
 
-Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
-in-cluster pin was v0.26.0). It operates the creator's GitOps fleet.
+Rollops is cutting **v0.31.0** (Make it real + multi-cluster Phase 2–3c). Tree
+includes #135–#140 on `main`; release branch pins deploy to `v0.31.0` and
+updates CHANGELOG. Cluster still on older pin until operator rolls after the
+ghcr image exists. Matrix/git generators stay out.
 
-**Make it real is executed** (`docs/design/make-it-real.md`). PR #135 still open.
-**Multi-cluster Phase 2 + 3a** on stacked branches: cluster registry/generator
-(#136) and fleet status rollup (`cursor/fleet-status-30c0`). Matrix/git stay
-out. Next candidates: TDD §17 leftovers — plan in Roady before coding.
+**Merged this cut:** #135 make-it-real · #136 clusters · #137 fleet · #138 MCP
+fleet · #139 plan/doctor/apply · #140 deploy pin to v0.30.0 (superseded by
+v0.31.0 pin on this release).
 
-**Last Session Summary (2026-08-15):** Shipped Phase 2 then Phase 3a fleet
-rollup (`engine.FleetStatus`, gRPC/CLI/HTTP). Always `warden run pre-push`
-before push.
+**Operator after tag:** rotate `k3s-ghcr-pull` before 2026-08-29; roll cluster
+to `v0.31.0` when image is up.
 
 ---
 
