@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
@@ -182,9 +183,27 @@ func TestParse_Example(t *testing.T) {
 }
 
 func TestLoad_AllExamples(t *testing.T) {
-	paths, err := filepath.Glob("../../examples/*.yaml")
+	var paths []string
+	err := filepath.WalkDir("../../examples", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+		// Skip non-rollout YAML (RBAC snippets under agent-loop).
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Contains(data, []byte("apiVersion: rollops.klarlabs.de/")) {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("glob examples: %v", err)
+		t.Fatalf("walk examples: %v", err)
 	}
 	if len(paths) == 0 {
 		t.Fatal("expected at least one example config")

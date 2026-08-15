@@ -1,0 +1,31 @@
+# Heterogeneous demo — SSH/VPS half.
+# Pair with kubernetes.yaml under the same daemon watch.
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo-api
+  labels:
+    demo: hetero
+    tier: edge
+spec:
+  target:
+    kind: ssh
+    ref: demo/prod/api
+    criticality: medium
+    env: prod
+    spec:
+      host: api.demo.internal
+      path: /srv/api
+  strategy:
+    type: rolling
+  risk:
+    threshold: 0.7
+    history:
+      lookback: 10
+      weight: 0.15
+      maxFailures: 3
+  rollback:
+    auto: true
+    healthCheck:
+      http: https://api.demo.internal/healthz
+      timeout: 10s

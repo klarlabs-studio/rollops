@@ -3,6 +3,7 @@
 # Default agent:* stays plan+status. This binds one named agent to the
 # built-in agent-deploy role (plan, apply, rollback, status, promote/verify).
 # Do not bind agent:* — that would let every MCP token deploy.
+# Match the subject to the agent name in ROLLOPS_MCP_TOKENS_FILE (e.g. claude).
 bindings:
-  - subject: agent:nomi
+  - subject: agent:claude
     roles: [agent-deploy]
