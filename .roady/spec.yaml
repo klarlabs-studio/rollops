@@ -770,6 +770,21 @@ features:
           priority: medium
           depends_on:
             - real-honesty-docs
+    - id: rolloutset-cluster
+      title: RolloutSet cluster generator
+      description: Multi-cluster RFC Phase 2. Cluster registry (name/kubeconfig/context/labels) from ROLLOPS_CLUSTERS file; kind RolloutSet cluster generator with matchLabels expands in memory to ordinary RolloutConfigs. Matrix/git generators and fleet status remain out of scope. Canonical RFC docs/design/multi-cluster-scale.md Phase 2.
+      requirements:
+        - id: cluster-registry-file
+          title: Cluster registry loads from ROLLOPS_CLUSTERS
+          description: YAML file lists clusters with name, kubeconfig, context, labels. Empty path means no registry. Loud errors on missing name or duplicate names. Daemon sets the registry at boot for watch load expansion.
+          priority: high
+          depends_on: []
+        - id: rolloutset-cluster-generator
+          title: RolloutSet cluster generator expands with selector
+          description: generators cluster selector matchLabels filters the registry; empty selector means all. Each match becomes a RolloutConfig with placeholders cluster.name, kubeconfig, context, cluster.labels.*. Unique target.ref enforced. List generator still works. No engine/store change.
+          priority: high
+          depends_on:
+            - cluster-registry-file
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.
