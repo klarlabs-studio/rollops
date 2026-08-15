@@ -595,3 +595,49 @@ func TestWatcher_ImageAutoLogsCoverageSummary(t *testing.T) {
 		}
 	}
 }
+
+// #98: a target reported the same idle-looking verdict for ~1,100 consecutive
+// reconciles over 18.5 hours while serving a stale image. Naming the wait every
+// cycle makes it visible; it does not make cycle 1,100 distinguishable from
+// cycle 1, and it is the later one that means something is wrong.
+func TestWatcher_AwaitingStreakEscalates(t *testing.T) {
+	w := &Watcher{}
+
+	for i := 1; i < stuckAfterCycles; i++ {
+		if got := w.noteAwaiting("acme", "a.yaml"); got != i {
+			t.Fatalf("cycle %d: got count %d", i, got)
+		}
+	}
+	if got := w.noteAwaiting("acme", "a.yaml"); got != stuckAfterCycles {
+		t.Fatalf("streak should reach the escalation threshold, got %d", got)
+	}
+
+	// Separate configs must not share a streak, or one stuck target would drag
+	// a healthy one over the threshold with it.
+	if got := w.noteAwaiting("acme", "b.yaml"); got != 1 {
+		t.Errorf("streaks are per config: got %d for a different path", got)
+	}
+	if got := w.noteAwaiting("other", "a.yaml"); got != 1 {
+		t.Errorf("streaks are per repo: got %d for a different repo", got)
+	}
+}
+
+// The streak is CONSECUTIVE, not cumulative. A target that alternates between
+// waiting and deploying is working, and must never accumulate its way into an
+// alert.
+func TestWatcher_AwaitingStreakResets(t *testing.T) {
+	w := &Watcher{}
+
+	for i := 0; i < stuckAfterCycles-1; i++ {
+		w.noteAwaiting("acme", "a.yaml")
+	}
+	w.clearAwaiting("acme", "a.yaml")
+
+	if got := w.noteAwaiting("acme", "a.yaml"); got != 1 {
+		t.Fatalf("a deploy or current verdict must reset the streak, got %d", got)
+	}
+
+	// Clearing something that was never waiting is a no-op, not a panic.
+	w.clearAwaiting("never", "seen.yaml")
+	(&Watcher{}).clearAwaiting("nil", "map.yaml")
+}
