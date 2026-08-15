@@ -21,10 +21,11 @@ daemon, but the Rollops authorization check still happens inside the daemon.
 
 | Permission | Meaning |
 |---|---|
-| `rollouts.status` | Read rollout status/history. |
+| `rollouts.status` | Read rollout status/history/list/drift/fleet. |
 | `rollouts.plan` | Compute a plan/diff from a rollout config. |
 | `rollouts.apply` | Deploy desired state; pause, resume, and abort an in-flight canary (scoped to the target). |
 | `rollouts.approve` | Approve a rollout held by the policy floor or risk gate. |
+| `rollouts.promote` | Promote past the post-deploy gate; also authorizes dry-run `verify` (gates actually run). |
 | `rollouts.rollback` | Roll back a target to the previous desired state. |
 | `rollouts.schedule` | Create or fire scheduled rollout work. |
 | `rollouts.freeze` | Engage or release the emergency freeze switch. |
