@@ -7,9 +7,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// KindRolloutSet is a load-time generator: a list of elements plus a template
-// expands in memory into ordinary RolloutConfigs. Git holds the template;
-// generated configs are ephemeral. Cluster/matrix generators are out of scope.
+// KindRolloutSet is a load-time generator: a list or cluster generator plus a
+// template expands in memory into ordinary RolloutConfigs. Git holds the
+// template; generated configs are ephemeral. Matrix/git generators are out of
+// scope.
 const KindRolloutSet = "RolloutSet"
 
 type rolloutSetDoc struct {
@@ -21,12 +22,20 @@ type rolloutSetDoc struct {
 }
 
 type rolloutSetGenerator struct {
-	List    *listGenerator `yaml:"list,omitempty"`
-	Cluster map[string]any `yaml:"cluster,omitempty"`
+	List    *listGenerator    `yaml:"list,omitempty"`
+	Cluster *clusterGenerator `yaml:"cluster,omitempty"`
 }
 
 type listGenerator struct {
 	Elements []map[string]any `yaml:"elements"`
+}
+
+type clusterGenerator struct {
+	Selector *clusterSelector `yaml:"selector,omitempty"`
+}
+
+type clusterSelector struct {
+	MatchLabels map[string]string `yaml:"matchLabels,omitempty"`
 }
 
 func peekKind(data []byte) (string, error) {
@@ -77,22 +86,67 @@ func expandRolloutSet(data []byte, path string) ([]NamedConfig, error) {
 	if set.Metadata.Name == "" {
 		return nil, fmt.Errorf("config: %s: RolloutSet metadata.name is required", path)
 	}
-	for _, g := range set.Generators {
-		if g.Cluster != nil {
-			return nil, fmt.Errorf("config: %s: cluster generator is not supported (Phase 1 is list only)", path)
-		}
-	}
-	if len(set.Generators) != 1 || set.Generators[0].List == nil {
-		return nil, fmt.Errorf("config: %s: RolloutSet requires exactly one list generator", path)
-	}
-	elements := set.Generators[0].List.Elements
-	if len(elements) == 0 {
-		return nil, fmt.Errorf("config: %s: list generator has no elements", path)
-	}
 	if set.Template == nil {
 		return nil, fmt.Errorf("config: %s: RolloutSet template is required", path)
 	}
+	if len(set.Generators) != 1 {
+		return nil, fmt.Errorf("config: %s: RolloutSet requires exactly one generator (list or cluster)", path)
+	}
+	g := set.Generators[0]
+	switch {
+	case g.List != nil && g.Cluster != nil:
+		return nil, fmt.Errorf("config: %s: generator must be list or cluster, not both", path)
+	case g.List != nil:
+		return expandFromElements(set, path, g.List.Elements)
+	case g.Cluster != nil:
+		return expandFromClusters(set, path, g.Cluster)
+	default:
+		return nil, fmt.Errorf("config: %s: RolloutSet generator must be list or cluster", path)
+	}
+}
 
+func expandFromClusters(set rolloutSetDoc, path string, gen *clusterGenerator) ([]NamedConfig, error) {
+	all := ClusterRegistry()
+	if len(all) == 0 {
+		return nil, fmt.Errorf("config: %s: cluster generator needs a registry (set ROLLOPS_CLUSTERS)", path)
+	}
+	var match map[string]string
+	if gen.Selector != nil {
+		match = gen.Selector.MatchLabels
+	}
+	selected := SelectClusters(all, match)
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("config: %s: cluster selector matched no clusters", path)
+	}
+	elements := make([]map[string]any, 0, len(selected))
+	for _, c := range selected {
+		elements = append(elements, clusterElement(c))
+	}
+	return expandFromElements(set, path, elements)
+}
+
+// clusterElement flattens a registry entry into template placeholders:
+// name, kubeconfig, context, cluster.name, cluster.kubeconfig, cluster.context,
+// and cluster.labels.<key> for each label.
+func clusterElement(c Cluster) map[string]any {
+	el := map[string]any{
+		"name":               c.Name,
+		"kubeconfig":         c.Kubeconfig,
+		"context":            c.Context,
+		"cluster.name":       c.Name,
+		"cluster.kubeconfig": c.Kubeconfig,
+		"cluster.context":    c.Context,
+	}
+	for k, v := range c.Labels {
+		el["cluster.labels."+k] = v
+	}
+	return el
+}
+
+func expandFromElements(set rolloutSetDoc, path string, elements []map[string]any) ([]NamedConfig, error) {
+	if len(elements) == 0 {
+		return nil, fmt.Errorf("config: %s: generator produced no elements", path)
+	}
 	out := make([]NamedConfig, 0, len(elements))
 	seenRef := make(map[string]string, len(elements))
 	for i, el := range elements {
@@ -157,8 +211,20 @@ func expandOne(set rolloutSetDoc, el map[string]any, name string) (*Config, erro
 }
 
 func substitute(s string, el map[string]any) string {
-	for k, v := range el {
-		s = strings.ReplaceAll(s, "{{"+k+"}}", stringify(v))
+	// Longer keys first so {{cluster.labels.env}} wins over a shorter prefix.
+	keys := make([]string, 0, len(el))
+	for k := range el {
+		keys = append(keys, k)
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if len(keys[j]) > len(keys[i]) {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	for _, k := range keys {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", stringify(el[k]))
 	}
 	return s
 }

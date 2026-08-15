@@ -1,9 +1,9 @@
 # RFC: Multi-cluster at scale
 
-Status: **Phase 1 (list generator) approved** as part of Make it real
-(`docs/design/make-it-real.md` D2). Cluster generator, matrix/git, and fleet
-status rollup remain draft / not scheduled.
-Date: 2026-06-14 (Phase 1 approved 2026-08-14).
+Status: **Phase 1 shipped** (Make it real D2). **Phase 2 (cluster
+generator) approved for execution**. Matrix/git and fleet status rollup
+remain draft / not scheduled.
+Date: 2026-06-14 (Phase 1 approved 2026-08-14; Phase 2 approved 2026-08-15).
 
 ## Problem
 

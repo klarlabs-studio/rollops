@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 439,
+  "version": 442,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -473,6 +473,13 @@
       ],
       "started_at": "2026-06-09T21:13:35.020781+02:00",
       "completed_at": "2026-06-09T21:13:35.026972+02:00",
+      "elapsed_minutes": 0
+    },
+    "task-cluster-registry-file": {
+      "status": "in_progress",
+      "path": "",
+      "owner": "Cursor Agent",
+      "started_at": "2026-08-15T08:07:35.651889789Z",
       "elapsed_minutes": 0
     },
     "task-command-tree-plan-apply-verify-promote": {
@@ -1415,6 +1422,11 @@
       "completed_at": "2026-06-09T21:13:35.335015+02:00",
       "elapsed_minutes": 0
     },
+    "task-rolloutset-cluster-generator": {
+      "status": "pending",
+      "path": "",
+      "elapsed_minutes": 0
+    },
     "task-scheduledrollout-queue-in-the-store": {
       "status": "verified",
       "path": "",
@@ -1556,5 +1568,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-14T17:54:53.398547255Z"
+  "updated_at": "2026-08-15T08:07:35.651889789Z"
 }

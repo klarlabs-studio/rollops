@@ -79,11 +79,92 @@ func TestExpandRolloutSet_ListTwoElements(t *testing.T) {
 	}
 }
 
-func TestExpandRolloutSet_RejectsClusterGenerator(t *testing.T) {
+func TestExpandRolloutSet_ClusterSelector(t *testing.T) {
+	t.Cleanup(func() { SetClusterRegistry(nil) })
+	SetClusterRegistry([]Cluster{
+		{Name: "east", Kubeconfig: "/etc/east", Context: "east", Labels: map[string]string{"tier": "prod", "env": "prod"}},
+		{Name: "west", Kubeconfig: "/etc/west", Context: "west", Labels: map[string]string{"tier": "prod", "env": "staging"}},
+		{Name: "dev", Kubeconfig: "/etc/dev", Context: "dev", Labels: map[string]string{"tier": "dev"}},
+	})
+	const src = `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - cluster:
+      selector:
+        matchLabels: { tier: prod }
+template:
+  spec:
+    target:
+      kind: kubernetes
+      ref: "web@{{cluster.name}}"
+      criticality: low
+      env: "{{cluster.labels.env}}"
+      spec:
+        kubeconfig: "{{cluster.kubeconfig}}"
+        context: "{{cluster.context}}"
+        namespace: web
+        resource: deployment/web
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: {name: web}
+          spec: {replicas: 1}
+    strategy: { type: rolling }
+`
+	got, err := expandRolloutSet([]byte(src), "web.yaml")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d, want 2 prod clusters", len(got))
+	}
+	refs := map[string]*Config{}
+	for _, nc := range got {
+		refs[nc.Config.Spec.Target.Ref] = nc.Config
+	}
+	if refs["web@east"] == nil || refs["web@west"] == nil {
+		t.Fatalf("refs = %v", refs)
+	}
+	if refs["web@east"].Spec.Target.Env != "prod" {
+		t.Errorf("east env = %q", refs["web@east"].Spec.Target.Env)
+	}
+	kc, _ := refs["web@east"].Spec.Target.Spec["kubeconfig"].(string)
+	if kc != "/etc/east" {
+		t.Errorf("east kubeconfig = %q", kc)
+	}
+}
+
+func TestExpandRolloutSet_ClusterNeedsRegistry(t *testing.T) {
+	t.Cleanup(func() { SetClusterRegistry(nil) })
+	SetClusterRegistry(nil)
+	const src = `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - cluster: {}
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec: { x: 1 }
+    strategy: { type: rolling }
+`
+	_, err := expandRolloutSet([]byte(src), "web.yaml")
+	if err == nil || !strings.Contains(err.Error(), "ROLLOPS_CLUSTERS") {
+		t.Fatalf("want registry error, got %v", err)
+	}
+}
+
+func TestExpandRolloutSet_RejectsBothGenerators(t *testing.T) {
 	src := strings.Replace(rolloutSetYAML, "- list:", "- cluster:\n      selector: { matchLabels: { tier: prod } }\n  - list:", 1)
 	_, err := expandRolloutSet([]byte(src), "web.yaml")
-	if err == nil || !strings.Contains(err.Error(), "cluster generator") {
-		t.Fatalf("want cluster-generator error, got %v", err)
+	if err == nil || (!strings.Contains(err.Error(), "exactly one") && !strings.Contains(err.Error(), "not both")) {
+		t.Fatalf("want single-generator error, got %v", err)
 	}
 }
 
