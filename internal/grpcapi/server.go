@@ -8,6 +8,7 @@ package grpcapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -85,27 +86,54 @@ func bearerFromMD(ctx context.Context) string {
 	return strings.TrimPrefix(vals[0], "Bearer ")
 }
 
-// Plan implements the Plan RPC.
+// Plan implements the Plan RPC. A RolloutSet expands to N plans; Summary lists
+// every generated target.
 func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollopsv1.PlanResponse, error) {
 	id := identityFrom(ctx)
-	c, err := config.Load([]byte(req.GetConfig()))
+	if err := config.LoadClusterRegistryEnv(nil); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	docs, err := config.LoadDocuments([]byte(req.GetConfig()), "grpc")
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := s.policy.Authorize(id, security.PermPlan, scopeOf(c)); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
+	var summaries []string
+	changed := false
+	action := ""
+	for _, d := range docs {
+		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+		p, err := s.eng.Plan(ctx, d.Config)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		summaries = append(summaries, p.Summary)
+		if p.Changed {
+			changed = true
+		}
+		if action == "" {
+			action = string(p.Action)
+		} else if action != string(p.Action) {
+			action = "mixed"
+		}
 	}
-	p, err := s.eng.Plan(ctx, c)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+	summary := strings.Join(summaries, "\n")
+	if len(docs) > 1 {
+		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
 	}
-	return &rollopsv1.PlanResponse{Action: string(p.Action), Changed: p.Changed, Summary: p.Summary}, nil
+	return &rollopsv1.PlanResponse{Action: action, Changed: changed, Summary: summary}, nil
 }
 
-// Apply implements the Apply RPC.
+// Apply implements the Apply RPC. RolloutSet apply is refused — the daemon
+// watcher owns fan-out.
 func (s *Server) Apply(ctx context.Context, req *rollopsv1.ApplyRequest) (*rollopsv1.ApplyResponse, error) {
 	id := identityFrom(ctx)
-	c, err := config.Load([]byte(req.GetConfig()))
+	data := []byte(req.GetConfig())
+	if err := config.RefuseApplyRolloutSet(data); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	c, err := config.Load(data)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

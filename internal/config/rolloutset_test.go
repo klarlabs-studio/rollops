@@ -218,3 +218,30 @@ func TestLoadAllFromDir_SetAmongConfigs(t *testing.T) {
 		t.Fatalf("got %d configs, want 3", len(got))
 	}
 }
+
+func TestLoadDocuments_ExpandsAndRefuseApply(t *testing.T) {
+	got, err := LoadDocuments([]byte(rolloutSetYAML), "web.yaml")
+	if err != nil {
+		t.Fatalf("LoadDocuments: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if err := RefuseApplyRolloutSet([]byte(rolloutSetYAML)); err == nil {
+		t.Fatal("expected refuse apply of RolloutSet")
+	}
+	solo := []byte(`apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata: { name: solo }
+spec:
+  target:
+    kind: fake
+    ref: solo
+    criticality: low
+    spec: { x: 1 }
+  strategy: { type: rolling }
+`)
+	if err := RefuseApplyRolloutSet(solo); err != nil {
+		t.Fatalf("ordinary config: %v", err)
+	}
+}

@@ -834,7 +834,23 @@ features:
           title: MCP rollouts.fleet wraps FleetStatus
           description: Tool rollouts.fleet takes filter/prefix, authorizes as status, returns FleetReport shape. Documented next to list/history/drift. Sync promote into security-rbac permissions table.
           priority: high
+          estimate: ""
           depends_on: []
+    - id: rolloutset-plan-doctor-parity
+      title: RolloutSet plan doctor parity
+      description: 'Honesty gap: daemon expands RolloutSet at watch load; CLI/MCP/HTTP/gRPC plan and doctor must expand too and preview all N members. Apply of a RolloutSet is refused loudly (reconcile owns fan-out). Doctor reports expanded count and ROLLOPS_CLUSTERS when set. Fix LoadAllFromDir list-only comment.'
+      requirements:
+        - id: load-documents-export
+          title: Export LoadDocuments for RolloutSet expansion
+          description: Public LoadDocuments expands RolloutConfig or RolloutSet; KindOf for apply refuse; LoadClusterRegistryEnv for one-shot/MCP plan of cluster generators. Fix LoadAllFromDir comment.
+          priority: high
+          depends_on: []
+        - id: plan-doctor-apply-surfaces
+          title: Plan and doctor expand sets; apply refuses
+          description: CLI/MCP/HTTP/gRPC plan expands and previews all N; apply refuses RolloutSet; doctor reports member count and ROLLOPS_CLUSTERS. Example + docs.
+          priority: high
+          depends_on:
+            - load-documents-export
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.

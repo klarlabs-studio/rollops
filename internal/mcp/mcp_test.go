@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,5 +298,39 @@ func TestTools_ListDeniedWithoutStatus(t *testing.T) {
 	tl.policy = pol
 	if _, err := tl.List(asAgent("planner"), ListInput{}); err == nil {
 		t.Fatal("plan-only agent must not list")
+	}
+}
+
+const rolloutSetYAML = `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east }
+        - { name: west }
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec: { x: 1 }
+    strategy: { type: rolling }
+`
+
+func TestTools_PlanRolloutSetRefuseApply(t *testing.T) {
+	tl := newTools(t)
+	ctx := asAgent("nomi")
+	out, err := tl.Plan(ctx, PlanInput{Config: rolloutSetYAML})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if !strings.Contains(out.Summary, "RolloutSet → 2 targets") {
+		t.Fatalf("summary = %q", out.Summary)
+	}
+	if _, err := tl.Apply(ctx, ApplyInput{Config: rolloutSetYAML}); err == nil {
+		t.Fatal("expected apply refuse")
 	}
 }

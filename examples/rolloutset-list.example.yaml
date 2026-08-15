@@ -1,0 +1,22 @@
+# Example RolloutSet with a list generator. plan/doctor expand this to N
+# RolloutConfigs; apply is refused — the daemon watcher owns fan-out.
+# Uses kind: fake so the example stays a shape demo (not a k8s security surface).
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata:
+  name: web
+generators:
+  - list:
+      elements:
+        - { name: east, region: us-east }
+        - { name: west, region: us-west }
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec:
+        region: "{{region}}"
+    strategy:
+      type: rolling

@@ -52,8 +52,36 @@ func peekKind(data []byte) (string, error) {
 	return head.Kind, nil
 }
 
-// loadDocuments loads one YAML file as either a RolloutConfig or a RolloutSet
-// (expanded in memory into N ordinary configs).
+// LoadDocuments loads one YAML file as either a RolloutConfig or a RolloutSet
+// (expanded in memory into N ordinary configs). Path is used only for errors
+// and NamedConfig.Path.
+func LoadDocuments(data []byte, path string) ([]NamedConfig, error) {
+	return loadDocuments(data, path)
+}
+
+// KindOf returns the document kind after the apiVersion gate. An empty kind is
+// treated as RolloutConfig by LoadDocuments.
+func KindOf(data []byte) (string, error) {
+	return peekKind(data)
+}
+
+// ErrApplyRolloutSet is returned when a caller tries to apply a RolloutSet
+// directly. Sets expand at watch load; plan/doctor preview members, reconcile
+// applies each generated target.
+var ErrApplyRolloutSet = fmt.Errorf("config: refuse apply of kind %s — plan/doctor expand it; the daemon watcher applies each generated target", KindRolloutSet)
+
+// RefuseApplyRolloutSet returns ErrApplyRolloutSet when data is a RolloutSet.
+func RefuseApplyRolloutSet(data []byte) error {
+	kind, err := KindOf(data)
+	if err != nil {
+		return err
+	}
+	if kind == KindRolloutSet {
+		return ErrApplyRolloutSet
+	}
+	return nil
+}
+
 func loadDocuments(data []byte, path string) ([]NamedConfig, error) {
 	kind, err := peekKind(data)
 	if err != nil {
