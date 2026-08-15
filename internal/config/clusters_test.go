@@ -46,6 +46,14 @@ func TestLoadClustersFile_EmptyPath(t *testing.T) {
 	}
 }
 
+func TestLoadClustersFile_RejectsUnsafePath(t *testing.T) {
+	for _, path := range []string{"clusters.yaml", "./clusters.yaml", "../etc/passwd", "/etc/../passwd"} {
+		if _, err := LoadClustersFile(path); err == nil {
+			t.Errorf("LoadClustersFile(%q) should fail", path)
+		}
+	}
+}
+
 func TestLoadClustersFile_Reads(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "clusters.yaml")

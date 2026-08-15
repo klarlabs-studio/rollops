@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -49,16 +51,37 @@ func ClusterRegistry() []Cluster {
 }
 
 // LoadClustersFile reads a cluster registry YAML file. Empty path → nil, nil.
+// The path must be absolute and free of ".." after cleaning — ROLLOPS_CLUSTERS
+// is operator config, never a caller-controlled relative path.
 // Duplicate or empty names fail loudly.
 func LoadClustersFile(path string) ([]Cluster, error) {
 	if path == "" {
 		return nil, nil
 	}
-	data, err := os.ReadFile(path)
+	clean, err := safeConfigPath(path)
 	if err != nil {
-		return nil, fmt.Errorf("clusters: read %s: %w", path, err)
+		return nil, fmt.Errorf("clusters: %w", err)
+	}
+	data, err := os.ReadFile(clean)
+	if err != nil {
+		return nil, fmt.Errorf("clusters: read %s: %w", clean, err)
 	}
 	return ParseClusters(data)
+}
+
+// safeConfigPath rejects relative paths and any input containing ".." before
+// reading. ROLLOPS_CLUSTERS is operator-supplied; never a request parameter.
+func safeConfigPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("path %q must not contain dot-dot segments", path)
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("path %q must be absolute", path)
+	}
+	return filepath.Clean(path), nil
 }
 
 // ParseClusters decodes a registry document:
