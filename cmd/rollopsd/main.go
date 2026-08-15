@@ -205,6 +205,17 @@ func run(args []string) error {
 	// Reconcile tick: fire due schedules.
 	go scheduleLoop(ctx, eng)
 
+	// Cluster registry for RolloutSet cluster generators (multi-cluster Phase 2).
+	// Must be set before the watcher loads configs.
+	if path := os.Getenv("ROLLOPS_CLUSTERS"); path != "" {
+		clusters, err := config.LoadClustersFile(path)
+		if err != nil {
+			return err
+		}
+		config.SetClusterRegistry(clusters)
+		fmt.Fprintf(os.Stderr, "rollopsd: cluster registry %d entr(y/ies) from %s\n", len(clusters), path)
+	}
+
 	// Git-watch reconciliation: if repos are configured (ROLLOPS_WATCH points to
 	// a JSON list of {name,url,branch,path}), watch and reconcile them on a tick.
 	if specs, err := loadWatchSpecs(os.Getenv("ROLLOPS_WATCH")); err != nil {

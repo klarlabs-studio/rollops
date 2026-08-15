@@ -13,8 +13,8 @@ generator, matrix/git, and fleet status rollup stay here as later work.
 
 Deploy a service across N clusters without per-cluster boilerplate, ArgoCD
 ApplicationSet-style. Scoped in `docs/design/multi-cluster-scale.md`.
-**List generator is in Make it real (D2).** Cluster generator, matrix/git,
-and fleet status rollup remain later work.
+**List + cluster generators are in.** Matrix/git and fleet status rollup
+remain later work.
 
 ---
 

@@ -48,10 +48,12 @@ promoted — logged, not fatal to the rest of the repo.
 ## RolloutSet list generator
 
 To avoid N copies of the same config, commit one `kind: RolloutSet` with a
-**list** generator. The watcher expands it in memory into ordinary
+**list** or **cluster** generator. The watcher expands it in memory into ordinary
 `RolloutConfig`s (Git holds the template; generated configs are not written
-back). Each element must produce a unique `target.ref`. Cluster and matrix
-generators are not in this build.
+back). Each element must produce a unique `target.ref`. Matrix generators are
+not in this build.
+
+### List generator
 
 ```yaml
 apiVersion: rollops.klarlabs.de/v1
@@ -76,6 +78,43 @@ template:
         manifestFrom: { path: deploy/web.yaml }
     strategy: { type: rolling }
 ```
+
+### Cluster generator
+
+Point `ROLLOPS_CLUSTERS` at a registry file the daemon loads at boot:
+
+```yaml
+# /etc/rollops/clusters.yaml
+clusters:
+  - { name: east, kubeconfig: /etc/rollops/clusters/east, context: east, labels: { tier: prod, env: prod } }
+  - { name: west, kubeconfig: /etc/rollops/clusters/west, context: west, labels: { tier: prod, env: staging } }
+  - { name: dev,  kubeconfig: /etc/rollops/clusters/dev,  context: dev,  labels: { tier: dev } }
+```
+
+```yaml
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - cluster:
+      selector: { matchLabels: { tier: prod } }   # empty selector → all clusters
+template:
+  spec:
+    target:
+      kind: kubernetes
+      ref: "web@{{cluster.name}}"
+      env: "{{cluster.labels.env}}"
+      criticality: low
+      spec:
+        kubeconfig: "{{cluster.kubeconfig}}"
+        context: "{{cluster.context}}"
+        namespace: web
+        resource: deployment/web
+        manifestFrom: { path: deploy/web.yaml }
+    strategy: { type: rolling }
+```
+
+Placeholders: `name`, `kubeconfig`, `context`, `cluster.name`,
+`cluster.kubeconfig`, `cluster.context`, and `cluster.labels.<key>`.
 
 ## Fleet view
 
