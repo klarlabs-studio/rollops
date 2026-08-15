@@ -133,6 +133,9 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	var summaries []string
 	changed := false
 	action := ""
+	var riskScore float64
+	needsApproval := false
+	sensitive := false
 	for _, d := range docs {
 		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
 			writeErr(w, http.StatusForbidden, err.Error())
@@ -152,12 +155,20 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		} else if action != string(p.Action) {
 			action = "mixed"
 		}
+		if p.RiskScore > riskScore {
+			riskScore = p.RiskScore
+		}
+		needsApproval = needsApproval || p.NeedsApproval
+		sensitive = sensitive || p.Sensitive
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
 		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"action": action, "changed": changed, "summary": summary})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"action": action, "changed": changed, "summary": summary,
+		"risk_score": riskScore, "needs_approval": needsApproval, "sensitive": sensitive,
+	})
 }
 
 func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +204,7 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef})
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "risk_score": rl.RiskScore})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +218,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy, "note": rl.Note})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy, "note": rl.Note,
+		"risk_score": rl.RiskScore, "actor_kind": rl.Initiator.Kind, "actor_name": rl.Initiator.Name,
+	})
 }
 
 func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {

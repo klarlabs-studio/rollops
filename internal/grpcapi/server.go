@@ -100,6 +100,9 @@ func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollops
 	var summaries []string
 	changed := false
 	action := ""
+	var riskScore float64
+	needsApproval := false
+	sensitive := false
 	for _, d := range docs {
 		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -117,12 +120,20 @@ func (s *Server) Plan(ctx context.Context, req *rollopsv1.PlanRequest) (*rollops
 		} else if action != string(p.Action) {
 			action = "mixed"
 		}
+		if p.RiskScore > riskScore {
+			riskScore = p.RiskScore
+		}
+		needsApproval = needsApproval || p.NeedsApproval
+		sensitive = sensitive || p.Sensitive
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
 		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
 	}
-	return &rollopsv1.PlanResponse{Action: action, Changed: changed, Summary: summary}, nil
+	return &rollopsv1.PlanResponse{
+		Action: action, Changed: changed, Summary: summary,
+		RiskScore: riskScore, NeedsApproval: needsApproval, Sensitive: sensitive,
+	}, nil
 }
 
 // Apply implements the Apply RPC. RolloutSet apply is refused — the daemon
@@ -150,7 +161,7 @@ func (s *Server) Apply(ctx context.Context, req *rollopsv1.ApplyRequest) (*rollo
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &rollopsv1.ApplyResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef}, nil
+	return &rollopsv1.ApplyResponse{Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, RiskScore: rl.RiskScore}, nil
 }
 
 // Status implements the Status RPC.
@@ -166,7 +177,8 @@ func (s *Server) Status(ctx context.Context, req *rollopsv1.StatusRequest) (*rol
 	return &rollopsv1.StatusResponse{
 		Id: rl.ID, Phase: string(rl.Phase), Target: rl.TargetRef, Strategy: string(rl.Strategy),
 		StepIndex: int32(rl.StepIndex), StepTotal: int32(rl.StepTotal), StepWeight: int32(rl.StepWeight),
-		Note: rl.Note,
+		Note: rl.Note, RiskScore: rl.RiskScore,
+		ActorKind: rl.Initiator.Kind, ActorName: rl.Initiator.Name,
 	}, nil
 }
 

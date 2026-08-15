@@ -52,6 +52,10 @@ message PlanResponse {
   string action = 1;   // create | update | noop
   bool changed = 2;
   string summary = 3;
+  // Risk fields when spec.risk is configured; zero/false when unconfigured.
+  double risk_score = 4;
+  bool needs_approval = 5;
+  bool sensitive = 6;
 }
 
 message ApplyRequest {
@@ -62,6 +66,7 @@ message ApplyResponse {
   string id = 1;
   string phase = 2;
   string target = 3;
+  double risk_score = 4;
 }
 
 message StatusRequest {
@@ -80,6 +85,9 @@ message StatusResponse {
   int32 step_total = 6;
   int32 step_weight = 7;
   string note = 8; // latest transition note (e.g. "database rollback: succeeded")
+  double risk_score = 9;
+  string actor_kind = 10;
+  string actor_name = 11;
 }
 
 message RollbackRequest {

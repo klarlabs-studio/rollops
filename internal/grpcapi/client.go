@@ -69,7 +69,10 @@ func (c *Client) Plan(ctx context.Context, cfg *config.Config) (*engine.Plan, er
 	if err != nil {
 		return nil, err
 	}
-	return &engine.Plan{Action: engine.PlanAction(r.GetAction()), Changed: r.GetChanged(), Summary: r.GetSummary()}, nil
+	return &engine.Plan{
+		Action: engine.PlanAction(r.GetAction()), Changed: r.GetChanged(), Summary: r.GetSummary(),
+		RiskScore: r.GetRiskScore(), NeedsApproval: r.GetNeedsApproval(), Sensitive: r.GetSensitive(),
+	}, nil
 }
 
 // Apply over gRPC.
@@ -82,7 +85,7 @@ func (c *Client) Apply(ctx context.Context, req engine.ApplyRequest) (*rollout.R
 	if err != nil {
 		return nil, err
 	}
-	return &rollout.Rollout{ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget()}, nil
+	return &rollout.Rollout{ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), RiskScore: r.GetRiskScore()}, nil
 }
 
 // Status over gRPC.
@@ -94,7 +97,8 @@ func (c *Client) Status(ctx context.Context, id string) (rollout.Rollout, error)
 	return rollout.Rollout{
 		ID: r.GetId(), Phase: rollout.Phase(r.GetPhase()), TargetRef: r.GetTarget(), Strategy: rollout.Strategy(r.GetStrategy()),
 		StepIndex: int(r.GetStepIndex()), StepTotal: int(r.GetStepTotal()), StepWeight: int(r.GetStepWeight()),
-		Note: r.GetNote(),
+		Note: r.GetNote(), RiskScore: r.GetRiskScore(),
+		Initiator: rollout.Identity{Kind: r.GetActorKind(), Name: r.GetActorName()},
 	}, nil
 }
 

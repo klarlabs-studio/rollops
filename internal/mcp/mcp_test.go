@@ -81,6 +81,51 @@ func asAgent(name string) context.Context {
 	return WithIdentity(context.Background(), rollout.Identity{Kind: "agent", Name: name})
 }
 
+func TestTools_PlanSurfacesRisk(t *testing.T) {
+	tl := newTools(t)
+	ctx := asAgent("nomi")
+	risky := `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: payments
+spec:
+  target:
+    kind: fake
+    ref: payments/prod/api
+    criticality: critical
+    env: prod
+    spec:
+      x: 1
+  strategy:
+    type: blue-green
+  risk:
+    threshold: 0.5
+    sensitive: 'changeType == "schema"'
+`
+	p, err := tl.Plan(ctx, PlanInput{Config: risky})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.RiskScore <= 0 || !p.NeedsApproval {
+		t.Fatalf("plan risk = score=%v need=%v, want score>0 and needs_approval", p.RiskScore, p.NeedsApproval)
+	}
+	a, err := tl.Apply(ctx, ApplyInput{Config: risky})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.RiskScore <= 0 {
+		t.Fatalf("apply risk_score = %v", a.RiskScore)
+	}
+	s, err := tl.Status(ctx, StatusInput{RolloutID: a.RolloutID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.RiskScore <= 0 || s.ActorKind != "agent" || s.ActorName != "nomi" {
+		t.Fatalf("status = %+v", s)
+	}
+}
+
 func TestTools_PlanApplyStatus(t *testing.T) {
 	tl := newTools(t)
 	ctx := asAgent("nomi")
@@ -91,6 +136,9 @@ func TestTools_PlanApplyStatus(t *testing.T) {
 	}
 	if p.Summary == "" {
 		t.Error("plan summary empty")
+	}
+	if p.RiskScore != 0 || p.NeedsApproval {
+		t.Errorf("unconfigured risk should be zero: %+v", p)
 	}
 	a, err := tl.Apply(ctx, ApplyInput{Config: cfgYAML})
 	if err != nil {
