@@ -1,5 +1,6 @@
 # Example RolloutSet with a list generator. plan/doctor expand this to N
 # RolloutConfigs; apply is refused — the daemon watcher owns fan-out.
+# Uses kind: fake so the example stays a shape demo (not a k8s security surface).
 apiVersion: rollops.klarlabs.de/v1
 kind: RolloutSet
 metadata:
@@ -7,30 +8,15 @@ metadata:
 generators:
   - list:
       elements:
-        - { name: east, kubeconfig: /etc/rollops/east, context: east }
-        - { name: west, kubeconfig: /etc/rollops/west, context: west }
+        - { name: east, region: us-east }
+        - { name: west, region: us-west }
 template:
   spec:
     target:
-      kind: kubernetes
+      kind: fake
       ref: "web@{{name}}"
       criticality: low
       spec:
-        kubeconfig: "{{kubeconfig}}"
-        context: "{{context}}"
-        namespace: web
-        resource: deployment/web
-        manifest: |
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata: { name: web }
-          spec:
-            replicas: 1
-            selector: { matchLabels: { app: web } }
-            template:
-              metadata: { labels: { app: web } }
-              spec:
-                containers:
-                  - { name: web, image: ghcr.io/example/web:1.0.0 }
+        region: "{{region}}"
     strategy:
       type: rolling
