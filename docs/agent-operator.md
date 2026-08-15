@@ -68,7 +68,10 @@ subject to match your token name). Do **not** bind `agent:*` to `agent-deploy`.
 ## 4. Point Claude or Cursor at MCP
 
 HTTP MCP endpoint: `POST http://127.0.0.1:8091/mcp` (or `https://…` with TLS)
-with `Authorization: Bearer <token>`.
+with `Authorization: Bearer <token>`. The embedded MCP server speaks Streamable
+HTTP (mcp-go default): clients must send `Mcp-Method` (JSON-RPC method) and
+`MCP-Protocol-Version` on each POST. Cursor / Claude Desktop SDKs do this;
+raw `curl` must set the headers explicitly.
 
 **Cursor** — project or user MCP config (example under
 `examples/agent-loop/cursor-mcp.example.json`):
