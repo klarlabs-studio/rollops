@@ -915,6 +915,44 @@ features:
           priority: medium
           estimate: ""
           depends_on: []
+    - id: needle-history-surface
+      title: Move the needle — history legible on plan
+      description: Expose recent_failures and risk reason on Plan so agents escalate with a citeable cause. MCP/HTTP/gRPC/CLI. Canonical RFC docs/design/move-the-needle.md Phase A.
+      requirements:
+        - id: decision-recent-failures
+          title: Decision and Plan carry recent_failures and reason
+          description: risk.Decision includes RecentFailures; Engine.Plan copies RecentFailures and Reason when risk configured. Table test with seeded rolled-back history.
+          priority: high
+          estimate: ""
+          depends_on: []
+        - id: plan-history-all-surfaces
+          title: Plan recent_failures and reason on all surfaces
+          description: Proto PlanResponse fields; MCP/HTTP/gRPC/CLI expose recent_failures and reason. Tests.
+          priority: high
+          estimate: ""
+          depends_on:
+            - decision-recent-failures
+    - id: needle-walkthrough
+      title: Move the needle — public proof walkthrough
+      description: docs/agent-walkthrough.md narrative from MCP enable through risk escalate to history attribution. README and agent-operator link it as the proof page. RFC Phase B.
+      requirements:
+        - id: agent-walkthrough-doc
+          title: Agent walkthrough doc and README link
+          description: Narrative walkthrough with example plan JSON including needs_approval and recent_failures. Linked from README USP and agent-operator.
+          priority: high
+          estimate: ""
+          depends_on:
+            - plan-history-all-surfaces
+    - id: needle-example-bar
+      title: Move the needle — agent-grade example bar
+      description: Examples with risk include history plus sensitive CEL using recentFailures. Hetero and rollout-config.example match the walkthrough. RFC Phase C.
+      requirements:
+        - id: examples-history-sensitive
+          title: Examples teach history plus recentFailures sensitive
+          description: rollout-config.example and examples/hetero risk blocks include history and sensitive CEL referencing recentFailures. examples-check green.
+          priority: medium
+          estimate: ""
+          depends_on: []
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.
@@ -938,4 +976,6 @@ constraints:
       description: This program does not add Jsonnet, app-of-apps, ApplicationSet matrix/git generators, Helm install (stay on helm template), host agent/pull mode, Postgres/mnemos Store backends, studio billing/tenancy, Istio/NGINX/SMI, replica-weighted canary, or multi-stage approval chains. Gateway API remains the rich traffic path. Stop when the RFC done-when list is met.
     - id: agent-loop-out-of-scope
       description: Agent-loop-as-product does not add matrix/git generators, new MCP verbs beyond risk/attribution fields, forced cosign or risk.history defaults, Obvia analysis-on-by-default, host agent, or Studio. Stop when the RFC done-when list is met.
+    - id: move-the-needle-out-of-scope
+      description: Move-the-needle does not force cosign or risk.history on every install, does not default-on Obvia analysis, does not touch agent-go/nox/relicta, and does not add Argo matrix. Stop when the RFC done-when list is met.
 version: 0.1.0

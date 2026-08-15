@@ -1469,6 +1469,70 @@
         }
       ],
       "source": {}
+    },
+    {
+      "id": "needle-history-surface",
+      "title": "Move the needle — history legible on plan",
+      "description": "Expose recent_failures and risk reason on Plan so agents escalate with a citeable cause. MCP/HTTP/gRPC/CLI. Canonical RFC docs/design/move-the-needle.md Phase A.",
+      "requirements": [
+        {
+          "id": "decision-recent-failures",
+          "title": "Decision and Plan carry recent_failures and reason",
+          "description": "risk.Decision includes RecentFailures; Engine.Plan copies RecentFailures and Reason when risk configured. Table test with seeded rolled-back history.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [],
+          "source": {}
+        },
+        {
+          "id": "plan-history-all-surfaces",
+          "title": "Plan recent_failures and reason on all surfaces",
+          "description": "Proto PlanResponse fields; MCP/HTTP/gRPC/CLI expose recent_failures and reason. Tests.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "decision-recent-failures"
+          ],
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "needle-walkthrough",
+      "title": "Move the needle — public proof walkthrough",
+      "description": "docs/agent-walkthrough.md narrative from MCP enable through risk escalate to history attribution. README and agent-operator link it as the proof page. RFC Phase B.",
+      "requirements": [
+        {
+          "id": "agent-walkthrough-doc",
+          "title": "Agent walkthrough doc and README link",
+          "description": "Narrative walkthrough with example plan JSON including needs_approval and recent_failures. Linked from README USP and agent-operator.",
+          "priority": "high",
+          "estimate": "",
+          "depends_on": [
+            "plan-history-all-surfaces"
+          ],
+          "source": {}
+        }
+      ],
+      "source": {}
+    },
+    {
+      "id": "needle-example-bar",
+      "title": "Move the needle — agent-grade example bar",
+      "description": "Examples with risk include history plus sensitive CEL using recentFailures. Hetero and rollout-config.example match the walkthrough. RFC Phase C.",
+      "requirements": [
+        {
+          "id": "examples-history-sensitive",
+          "title": "Examples teach history plus recentFailures sensitive",
+          "description": "rollout-config.example and examples/hetero risk blocks include history and sensitive CEL referencing recentFailures. examples-check green.",
+          "priority": "medium",
+          "estimate": "",
+          "depends_on": [],
+          "source": {}
+        }
+      ],
+      "source": {}
     }
   ],
   "constraints": [
