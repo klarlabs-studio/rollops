@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 461,
+  "version": 463,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -847,10 +847,14 @@
       "elapsed_minutes": 0
     },
     "task-mcp-rollouts-fleet": {
-      "status": "in_progress",
+      "status": "verified",
       "path": "",
       "owner": "Cursor Agent",
+      "evidence": [
+        "48ec4db go test ./internal/mcp/"
+      ],
       "started_at": "2026-08-15T08:51:15.563064333Z",
+      "completed_at": "2026-08-15T08:52:11.85643248Z",
       "elapsed_minutes": 0
     },
     "task-mcp-tools-mapping-1-1-to": {
@@ -1618,5 +1622,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:51:28.47060541Z"
+  "updated_at": "2026-08-15T08:52:11.877168382Z"
 }
