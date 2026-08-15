@@ -1,25 +1,21 @@
 # Status — Rollops
 
-*Updated: 2026-08-14*
+*Updated: 2026-08-15*
 
 ## Current State
 
 Rollops is **released at v0.30.0** (tree HEAD; cluster may lag — last recorded
 in-cluster pin was v0.26.0). It operates the creator's GitOps fleet.
 
-**Make it real is executed** (`docs/design/make-it-real.md`, Roady 142/142).
-Advertised behaviour matches `rollopsd`: freeze persist, shared boot, risk on
-the rollout, Vault+Env, opt-in analysis, honest `current`, agent-deploy + MCP
-observe tools, tick-driven canary with pause/resume/abort, HMAC webhook,
-`RolloutSet` list, `ignoreDifferences`, `dependsOn` waits. Do not add Argo
-checkboxes. Next is TDD §17 leftovers (schema versioning, plugin protocol,
-analysis P2, multi-instance, UI act-vs-observe, RBAC taxonomy) — plan those
-in Roady before coding.
+**Make it real is executed** (`docs/design/make-it-real.md`). PR #135 still open.
+**Multi-cluster Phase 2 is executed** on `cursor/rolloutset-cluster-30c0`:
+`ROLLOPS_CLUSTERS` registry + `RolloutSet` cluster generator (Roady 144/144).
+Do not start matrix/git or fleet rollup without a new plan. Next candidates:
+TDD §17 leftovers — plan in Roady before coding.
 
-**Last Session Summary (2026-08-14):** Closed Phases C2–D after C1. Warden
-pre-push green on HEAD; CI 7/7. Four historical chore commits lack notes
-(pre-commit only; Cursor overrides `core.hooksPath` so `git push` does not
-run pre-push — always `warden run pre-push` explicitly).
+**Last Session Summary (2026-08-15):** Shipped cluster registry + RolloutSet
+cluster generator. Warden pre-push required before push (Cursor overrides
+`core.hooksPath`). Stack PR on make-it-real branch when #135 is unmerged.
 
 ---
 

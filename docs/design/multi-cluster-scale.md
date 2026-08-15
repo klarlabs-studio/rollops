@@ -1,9 +1,9 @@
 # RFC: Multi-cluster at scale
 
-Status: **Phase 1 shipped** (Make it real D2). **Phase 2 (cluster
-generator) approved for execution**. Matrix/git and fleet status rollup
-remain draft / not scheduled.
-Date: 2026-06-14 (Phase 1 approved 2026-08-14; Phase 2 approved 2026-08-15).
+Status: **Phase 1 shipped** (Make it real D2). **Phase 2 shipped**
+(cluster registry + `RolloutSet` cluster generator). Matrix/git and fleet
+status rollup remain draft / not scheduled.
+Date: 2026-06-14 (Phase 1 approved 2026-08-14; Phase 2 shipped 2026-08-15).
 
 ## Problem
 
@@ -115,7 +115,7 @@ phases**:
   Deterministic per-item `ref`. Validation: every generated config must validate;
   `ref` uniqueness enforced.
 - **Phase 2** — `cluster` generator (iterate the registry, label selector). This
-  is the ApplicationSet headline.
+  is the ApplicationSet headline. **Shipped 2026-08-15.**
 - **Phase 3** — `matrix`/`git-directory` generators; a fleet status rollup
   ("web: 9/10 clusters promoted") in CLI/UI; optional promotion *waves*
   (sequential cluster groups), reusing the existing `Environments` concept.

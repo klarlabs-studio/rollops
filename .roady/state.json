@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 442,
+  "version": 447,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -476,11 +476,15 @@
       "elapsed_minutes": 0
     },
     "task-cluster-registry-file": {
-      "status": "in_progress",
+      "status": "verified",
       "path": "",
       "owner": "Cursor Agent",
+      "evidence": [
+        "97bf066 go test ./internal/config/ -run Cluster"
+      ],
       "started_at": "2026-08-15T08:07:35.651889789Z",
-      "elapsed_minutes": 0
+      "completed_at": "2026-08-15T08:11:07.862730277Z",
+      "elapsed_minutes": 3
     },
     "task-command-tree-plan-apply-verify-promote": {
       "status": "verified",
@@ -1423,8 +1427,14 @@
       "elapsed_minutes": 0
     },
     "task-rolloutset-cluster-generator": {
-      "status": "pending",
+      "status": "verified",
       "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "a87661e go test ./internal/config/ ./cmd/rollopsd/"
+      ],
+      "started_at": "2026-08-15T08:11:07.899007915Z",
+      "completed_at": "2026-08-15T08:11:07.914798616Z",
       "elapsed_minutes": 0
     },
     "task-scheduledrollout-queue-in-the-store": {
@@ -1568,5 +1578,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:07:35.651889789Z"
+  "updated_at": "2026-08-15T08:11:07.934964221Z"
 }
