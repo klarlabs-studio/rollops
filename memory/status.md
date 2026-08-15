@@ -4,13 +4,10 @@
 
 ## Current State
 
-Rollops is **released at v0.32.0**. **Move the needle** executed
-(`docs/design/move-the-needle.md`): plan surfaces `recent_failures` + reason;
-public proof at `docs/agent-walkthrough.md`; examples teach history-sensitive
-CEL. Matrix/git stay out.
-
-Still operator: rotate `k3s-ghcr-pull` before 2026-08-29. Outside repo:
-agent-go CRITICAL vulns, go.sum excludes, relicta/nox.
+Rollops is cutting **v0.33.0** (move the needle — #144). Plan surfaces
+`recent_failures` + `reason`; proof at `docs/agent-walkthrough.md`. Deploy pin
+`v0.33.0`. Cluster auto-deploys after ghcr. Rotate `k3s-ghcr-pull` before
+2026-08-29. Outside repo: agent-go CRITICAL vulns.
 
 ---
 
