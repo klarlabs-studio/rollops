@@ -399,6 +399,17 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 		p.Migration = fmt.Sprintf("migrate (%s): %s", c.Spec.DatabaseMigrateWhen(), strings.Join(mig.Command, " "))
 		p.Summary = p.render()
 	}
+	// Attach the risk decision when configured so agents can escalate from
+	// plan — not only discover a gate on apply.
+	if c.Spec.Risk.Threshold > 0 || c.Spec.Risk.Sensitive != "" {
+		d, err := e.EvaluateRisk(ctx, c, RiskFromConfig(c))
+		if err != nil {
+			return nil, err
+		}
+		p.RiskScore = d.Score
+		p.NeedsApproval = d.NeedsApproval
+		p.Sensitive = d.Sensitive
+	}
 	return p, nil
 }
 
@@ -473,6 +484,12 @@ type Plan struct {
 	// blue-green without traffic routing is a full cutover. Empty when the
 	// type name already matches what will run.
 	StrategyNote string
+	// Risk fields are set when spec.risk is configured (threshold > 0 or a
+	// sensitive expression). Zero/false when risk is unconfigured so agents
+	// can tell "no gate" from "low score".
+	RiskScore     float64
+	NeedsApproval bool
+	Sensitive     bool
 }
 
 func newPlan(ref string, desired pt.Manifest, current pt.Fingerprint, deepDrift bool) *Plan {
