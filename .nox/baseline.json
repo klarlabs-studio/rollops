@@ -20,6 +20,15 @@
       "created_at": "2026-08-12T00:00:00Z"
     },
     {
+      "fingerprint": "2a5ca8bc573407f19704ecb6f06e41767818455a854579eae64a2f0d2d1ac9f7",
+      "rule_id": "TAINT-004",
+      "file_path": "internal/config/clusters.go",
+      "severity": "high",
+      "reason": "ROLLOPS_CLUSTERS is operator configuration for the cluster registry file path, same threat model as ROLLOPS_PLUGIN_PUBLIC_KEY (already waived). Whoever can set the process environment can already read any file the process can. LoadClustersFile additionally requires an absolute path without dot-dot segments before ReadFile. Fingerprint from CI nox-results on #139. Re-verify if this path ever becomes settable from a request, plugin manifest, or other non-operator source.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-15T00:00:00Z"
+    },
+    {
       "fingerprint": "2678ae2b74948072d76040b950287fb2b6a0cefa18df3abaac9dc4c4e2fe3ce4",
       "rule_id": "IAC-294",
       "file_path": "deploy/kubernetes/rollopsd.yaml",
