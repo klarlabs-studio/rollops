@@ -10,6 +10,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	mcpserver "go.klarlabs.de/mcp"
 
@@ -89,34 +91,61 @@ type RollbackOutput struct {
 
 // --- handlers ---
 
-// Plan implements rollouts.plan.
+// Plan implements rollouts.plan. A RolloutSet expands to N plans; the summary
+// lists every generated target.
 func (t *Tools) Plan(ctx context.Context, in PlanInput) (PlanOutput, error) {
 	id, err := t.caller(ctx)
 	if err != nil {
 		return PlanOutput{}, err
 	}
-	c, err := config.Load([]byte(in.Config))
+	if err := config.LoadClusterRegistryEnv(nil); err != nil {
+		return PlanOutput{}, err
+	}
+	docs, err := config.LoadDocuments([]byte(in.Config), "mcp")
 	if err != nil {
 		return PlanOutput{}, err
 	}
-	if err := t.authz(id, security.PermPlan, c); err != nil {
-		return PlanOutput{}, err
+	var summaries []string
+	changed := false
+	action := ""
+	for _, d := range docs {
+		if err := t.authz(id, security.PermPlan, d.Config); err != nil {
+			return PlanOutput{}, err
+		}
+		p, err := t.eng.Plan(ctx, d.Config)
+		if err != nil {
+			return PlanOutput{}, err
+		}
+		summaries = append(summaries, p.Summary)
+		if p.Changed {
+			changed = true
+		}
+		if action == "" {
+			action = string(p.Action)
+		} else if action != string(p.Action) {
+			action = "mixed"
+		}
 	}
-	p, err := t.eng.Plan(ctx, c)
-	if err != nil {
-		return PlanOutput{}, err
+	summary := strings.Join(summaries, "\n")
+	if len(docs) > 1 {
+		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
 	}
-	return PlanOutput{Action: string(p.Action), Changed: p.Changed, Summary: p.Summary}, nil
+	return PlanOutput{Action: action, Changed: changed, Summary: summary}, nil
 }
 
 // Apply implements rollouts.apply. The agent must have planned first; the engine
-// produces a plan here so the plan-before-apply guard holds.
+// produces a plan here so the plan-before-apply guard holds. RolloutSet apply is
+// refused — the daemon watcher owns fan-out.
 func (t *Tools) Apply(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
 	id, err := t.caller(ctx)
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	c, err := config.Load([]byte(in.Config))
+	data := []byte(in.Config)
+	if err := config.RefuseApplyRolloutSet(data); err != nil {
+		return ApplyOutput{}, err
+	}
+	c, err := config.Load(data)
 	if err != nil {
 		return ApplyOutput{}, err
 	}

@@ -197,8 +197,12 @@ func TestLoad_AllExamples(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read example: %v", err)
 			}
-			if _, err := Load(data); err != nil {
+			docs, err := LoadDocuments(data, path)
+			if err != nil {
 				t.Fatalf("example config must load and validate: %v", err)
+			}
+			if len(docs) == 0 {
+				t.Fatal("expected at least one document")
 			}
 		})
 	}

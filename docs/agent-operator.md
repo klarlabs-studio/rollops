@@ -66,7 +66,9 @@ Endpoint: `POST http://127.0.0.1:8091/mcp` (or `https://…` with TLS) with the
 bearer token. Observe tools are authorized as `rollouts.status`; apply still
 plans first.
 
-1. **`rollouts.plan`** — YAML in, summary out. Required before apply.
+1. **`rollouts.plan`** — YAML in, summary out. Required before apply. Accepts a
+   `RolloutSet` and expands it to N target summaries (same as the watcher).
+   **`rollouts.apply` refuses a RolloutSet** — let reconcile fan out.
 2. **`rollouts.status`** / **`rollouts.list`** / **`rollouts.history`** /
    **`rollouts.drift`** / **`rollouts.fleet`** — inspect. `agent:*` can do this
    without the deploy grant. `fleet` takes a RolloutSet-style prefix (`web` /

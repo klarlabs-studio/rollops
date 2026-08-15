@@ -479,3 +479,47 @@ func TestCLI_DoctorDaemon(t *testing.T) {
 		t.Errorf("doctor output = %q", buf.String())
 	}
 }
+
+const rolloutSetYAML = `
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata: { name: web }
+generators:
+  - list:
+      elements:
+        - { name: east }
+        - { name: west }
+template:
+  spec:
+    target:
+      kind: fake
+      ref: "web@{{name}}"
+      criticality: low
+      spec: { x: 1 }
+    strategy: { type: rolling }
+`
+
+func TestCLI_PlanRolloutSetAndRefuseApply(t *testing.T) {
+	app, buf, _ := newApp(t)
+	path := filepath.Join(t.TempDir(), "web.yaml")
+	if err := os.WriteFile(path, []byte(rolloutSetYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"plan", path}); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "RolloutSet → 2 targets") || !strings.Contains(out, "web@east") || !strings.Contains(out, "web@west") {
+		t.Fatalf("plan output = %q", out)
+	}
+	if err := app.Run(context.Background(), []string{"apply", path}); err == nil || !strings.Contains(err.Error(), "RolloutSet") {
+		t.Fatalf("apply want refuse, got %v", err)
+	}
+	buf.Reset()
+	if err := app.Run(context.Background(), []string{"doctor", path}); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if !strings.Contains(buf.String(), "2 rollout(s)") {
+		t.Fatalf("doctor = %q", buf.String())
+	}
+}

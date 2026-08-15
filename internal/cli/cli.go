@@ -209,26 +209,36 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) plan(ctx context.Context, args []string) error {
-	c, root, err := loadConfigArg(args)
+	docs, root, err := loadDocumentsArg(args)
 	if err != nil {
 		return err
 	}
 	ctx = engine.WithRoot(ctx, root)
-	p, err := a.Ops.Plan(ctx, c)
-	if err != nil {
-		return err
+	if len(docs) > 1 {
+		_, _ = fmt.Fprintf(a.Out, "RolloutSet → %d targets\n", len(docs))
 	}
-	_, _ = fmt.Fprintln(a.Out, p.Summary)
-	// Surface the rendered manifest for a referenced source so the resolved
-	// result is reviewable before an apply.
-	if len(p.Rendered) > 0 {
-		_, _ = fmt.Fprintf(a.Out, "\n--- rendered manifest ---\n%s\n", p.Rendered)
+	for _, d := range docs {
+		p, err := a.Ops.Plan(ctx, d.Config)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(a.Out, p.Summary)
+		if len(p.Rendered) > 0 {
+			_, _ = fmt.Fprintf(a.Out, "\n--- rendered manifest (%s) ---\n%s\n", d.Config.Spec.Target.Ref, p.Rendered)
+		}
 	}
 	return nil
 }
 
 func (a *App) apply(ctx context.Context, args []string) error {
-	c, root, err := loadConfigArg(args)
+	data, root, err := readConfigFileArg(args)
+	if err != nil {
+		return err
+	}
+	if err := config.RefuseApplyRolloutSet(data); err != nil {
+		return err
+	}
+	c, err := config.Load(data)
 	if err != nil {
 		return err
 	}
@@ -442,19 +452,35 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 	var failed []string
 	var cfg *config.Config
 	if len(args) > 0 {
-		c, _, err := loadConfigArg(args[:1])
+		docs, _, err := loadDocumentsArg(args[:1])
 		if err != nil {
 			_, _ = fmt.Fprintf(a.Out, "config: fail (%v)\n", err)
 			failed = append(failed, "config")
 		} else {
-			cfg = c
-			_, _ = fmt.Fprintf(a.Out, "config: ok (%s)\n", args[0])
-			if note := cfg.HonestStrategy(); note != "" {
-				_, _ = fmt.Fprintf(a.Out, "strategy: %s\n", note)
+			_, _ = fmt.Fprintf(a.Out, "config: ok (%s) — %d rollout(s)\n", args[0], len(docs))
+			for _, d := range docs {
+				if note := d.Config.HonestStrategy(); note != "" {
+					_, _ = fmt.Fprintf(a.Out, "strategy %s: %s\n", d.Config.Spec.Target.Ref, note)
+				}
+			}
+			if len(docs) > 0 {
+				cfg = docs[0].Config // probe tools from first member
 			}
 		}
 	} else {
 		_, _ = fmt.Fprintln(a.Out, "config: skipped (pass rollops.yaml to validate)")
+	}
+
+	if path := os.Getenv("ROLLOPS_CLUSTERS"); path != "" {
+		clusters, err := config.LoadClustersFile(path)
+		if err != nil {
+			_, _ = fmt.Fprintf(a.Out, "clusters: fail (%v)\n", err)
+			failed = append(failed, "clusters")
+		} else {
+			_, _ = fmt.Fprintf(a.Out, "clusters: ok (%s) — %d cluster(s)\n", path, len(clusters))
+		}
+	} else {
+		_, _ = fmt.Fprintln(a.Out, "clusters: skipped (set ROLLOPS_CLUSTERS for cluster generators)")
 	}
 
 	// Render-tool readiness: a Kubernetes target renders through kubectl (always)
@@ -572,11 +598,7 @@ func (a *App) version() error {
 	return nil
 }
 
-// loadConfigArg loads the config named by args[0] and returns it alongside the
-// directory it lives in — the root that relative referenced manifest sources
-// (manifestFrom) resolve against, so the one-shot CLI and the daemon behave
-// identically.
-func loadConfigArg(args []string) (*config.Config, string, error) {
+func readConfigFileArg(args []string) ([]byte, string, error) {
 	if len(args) < 1 {
 		return nil, "", fmt.Errorf("config file path required")
 	}
@@ -584,9 +606,22 @@ func loadConfigArg(args []string) (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read config: %w", err)
 	}
-	c, err := config.Load(data)
+	return data, filepath.Dir(args[0]), nil
+}
+
+// loadDocumentsArg expands a RolloutConfig or RolloutSet the same way the
+// watcher does, and loads ROLLOPS_CLUSTERS for cluster generators.
+func loadDocumentsArg(args []string) ([]config.NamedConfig, string, error) {
+	data, root, err := readConfigFileArg(args)
 	if err != nil {
 		return nil, "", err
 	}
-	return c, filepath.Dir(args[0]), nil
+	if err := config.LoadClusterRegistryEnv(os.Getenv); err != nil {
+		return nil, "", err
+	}
+	docs, err := config.LoadDocuments(data, args[0])
+	if err != nil {
+		return nil, "", err
+	}
+	return docs, root, nil
 }
