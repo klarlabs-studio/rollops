@@ -268,6 +268,27 @@ func (s *Server) Freeze(ctx context.Context, req *rollopsv1.FreezeRequest) (*rol
 	return &rollopsv1.FreezeResponse{Active: active, Reason: reason}, nil
 }
 
+// FleetStatus implements the FleetStatus RPC (RolloutSet-style prefix rollup).
+func (s *Server) FleetStatus(ctx context.Context, req *rollopsv1.FleetStatusRequest) (*rollopsv1.FleetStatusResponse, error) {
+	actor := identityFrom(ctx)
+	if err := s.policy.Authorize(actor, security.PermStatus, security.Scope{}); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	rep, err := s.eng.FleetStatus(ctx, req.GetFilter())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	members := make([]*rollopsv1.FleetMember, 0, len(rep.Members))
+	for _, m := range rep.Members {
+		members = append(members, &rollopsv1.FleetMember{Id: m.ID, Target: m.Target, Phase: string(m.Phase)})
+	}
+	return &rollopsv1.FleetStatusResponse{
+		Name: rep.Name, Total: int32(rep.Total), Promoted: int32(rep.Promoted),
+		Active: int32(rep.Active), Degraded: int32(rep.Degraded), Awaiting: int32(rep.Awaiting),
+		Members: members,
+	}, nil
+}
+
 func scopeOf(c *config.Config) security.Scope {
 	return security.Scope{Env: c.Spec.Target.Env, TargetRef: c.Spec.Target.Ref}
 }

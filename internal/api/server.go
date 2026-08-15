@@ -80,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/verify", s.handleVerify)
 	mux.HandleFunc("POST /v1/freeze", s.handleFreeze)
 	mux.HandleFunc("GET /v1/rollouts/{id}", s.handleStatus)
+	mux.HandleFunc("GET /v1/fleet", s.handleFleet)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return s.authMiddleware(mux)
 }
@@ -170,6 +171,32 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": rl.ID, "phase": rl.Phase, "target": rl.TargetRef, "strategy": rl.Strategy, "note": rl.Note})
+}
+
+func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
+	id := identityFrom(r)
+	if err := s.policy.Authorize(id, security.PermStatus, security.Scope{}); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	filter := r.URL.Query().Get("prefix")
+	if filter == "" {
+		filter = r.URL.Query().Get("filter")
+	}
+	rep, err := s.eng.FleetStatus(r.Context(), filter)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	members := make([]map[string]any, 0, len(rep.Members))
+	for _, m := range rep.Members {
+		members = append(members, map[string]any{"id": m.ID, "target": m.Target, "phase": m.Phase})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name": rep.Name, "total": rep.Total, "promoted": rep.Promoted,
+		"active": rep.Active, "degraded": rep.Degraded, "awaiting": rep.Awaiting,
+		"members": members,
+	})
 }
 
 func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {

@@ -196,6 +196,28 @@ func TestGRPC_RBACDeniesViewerApply(t *testing.T) {
 	}
 }
 
+func TestGRPC_FleetStatus(t *testing.T) {
+	c := dialBuf(t)
+	ctx := withToken("t-felix")
+	if _, err := c.Apply(ctx, &rollopsv1.ApplyRequest{Config: cfgYAML}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	rep, err := c.FleetStatus(ctx, &rollopsv1.FleetStatusRequest{Filter: "demo/prod/app"})
+	if err != nil {
+		t.Fatalf("FleetStatus: %v", err)
+	}
+	if rep.GetTotal() != 1 || rep.GetName() != "demo/prod/app" {
+		t.Fatalf("fleet = %+v", rep)
+	}
+	if _, err := c.FleetStatus(ctx, &rollopsv1.FleetStatusRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty filter code = %v", status.Code(err))
+	}
+	// Viewer may read fleet (status perm).
+	if _, err := c.FleetStatus(withToken("t-bot"), &rollopsv1.FleetStatusRequest{Filter: "demo/prod/app"}); err != nil {
+		t.Fatalf("viewer fleet: %v", err)
+	}
+}
+
 func TestGRPC_RBACDeniesViewerRollback(t *testing.T) {
 	c := dialBuf(t)
 	_, err := c.Rollback(withToken("t-bot"), &rollopsv1.RollbackRequest{Target: "demo/prod/app"})

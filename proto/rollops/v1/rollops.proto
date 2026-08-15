@@ -38,6 +38,9 @@ service RolloutService {
   rpc Verify(RolloutActionRequest) returns (VerifyResponse);
   // Freeze engages or lifts the emergency kill-switch that blocks all applies.
   rpc Freeze(FreezeRequest) returns (FreezeResponse);
+  // FleetStatus aggregates the latest phase per target matching a RolloutSet-style
+  // prefix (e.g. "web" or "web@" → web@east, web@west). Authorized as status.
+  rpc FleetStatus(FleetStatusRequest) returns (FleetStatusResponse);
 }
 
 message PlanRequest {
@@ -142,3 +145,25 @@ message FreezeResponse {
   bool active = 1;
   string reason = 2;
 }
+
+message FleetStatusRequest {
+  // filter is a RolloutSet-style set name ("web") or prefix ("web@").
+  string filter = 1;
+}
+
+message FleetMember {
+  string id = 1;
+  string target = 2;
+  string phase = 3;
+}
+
+message FleetStatusResponse {
+  string name = 1;
+  int32 total = 2;
+  int32 promoted = 3;
+  int32 active = 4;
+  int32 degraded = 5;
+  int32 awaiting = 6;
+  repeated FleetMember members = 7;
+}
+

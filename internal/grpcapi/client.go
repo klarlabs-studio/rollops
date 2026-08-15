@@ -161,6 +161,23 @@ func (c *Client) Freeze(ctx context.Context, on bool, reason string) (bool, stri
 	return r.GetActive(), r.GetReason(), nil
 }
 
+// FleetStatus aggregates latest-per-target phases for a RolloutSet-style prefix.
+func (c *Client) FleetStatus(ctx context.Context, filter string) (engine.FleetReport, error) {
+	r, err := c.rpc.FleetStatus(c.ctx(ctx), &rollopsv1.FleetStatusRequest{Filter: filter})
+	if err != nil {
+		return engine.FleetReport{}, err
+	}
+	members := make([]engine.FleetMember, 0, len(r.GetMembers()))
+	for _, m := range r.GetMembers() {
+		members = append(members, engine.FleetMember{ID: m.GetId(), Target: m.GetTarget(), Phase: rollout.Phase(m.GetPhase())})
+	}
+	return engine.FleetReport{
+		Name: r.GetName(), Total: int(r.GetTotal()), Promoted: int(r.GetPromoted()),
+		Active: int(r.GetActive()), Degraded: int(r.GetDegraded()), Awaiting: int(r.GetAwaiting()),
+		Members: members,
+	}, nil
+}
+
 func (c *Client) rolloutAction(ctx context.Context, rpc func(context.Context, *rollopsv1.RolloutActionRequest, ...grpc.CallOption) (*rollopsv1.RolloutActionResponse, error), id string) (rollout.Rollout, error) {
 	r, err := rpc(c.ctx(ctx), &rollopsv1.RolloutActionRequest{Id: id})
 	if err != nil {

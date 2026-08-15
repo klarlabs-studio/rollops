@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 447,
+  "version": 452,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -639,6 +639,17 @@
       "started_at": "2026-06-09T21:13:34.762768+02:00",
       "completed_at": "2026-06-09T21:13:34.768731+02:00",
       "elapsed_minutes": 0
+    },
+    "task-fleet-status-rollup": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "fd666e8 go test ./internal/engine/ ./internal/cli/ ./internal/api/ ./internal/grpcapi/"
+      ],
+      "started_at": "2026-08-15T08:43:30.629933102Z",
+      "completed_at": "2026-08-15T08:46:53.389829217Z",
+      "elapsed_minutes": 3
     },
     "task-ftp-target-with-stamped-manifest-drift": {
       "status": "verified",
@@ -1578,5 +1589,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:11:07.934964221Z"
+  "updated_at": "2026-08-15T08:46:53.407618112Z"
 }

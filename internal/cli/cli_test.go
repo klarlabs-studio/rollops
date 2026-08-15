@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +165,36 @@ func (statusNoteOps) Freeze(context.Context, bool, string) (bool, string, error)
 }
 func (statusNoteOps) History(context.Context, string) ([]rollout.RolloutRecord, error) {
 	return []rollout.RolloutRecord{{RolloutID: "ro-cli", Note: "database rollback: succeeded"}}, nil
+}
+
+type fleetOps struct{ statusNoteOps }
+
+func (fleetOps) FleetStatus(_ context.Context, filter string) (engine.FleetReport, error) {
+	if filter == "" {
+		return engine.FleetReport{}, fmt.Errorf("filter required")
+	}
+	return engine.FleetReport{
+		Name: "web", Total: 2, Promoted: 1, Active: 1,
+		Members: []engine.FleetMember{
+			{ID: "r1", Target: "web@east", Phase: rollout.PhasePromoted},
+			{ID: "r2", Target: "web@west", Phase: rollout.PhaseDeploying},
+		},
+	}, nil
+}
+
+func TestCLI_Fleet(t *testing.T) {
+	var buf strings.Builder
+	app := &App{Ops: fleetOps{}, Out: &buf}
+	if err := app.Run(context.Background(), []string{"fleet", "web"}); err != nil {
+		t.Fatalf("fleet: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "web: 1/2 promoted") || !strings.Contains(out, "web@east") {
+		t.Fatalf("output = %q", out)
+	}
+	if err := app.Run(context.Background(), []string{"fleet"}); err == nil {
+		t.Fatal("expected missing filter error")
+	}
 }
 
 func TestCLI_RollbackLast(t *testing.T) {

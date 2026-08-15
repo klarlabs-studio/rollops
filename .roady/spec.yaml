@@ -626,39 +626,46 @@ features:
           title: Shared engine boot for CLI and daemon
           description: Extract daemon engine option assembly (audit, guardrails, secrets, governance, artifact gate, notifier, confinement, leases) into a shared boot package used by cmd/rollopsd and the one-shot CLI. One-shot apply against a frozen SQLite file must be refused. Test from a fake env.
           priority: high
+          estimate: ""
           depends_on: []
         - id: real-persist-risk-score
           title: Persist EvaluateRisk onto the rollout
           description: Engine.Apply writes the risk Decision score onto Rollout.RiskScore. UI shows that number. Drop the decisionkit label unless decisionkit is actually called; keep the homegrown scorer.
           priority: high
+          estimate: ""
           depends_on: []
         - id: real-risk-inputs-from-callers
           title: Callers pass RiskInputs instead of zeros
           description: Reconcile, CLI, HTTP, gRPC, and MCP fill RiskInputs — env from spec.target.env, change-type from plan/hooks, blast radius from depgraph when available. Empty inputs must not be the production path.
           priority: high
+          estimate: ""
           depends_on:
             - real-persist-risk-score
         - id: real-wire-metric-analysis
           title: Daemon evaluates spec.analysis when enabled
           description: rollopsd enables WithMetricAnalysis / Prometheus or metricprovider plugin when ROLLOPS_ANALYSIS is set or equivalent. Default remains off (observability-free v1). Startup log. Promote fails on a breaching provider.
           priority: high
+          estimate: ""
           depends_on:
             - real-extract-engine-boot
         - id: real-wire-vault
           title: Daemon constructs Vault plus Env secret chain
           description: secrets.FromEnv builds Chain{Vault, Env} when VAULT_ADDR is set, else Env only. Token from VAULT_TOKEN or VAULT_TOKEN_FILE, never logged. Unset VAULT_ADDR leaves behaviour unchanged.
           priority: high
+          estimate: ""
           depends_on:
             - real-extract-engine-boot
         - id: real-persist-freeze
           title: Freeze survives daemon restart
           description: Persist freeze active/reason/by/at in the Store. Daemon loads it at boot; Engage and Lift write through. One-shot CLI sees the same row. Agents cannot Lift (existing RBAC).
           priority: high
+          estimate: ""
           depends_on: []
         - id: real-cli-policy-parity
           title: One-shot CLI cannot skip freeze secrets audit
           description: After shared boot, one-shot apply/rollback/freeze uses the same guardrails, secrets, audit, and artifact gate as the daemon when the same env/DB are present.
           priority: high
+          estimate: ""
           depends_on:
             - real-extract-engine-boot
             - real-persist-freeze
@@ -667,21 +674,25 @@ features:
           title: CLI gRPC client uses TLS when the daemon does
           description: grpcapi client stops always dialing insecure. With ROLLOPS_TLS_* set, ROLLOPS_DAEMON CLI uses servertls. Loopback plaintext remains the dev default.
           priority: medium
+          estimate: ""
           depends_on: []
         - id: real-traffic-fail-closed
           title: Traffic SetWeight failure aborts the step
           description: driveTraffic errors fail Apply / the current progressive step and can auto-rollback. Feature-flag apply_flag stays best-effort and audited.
           priority: high
+          estimate: ""
           depends_on: []
         - id: real-imageauto-current-invariant
           title: Image-automation current means scanner equals Git pin
           description: current is only legal when scanner identity equals the Git-pinned identity. File-already-pins is a distinct outcome. Scanner-moved plus patch-unchanged is error, never current. Regression test closes issue 98 on the invariant.
           priority: high
+          estimate: ""
           depends_on: []
         - id: real-honesty-docs
           title: Docs and UI match rollopsd behaviour
           description: After the wires, README, TDD, wiki, vision status, UI copy, store/MCP package comments stop claiming Postgres, mnemos, host agent, standalone MCP, decisionkit UI scores, or unwired analysis. Webhook wording waits for Phase D. Vision is no longer Concept/pre-MVP.
           priority: high
+          estimate: ""
           depends_on:
             - real-persist-risk-score
             - real-risk-inputs-from-callers
@@ -700,18 +711,21 @@ features:
           title: Documented opt-in agent deploy role
           description: Add agent:deploy (plan/apply/rollback/status/verify — not freeze lift, not approve) as an example grant in docs/security-rbac.md and a policy snippet. Default agent:* stays plan+status.
           priority: high
+          estimate: ""
           depends_on:
             - real-honesty-docs
         - id: real-mcp-observe-tools
           title: MCP list history and drift tools
           description: Add rollouts.list, rollouts.history, rollouts.drift, authorized as status. Apply remains plan-before-apply.
           priority: medium
+          estimate: ""
           depends_on:
             - real-honesty-docs
         - id: real-mcp-runbook
           title: Agent operator runbook
           description: Short docs page — enable ROLLOPS_MCP_ADDR, tokens file, policy grant, example flow plan then status then apply then verify then rollback. Cluster enable stays operator work.
           priority: high
+          estimate: ""
           depends_on:
             - real-deploy-agent-rbac
             - real-mcp-observe-tools
@@ -723,24 +737,28 @@ features:
           title: Tick-driven canary stepper with snapshot restore
           description: Apply deploys once, starts Stepper, persists snapshot, returns. Reconcile tick advances health and SetWeight. Crash restores snapshot. Tests complete a short pause across two ticks, not one blocking Apply.
           priority: high
+          estimate: ""
           depends_on:
             - real-traffic-fail-closed
         - id: real-pause-resume-abort-api
           title: Pause resume abort on CLI HTTP gRPC MCP
           description: Engine methods plus all operator surfaces. Authorize as apply scoped to target ref. Abort rolls back. Table tests per surface.
           priority: high
+          estimate: ""
           depends_on:
             - real-stepper-tick
         - id: real-pause-resume-abort-ui
           title: Pause resume abort in the web console
           description: In-flight canary shows pause/resume/abort. UI never force-promotes. Bundle test asserts the controls.
           priority: medium
+          estimate: ""
           depends_on:
             - real-pause-resume-abort-api
         - id: real-honest-strategy-names
           title: doctor and plan name bake and cutover honestly
           description: canary without trafficRouting or featureFlags is a health-gated bake in plan/doctor summary. blue-green without traffic routing is a full cutover. Real two-stack blue-green stays out of scope.
           priority: medium
+          estimate: ""
           depends_on: []
     - id: real-gitops
       title: Make it real — GitOps wedge
@@ -750,24 +768,28 @@ features:
           title: GitHub HMAC webhook triggers reconcile
           description: POST hook route verifies git.VerifySignature and calls watcher.Tick. Secret from ROLLOPS_WEBHOOK_SECRET; unset means 404. Invalid signature 401 and does not Tick. Poll remains the safety net.
           priority: high
+          estimate: ""
           depends_on:
             - real-honesty-docs
         - id: real-rolloutset-list
           title: RolloutSet list generator expands in memory
           description: kind RolloutSet with a list generator and template expands at watch load into ordinary RolloutConfigs with deterministic unique target.ref. Each reconciles independently. No engine/store change. Cluster/matrix generators are out of scope.
           priority: high
+          estimate: ""
           depends_on:
             - real-honesty-docs
         - id: real-ignore-differences
           title: Kubernetes ignoreDifferences for drift
           description: Target spec lists field paths ignored in Observe/Diff so HPA replicas and webhook defaults do not flap. Apply stays client-side kubectl apply. Ignored-only diff is not drift; other fields still are.
           priority: medium
+          estimate: ""
           depends_on:
             - real-honesty-docs
         - id: real-dependson-wait
           title: Reconcile waits on dependsOn
           description: If B dependsOn A and A is not promoted, skip B this tick (logged, not fatal to the rest of the repo). A promoted unblocks B. DAG already feeds risk; this is deploy order.
           priority: medium
+          estimate: ""
           depends_on:
             - real-honesty-docs
     - id: rolloutset-cluster
@@ -778,13 +800,30 @@ features:
           title: Cluster registry loads from ROLLOPS_CLUSTERS
           description: YAML file lists clusters with name, kubeconfig, context, labels. Empty path means no registry. Loud errors on missing name or duplicate names. Daemon sets the registry at boot for watch load expansion.
           priority: high
+          estimate: ""
           depends_on: []
         - id: rolloutset-cluster-generator
           title: RolloutSet cluster generator expands with selector
           description: generators cluster selector matchLabels filters the registry; empty selector means all. Each match becomes a RolloutConfig with placeholders cluster.name, kubeconfig, context, cluster.labels.*. Unique target.ref enforced. List generator still works. No engine/store change.
           priority: high
+          estimate: ""
           depends_on:
             - cluster-registry-file
+    - id: fleet-status-rollup
+      title: Fleet status rollup
+      description: 'Multi-cluster RFC Phase 3a (lean). Aggregate latest-per-target rollout phases for a RolloutSet-style prefix (web@ → web: 9/10 promoted). Engine FleetRollup + gRPC/CLI/HTTP. No store schema change. Matrix/git generators and promotion waves remain out of scope (TDD forbids ApplicationSet matrix).'
+      requirements:
+        - id: engine-fleet-rollup
+          title: Engine FleetRollup aggregates latest phases by prefix
+          description: FleetRollup(filter) takes latest rollout per TargetRef matching filter (exact set name before @, or prefix with optional trailing @). Counts promoted/active/degraded/awaiting. No store schema change.
+          priority: high
+          depends_on: []
+        - id: fleet-surfaces
+          title: Fleet status on gRPC CLI and HTTP
+          description: Expose FleetStatus RPC (auth as status), rollops fleet CLI command, GET /v1/fleet?prefix=. Document in multi-cluster.md. Matrix/git out of scope.
+          priority: high
+          depends_on:
+            - engine-fleet-rollup
 constraints:
     - id: no-k8s-dependency
       description: Core has no Kubernetes dependency. K8s is one target plugin, never an assumption.
