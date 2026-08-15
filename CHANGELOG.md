@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.31.0 - Make it real, then multi-cluster
+
+Advertised behaviour matches the daemon, and a single `RolloutSet` can fan out
+across a cluster registry with a fleet view agents can read.
+
+### Make it real (#135)
+
+Trust, agent, canary, and the small GitOps wedge from
+`docs/design/make-it-real.md` are on the default path: freeze persists across
+restart; CLI and daemon share `internal/boot`; risk scores land on the rollout;
+Vault+Env secrets and opt-in analysis wire when configured; traffic
+`SetWeight` failure aborts the step; image-automation `current` only when the
+scanner identity equals the Git pin; CLI cannot skip freeze/secrets/audit; gRPC
+uses TLS when `ROLLOPS_TLS_*` is set.
+
+Agents get an unbound `agent-deploy` role plus MCP `list` / `history` / `drift`.
+Canaries are tick-driven with pause / resume / abort on CLI, HTTP, gRPC, MCP,
+and `/ui`, and plan/doctor name bake vs traffic canary honestly.
+
+GitOps: GitHub HMAC webhook (`POST /v1/hooks/github`), `RolloutSet` **list**
+generator, Kubernetes `ignoreDifferences`, and `dependsOn` waits.
+
+### Multi-cluster Phase 2–3a (#136–#139)
+
+- **Cluster registry** from `ROLLOPS_CLUSTERS` and a `RolloutSet` **cluster**
+  generator with `matchLabels`.
+- **Fleet status** — `rollops fleet`, `GET /v1/fleet`, gRPC `FleetStatus`, and
+  MCP `rollouts.fleet` (`web: 9/10 promoted`).
+- **Plan/doctor** expand a `RolloutSet` to all N members; **apply** of a set is
+  refused (the watcher owns fan-out). Absolute-path guard on the registry file.
+
+Matrix/git generators stay out (TDD).
+
+### Image automation stuck signal
+
+A wait that stops looking like one escalates to STUCK after consecutive
+awaiting ticks (#98 companion on main).
+
+### Deploy pin
+
+`deploy/kubernetes/rollopsd.yaml` pins `ghcr.io/klarlabs-studio/rollopsd:v0.31.0`.
+
+
 ## v0.30.0 - Verdicts you can check
 
 Both changes here fix a signal that could not fail visibly.
