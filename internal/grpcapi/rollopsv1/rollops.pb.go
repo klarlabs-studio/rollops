@@ -72,11 +72,13 @@ type PlanResponse struct {
 	Changed bool                   `protobuf:"varint,2,opt,name=changed,proto3" json:"changed,omitempty"`
 	Summary string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
 	// Risk fields when spec.risk is configured; zero/false when unconfigured.
-	RiskScore     float64 `protobuf:"fixed64,4,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
-	NeedsApproval bool    `protobuf:"varint,5,opt,name=needs_approval,json=needsApproval,proto3" json:"needs_approval,omitempty"`
-	Sensitive     bool    `protobuf:"varint,6,opt,name=sensitive,proto3" json:"sensitive,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RiskScore      float64 `protobuf:"fixed64,4,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
+	NeedsApproval  bool    `protobuf:"varint,5,opt,name=needs_approval,json=needsApproval,proto3" json:"needs_approval,omitempty"`
+	Sensitive      bool    `protobuf:"varint,6,opt,name=sensitive,proto3" json:"sensitive,omitempty"`
+	RecentFailures int32   `protobuf:"varint,7,opt,name=recent_failures,json=recentFailures,proto3" json:"recent_failures,omitempty"` // rolled-back count inside risk.history lookback
+	Reason         string  `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`                                        // citeable gate explanation for agents
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PlanResponse) Reset() {
@@ -149,6 +151,20 @@ func (x *PlanResponse) GetSensitive() bool {
 		return x.Sensitive
 	}
 	return false
+}
+
+func (x *PlanResponse) GetRecentFailures() int32 {
+	if x != nil {
+		return x.RecentFailures
+	}
+	return 0
+}
+
+func (x *PlanResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type ApplyRequest struct {
@@ -1134,7 +1150,7 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\x18rollops/v1/rollops.proto\x12\n" +
 	"rollops.v1\"%\n" +
 	"\vPlanRequest\x12\x16\n" +
-	"\x06config\x18\x01 \x01(\tR\x06config\"\xbe\x01\n" +
+	"\x06config\x18\x01 \x01(\tR\x06config\"\xff\x01\n" +
 	"\fPlanResponse\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x18\n" +
 	"\achanged\x18\x02 \x01(\bR\achanged\x12\x18\n" +
@@ -1142,7 +1158,9 @@ const file_rollops_v1_rollops_proto_rawDesc = "" +
 	"\n" +
 	"risk_score\x18\x04 \x01(\x01R\triskScore\x12%\n" +
 	"\x0eneeds_approval\x18\x05 \x01(\bR\rneedsApproval\x12\x1c\n" +
-	"\tsensitive\x18\x06 \x01(\bR\tsensitive\"&\n" +
+	"\tsensitive\x18\x06 \x01(\bR\tsensitive\x12'\n" +
+	"\x0frecent_failures\x18\a \x01(\x05R\x0erecentFailures\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\"&\n" +
 	"\fApplyRequest\x12\x16\n" +
 	"\x06config\x18\x01 \x01(\tR\x06config\"l\n" +
 	"\rApplyResponse\x12\x0e\n" +

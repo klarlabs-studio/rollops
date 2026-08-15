@@ -136,6 +136,8 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	var riskScore float64
 	needsApproval := false
 	sensitive := false
+	recentFailures := 0
+	reason := ""
 	for _, d := range docs {
 		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
 			writeErr(w, http.StatusForbidden, err.Error())
@@ -160,6 +162,12 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		}
 		needsApproval = needsApproval || p.NeedsApproval
 		sensitive = sensitive || p.Sensitive
+		if p.RecentFailures > recentFailures {
+			recentFailures = p.RecentFailures
+		}
+		if p.RiskReason != "" {
+			reason = p.RiskReason
+		}
 	}
 	summary := strings.Join(summaries, "\n")
 	if len(docs) > 1 {
@@ -168,6 +176,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"action": action, "changed": changed, "summary": summary,
 		"risk_score": riskScore, "needs_approval": needsApproval, "sensitive": sensitive,
+		"recent_failures": recentFailures, "reason": reason,
 	})
 }
 
