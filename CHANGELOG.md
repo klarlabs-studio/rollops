@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.32.0 - Agent loop as product
+
+Agents (and every other surface) can see risk *before* apply, and the Claude /
+Cursor dogfood path is documented as the public USP.
+
+### Risk on the plan (#142)
+
+`Engine.Plan` attaches `EvaluateRisk` when `spec.risk` is configured. MCP,
+HTTP, gRPC, and CLI expose `risk_score`, `needs_approval`, and `sensitive`.
+Status and apply carry `risk_score`; status includes actor attribution.
+
+### Published agent path
+
+`docs/agent-operator.md` covers MCP client config for Cursor and Claude
+Desktop, escalate-when-`needs_approval`, canary pause/abort, history, and
+opt-in cosign (`ROLLOPS_COSIGN_KEY`). Snippets under `examples/agent-loop/`.
+
+### Heterogeneous demo
+
+`examples/hetero/` — one SSH and one Kubernetes `RolloutConfig` under the same
+narrative. Matrix/git generators stay out.
+
+### Deploy pin
+
+`deploy/kubernetes/rollopsd.yaml` pins `ghcr.io/klarlabs-studio/rollopsd:v0.32.0`.
+
+
 ## v0.31.0 - Make it real, then multi-cluster
 
 Advertised behaviour matches the daemon, and a single `RolloutSet` can fan out

@@ -4,12 +4,10 @@
 
 ## Current State
 
-Rollops is **released at v0.31.0**. Next program: **agent loop as product**
-(`docs/design/agent-loop-product.md`) — risk on plan/status for agents, public
-Claude/Cursor MCP path, cosign documented as agent-grade, hetero SSH+K8s
-examples. Roady 157/157.
-
-Matrix/git generators stay out. Rotate `k3s-ghcr-pull` before 2026-08-29.
+Rollops is cutting **v0.32.0** (agent loop as product — #142). Deploy pin
+moves to `v0.32.0`; CHANGELOG records risk-visible plan and the public
+Claude/Cursor path. Cluster auto-deploys from the pin after the ghcr image
+exists. Matrix/git stay out. Rotate `k3s-ghcr-pull` before 2026-08-29.
 
 ---
 
