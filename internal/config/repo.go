@@ -100,9 +100,9 @@ type NamedConfig struct {
 // single file it returns that one config; when it is a directory it loads all
 // *.yaml / *.yml files in it (sorted, non-recursive), so one repo path can hold
 // many apps — the keel-style "manage everything" layout. A kind: RolloutSet file
-// expands in memory into N ordinary RolloutConfigs (list generator only). Each
-// file is validated; one bad file fails the whole load so a broken config never
-// silently drops an app from reconciliation.
+// expands in memory into N ordinary RolloutConfigs (list or cluster generator).
+// Each file is validated; one bad file fails the whole load so a broken config
+// never silently drops an app from reconciliation.
 func LoadAllFromDir(dir string, r RepoRef) ([]NamedConfig, error) {
 	r = r.WithDefaults()
 	full := filepath.Join(dir, filepath.Clean("/" + r.Path)[1:]) // prevent path escape

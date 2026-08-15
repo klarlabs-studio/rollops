@@ -10,6 +10,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -115,26 +116,62 @@ func identityFrom(r *http.Request) rollout.Identity {
 
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	id := identityFrom(r)
-	c, err := decodeConfig(r)
+	data, err := readBody(r)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.policy.Authorize(id, security.PermPlan, scopeOf(c)); err != nil {
-		writeErr(w, http.StatusForbidden, err.Error())
+	if err := config.LoadClusterRegistryEnv(nil); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := s.eng.Plan(r.Context(), c)
+	docs, err := config.LoadDocuments(data, "http")
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"action": p.Action, "changed": p.Changed, "summary": p.Summary})
+	var summaries []string
+	changed := false
+	action := ""
+	for _, d := range docs {
+		if err := s.policy.Authorize(id, security.PermPlan, scopeOf(d.Config)); err != nil {
+			writeErr(w, http.StatusForbidden, err.Error())
+			return
+		}
+		p, err := s.eng.Plan(r.Context(), d.Config)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		summaries = append(summaries, p.Summary)
+		if p.Changed {
+			changed = true
+		}
+		if action == "" {
+			action = string(p.Action)
+		} else if action != string(p.Action) {
+			action = "mixed"
+		}
+	}
+	summary := strings.Join(summaries, "\n")
+	if len(docs) > 1 {
+		summary = fmt.Sprintf("RolloutSet → %d targets\n%s", len(docs), summary)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"action": action, "changed": changed, "summary": summary})
 }
 
 func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	id := identityFrom(r)
-	c, err := decodeConfig(r)
+	data, err := readBody(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := config.RefuseApplyRolloutSet(data); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	c, err := config.Load(data)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -353,12 +390,8 @@ func bearer(r *http.Request) string {
 	return ""
 }
 
-func decodeConfig(r *http.Request) (*config.Config, error) {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	return config.Load(data)
+func readBody(r *http.Request) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r.Body, 1<<20))
 }
 
 func scopeOf(c *config.Config) security.Scope {

@@ -116,6 +116,15 @@ template:
 Placeholders: `name`, `kubeconfig`, `context`, `cluster.name`,
 `cluster.kubeconfig`, `cluster.context`, and `cluster.labels.<key>`.
 
+## Plan and doctor
+
+`rollops plan path/to/set.yaml` and `rollops doctor path/to/set.yaml` expand the
+set the same way the watcher does and preview **all** generated targets
+(MCP/HTTP/gRPC `plan` too). `rollops apply` of a `RolloutSet` is refused —
+reconcile applies each generated config. For cluster generators, set
+`ROLLOPS_CLUSTERS` in the one-shot environment as well as on the daemon.
+`doctor` reports the registry size when that env is set.
+
 ## Fleet status
 
 After a RolloutSet expands to `web@east`, `web@west`, …, ask the daemon for an

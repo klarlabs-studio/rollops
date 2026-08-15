@@ -98,3 +98,9 @@ Multi-cluster RFC Phase 3a (lean). Aggregate latest-per-target rollout phases fo
 Agent parity for multi-cluster Phase 3a. MCP tool rollouts.fleet wraps engine.FleetStatus with status auth. Docs in multi-cluster and agent-operator. No new permission.
 
 ---
+
+## RolloutSet plan doctor parity
+
+Honesty gap: daemon expands RolloutSet at watch load; CLI/MCP/HTTP/gRPC plan and doctor must expand too and preview all N members. Apply of a RolloutSet is refused loudly (reconcile owns fan-out). Doctor reports expanded count and ROLLOPS_CLUSTERS when set. Fix LoadAllFromDir list-only comment.
+
+---

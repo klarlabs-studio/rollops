@@ -1,6 +1,6 @@
 {
   "project_id": "rollops",
-  "version": 463,
+  "version": 470,
   "task_states": {
     "t-artifact": {
       "status": "verified",
@@ -827,6 +827,17 @@
       "completed_at": "2026-06-09T21:13:35.98719+02:00",
       "elapsed_minutes": 0
     },
+    "task-load-documents-export": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "LoadDocuments KindOf RefuseApplyRolloutSet LoadClusterRegistryEnv"
+      ],
+      "started_at": "2026-08-15T09:26:57.147014404Z",
+      "completed_at": "2026-08-15T09:27:25.925144635Z",
+      "elapsed_minutes": 0
+    },
     "task-manifest-capability-plugin-architecture-(nox-style)-+-feature-flag-plugins": {
       "status": "verified",
       "path": "",
@@ -1183,6 +1194,17 @@
       "started_at": "2026-06-09T21:13:34.899567+02:00",
       "completed_at": "2026-06-09T21:13:34.905861+02:00",
       "elapsed_minutes": 0
+    },
+    "task-plan-doctor-apply-surfaces": {
+      "status": "verified",
+      "path": "",
+      "owner": "Cursor Agent",
+      "evidence": [
+        "1f5e0d8 tests green"
+      ],
+      "started_at": "2026-08-15T09:27:25.957539705Z",
+      "completed_at": "2026-08-15T09:29:26.89788048Z",
+      "elapsed_minutes": 2
     },
     "task-prometheus-metrics-for-reconcile-latency-drift": {
       "status": "verified",
@@ -1622,5 +1644,5 @@
       "elapsed_minutes": 0
     }
   },
-  "updated_at": "2026-08-15T08:52:11.877168382Z"
+  "updated_at": "2026-08-15T09:29:26.916173223Z"
 }

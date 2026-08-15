@@ -9,9 +9,9 @@
 
 0. **[DONE] Make it real.** RFC `docs/design/make-it-real.md` executed
    (Roady 142/142). PR #135 merges A–D. Do not add Argo checkboxes.
-0b. **[DONE] Multi-cluster Phase 2 + 3a (+ MCP).** Cluster registry +
-   RolloutSet cluster generator (#136); fleet status (#137) + MCP
-   `rollouts.fleet`. Matrix/git generators still out (TDD).
+0b. **[DONE] Multi-cluster Phase 2 + 3a (+ MCP + plan parity).** Cluster
+   registry + RolloutSet (#136); fleet (#137); MCP fleet (#138); plan/doctor
+   expand sets / apply refuses (`cursor/rolloutset-plan-30c0`). Matrix/git out.
 1. **[READY TO CLOSE] Image automation #98** — verdicts + digests (#100–#103),
    `current` iff scanner==Git pin (Make it real A8), and consecutive-awaiting
    STUCK escalation (`29e4b62` on main, now in #135). Original 18h hang not

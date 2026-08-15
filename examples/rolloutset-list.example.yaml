@@ -1,0 +1,36 @@
+# Example RolloutSet with a list generator. plan/doctor expand this to N
+# RolloutConfigs; apply is refused — the daemon watcher owns fan-out.
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutSet
+metadata:
+  name: web
+generators:
+  - list:
+      elements:
+        - { name: east, kubeconfig: /etc/rollops/east, context: east }
+        - { name: west, kubeconfig: /etc/rollops/west, context: west }
+template:
+  spec:
+    target:
+      kind: kubernetes
+      ref: "web@{{name}}"
+      criticality: low
+      spec:
+        kubeconfig: "{{kubeconfig}}"
+        context: "{{context}}"
+        namespace: web
+        resource: deployment/web
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: { name: web }
+          spec:
+            replicas: 1
+            selector: { matchLabels: { app: web } }
+            template:
+              metadata: { labels: { app: web } }
+              spec:
+                containers:
+                  - { name: web, image: ghcr.io/example/web:1.0.0 }
+    strategy:
+      type: rolling

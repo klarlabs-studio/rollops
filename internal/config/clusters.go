@@ -111,3 +111,22 @@ func SelectClusters(all []Cluster, matchLabels map[string]string) []Cluster {
 	}
 	return out
 }
+
+// LoadClusterRegistryEnv loads ROLLOPS_CLUSTERS into the in-process registry
+// when the env var is set. Empty path is a no-op. Used by one-shot CLI and
+// plan surfaces so cluster generators expand outside the daemon.
+func LoadClusterRegistryEnv(getenv func(string) string) error {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	path := getenv("ROLLOPS_CLUSTERS")
+	if path == "" {
+		return nil
+	}
+	clusters, err := LoadClustersFile(path)
+	if err != nil {
+		return err
+	}
+	SetClusterRegistry(clusters)
+	return nil
+}
