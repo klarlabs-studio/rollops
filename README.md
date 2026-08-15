@@ -17,10 +17,11 @@ many products across heterogeneous infrastructure (one on K8s, one behind FTP,
 one on a bare VPS). Rollops is the lean, declarative, agnostic control plane —
 and it treats an autonomous agent as a native operator via MCP.
 
-**Agent path:** wire Claude or Cursor to the embedded MCP surface —
-[`docs/agent-operator.md`](docs/agent-operator.md) (tokens → `agent-deploy` →
-plan with visible risk → escalate or apply → canary → history). Mixed SSH +
-Kubernetes demo: [`examples/hetero/`](examples/hetero/).
+**Agent path:** the public proof is
+[`docs/agent-walkthrough.md`](docs/agent-walkthrough.md) — Claude/Cursor → plan
+with `needs_approval` + `recent_failures` → escalate or apply → history.
+Operator knobs: [`docs/agent-operator.md`](docs/agent-operator.md). Mixed SSH +
+Kubernetes: [`examples/hetero/`](examples/hetero/).
 
 ## Architecture (one line)
 
@@ -130,9 +131,10 @@ sudo scripts/install-systemd.sh
 
 See `docs/deploy-systemd.md` for the unit, env file, and first-start checklist.
 See `docs/agent-operator.md` for the **agent USP path** — Claude/Cursor MCP
-client config, opt-in `agent-deploy`, plan with `risk_score` / `needs_approval`,
-apply → canary → history attribution, optional cosign. Snippets:
-`examples/agent-loop/`. Mixed targets: `examples/hetero/`.
+client config, opt-in `agent-deploy`, plan with `risk_score` / `needs_approval` /
+`recent_failures`, apply → canary → history attribution, optional cosign.
+Proof narrative: `docs/agent-walkthrough.md`. Snippets: `examples/agent-loop/`.
+Mixed targets: `examples/hetero/`.
 See `docs/security-rbac.md` for the bootstrap roles and permission taxonomy.
 See `docs/tls.md` for native TLS 1.3 + mTLS (zero-trust transport, cert-manager, client certs).
 See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.

@@ -39,3 +39,9 @@ so existing thresholds keep their behavior.
 - `historyRisk`: normalized historical risk from `0` to `1`.
 
 Malformed history bounds and CEL expressions fail during config load.
+
+## Agent surface
+
+When history is configured, `rollouts.plan` (and CLI/HTTP/gRPC plan) returns
+`recent_failures` and a citeable `reason` alongside `needs_approval`. See
+[agent-walkthrough](agent-walkthrough.md).

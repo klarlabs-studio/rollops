@@ -38,6 +38,7 @@ spec:
     type: rolling
   risk:
     threshold: 0.7
+    sensitive: 'changeType == "schema" || recentFailures >= 2'
     history:
       lookback: 10
       weight: 0.15
