@@ -5,17 +5,29 @@
 > `[OPEN]`/`[WAITING]` markers in the 2026-06-14 and 2026-07-17 blocks are
 > historical, NOT live. Trust this list.
 
-## ACTUALLY OPEN (as of 2026-08-14)
+## ACTUALLY OPEN (as of 2026-08-15)
 
-0. **[OPEN — PRODUCT] Make it real.** Canonical RFC
-   `docs/design/make-it-real.md`. Phases A and B are closed. C1 (tick-driven
-   stepper) is in. Next: C2 pause/resume/abort, then C3 honest strategy
-   names. Do not start Phase D before C. Do not add Argo checkboxes
-   outside the RFC.
-1. **[OPEN] Image automation #98** — stall after a mutable tag moves is
-   unexplained; v0.29/v0.30 made verdicts legible. The RFC's A8 closes it
-   on the invariant (`current` iff scanner identity equals Git pin) even
-   without reproducing the 18h hang.
+0. **[DONE] Make it real.** RFC `docs/design/make-it-real.md` executed
+   (Roady 142/142). PR #135 merges A–D. Do not add Argo checkboxes.
+1. **[READY TO CLOSE] Image automation #98** — verdicts + digests (#100–#103),
+   `current` iff scanner==Git pin (Make it real A8), and consecutive-awaiting
+   STUCK escalation (`29e4b62` on main, now in #135). Original 18h hang not
+   reproduced; close on the invariant + stuck signal. Operator closes the issue
+   after #135 merges (agent cannot write issues).
+2. **[OPEN — HIGHEST VALUE outside this repo] agent-go has 42 CRITICAL
+   dependency vulnerabilities** (+14 high). Triage in agent-go, not here.
+3. **[OPEN] Drop `go.sum` excludes across the 28 repos** — unblocked by
+   nox v1.10.0. agent-go LAST. Not a rollops code task.
+4. **[OPEN] relicta is broken in the nox repo** — `relicta notes` / `approve`.
+   Fix before the next nox cut.
+5. **`k3s-ghcr-pull` expires 2026-08-29** — rotate before end of Aug 2026.
+6. **Cluster pin lag** — `deploy/kubernetes/rollopsd.yaml` still references
+   `v0.29.0`; cut/roll a release after #135 merges.
+
+## ACTUALLY OPEN (as of 2026-08-14) — superseded by the list above
+
+0. ~~**[OPEN — PRODUCT] Make it real.**~~ Executed 2026-08-15; see above.
+1. ~~**[OPEN] Image automation #98**~~ Ready to close after #135; see above.
 2. **[OPEN — HIGHEST VALUE outside this repo] agent-go has 42 CRITICAL
    dependency vulnerabilities** (+14 high). Found 2026-07-19. Triage them
    in agent-go, not here.
