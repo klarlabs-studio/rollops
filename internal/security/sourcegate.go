@@ -2,6 +2,9 @@ package security
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -73,10 +76,18 @@ func (s VSAStatement) SourceCommit() string {
 // built from an ungated one, and each attestation would verify perfectly on
 // its own.
 type SourceGateVerifier struct {
-	KeyPath        string
-	CertIdentity   string
-	CertOIDCIssuer string
-	AllowHTTP      bool
+	// PublicKeys are the source gate's own ed25519 public keys, base64 as
+	// `warden key show` prints them.
+	//
+	// The summary is verified against these directly — not through cosign,
+	// and not against the build platform's key. That is the whole point: the
+	// build platform only carried the envelope, so a signature it made would
+	// attest to the carrier. Checking the gate's own signature means the claim
+	// stands on the gate's key and nothing else, which is what lets an auditor
+	// follow the chain without trusting the pipeline that produced it.
+	PublicKeys []string
+
+	AllowHTTP bool
 
 	// AllowedVerifiers are the gate identities that may vouch for a source.
 	// Empty accepts any, and says so rather than implying a check happened.
@@ -96,14 +107,12 @@ type SourceGateVerifier struct {
 }
 
 // Configured reports whether this verifier can check anything.
-func (v SourceGateVerifier) Configured() bool {
-	return v.KeyPath != "" || (v.CertIdentity != "" && v.CertOIDCIssuer != "")
-}
+func (v SourceGateVerifier) Configured() bool { return len(v.PublicKeys) > 0 }
 
-// Verify fetches the summary and applies the policy.
+// Verify downloads the summary and checks the gate's own signature over it.
 func (v SourceGateVerifier) Verify(ctx context.Context, ref string) (bool, string, error) {
 	if !v.Configured() {
-		return false, "no cosign key or certificate identity configured for the source gate", nil
+		return false, "no source gate public keys configured", nil
 	}
 
 	run := v.Run
@@ -114,42 +123,138 @@ func (v SourceGateVerifier) Verify(ctx context.Context, ref string) (bool, strin
 		}
 	}
 
-	args := []string{"verify-attestation", "--type", VSAPredicateType}
+	// `download`, not `verify-attestation`. cosign would check the envelope
+	// against a cosign key — the build platform's — and that is not the
+	// signature that matters here. RollOps wants the raw envelope so it can
+	// check the gate's signature itself.
+	args := []string{"download", "attestation"}
 	if v.AllowHTTP {
 		args = append(args, "--allow-http-registry")
-	}
-	if v.KeyPath != "" {
-		args = append(args, "--key", v.KeyPath)
-	}
-	if v.CertIdentity != "" {
-		args = append(args, "--certificate-identity", v.CertIdentity)
-	}
-	if v.CertOIDCIssuer != "" {
-		args = append(args, "--certificate-oidc-issuer", v.CertOIDCIssuer)
 	}
 	args = append(args, ref)
 
 	out, err := run(ctx, "cosign", args...)
 	if err != nil {
-		return false, "no verifiable source gate summary: " + lastLine(out), nil
+		return false, "no source gate summary on this artifact: " + lastLine(out), nil
 	}
 
-	summaries, err := ParseVSAs(out)
-	if err != nil {
-		return false, err.Error(), nil
+	envelopes := ParseEnvelopes(out)
+	if len(envelopes) == 0 {
+		return false, "no source gate summary on this artifact", nil
 	}
 
 	builtFrom := v.buildCommit(ctx, ref)
 
 	var lastDetail string
-	for _, s := range summaries {
-		ok, detail := v.check(s, builtFrom)
+	for _, e := range envelopes {
+		summary, keyID, err := v.authenticate(e)
+		if errors.Is(err, errNotASummary) {
+			// Some other attestation on the same artifact. Not a failure, and
+			// reporting it as one would put an internal skip marker in front
+			// of an operator.
+			continue
+		}
+		if err != nil {
+			lastDetail = err.Error()
+			continue
+		}
+		ok, detail := v.check(summary, keyID, builtFrom)
 		if ok {
 			return true, detail, nil
 		}
 		lastDetail = detail
 	}
+	if lastDetail == "" {
+		lastDetail = "no source gate summary on this artifact"
+	}
 	return false, lastDetail, nil
+}
+
+// authenticate checks the gate's signature over the envelope and returns the
+// summary inside it.
+//
+// A statement is only worth reading once its signature holds, so this refuses
+// to hand back a summary it could not authenticate. Trying each configured key
+// rather than only the one named in keyid: the keyid is attacker-controlled
+// metadata, useful as a hint and not as an authorisation.
+func (v SourceGateVerifier) authenticate(e Envelope) (VSAStatement, string, error) {
+	payload, err := base64.StdEncoding.DecodeString(e.Payload)
+	if err != nil {
+		return VSAStatement{}, "", fmt.Errorf("source summary payload is not base64")
+	}
+
+	var summary VSAStatement
+	if err := jsonUnmarshal(payload, &summary); err != nil {
+		return VSAStatement{}, "", fmt.Errorf("source summary is not readable")
+	}
+	if summary.PredicateType != VSAPredicateType {
+		// Some other attestation on the same artifact — an SBOM, the build
+		// provenance. Not an error, just not this.
+		return VSAStatement{}, "", errNotASummary
+	}
+	if len(e.Signatures) == 0 {
+		return VSAStatement{}, "", fmt.Errorf("the source summary carries no signature")
+	}
+
+	message := pae(e.PayloadType, payload)
+	for _, encoded := range v.PublicKeys {
+		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil || len(key) != ed25519.PublicKeySize {
+			continue
+		}
+		for _, sig := range e.Signatures {
+			raw, err := base64.StdEncoding.DecodeString(sig.Sig)
+			if err != nil {
+				continue
+			}
+			if ed25519.Verify(ed25519.PublicKey(key), message, raw) {
+				return summary, sig.KeyID, nil
+			}
+		}
+	}
+	return VSAStatement{}, "", fmt.Errorf(
+		"the source summary is not signed by any configured gate key")
+}
+
+// errNotASummary marks an attestation of some other kind, so the caller can
+// skip it without reporting it as a failure.
+var errNotASummary = errors.New("not a source gate summary")
+
+// pae reconstructs DSSE's pre-authentication encoding.
+//
+// It must match the signer's byte for byte — the framing is part of what was
+// signed, which is what stops the same payload being replayed under a
+// different media type.
+func pae(payloadType string, payload []byte) []byte {
+	return fmt.Appendf(nil, "DSSEv1 %d %s %d %s",
+		len(payloadType), payloadType, len(payload), payload)
+}
+
+// Envelope is a DSSE envelope as the source gate signed it.
+type Envelope struct {
+	PayloadType string `json:"payloadType"`
+	Payload     string `json:"payload"`
+	Signatures  []struct {
+		KeyID string `json:"keyid"`
+		Sig   string `json:"sig"`
+	} `json:"signatures"`
+}
+
+// ParseEnvelopes reads every DSSE envelope out of cosign's download output.
+func ParseEnvelopes(out string) []Envelope {
+	var found []Envelope
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var e Envelope
+		if err := jsonUnmarshal([]byte(line), &e); err != nil || e.Payload == "" {
+			continue
+		}
+		found = append(found, e)
+	}
+	return found
 }
 
 // buildCommit asks the provenance verifier which commit the artifact came
@@ -170,7 +275,7 @@ func (v SourceGateVerifier) buildCommit(ctx context.Context, ref string) string 
 	return ""
 }
 
-func (v SourceGateVerifier) check(s VSAStatement, builtFrom string) (bool, string) {
+func (v SourceGateVerifier) check(s VSAStatement, keyID, builtFrom string) (bool, string) {
 	verifier := s.Predicate.Verifier.ID
 
 	if len(v.AllowedVerifiers) > 0 && !builderAllowed(verifier, v.AllowedVerifiers) {
@@ -198,7 +303,8 @@ func (v SourceGateVerifier) check(s VSAStatement, builtFrom string) (bool, strin
 			short(commit), short(builtFrom))
 	}
 
-	detail := fmt.Sprintf("source gated by %s at %s", orUnknown(verifier), short(commit))
+	detail := fmt.Sprintf("source gated by %s at %s, signed by %s",
+		orUnknown(verifier), short(commit), orUnknown(keyID))
 
 	// Every way the check was weakened, not just the first. An operator
 	// reading "accepted" needs to know which parts were actually established,

@@ -128,6 +128,7 @@ func (c Config) artifactGate() (*security.ArtifactGate, string) {
 	issuer := c.getenv("ROLLOPS_COSIGN_ISSUER")
 	builders := splitList(c.getenv("ROLLOPS_PROVENANCE_BUILDERS"))
 	gates := splitList(c.getenv("ROLLOPS_SOURCE_GATES"))
+	gateKeys := splitList(c.getenv("ROLLOPS_SOURCE_KEYS"))
 
 	authenticated := key != "" || (identity != "" && issuer != "")
 
@@ -160,22 +161,30 @@ func (c Config) artifactGate() (*security.ArtifactGate, string) {
 		}
 	}
 
-	if len(gates) > 0 {
-		if !authenticated {
-			c.logf("rollops: ROLLOPS_SOURCE_GATES is set but no cosign key or identity is; " +
-				"the source summary cannot be verified without one\n")
+	if len(gates) > 0 || len(gateKeys) > 0 {
+		if len(gateKeys) == 0 {
+			// The gate's summary is verified against the gate's own key, not
+			// against cosign's. Without it there is nothing to check the
+			// signature with, and accepting the summary anyway would mean
+			// trusting whoever carried it.
+			c.logf("rollops: ROLLOPS_SOURCE_GATES is set but ROLLOPS_SOURCE_KEYS is not; " +
+				"the source summary is verified against the gate's own public key\n")
 		} else {
 			// Handing the source gate the provenance verifier is what lets it
 			// check that the commit the gate vouched for is the commit the
 			// artifact was built from. Without that join both attestations
 			// verify alone while saying nothing about each other.
 			verifiers = append(verifiers, security.SourceGateVerifier{
-				KeyPath: key, CertIdentity: identity, CertOIDCIssuer: issuer,
+				PublicKeys:       gateKeys,
 				AllowedVerifiers: gates,
 				RequireLevels:    splitList(c.getenv("ROLLOPS_SOURCE_REQUIRE_LEVELS")),
 				Provenance:       provenance,
 			})
-			parts = append(parts, "source gated by "+strings.Join(gates, ", "))
+			label := "source gate signature"
+			if len(gates) > 0 {
+				label = "source gated by " + strings.Join(gates, ", ")
+			}
+			parts = append(parts, label)
 		}
 	}
 

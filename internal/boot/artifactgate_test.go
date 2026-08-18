@@ -122,16 +122,14 @@ func TestTheSourceGateJoinsAgainstTheProvenance(t *testing.T) {
 		"ROLLOPS_COSIGN_KEY":          "cosign.pub",
 		"ROLLOPS_PROVENANCE_BUILDERS": "https://github.com/klarlabs-studio/kiln@",
 		"ROLLOPS_SOURCE_GATES":        "https://warden.klarlabs.de",
+		"ROLLOPS_SOURCE_KEYS":         "E/ke5rX9+WmV4nRgD87kAwwfKDAiCx3mnRMfjHxFq0k=",
 	})
 
 	chain := gate.Verifier.(security.ChainVerifier)
 	if len(chain.Verifiers) != 3 {
 		t.Fatalf("want signature, provenance and source gate: %#v", chain.Verifiers)
 	}
-	src, ok := chain.Verifiers[2].(security.SourceGateVerifier)
-	if !ok {
-		t.Fatalf("third verifier = %#v", chain.Verifiers[2])
-	}
+	src := sourceGateIn(t, gate)
 	// Without the provenance verifier the source gate cannot check that the
 	// commit warden vouched for is the commit that was built.
 	if src.Provenance == nil {
@@ -142,13 +140,40 @@ func TestTheSourceGateJoinsAgainstTheProvenance(t *testing.T) {
 	}
 }
 
-func TestASourceGateWithoutAKeyIsRefused(t *testing.T) {
+func TestASourceGateWithoutItsPublicKeyIsRefused(t *testing.T) {
 	gate, _ := gateFor(map[string]string{
+		"ROLLOPS_COSIGN_KEY":   "cosign.pub",
 		"ROLLOPS_SOURCE_GATES": "https://warden.klarlabs.de",
 	})
 
-	if gate != nil {
-		t.Errorf("gate = %+v, want none until a key or identity is set", gate)
+	// The summary is verified against the gate's own key. With none there is
+	// nothing to check the signature with, and accepting it anyway would mean
+	// trusting whoever carried the envelope.
+	chain := gate.Verifier.(security.ChainVerifier)
+	for _, v := range chain.Verifiers {
+		if _, isGate := v.(security.SourceGateVerifier); isGate {
+			t.Error("configured a source gate with no key to verify against")
+		}
+	}
+}
+
+func TestTheSourceGateNeedsNoCosignKey(t *testing.T) {
+	// The gate's signature is checked directly, so an operator can require it
+	// without adopting cosign signing at all.
+	gate, describe := gateFor(map[string]string{
+		"ROLLOPS_SOURCE_GATES": "https://warden.klarlabs.de",
+		"ROLLOPS_SOURCE_KEYS":  "E/ke5rX9+WmV4nRgD87kAwwfKDAiCx3mnRMfjHxFq0k=",
+	})
+
+	if gate == nil {
+		t.Fatal("gate = nil")
+	}
+	chain := gate.Verifier.(security.ChainVerifier)
+	if len(chain.Verifiers) != 1 {
+		t.Fatalf("want the source gate alone: %#v", chain.Verifiers)
+	}
+	if !strings.Contains(describe, "source gate") {
+		t.Errorf("describe = %q", describe)
 	}
 }
 
@@ -156,12 +181,33 @@ func TestRequiredSourceLevelsReachTheVerifier(t *testing.T) {
 	gate, _ := gateFor(map[string]string{
 		"ROLLOPS_COSIGN_KEY":            "cosign.pub",
 		"ROLLOPS_SOURCE_GATES":          "https://warden.klarlabs.de",
+		"ROLLOPS_SOURCE_KEYS":           "E/ke5rX9+WmV4nRgD87kAwwfKDAiCx3mnRMfjHxFq0k=",
 		"ROLLOPS_SOURCE_REQUIRE_LEVELS": "WARDEN_SOURCE_SIGNED",
 	})
 
-	chain := gate.Verifier.(security.ChainVerifier)
-	src := chain.Verifiers[1].(security.SourceGateVerifier)
+	src := sourceGateIn(t, gate)
 	if len(src.RequireLevels) != 1 || src.RequireLevels[0] != "WARDEN_SOURCE_SIGNED" {
 		t.Errorf("RequireLevels = %v", src.RequireLevels)
 	}
+	if len(src.PublicKeys) != 1 {
+		t.Errorf("PublicKeys = %v, want the gate key", src.PublicKeys)
+	}
+}
+
+// sourceGateIn finds the source gate verifier by type. Indexing into the chain
+// would break every time the composition changes, which is not what these
+// tests are about.
+func sourceGateIn(t *testing.T, gate *security.ArtifactGate) security.SourceGateVerifier {
+	t.Helper()
+	chain, ok := gate.Verifier.(security.ChainVerifier)
+	if !ok {
+		t.Fatalf("Verifier = %#v, want a chain", gate.Verifier)
+	}
+	for _, v := range chain.Verifiers {
+		if src, isGate := v.(security.SourceGateVerifier); isGate {
+			return src
+		}
+	}
+	t.Fatal("no source gate verifier in the chain")
+	return security.SourceGateVerifier{}
 }

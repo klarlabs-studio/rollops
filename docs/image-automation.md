@@ -154,6 +154,7 @@ it, which the same stolen key no longer satisfies.
 ROLLOPS_COSIGN_KEY=/etc/rollops/cosign.pub
 ROLLOPS_PROVENANCE_BUILDERS=https://github.com/klarlabs-studio/kiln@
 ROLLOPS_SOURCE_GATES=https://warden.klarlabs.de
+ROLLOPS_SOURCE_KEYS=E/ke5rX9+WmV4nRgD87kAwwfKDAiCx3mnRMfjHxFq0k=   # warden key show
 ```
 
 Three claims by three authorities, each checkable on its own:
@@ -164,10 +165,16 @@ Three claims by three authorities, each checkable on its own:
 | this artifact was built from commit C | the build platform | SLSA build provenance |
 | commit C passed its policy | the source gate | SLSA verification summary |
 
-The third is the source gate's own statement, carried onto the artifact rather
-than summarised by the builder — so the verdict names its verifier, the policy
-file it was measured against, and the levels it reached, instead of asking you
-to take a build tool's word about a gate.
+The third is the source gate's own **signed** statement, carried onto the
+artifact by the builder but not re-signed by it. RollOps verifies it against
+the gate's own public key (`ROLLOPS_SOURCE_KEYS`), not against cosign's — so
+the claim stands on the gate's signature and the builder is only a courier.
+That is what lets an auditor follow the chain without trusting the pipeline
+that produced it.
+
+Each tool signs what it is entitled to assert and nothing else. No tool
+vouches for another's verdict, and no verification step requires trusting a
+tool other than the one that made the claim being checked.
 
 **The commit joins them, and the join is checked.** A verification summary for
 some well-gated commit attached to an artifact built from an ungated one
@@ -186,6 +193,7 @@ exactly; the startup log says which checks are in force.
 | `ROLLOPS_PROVENANCE_BUILDERS` | comma-separated builder ids that may vouch for a deployable artifact |
 | `ROLLOPS_PROVENANCE_REQUIRE_REPROVED` | reject artifacts whose source checks were inherited rather than run |
 | `ROLLOPS_SOURCE_GATES` | comma-separated source-gate verifier ids whose summary is acceptable |
+| `ROLLOPS_SOURCE_KEYS` | comma-separated base64 ed25519 public keys of those gates, as `warden key show` prints them |
 | `ROLLOPS_SOURCE_REQUIRE_LEVELS` | verification levels the summary must claim, e.g. `WARDEN_SOURCE_SIGNED` |
 
 A trailing `@` matches any version, so `…/kiln@` accepts every release without
@@ -202,6 +210,9 @@ GitHub's SLSA generator, or anything else emitting the spec.
 - `runDetails.builder.id` is in the allowed list — this matters, because cosign
   proves a trusted key signed *an* attestation, not what it says
 - the provenance names a source commit
+- the summary carries a valid signature from one of the configured gate keys —
+  checked with ed25519 directly, not through cosign, because a cosign check
+  would verify the courier rather than the gate
 - the summary's verifier is an allowed gate, its verdict is `PASSED`, and it
   reaches any required levels
 - the commit in the summary is the commit in the provenance
@@ -211,6 +222,10 @@ a second from a rebuild, one left by an older tool version. Any single
 statement satisfying the policy is enough; requiring all of them would let one
 stale entry block every deploy of an otherwise good artifact.
 
-Setting builders or gates with no key or identity is refused at startup rather
+The `keyid` in a signature is a hint for selecting a key from the roster, never
+an authorisation: it is attacker-controlled metadata, so every configured key
+is tried and only a real signature passes.
+
+Setting builders or gates with no key is refused at startup rather
 than accepted: a verifier with nothing to authenticate against would fail every
 deploy, which reads as a broken pipeline rather than the misconfiguration it is.
