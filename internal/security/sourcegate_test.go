@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -42,6 +43,13 @@ func signedSummary(t *testing.T, priv ed25519.PrivateKey, commit, verdict string
 			"verifiedLevels":     levels,
 		},
 	}
+	return signedStatement(t, priv, stmt)
+}
+
+// signedStatement signs an arbitrary in-toto statement, for the cases that
+// need a shape signedSummary does not produce.
+func signedStatement(t *testing.T, priv ed25519.PrivateKey, stmt any) string {
+	t.Helper()
 	payload, err := json.Marshal(stmt)
 	if err != nil {
 		t.Fatal(err)
@@ -339,5 +347,184 @@ func TestCosignIsNotAskedToVerifyTheSummary(t *testing.T) {
 		if a == "verify-attestation" || a == "--key" {
 			t.Errorf("the summary was handed to cosign to verify: %v", invoked)
 		}
+	}
+}
+
+func TestCosignsReasonForNotFindingASummaryIsPassedOn(t *testing.T) {
+	_, pub := gateKey()
+	v := gate(t, pub, "")
+	v.Run = cosignSaying("Error: no matching attestations\nmain.go:74\nno attestations found", errors.New("exit 1"))
+
+	ok, detail, err := v.Verify(context.Background(), "ref")
+	if err != nil {
+		// A registry that cannot be reached is not a policy verdict, but it is
+		// also not RollOps' error to raise: the gate simply has not been shown
+		// what it needs, and the deploy stops on the verdict.
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("accepted an artifact whose attestations could not be fetched")
+	}
+	if !strings.Contains(detail, "no attestations found") {
+		t.Errorf("detail = %q, want cosign's own reason", detail)
+	}
+}
+
+func TestNoiseAroundTheEnvelopeIsIgnored(t *testing.T) {
+	priv, pub := gateKey()
+
+	// cosign interleaves human-readable notes with the JSON, an artifact
+	// carries attestations of other kinds, and a truncated line is always
+	// possible. None of that may stop the real envelope being found.
+	out := strings.Join([]string{
+		"Verification for ghcr.io/x/y@sha256:aaa --",
+		`{"payloadType":"application/vnd.in-toto+json","payload":`,
+		`{"payloadType":"application/vnd.in-toto+json"}`,
+		strings.TrimSpace(signedSummary(t, priv, commitSHA, "PASSED", defaultLevels)),
+	}, "\n")
+
+	if ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref"); !ok {
+		t.Errorf("the genuine envelope was lost in the noise: %s", detail)
+	}
+}
+
+func TestAnUnsignedSummaryIsRefused(t *testing.T) {
+	priv, pub := gateKey()
+	out := strings.Replace(
+		signedSummary(t, priv, commitSHA, "PASSED", defaultLevels),
+		`"signatures":[`, `"signatures":[],"ignored":[`, 1)
+
+	// An envelope with the signatures stripped off is a bare assertion. It
+	// must not be read as a verdict just because its payload parses.
+	ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref")
+	if ok {
+		t.Error("accepted a summary nobody signed")
+	}
+	if !strings.Contains(detail, "carries no signature") {
+		t.Errorf("detail = %q", detail)
+	}
+}
+
+func TestAnUnreadablePayloadIsRefused(t *testing.T) {
+	_, pub := gateKey()
+
+	for name, payload := range map[string]string{
+		"not base64": "!!!!not-base64!!!!",
+		"not json":   base64.StdEncoding.EncodeToString([]byte("a source gate said so")),
+	} {
+		out := `{"payloadType":"application/vnd.in-toto+json","payload":"` + payload +
+			`","signatures":[{"keyid":"x","sig":"AA=="}]}`
+
+		ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref")
+		if ok {
+			t.Errorf("%s: accepted an unreadable payload", name)
+		}
+		if detail == "" {
+			t.Errorf("%s: refused without saying why", name)
+		}
+	}
+}
+
+func TestAnUnusableConfiguredKeyDoesNotBlockAGoodOne(t *testing.T) {
+	priv, pub := gateKey()
+	v := gate(t, pub, signedSummary(t, priv, commitSHA, "PASSED", defaultLevels))
+
+	// Rosters accumulate: a retired key, a copy-paste with a newline in it, a
+	// line that was never a key at all. One bad entry must not deny a deploy
+	// that a good entry authorises — nor may it be treated as authorising one.
+	v.PublicKeys = []string{"not-base64-at-all", base64.StdEncoding.EncodeToString([]byte("short")), "\n" + pub + "\n"}
+
+	if ok, detail, _ := v.Verify(context.Background(), "ref"); !ok {
+		t.Errorf("a valid signature was rejected because of unrelated roster entries: %s", detail)
+	}
+}
+
+func TestAJunkSignatureAlongsideTheRealOneIsIgnored(t *testing.T) {
+	priv, pub := gateKey()
+	out := strings.Replace(
+		signedSummary(t, priv, commitSHA, "PASSED", defaultLevels),
+		`"signatures":[`, `"signatures":[{"keyid":"junk","sig":"%%%not-base64%%%"},`, 1)
+
+	// A DSSE envelope may carry several signatures and an attacker can add
+	// one. Finding one that verifies is what matters; failing to decode a
+	// neighbour is not a reason to refuse.
+	if ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref"); !ok {
+		t.Errorf("a genuine signature was rejected because of a junk sibling: %s", detail)
+	}
+}
+
+func TestASummaryNamingNoCommitIsRefused(t *testing.T) {
+	priv, pub := gateKey()
+	out := signedStatement(t, priv, map[string]any{
+		"_type": "https://in-toto.io/Statement/v1",
+		// cosign rewrites the subject to the artifact when the envelope is
+		// attached, so a summary whose resourceUri carries no commit either
+		// leaves nothing to join against.
+		"subject": []any{map[string]any{
+			"name": "ghcr.io/x/y", "digest": map[string]string{"sha256": "aaa"},
+		}},
+		"predicateType": VSAPredicateType,
+		"predicate": map[string]any{
+			"verifier":           map[string]any{"id": "https://warden.klarlabs.de"},
+			"resourceUri":        "git+ssh://git@github.com/o/r.git",
+			"verificationResult": "PASSED",
+			"verifiedLevels":     defaultLevels,
+		},
+	})
+
+	ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref")
+	if ok {
+		t.Error("accepted a verdict about nothing in particular")
+	}
+	if !strings.Contains(detail, "names no commit") {
+		t.Errorf("detail = %q", detail)
+	}
+}
+
+func TestTheSubjectIsPreferredToTheResourceURI(t *testing.T) {
+	priv, pub := gateKey()
+	out := signedStatement(t, priv, map[string]any{
+		"_type": "https://in-toto.io/Statement/v1",
+		"subject": []any{map[string]any{
+			"name": "git+commit", "digest": map[string]string{"gitCommit": commitSHA},
+		}},
+		"predicateType": VSAPredicateType,
+		"predicate": map[string]any{
+			"verifier": map[string]any{"id": "https://warden.klarlabs.de"},
+			// Disagreeing with the subject. The subject is the statement's own
+			// idea of what it is about; resourceUri is the fallback for when
+			// cosign has overwritten it.
+			"resourceUri":        "git+ssh://git@github.com/o/r.git@0000000000000000000000000000000000000000",
+			"verificationResult": "PASSED",
+			"verifiedLevels":     defaultLevels,
+		},
+	})
+
+	ok, detail, _ := gate(t, pub, out).Verify(context.Background(), "ref")
+	if !ok {
+		t.Fatalf("rejected: %s", detail)
+	}
+	if !strings.Contains(detail, short(commitSHA)) {
+		t.Errorf("detail = %q, want the subject's commit", detail)
+	}
+}
+
+func TestTheJoinIsSkippedWhenTheProvenanceCannotBeRead(t *testing.T) {
+	priv, pub := gateKey()
+	v := gate(t, pub, signedSummary(t, priv, commitSHA, "PASSED", defaultLevels))
+	v.Provenance = &ProvenanceVerifier{
+		KeyPath: "cosign.pub",
+		Run:     cosignSaying("Error: no matching attestations", errors.New("exit 1")),
+	}
+
+	// Configured but unreadable is not the same as absent, and it must not
+	// silently pass as a closed chain: the summary stands on its own and the
+	// operator is told the join did not happen.
+	ok, detail, _ := v.Verify(context.Background(), "ref")
+	if !ok {
+		t.Fatalf("want the summary accepted on its own terms, got %s", detail)
+	}
+	if !strings.Contains(detail, "not joined to the build") {
+		t.Errorf("detail = %q, want the missing join surfaced", detail)
 	}
 }

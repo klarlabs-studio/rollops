@@ -56,9 +56,32 @@ func (s VSAStatement) SourceCommit() string {
 		}
 	}
 	if i := strings.LastIndex(s.Predicate.ResourceURI, "@"); i >= 0 {
-		return s.Predicate.ResourceURI[i+1:]
+		// Only if what follows is actually an object id. `git+ssh://git@host/o/r.git`
+		// has an @ in it and no commit at all, and taking the tail regardless
+		// yields "host/o/r.git" as the commit — which then gets reported in
+		// the accepted verdict and, with nothing to join against, accepted.
+		if commit := s.Predicate.ResourceURI[i+1:]; isObjectID(commit) {
+			return commit
+		}
 	}
 	return ""
+}
+
+// isObjectID reports whether s is a full git object id, sha-1 or sha-256.
+//
+// Full length only: an abbreviated id would make the join between the summary
+// and the build provenance a prefix comparison, and a prefix match is not an
+// identity.
+func isObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
 }
 
 // SourceGateVerifier requires an artifact to carry a passing verification
@@ -329,22 +352,4 @@ func hasLevel(levels []string, want string) bool {
 		}
 	}
 	return false
-}
-
-// ParseVSAs reads every verification summary out of cosign's output.
-func ParseVSAs(out string) ([]VSAStatement, error) {
-	var found []VSAStatement
-	for _, payload := range dssePayloads(out) {
-		var s VSAStatement
-		if err := jsonUnmarshal(payload, &s); err != nil {
-			continue
-		}
-		if s.PredicateType == VSAPredicateType {
-			found = append(found, s)
-		}
-	}
-	if len(found) == 0 {
-		return nil, fmt.Errorf("no source gate summary in the attestation")
-	}
-	return found, nil
 }
