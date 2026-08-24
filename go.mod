@@ -2,6 +2,8 @@ module go.klarlabs.de/rollops
 
 go 1.26.6
 
+toolchain go1.26.7
+
 require (
 	github.com/felixgeelhaar/decisionkit v0.1.0
 	github.com/google/cel-go v0.31.0
