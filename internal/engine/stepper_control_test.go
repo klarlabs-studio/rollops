@@ -30,7 +30,7 @@ func TestPause_HoldsCanaryAcrossElapsedBake(t *testing.T) {
 		t.Fatalf("phase after Pause = %q, want paused", r.Phase)
 	}
 
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	ticked, err := e.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick while paused: %v", err)
@@ -55,7 +55,7 @@ func TestResume_RestartsCurrentStepBake(t *testing.T) {
 	if _, err := e.Pause(ctx, applied.ID, by); err != nil {
 		t.Fatalf("Pause: %v", err)
 	}
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	r, err := e.Resume(ctx, applied.ID, by)
 	if err != nil {
 		t.Fatalf("Resume: %v", err)
@@ -73,7 +73,7 @@ func TestResume_RestartsCurrentStepBake(t *testing.T) {
 		t.Fatalf("resume must restart the current-step bake: phase=%s weight=%d", ticked.Phase, ticked.StepWeight)
 	}
 
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	ticked, err = e.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick after bake: %v", err)
