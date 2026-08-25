@@ -29,9 +29,9 @@ spec:
     type: canary
     steps:
       - weight: 10
-        pause: 50ms
+        pause: 2s
       - weight: 100
-        pause: 50ms
+        pause: 2s
 `
 
 func loadCanaryPause(t *testing.T) *config.Config {
@@ -44,7 +44,7 @@ func loadCanaryPause(t *testing.T) *config.Config {
 }
 
 // TestApply_CanaryPauseCompletesAcrossTwoTicks is C1 acceptance: a canary with
-// pause: 50ms must not block inside Apply. It finishes across two Tick calls.
+// pause: 2s must not block inside Apply. It finishes across two Tick calls.
 func TestApply_CanaryPauseCompletesAcrossTwoTicks(t *testing.T) {
 	fake := &fakeTarget{}
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -57,8 +57,17 @@ func TestApply_CanaryPauseCompletesAcrossTwoTicks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if time.Since(start) >= 50*time.Millisecond {
-		t.Fatalf("Apply blocked for %s; canary pause must not sleep inside Apply", time.Since(start))
+	// The bound is deliberately far below the 2s pause and far above what
+	// Apply costs (~5ms, and ~350ms on a machine under heavy parallel load).
+	// It used to be the pause itself, 50ms, which could not tell "slept
+	// through the pause" apart from "did 50ms of honest work" — so it failed
+	// on a loaded machine while reporting a sleep that the engine cannot
+	// perform. Nothing in the engine sleeps; the pause is evaluated as
+	// now().Sub(enteredAt) against the injected clock, which does not advance
+	// during Apply. Widening the gap is what makes this assertion able to
+	// fail for the reason its message gives.
+	if elapsed := time.Since(start); elapsed >= time.Second {
+		t.Fatalf("Apply blocked for %s; canary pause must not sleep inside Apply", elapsed)
 	}
 	if r.Phase != rollout.PhaseDeploying {
 		t.Fatalf("phase after Apply = %q, want deploying (still baking)", r.Phase)
@@ -77,7 +86,7 @@ func TestApply_CanaryPauseCompletesAcrossTwoTicks(t *testing.T) {
 		t.Fatal("Apply must persist a stepper snapshot so a restart can resume")
 	}
 
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	r, err = e.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick 1: %v", err)
@@ -89,7 +98,7 @@ func TestApply_CanaryPauseCompletesAcrossTwoTicks(t *testing.T) {
 		t.Errorf("after Tick 1 weight = %d, want 100", r.StepWeight)
 	}
 
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	r, err = e.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick 2: %v", err)
@@ -128,7 +137,7 @@ func TestTick_RestartMidPauseResumesFromSnapshot(t *testing.T) {
 	}
 
 	e2 := New(db, reg, WithClock(clock), WithIDGen(func() string { return "ro-restart-2" }))
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	r, err = e2.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick after restart: %v", err)
@@ -136,7 +145,7 @@ func TestTick_RestartMidPauseResumesFromSnapshot(t *testing.T) {
 	if r.Phase != rollout.PhaseDeploying || r.StepWeight != 100 {
 		t.Fatalf("after restart Tick 1: phase=%s weight=%d, want deploying/100", r.Phase, r.StepWeight)
 	}
-	now = now.Add(50 * time.Millisecond)
+	now = now.Add(2 * time.Second)
 	r, err = e2.Tick(ctx, r.ID, cfg)
 	if err != nil {
 		t.Fatalf("Tick 2 after restart: %v", err)
