@@ -209,15 +209,7 @@ func (k jwk) publicKey() (crypto.PublicKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		x, err := b64uBigInt(k.X)
-		if err != nil {
-			return nil, fmt.Errorf("oidc: jwk EC x: %w", err)
-		}
-		y, err := b64uBigInt(k.Y)
-		if err != nil {
-			return nil, fmt.Errorf("oidc: jwk EC y: %w", err)
-		}
-		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+		return ecPublicKey(curve, k.X, k.Y)
 	default:
 		return nil, fmt.Errorf("oidc: unsupported jwk kty %q", k.Kty)
 	}
@@ -234,6 +226,53 @@ func curveFor(crv string) (elliptic.Curve, error) {
 	default:
 		return nil, fmt.Errorf("oidc: unsupported EC curve %q", crv)
 	}
+}
+
+// ecPublicKey builds an ECDSA public key from a JWK's base64url coordinates.
+//
+// It goes through ParseUncompressedPublicKey rather than assigning X and Y
+// directly. Assigning them accepts any pair of integers, including a point
+// that is not on the named curve, and this function parses keys fetched from
+// an issuer's JWKS — precisely where such a point would arrive from.
+// ParseUncompressedPublicKey checks curve membership; the deprecation of the
+// raw coordinate fields in Go 1.26 says the same thing.
+func ecPublicKey(curve elliptic.Curve, xs, ys string) (*ecdsa.PublicKey, error) {
+	size := (curve.Params().BitSize + 7) / 8
+	x, err := b64uCoord(xs, size)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: jwk EC x: %w", err)
+	}
+	y, err := b64uCoord(ys, size)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: jwk EC y: %w", err)
+	}
+	// Uncompressed point: 0x04 || X || Y, each coordinate left-padded to the
+	// curve's byte length.
+	buf := make([]byte, 1+2*size)
+	buf[0] = 4
+	copy(buf[1:1+size], x)
+	copy(buf[1+size:], y)
+	pub, err := ecdsa.ParseUncompressedPublicKey(curve, buf)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: jwk EC point: %w", err)
+	}
+	return pub, nil
+}
+
+// b64uCoord decodes one base64url coordinate and left-pads it to the curve's
+// byte length. RFC 7518 requires the encoding to already be that length, but a
+// shorter one is unambiguous and some issuers strip leading zero bytes.
+func b64uCoord(s string, size int) ([]byte, error) {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > size {
+		return nil, fmt.Errorf("coordinate is %d bytes, want at most %d", len(b), size)
+	}
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out, nil
 }
 
 func b64uBigInt(s string) (*big.Int, error) {
