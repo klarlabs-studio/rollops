@@ -1,0 +1,143 @@
+# Post-merge provenance: attest the commit that actually landed.
+#
+# warden's gate is client-side pre-push, so it can only note commits it pushed.
+# Anything the forge creates on its own — a GitHub squash-merge, a web edit, a
+# merged Dependabot PR — is a new commit object warden never saw, and it lands
+# on main carrying no proof at all.
+#
+# That is this repository today. warden-verify prints the warning on every PR
+# ("a squash merge creates a new sha whose note does not follow it"), the
+# `Warden provenance` check stays green because warden-verify cannot fail, and
+# nothing measures the trunk. Every squash merge here has dropped its note.
+#
+# This closes the gap the way warden's own repo does: the attestation of record
+# is produced by CI, against the exact tree that landed, on infrastructure the
+# author does not control — rather than asserted by a laptop about a commit that
+# no longer exists after the squash.
+#
+# Ported from klarlabs-studio/warden's provenance-main.yml. Kept close to that
+# original on purpose; divergence here is how the fleet's copies rot.
+name: provenance-main
+
+on:
+  push:
+    branches: [main]
+
+# Serialise: two of these racing would both push refs/notes/warden and one would
+# lose. Do NOT cancel in progress — an attestation abandoned half-way just
+# leaves the commit unattested, which is the thing being fixed.
+concurrency:
+  group: provenance-main
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push refs/notes/warden — nothing else
+    steps:
+      # Deliberately OUTSIDE the workspace: a key directory inside the repo
+      # would be an untracked file in the very tree warden is about to gate.
+      - name: Locate the warden config dir
+        run: echo "WARDEN_CONFIG_DIR=${RUNNER_TEMP}/warden" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # notes and history both ride on the full clone
+
+      # The toolchain warden's OWN steps need. Installing warden is not enough:
+      # .warden.yaml's pre_push is [test, lint, vulns], and on a bare runner
+      # `lint` reports step/missing-toolchain and exits 78 — warden correctly
+      # refusing to attest rather than passing a step that never ran.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod # no new pin: go.mod is already the source of truth
+
+      - name: Install golangci-lint
+        run: |
+          # keep in sync with klarlabs-studio/.github .../go-ci.yml
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+
+      - name: Install warden
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/klarlabs-studio/warden/main/.github/actions/install-warden.sh -o /tmp/install-warden.sh
+          bash /tmp/install-warden.sh
+        env:
+          WARDEN_VERSION: latest
+          # Resolving "latest" unauthenticated shares a 60/hr limit across every
+          # runner on the same egress IP.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Fetch existing notes
+        run: git fetch origin 'refs/notes/warden:refs/notes/warden' || true
+
+      # `git notes add` writes a COMMIT on refs/notes/warden, so it needs a
+      # committer identity — actions/checkout configures none. Without this the
+      # note write fails with "Author identity unknown".
+      - name: Configure the notes committer
+        run: |
+          # A non-address identity on purpose: git does not validate this field,
+          # and a literal that looks like an email trips secret scanners.
+          git config user.name  'warden-ci'
+          git config user.email 'warden-ci'
+
+      # The signing key must come from the secret. If it is absent, warden's
+      # signer GENERATES a fresh keypair — notes signed by a throwaway key that
+      # dies with the runner. Those commits would read as signed-and-attested
+      # while being signed by nobody trusted, which is worse than leaving them
+      # unattested: it manufactures provenance instead of recording it.
+      #
+      # So this warns and stops rather than attesting badly. Until the secret
+      # exists this workflow is deliberately inert.
+      - name: Configure the signing key
+        id: key
+        env:
+          WARDEN_SIGNING_KEY: ${{ secrets.WARDEN_SIGNING_KEY }}
+        run: |
+          if [ -z "${WARDEN_SIGNING_KEY}" ]; then
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WARDEN_SIGNING_KEY is not set — skipping attestation." \
+                 "Without it warden would mint an ephemeral key and write notes signed by" \
+                 "a signer nobody trusts. Add the secret (base64 ed25519 seed, see" \
+                 "'warden key show') and put its fingerprint in .warden.yaml trusted_keys."
+            exit 0
+          fi
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+          mkdir -p "${WARDEN_CONFIG_DIR}"
+          chmod 700 "${WARDEN_CONFIG_DIR}"
+          printf '%s' "${WARDEN_SIGNING_KEY}" > "${WARDEN_CONFIG_DIR}/signing.key"
+          chmod 600 "${WARDEN_CONFIG_DIR}/signing.key"
+
+      # A commit warden itself pushed already carries its note. Re-attesting it
+      # would burn a full CI run rewriting a record that already exists. This is
+      # what keeps the job cheap: it fires only for forge-created commits, which
+      # is exactly the gap it exists to close.
+      - name: Skip if already attested
+        id: check
+        if: steps.key.outputs.have_key == 'true'
+        run: |
+          if warden verify --commit "${GITHUB_SHA}" --quiet; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${GITHUB_SHA} already carries provenance; nothing to do."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --attest-only runs the configured pre-push steps against the merged tree
+      # and writes the note, but does NOT move or push the branch. It refuses
+      # outright if a step rewrites the tree: the note binds to HEAD, so
+      # attesting a rewritten tree would claim the checks passed on a tree they
+      # never saw. In CI the steps must be checks, not formatters.
+      - name: Gate and attest the merged commit
+        if: steps.key.outputs.have_key == 'true' && steps.check.outputs.already == 'false'
+        run: warden run pre-push --attest-only
+
+      - name: Publish the note
+        if: steps.key.outputs.have_key == 'true' && steps.check.outputs.already == 'false'
+        run: git push origin 'refs/notes/warden:refs/notes/warden'
+
+      - name: Remove the signing key
+        if: always()
+        run: rm -f "${WARDEN_CONFIG_DIR}/signing.key"

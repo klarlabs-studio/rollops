@@ -4,10 +4,9 @@
 # as the warden/gate commit status, which branch protection requires instead.
 status:
   enabled: true
-
 # warden gate — https://github.com/klarlabs-studio/warden
 # Any dev with warden installed gets the same checks CI runs, pre-commit/pre-push.
-hooks: { pre_commit: true, pre_push: true }
+hooks: {pre_commit: false, pre_push: true}
 commands:
   # The gate that found the fleet-wide toolchain problem. It ran only in
   # GitHub Actions, and this repository no longer requires those checks —
