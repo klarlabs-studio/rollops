@@ -137,3 +137,95 @@ v1.2.0`). The next tick resumes normal semver selection from that tag. If no
 published semver tag points at the pinned digest, migration is a no-op and logs
 the reason (best-effort, never blocks reconcile). `digest` mode itself is
 unaffected: it keeps pinning a mutable tag's digest and is not migrated.
+
+
+## Artifact provenance at apply time
+
+A signature and provenance answer different questions, and RollOps can now
+require both — plus the source gate's own verdict.
+
+`cosign verify` proves somebody holding the key vouched for these bytes. It
+says nothing about where they came from — an attacker who obtains the signing
+key can sign an arbitrary image, and a signature-only gate deploys it.
+Provenance pins the artifact to a source commit and to the platform that built
+it, which the same stolen key no longer satisfies.
+
+```bash
+ROLLOPS_COSIGN_KEY=/etc/rollops/cosign.pub
+ROLLOPS_PROVENANCE_BUILDERS=https://github.com/klarlabs-studio/kiln@
+ROLLOPS_SOURCE_GATES=https://warden.klarlabs.de
+ROLLOPS_SOURCE_KEYS=E/ke5rX9+WmV4nRgD87kAwwfKDAiCx3mnRMfjHxFq0k=   # warden key show
+```
+
+Three claims by three authorities, each checkable on its own:
+
+| Claim | Who says it | Attestation |
+|---|---|---|
+| somebody vouched for these bytes | whoever holds the key | the signature |
+| this artifact was built from commit C | the build platform | SLSA build provenance |
+| commit C passed its policy | the source gate | SLSA verification summary |
+
+The third is the source gate's own **signed** statement, carried onto the
+artifact by the builder but not re-signed by it. RollOps verifies it against
+the gate's own public key (`ROLLOPS_SOURCE_KEYS`), not against cosign's — so
+the claim stands on the gate's signature and the builder is only a courier.
+That is what lets an auditor follow the chain without trusting the pipeline
+that produced it.
+
+Each tool signs what it is entitled to assert and nothing else. No tool
+vouches for another's verdict, and no verification step requires trusting a
+tool other than the one that made the claim being checked.
+
+**The commit joins them, and the join is checked.** A verification summary for
+some well-gated commit attached to an artifact built from an ungated one
+verifies perfectly as two separate attestations; only comparing the commit in
+the provenance against the commit in the summary catches it. RollOps does that
+whenever both are configured, and says "not joined to the build" in the deploy
+log when it cannot.
+
+Both are opt-in and compose. Setting only the key keeps the previous behaviour
+exactly; the startup log says which checks are in force.
+
+| Variable | Effect |
+|---|---|
+| `ROLLOPS_COSIGN_KEY` | public key for keyed verification |
+| `ROLLOPS_COSIGN_IDENTITY` / `ROLLOPS_COSIGN_ISSUER` | keyless verification |
+| `ROLLOPS_PROVENANCE_BUILDERS` | comma-separated builder ids that may vouch for a deployable artifact |
+| `ROLLOPS_PROVENANCE_REQUIRE_REPROVED` | reject artifacts whose source checks were inherited rather than run |
+| `ROLLOPS_SOURCE_GATES` | comma-separated source-gate verifier ids whose summary is acceptable |
+| `ROLLOPS_SOURCE_KEYS` | comma-separated base64 ed25519 public keys of those gates, as `warden key show` prints them |
+| `ROLLOPS_SOURCE_REQUIRE_LEVELS` | verification levels the summary must claim, e.g. `WARDEN_SOURCE_SIGNED` |
+
+A trailing `@` matches any version, so `…/kiln@` accepts every release without
+a policy change on each one.
+
+### What is checked
+
+RollOps reads the SLSA predicates itself rather than importing types from any
+build tool: the formats are standards, and a CD system that could only verify
+one builder's output would be the wrong shape. It works with kiln, with
+GitHub's SLSA generator, or anything else emitting the spec.
+
+- the attestations are authenticated by the configured key or identity
+- `runDetails.builder.id` is in the allowed list — this matters, because cosign
+  proves a trusted key signed *an* attestation, not what it says
+- the provenance names a source commit
+- the summary carries a valid signature from one of the configured gate keys —
+  checked with ed25519 directly, not through cosign, because a cosign check
+  would verify the courier rather than the gate
+- the summary's verifier is an allowed gate, its verdict is `PASSED`, and it
+  reaches any required levels
+- the commit in the summary is the commit in the provenance
+
+An image commonly carries several attestations — an SBOM beside its provenance,
+a second from a rebuild, one left by an older tool version. Any single
+statement satisfying the policy is enough; requiring all of them would let one
+stale entry block every deploy of an otherwise good artifact.
+
+The `keyid` in a signature is a hint for selecting a key from the roster, never
+an authorisation: it is attacker-controlled metadata, so every configured key
+is tried and only a real signature passes.
+
+Setting builders or gates with no key is refused at startup rather
+than accepted: a verifier with nothing to authenticate against would fail every
+deploy, which reads as a broken pipeline rather than the misconfiguration it is.
