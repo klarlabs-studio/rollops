@@ -15,7 +15,7 @@
 # Index digests, not per-architecture ones: both resolve to a manifest list covering amd64 and
 # arm64, so this does not quietly restrict where the image can be built.
 # golang:1.26-alpine
-FROM golang@sha256:70b46548e42db77e0966aaf3619fd068734dc6c77584d526b91126504fd95816 AS build
+FROM golang@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
