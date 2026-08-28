@@ -66,3 +66,16 @@ func labelManifest(manifest []byte, key, val string) ([]byte, error) {
 	_ = enc.Close()
 	return out.Bytes(), nil
 }
+
+// pruneArgs returns the kubectl flags that make an apply garbage-collect
+// resources carrying this target's label but no longer in the apply set.
+//
+// Split out from Apply so the invariant #158 turns on is testable without a
+// cluster: the LABEL goes on every apply, the PRUNE flags only when asked for.
+// Conflating them is what left `prune: false` resources unidentifiable.
+func pruneArgs(prune bool, pruneVal string) []string {
+	if !prune {
+		return nil
+	}
+	return []string{"--prune", "--selector", PruneLabel + "=" + pruneVal}
+}
