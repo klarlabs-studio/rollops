@@ -149,6 +149,9 @@ func (w *Watcher) ensureOrphanState() {
 	if w.lastSeen == nil {
 		w.lastSeen = make(map[string]*config.Config)
 	}
+	if w.drifting == nil {
+		w.drifting = newDriftStreak(stuckAfterCycles)
+	}
 }
 
 func (w *Watcher) reportOrphan(v verdict) {
@@ -198,4 +201,82 @@ func targetPrunes(c *config.Config) bool {
 	}
 	b, _ := v.(bool)
 	return b
+}
+
+// driftStreak counts CONSECUTIVE ticks a target has reported uncorrected drift.
+//
+// Under `verification: detect` — the default — rollops live-diffs, alerts, and
+// deliberately does not auto-correct. The alert is therefore the entire
+// mechanism, and today every tick writes the same audit entry: an ActionDrift
+// with the same summary, forever. Tick 1 and tick 1,100 read identically, and
+// it is the second that means something is wrong.
+//
+// That is the lesson #98 already taught this codebase about targets waiting on
+// Git (see stuckAfterCycles) and #154 taught it about targets that vanished. A
+// state which is fine briefly and serious when sustained cannot be reported as
+// a level; it has to be reported as a duration.
+type driftStreak struct {
+	after int
+	n     map[string]int
+	fired map[string]bool
+}
+
+func newDriftStreak(after int) *driftStreak {
+	return &driftStreak{after: after, n: map[string]int{}, fired: map[string]bool{}}
+}
+
+// observe records one tick for a target and returns the streak length when it
+// has just crossed the threshold, or 0 otherwise.
+//
+// Returning non-zero only on the crossing tick is deliberate. Escalating every
+// tick after the threshold would reproduce the very problem — a wall of
+// identical entries — one severity level louder.
+func (d *driftStreak) observe(key string, drifting bool) int {
+	if !drifting {
+		delete(d.n, key)
+		delete(d.fired, key)
+		return 0
+	}
+	d.n[key]++
+	if d.n[key] >= d.after && !d.fired[key] {
+		d.fired[key] = true
+		return d.n[key]
+	}
+	return 0
+}
+
+// reportPersistentDrift names drift that has persisted rather than merely
+// occurred. Called once per streak, on the tick it crosses the threshold.
+//
+// `verification: detect` is a deliberate posture — observe and tell me, do not
+// touch it — and this does not change that. It changes what "tell me" means
+// when the telling has been going on for hours: an ActionDrift entry per tick
+// is a level, and what an operator needs is a duration.
+func (w *Watcher) reportPersistentDrift(key string, cfg *config.Config, ticks int) {
+	ref, mode := "unknown", "detect"
+	if cfg != nil {
+		ref = cfg.Spec.Target.Ref
+		if v := cfg.Spec.Verification; v != "" {
+			mode = v
+		}
+	}
+	if w.logf != nil {
+		w.logf("persistent drift %s (ref %s): diverged for %d consecutive reconciles under verification=%s "+
+			"— alerted every tick and never corrected; set verification=full to self-heal, or reconcile by hand",
+			key, ref, ticks, mode)
+	}
+	if w.rec != nil {
+		w.rec.record(audit.Entry{
+			Action:    audit.ActionDrift,
+			TargetRef: ref,
+			Phase:     "persistent",
+			Detail:    "drift alerted but uncorrected across consecutive reconciles",
+			Fields: map[string]any{
+				"key":           key,
+				"ticks":         ticks,
+				"verification":  mode,
+				"auto_corrects": mode == "full",
+			},
+		})
+	}
 }
