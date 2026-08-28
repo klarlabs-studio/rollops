@@ -641,3 +641,73 @@ func TestWatcher_AwaitingStreakResets(t *testing.T) {
 	w.clearAwaiting("never", "seen.yaml")
 	(&Watcher{}).clearAwaiting("nil", "map.yaml")
 }
+
+// #154: a RolloutConfig deleted from the repo must be NAMED, not silently
+// forgotten. The reported incident ran 19 hours with the Deployment serving
+// nothing and no warning anywhere, because the watcher loads the world fresh
+// each tick and never compares it with the last one.
+func TestWatcher_ReportsVanishedConfig(t *testing.T) {
+	upstream := makeRepoFiles(t, map[string]string{
+		"a.yaml": repoConfigV1,
+		"b.yaml": strings.ReplaceAll(strings.ReplaceAll(repoConfigV1, "name: demo", "name: other"), "demo/prod/app", "other/prod/app"),
+	})
+	fake := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	w := newWatcher(t, fake)
+	// Fire on the second absent tick so the test does not run ten of them; the
+	// production threshold is stuckAfterCycles.
+	w.orphans = newReaper(2)
+
+	var logs []string
+	w.logf = func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+
+	co := filepath.Join(t.TempDir(), "co")
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", co, git.Auth{})
+	if err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Branch: "main", Path: "."}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	w.Tick(context.Background()) // both declared
+
+	// Retire b the way the incident did: delete the manifest and push.
+	if err := os.Remove(filepath.Join(upstream, "b.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, upstream, "add", "-A")
+	gitRun(t, upstream, "commit", "-m", "retire b")
+
+	w.Tick(context.Background()) // absent 1 — must stay silent
+	for _, l := range logs {
+		if strings.Contains(l, "orphaned target") {
+			t.Fatalf("reported after a single absent tick: %q", l)
+		}
+	}
+
+	w.Tick(context.Background()) // absent 2 — threshold
+	var found string
+	for _, l := range logs {
+		if strings.Contains(l, "orphaned target") {
+			found = l
+		}
+	}
+	if found == "" {
+		t.Fatalf("vanished config was never reported; logs=%v", logs)
+	}
+	if !strings.Contains(found, "b.yaml") {
+		t.Errorf("report does not name the vanished config: %q", found)
+	}
+	// It must say the resources are unreachable rather than claim a cleanup:
+	// this config has no prune setting, so nothing carries the label.
+	if !strings.Contains(found, "no prune label") {
+		t.Errorf("report does not say the resources are unidentifiable: %q", found)
+	}
+
+	// And it must not repeat every tick thereafter.
+	before := len(logs)
+	w.Tick(context.Background())
+	for _, l := range logs[before:] {
+		if strings.Contains(l, "orphaned target") {
+			t.Errorf("repeated the report on a later tick: %q", l)
+		}
+	}
+}
