@@ -27,7 +27,10 @@ const (
 	ActionRollback Action = "rollback"
 	ActionDrift    Action = "drift"
 	ActionSchedule Action = "schedule"
-	ActionFreeze   Action = "freeze"
+	// ActionOrphan records a target that stopped being declared. Not a
+	// deletion: rollops does not remove what it can no longer describe (#154).
+	ActionOrphan Action = "orphan"
+	ActionFreeze Action = "freeze"
 )
 
 // Entry is one audited event.

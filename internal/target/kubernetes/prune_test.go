@@ -65,3 +65,75 @@ metadata:
 		t.Error("existing labels should be preserved")
 	}
 }
+
+// #158: the identity label and the destructive behaviour are separate
+// decisions. Labelling only when prune is on means a `prune: false` target's
+// resources carry nothing tying them to it — so when its RolloutConfig is
+// deleted (#154) nothing, including a future reaper, can even enumerate what
+// it left behind.
+func TestLabelManifest_LeavesSelectorAndPodTemplateAlone(t *testing.T) {
+	const deploy = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: api:1
+`
+	out, err := labelManifest([]byte(deploy), PruneLabel, "demo-prod-app")
+	if err != nil {
+		t.Fatalf("labelManifest: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	meta := doc["metadata"].(map[string]any)
+	labels := meta["labels"].(map[string]any)
+	if labels[PruneLabel] != "demo-prod-app" {
+		t.Errorf("top-level metadata.labels missing the target label: %v", labels)
+	}
+
+	spec := doc["spec"].(map[string]any)
+
+	// spec.selector is IMMUTABLE on a Deployment. Adding a key here would make
+	// every subsequent apply fail on an existing workload.
+	sel := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)
+	if _, found := sel[PruneLabel]; found {
+		t.Errorf("label leaked into the immutable spec.selector: %v", sel)
+	}
+
+	// The pod template's labels feed the selector and changing them rolls every
+	// pod. Adopting a running workload must not restart it.
+	tmplLabels := spec["template"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)
+	if _, found := tmplLabels[PruneLabel]; found {
+		t.Errorf("label leaked into spec.template.metadata.labels, which would roll the pods: %v", tmplLabels)
+	}
+}
+
+// The label is unconditional; the destructive flags are not. #158.
+func TestPruneArgs_OnlyWhenAsked(t *testing.T) {
+	if got := pruneArgs(false, "demo-prod-app"); got != nil {
+		t.Errorf("prune: false produced flags %v — a target that opted out of deletion must never get --prune", got)
+	}
+	got := pruneArgs(true, "demo-prod-app")
+	want := []string{"--prune", "--selector", PruneLabel + "=demo-prod-app"}
+	if len(got) != len(want) {
+		t.Fatalf("pruneArgs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("pruneArgs = %v, want %v", got, want)
+		}
+	}
+}

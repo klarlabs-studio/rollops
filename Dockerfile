@@ -15,7 +15,7 @@
 # Index digests, not per-architecture ones: both resolve to a manifest list covering amd64 and
 # arm64, so this does not quietly restrict where the image can be built.
 # golang:1.26-alpine
-FROM golang@sha256:70b46548e42db77e0966aaf3619fd068734dc6c77584d526b91126504fd95816 AS build
+FROM golang@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/rollopsd ./cmd/rollopsd
 
 # alpine:3.20
-FROM alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+FROM alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 # Supplied by BuildKit for the platform being built. Declared here because ARG scope is
 # per-stage: without this line TARGETARCH is empty in this stage and the kubectl download
 # below would silently build a URL with a missing path segment.

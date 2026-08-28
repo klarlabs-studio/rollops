@@ -4,9 +4,31 @@
 # as the warden/gate commit status, which branch protection requires instead.
 status:
   enabled: true
+
+# Who may sign a provenance note for this repo. With no roster, `warden verify`
+# runs at "a warden ran here" depth — an intact note proves the gate ran, not
+# whose gate. With one, it means "a warden I trust ran here".
+#
+# Two signers, deliberately:
+#   139e6eb9e2611c76  the maintainer's workstation — the pre-push gate
+#   c61ba23fd2083eaf  CI, holding secrets.WARDEN_SIGNING_KEY — used by
+#                     provenance-main.yml to attest the squash commit that
+#                     actually lands, which no laptop ever sees
+#
+# They are separate keys on purpose. Reusing the workstation key in CI would
+# make a commit attested by a runner indistinguishable from one a person gated,
+# and widen that key's blast radius from one laptop to a CI secret.
+#
+# Adding a signer means editing this list; rotating one means replacing its
+# fingerprint here and the secret in the same change, or verification silently
+# drops to the looser depth for anything that key signed.
+trusted_keys:
+  - 139e6eb9e2611c76
+  - c61ba23fd2083eaf
+
 # warden gate — https://github.com/klarlabs-studio/warden
 # Any dev with warden installed gets the same checks CI runs, pre-commit/pre-push.
-hooks: {pre_commit: false, pre_push: true}
+hooks: { pre_commit: true, pre_push: true }
 commands:
   # The gate that found the fleet-wide toolchain problem. It ran only in
   # GitHub Actions, and this repository no longer requires those checks —

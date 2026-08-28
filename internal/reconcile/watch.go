@@ -49,6 +49,21 @@ type Watcher struct {
 	// awaiting counts CONSECUTIVE cycles a config has spent waiting on Git,
 	// keyed by "repo/path". See stuckAfterCycles.
 	awaiting map[string]int
+
+	// orphans notices a RolloutConfig that stopped being declared. See reap.go
+	// and #154: deleting a config removes the target that --prune runs as part
+	// of, so the one way to retire a service is the one way prune cannot cover.
+	orphans *reaper
+	// lastSeen keeps the config a key was last declared with, so a vanished
+	// target can still be described after its file is gone. Bounded by the
+	// number of configs the watched repos declare.
+	lastSeen map[string]*config.Config
+
+	// drifting counts consecutive ticks a target has reported drift it was not
+	// allowed to correct. Under `verification: detect` the alert is the whole
+	// mechanism, and one alert per tick reads the same on day one as on day
+	// twenty. See driftStreak.
+	drifting *driftStreak
 }
 
 // stuckAfterCycles is how many consecutive waiting cycles turn a proposal from
@@ -96,7 +111,8 @@ func WithImageAutomation(ia *ImageAuto) WatcherOption {
 
 // NewWatcher clones each repo into baseDir and returns a ready watcher.
 func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec, opts ...WatcherOption) (*Watcher, error) {
-	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now}
+	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now,
+		orphans: newReaper(stuckAfterCycles), lastSeen: map[string]*config.Config{}}
 	for _, opt := range opts {
 		opt(w)
 	}
@@ -190,6 +206,12 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	// (manage many apps from one repo). Each config reconciles independently.
 	configs, err := config.LoadAllFromDir(r.src.Dir(), r.spec.Ref)
 	if err != nil {
+		// Tell the reaper the load failed BEFORE returning. A tick that could
+		// not read the repo taught us nothing about what it declares, and
+		// silence here would let the next successful tick read the gap as a
+		// deletion.
+		w.ensureOrphanState()
+		w.orphans.observe(r.spec.Name, nil, err)
 		return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("watch: load config: %w", err)}}
 	}
 	// Guard against duplicate target refs: drift state is keyed by target ref,
@@ -210,6 +232,19 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		deduped = append(deduped, nc)
 	}
 	configs = deduped
+
+	// Orphan check on the COMPLETE, deduped set: what this repo declares now.
+	// Runs before reconciling so a retirement is named on the same tick it is
+	// noticed, rather than after every rollout in the repo has finished.
+	w.ensureOrphanState()
+	keys := make([]string, 0, len(configs))
+	for _, nc := range configs {
+		keys = append(keys, nc.Path)
+		w.lastSeen[r.spec.Name+"/"+nc.Path] = nc.Config
+	}
+	for _, v := range w.orphans.observe(r.spec.Name, keys, nil) {
+		w.reportOrphan(v)
+	}
 
 	// Two phases, deliberately DECOUPLED. Image automation for EVERY config first
 	// (a fast registry scan + git commit), then reconcile every config (a
@@ -301,7 +336,15 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		// kustomize/helm/path points at the polled desired state.
 		root := filepath.Join(r.src.Dir(), filepath.Dir(p.nc.Path))
 		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), p.cfg, r.spec.Initiator)
-		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Outcome: o, Err: rerr})
+		key := r.spec.Name + "/" + p.nc.Path
+		// Only an error-free reconcile says anything about drift. A failed one
+		// did not observe the target, so it must not extend OR reset a streak.
+		if rerr == nil {
+			if n := w.drifting.observe(key, o.Drift && !o.Reconciled); n > 0 {
+				w.reportPersistentDrift(key, p.cfg, n)
+			}
+		}
+		out = append(out, RepoOutcome{Repo: key, Changed: changed, Outcome: o, Err: rerr})
 	}
 	return out
 }

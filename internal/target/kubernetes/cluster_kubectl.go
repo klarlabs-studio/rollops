@@ -94,19 +94,31 @@ func (k *kubectlCluster) run(ctx context.Context, stdin []byte, args ...string) 
 
 func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum string) error {
 	args := []string{"apply", "-f", "-"}
-	if k.prune {
-		labeled, err := labelManifest(manifest, PruneLabel, k.pruneVal)
-		if err != nil {
-			return fmt.Errorf("kubernetes: label for prune: %w", err)
-		}
-		manifest = labeled
-		// Prune resources carrying our label that are no longer in the apply set.
-		args = append(args, "--prune", "--selector", fmt.Sprintf("%s=%s", PruneLabel, k.pruneVal))
+	// Label ALWAYS, prune only when asked. These were one decision and are two
+	// (#158): the label is an identity marker — "rollops manages this, for this
+	// target" — while --prune is the destructive behaviour built on top of it.
+	//
+	// Labelling only under prune left a `prune: false` target's resources
+	// carrying nothing that ties them to it. So when its RolloutConfig was
+	// deleted (#154) nothing could enumerate what it had left running, and
+	// turning prune on later covered only what happened to be re-applied
+	// afterwards — silently missing everything that was not.
+	//
+	// Safe on a live workload: labelManifest writes top-level metadata.labels
+	// only. It does not touch spec.selector, which is immutable on a Deployment
+	// and would fail every subsequent apply, nor spec.template.metadata.labels,
+	// which would roll every pod. TestLabelManifest_LeavesSelectorAndPodTemplateAlone
+	// holds that line.
+	labeled, err := labelManifest(manifest, PruneLabel, k.pruneVal)
+	if err != nil {
+		return fmt.Errorf("kubernetes: label target resources: %w", err)
 	}
+	manifest = labeled
+	args = append(args, pruneArgs(k.prune, k.pruneVal)...)
 	if _, err := k.run(ctx, manifest, args...); err != nil {
 		return err
 	}
-	_, err := k.run(ctx, nil, "annotate", "--overwrite", k.resource,
+	_, err = k.run(ctx, nil, "annotate", "--overwrite", k.resource,
 		fmt.Sprintf("%s=%s", ChecksumAnnotation, checksum))
 	return err
 }
