@@ -79,3 +79,38 @@ func pruneArgs(prune bool, pruneVal string) []string {
 	}
 	return []string{"--prune", "--selector", PruneLabel + "=" + pruneVal}
 }
+
+// defaultReapTypes is what a reap deletes when the target does not name types.
+//
+// `all` is kubectl's shortcut, and it is NARROWER than it reads: pods, services,
+// deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs,
+// replicationcontrollers. It does NOT include ingresses, configmaps, secrets,
+// pvcs, serviceaccounts or CRDs.
+//
+// That is deliberate and is the safe direction to be wrong in. Reaping too
+// little leaves resources behind, which is visible — the orphan report (#154)
+// names the target and the operator finishes by hand. Reaping too much deletes
+// something nobody asked to lose. A target that manages ingresses or config
+// should widen this explicitly via `reapTypes`, which is a decision to take with
+// the cluster in front of you rather than a default anyone inherits.
+var defaultReapTypes = []string{"all"}
+
+// reapArgs builds the kubectl delete that removes resources carrying this
+// target's marker.
+//
+// Split out from the cluster so the scoping is testable without a cluster: this
+// is the one command in rollops that destroys state it did not just create, and
+// the selector is the only thing standing between "this target's resources" and
+// "the namespace".
+func reapArgs(types []string, pruneVal string) []string {
+	if len(types) == 0 {
+		types = defaultReapTypes
+	}
+	return []string{
+		"delete", strings.Join(types, ","),
+		"--selector", PruneLabel + "=" + pruneVal,
+		// Deleting nothing is the expected outcome of a retried reap, not an
+		// error the caller should retry forever.
+		"--ignore-not-found",
+	}
+}

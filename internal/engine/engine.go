@@ -2033,3 +2033,14 @@ func strategyFrom(c *config.Config) rollout.Strategy {
 		return rollout.StrategyRolling
 	}
 }
+
+// BuildTarget constructs a target from its config through the registry.
+//
+// Exported for the orphan reaper (#154), which must act on a target whose
+// RolloutConfig has been DELETED — so it cannot go through the normal plan
+// path, which starts from a config that still exists. The registry is otherwise
+// private to the engine and stays that way; this hands back a built target and
+// nothing else.
+func (e *Engine) BuildTarget(t config.Target) (pt.Target, error) {
+	return e.reg.Build(t)
+}

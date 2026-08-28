@@ -1,6 +1,10 @@
 package reconcile
 
-import "testing"
+import (
+	"testing"
+
+	"go.klarlabs.de/rollops/internal/config"
+)
 
 // A target present every tick is never a candidate.
 func TestReaperIgnoresPresentTargets(t *testing.T) {
@@ -156,5 +160,34 @@ func TestDriftStreakScopesPerTarget(t *testing.T) {
 	d.observe("a", true)
 	if got := d.observe("b", true); got != 0 {
 		t.Fatalf("b escalated on its first drift tick: %d", got)
+	}
+}
+
+// The opt-in is the whole safety boundary. `prune: true` means "delete what I
+// stopped declaring inside a live apply"; reaping means "delete everything when
+// the declaration is gone". The second must not be inherited from the first.
+func TestReapOnDelete_RequiresItsOwnOptIn(t *testing.T) {
+	cases := []struct {
+		name string
+		spec map[string]any
+		want bool
+	}{
+		{"nothing set", map[string]any{}, false},
+		{"prune alone does NOT imply reap", map[string]any{"prune": true}, false},
+		{"explicit opt-in", map[string]any{"reapOnDelete": true}, true},
+		{"explicit opt-out", map[string]any{"prune": true, "reapOnDelete": false}, false},
+		{"non-bool is not an opt-in", map[string]any{"reapOnDelete": "yes"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Spec.Target.Spec = tc.spec
+			if got := reapOnDelete(cfg); got != tc.want {
+				t.Errorf("reapOnDelete(%v) = %v, want %v", tc.spec, got, tc.want)
+			}
+		})
+	}
+	if reapOnDelete(nil) {
+		t.Error("a nil config must never authorise a deletion")
 	}
 }

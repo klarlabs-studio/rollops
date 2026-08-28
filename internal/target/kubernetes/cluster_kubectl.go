@@ -21,9 +21,19 @@ type kubectlCluster struct {
 	context    string
 	namespace  string
 	resource   string // e.g. deployment/api
-	prune      bool   // garbage-collect resources removed from desired
-	pruneVal   string // label value selecting this target's resources
-	healthCond string // explicit status.conditions type to gate on (CRDs)
+	prune      bool
+	// reapOnDelete opts this target into removal when its RolloutConfig is
+	// deleted (#154). Separate from prune: pruning drops resources from a LIVE
+	// apply set; reaping removes everything when the declaration itself is gone.
+	// Inheriting the second from the first would turn a GitOps convenience into
+	// a deletion nobody opted into.
+	reapOnDelete bool
+	// reapTypes narrows or widens what a reap deletes. Empty means
+	// defaultReapTypes ("all", which is kubectl's shortcut and excludes
+	// ingresses, configmaps, secrets and PVCs).
+	reapTypes  []string // garbage-collect resources removed from desired
+	pruneVal   string   // label value selecting this target's resources
+	healthCond string   // explicit status.conditions type to gate on (CRDs)
 }
 
 func newKubectl(s spec, ref string, conf security.Confinement) (Cluster, error) {
@@ -52,13 +62,15 @@ func newKubectl(s spec, ref string, conf security.Confinement) (Cluster, error) 
 	}
 
 	return &kubectlCluster{
-		kubeconfig: kubeconfig,
-		context:    kctx,
-		namespace:  ns,
-		resource:   s.str("resource"),
-		prune:      s.boolVal("prune"),
-		pruneVal:   labelValue(ref),
-		healthCond: s.str("healthCondition"),
+		kubeconfig:   kubeconfig,
+		context:      kctx,
+		namespace:    ns,
+		resource:     s.str("resource"),
+		prune:        s.boolVal("prune"),
+		pruneVal:     labelValue(ref),
+		reapOnDelete: s.boolVal("reapOnDelete"),
+		reapTypes:    s.strSlice("reapTypes"),
+		healthCond:   s.str("healthCondition"),
 	}, nil
 }
 
@@ -319,4 +331,35 @@ func selectorFromMatchLabels(j string) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+// ReapTarget removes the resources carrying this target's marker. It implements
+// the optional pt.Reaper capability, invoked only when a RolloutConfig has been
+// deleted (#154) and the target opted in via reapOnDelete.
+//
+// Refuses unless opted in. The engine should not call this on a target that did
+// not ask for it, but a capability that deletes production state should not rely
+// on its caller getting that right.
+func (k *kubectlCluster) ReapTarget(ctx context.Context) (int, error) {
+	if !k.reapOnDelete {
+		return 0, fmt.Errorf("kubernetes: reap requested but reapOnDelete is not set for this target")
+	}
+	if k.pruneVal == "" {
+		// Without a marker the selector would be empty and the delete would
+		// match everything in the namespace. Fail rather than widen.
+		return 0, fmt.Errorf("kubernetes: refusing to reap with an empty target marker")
+	}
+	out, err := k.run(ctx, nil, reapArgs(k.reapTypes, k.pruneVal)...)
+	if err != nil {
+		return 0, err
+	}
+	// kubectl prints one line per deleted object; "No resources found" prints
+	// nothing to stdout under --ignore-not-found.
+	removed := 0
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			removed++
+		}
+	}
+	return removed, nil
 }

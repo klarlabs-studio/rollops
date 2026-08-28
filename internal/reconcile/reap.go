@@ -16,8 +16,12 @@ package reconcile
 // the decision to retire something is testable on its own.
 
 import (
+	"context"
+	"fmt"
+
 	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // reaper tracks which target keys each repo declared, and how many consecutive
@@ -183,10 +187,87 @@ func (w *Watcher) reportOrphan(v verdict) {
 			},
 		})
 	}
+	// Reap only when the target asked for it. `prune: true` says "delete what
+	// I stopped declaring inside a live apply"; reaping says "delete
+	// everything when I stop declaring the target at all". The second does not
+	// follow from the first, so it is its own opt-in.
+	if reapOnDelete(cfg) {
+		w.reapOrphan(v, cfg, ref)
+	}
 	// Reported once; stop tracking so a long-retired target does not sit in the
 	// maps for the life of the process.
 	w.orphans.forget(v.Repo, v.Key)
 	delete(w.lastSeen, v.Key)
+}
+
+// reapOnDelete reports whether the target opted into removal when its
+// declaration disappears.
+func reapOnDelete(c *config.Config) bool {
+	if c == nil {
+		return false
+	}
+	v, ok := c.Spec.Target.Spec["reapOnDelete"]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
+}
+
+// reapOrphan removes the resources of a target whose RolloutConfig is gone.
+//
+// Everything about this is deliberately narrow. It runs only for a target that
+// set reapOnDelete, only after the absence threshold, only through a target
+// kind that implements pt.Reaper, and the deletion itself is scoped to the
+// marker rollops applied. A failure is recorded and left alone rather than
+// retried: the orphan report already named the target, and a reap that keeps
+// failing should be read by a person, not hammered.
+func (w *Watcher) reapOrphan(v verdict, cfg *config.Config, ref string) {
+	if w.rec == nil || w.rec.eng == nil {
+		return
+	}
+	tgt, err := w.rec.eng.BuildTarget(cfg.Spec.Target)
+	if err != nil {
+		w.logOrphanReap(v, ref, 0, fmt.Errorf("build target: %w", err))
+		return
+	}
+	defer closeIfCloser(tgt)
+	r, ok := tgt.(pt.Reaper)
+	if !ok {
+		w.logOrphanReap(v, ref, 0, fmt.Errorf("target kind %q cannot reap", cfg.Spec.Target.Kind))
+		return
+	}
+	removed, err := r.ReapTarget(context.Background())
+	w.logOrphanReap(v, ref, removed, err)
+}
+
+func (w *Watcher) logOrphanReap(v verdict, ref string, removed int, err error) {
+	if w.logf != nil {
+		if err != nil {
+			w.logf("reap %s (ref %s) FAILED: %v — resources may still be running", v.Key, ref, err)
+		} else {
+			w.logf("reaped %s (ref %s): removed %d resource(s)", v.Key, ref, removed)
+		}
+	}
+	if w.rec == nil {
+		return
+	}
+	fields := map[string]any{"key": v.Key, "repo": v.Repo, "removed": removed}
+	detail := "reaped resources of a target whose RolloutConfig was deleted"
+	if err != nil {
+		fields["error"] = err.Error()
+		detail = "reap of a deleted target FAILED; resources may still be running"
+	}
+	w.rec.record(audit.Entry{
+		Action: audit.ActionOrphan, TargetRef: ref, Phase: "reap",
+		Detail: detail, Fields: fields,
+	})
+}
+
+func closeIfCloser(t pt.Target) {
+	if c, ok := t.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
 }
 
 // targetPrunes reports whether the target opted into prune labelling, which

@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -135,5 +136,54 @@ func TestPruneArgs_OnlyWhenAsked(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("pruneArgs = %v, want %v", got, want)
 		}
+	}
+}
+
+// The selector is the only thing between "this target's resources" and "the
+// namespace". #154.
+func TestReapArgs_AlwaysScopedToTheTargetMarker(t *testing.T) {
+	got := reapArgs(nil, "demo-prod-app")
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "--selector "+PruneLabel+"=demo-prod-app") {
+		t.Fatalf("reap is not scoped to the target marker: %v", got)
+	}
+	if got[0] != "delete" {
+		t.Errorf("first arg = %q, want delete", got[0])
+	}
+	// Unset types must fall back to the documented default rather than an empty
+	// type list, which kubectl would reject or interpret unpredictably.
+	if !strings.Contains(joined, "all") {
+		t.Errorf("no resource types in %v", got)
+	}
+	if !strings.Contains(joined, "--ignore-not-found") {
+		t.Errorf("a retried reap should not error on an empty match: %v", got)
+	}
+}
+
+// Widening is possible but must be explicit, and must not drop the selector.
+func TestReapArgs_HonoursExplicitTypes(t *testing.T) {
+	got := reapArgs([]string{"deployment", "service", "ingress"}, "x-y")
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "deployment,service,ingress") {
+		t.Errorf("explicit types not passed through: %v", got)
+	}
+	if !strings.Contains(joined, "--selector "+PruneLabel+"=x-y") {
+		t.Errorf("explicit types dropped the selector — that would delete every object of these kinds: %v", got)
+	}
+}
+
+// A target that did not opt in must be refused even if something calls it.
+func TestReapTarget_RefusesWithoutOptIn(t *testing.T) {
+	k := &kubectlCluster{pruneVal: "demo", reapOnDelete: false}
+	if _, err := k.ReapTarget(context.Background()); err == nil {
+		t.Fatal("reaped a target that never opted in")
+	}
+}
+
+// An empty marker would make the selector match everything in the namespace.
+func TestReapTarget_RefusesEmptyMarker(t *testing.T) {
+	k := &kubectlCluster{pruneVal: "", reapOnDelete: true}
+	if _, err := k.ReapTarget(context.Background()); err == nil {
+		t.Fatal("reaped with an empty marker — the selector would match the namespace")
 	}
 }
