@@ -90,11 +90,9 @@ func (c Config) Options(ctx context.Context) ([]engine.Option, error) {
 		opts = append(opts, engine.WithMetricAnalysis())
 		c.logf("rollops: metric analysis enabled (observability-free default is off)\n")
 	}
-	if key := c.getenv("ROLLOPS_COSIGN_KEY"); key != "" {
-		opts = append(opts, engine.WithArtifactGate(security.ArtifactGate{
-			Mode:     security.VerifyEnforce,
-			Verifier: security.CosignVerifier{KeyPath: key},
-		}))
+	if gate, describe := c.artifactGate(); gate != nil {
+		opts = append(opts, engine.WithArtifactGate(*gate))
+		c.logf("rollops: artifact gate: %s\n", describe)
 	}
 	if n, _ := notify.FromEnv(c.getenv); n != nil {
 		opts = append(opts, engine.WithNotifier(n))
@@ -110,6 +108,112 @@ func (c Config) Options(ctx context.Context) ([]engine.Option, error) {
 		c.logf("rollops: multi-tenant confinement is OFF (trusted-repo mode); for untrusted/multi-tenant repos set ROLLOPS_ALLOWED_COMMANDS, ROLLOPS_ALLOWED_NAMESPACES, and/or ROLLOPS_CONFINE_TARGET_CLUSTER=1\n")
 	}
 	return opts, nil
+}
+
+// artifactGate assembles the deploy-time artifact policy.
+//
+// Three claims by three authorities, each opt-in and each checkable on its
+// own. A signature proves somebody holding the key vouched for these bytes and
+// says nothing about where they came from, so an attacker who obtains that key
+// can sign an arbitrary image and a signature-only gate deploys it. Build
+// provenance pins the artifact to a commit and to the platform that built it.
+// The source gate's verification summary says that commit passed its policy —
+// carried from the gate itself rather than summarised by the builder, so the
+// verdict names its verifier and the policy file it was measured against.
+//
+// Setting only ROLLOPS_COSIGN_KEY keeps the previous behaviour exactly.
+func (c Config) artifactGate() (*security.ArtifactGate, string) {
+	key := c.getenv("ROLLOPS_COSIGN_KEY")
+	identity := c.getenv("ROLLOPS_COSIGN_IDENTITY")
+	issuer := c.getenv("ROLLOPS_COSIGN_ISSUER")
+	builders := splitList(c.getenv("ROLLOPS_PROVENANCE_BUILDERS"))
+	gates := splitList(c.getenv("ROLLOPS_SOURCE_GATES"))
+	gateKeys := splitList(c.getenv("ROLLOPS_SOURCE_KEYS"))
+
+	authenticated := key != "" || (identity != "" && issuer != "")
+
+	var verifiers []security.ArtifactVerifier
+	var parts []string
+
+	if authenticated {
+		verifiers = append(verifiers, security.CosignVerifier{
+			KeyPath: key, CertIdentity: identity, CertOIDCIssuer: issuer,
+		})
+		parts = append(parts, "signature")
+	}
+
+	var provenance *security.ProvenanceVerifier
+	if len(builders) > 0 {
+		if !authenticated {
+			// A verifier with nothing to authenticate against fails every
+			// deploy, which reads as a broken pipeline rather than the
+			// misconfiguration it is.
+			c.logf("rollops: ROLLOPS_PROVENANCE_BUILDERS is set but no cosign key or identity is; " +
+				"provenance cannot be verified without one\n")
+		} else {
+			provenance = &security.ProvenanceVerifier{
+				KeyPath: key, CertIdentity: identity, CertOIDCIssuer: issuer,
+				AllowedBuilders: builders,
+				RequireReproved: truthy(c.getenv("ROLLOPS_PROVENANCE_REQUIRE_REPROVED")),
+			}
+			verifiers = append(verifiers, *provenance)
+			parts = append(parts, "provenance from "+strings.Join(builders, ", "))
+		}
+	}
+
+	if len(gates) > 0 || len(gateKeys) > 0 {
+		if len(gateKeys) == 0 {
+			// The gate's summary is verified against the gate's own key, not
+			// against cosign's. Without it there is nothing to check the
+			// signature with, and accepting the summary anyway would mean
+			// trusting whoever carried it.
+			c.logf("rollops: ROLLOPS_SOURCE_GATES is set but ROLLOPS_SOURCE_KEYS is not; " +
+				"the source summary is verified against the gate's own public key\n")
+		} else {
+			// Handing the source gate the provenance verifier is what lets it
+			// check that the commit the gate vouched for is the commit the
+			// artifact was built from. Without that join both attestations
+			// verify alone while saying nothing about each other.
+			verifiers = append(verifiers, security.SourceGateVerifier{
+				PublicKeys:       gateKeys,
+				AllowedVerifiers: gates,
+				RequireLevels:    splitList(c.getenv("ROLLOPS_SOURCE_REQUIRE_LEVELS")),
+				Provenance:       provenance,
+			})
+			label := "source gate signature"
+			if len(gates) > 0 {
+				label = "source gated by " + strings.Join(gates, ", ")
+			}
+			parts = append(parts, label)
+		}
+	}
+
+	if len(verifiers) == 0 {
+		return nil, ""
+	}
+	return &security.ArtifactGate{
+		Mode:     security.VerifyEnforce,
+		Verifier: security.ChainVerifier{Verifiers: verifiers},
+	}, "enforcing " + strings.Join(parts, " + ")
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func truthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func logOrDiscard(w io.Writer) io.Writer {

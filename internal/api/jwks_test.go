@@ -259,3 +259,46 @@ func TestDiscoverJWKSURL(t *testing.T) {
 		t.Fatalf("discovery = %q err=%v", got, err)
 	}
 }
+
+// TestJWK_ECRejectsOffCurvePoint pins the reason publicKey() goes through
+// ecdsa.ParseUncompressedPublicKey instead of assigning X and Y.
+//
+// A JWKS is fetched from the issuer, so its coordinates are remote input.
+// Assigning them straight onto an ecdsa.PublicKey builds a key for a point
+// that need not lie on the named curve, which is the setup for an
+// invalid-curve attack. Parsing checks curve membership and rejects it.
+func TestJWK_ECRejectsOffCurvePoint(t *testing.T) {
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := (elliptic.P256().Params().BitSize + 7) / 8
+	pad := func(i *big.Int) []byte {
+		b := i.Bytes()
+		out := make([]byte, size)
+		copy(out[size-len(b):], b)
+		return out
+	}
+
+	// Sanity: the honest key still parses, so the test below is about the
+	// tampering and not about the encoding.
+	good := jwk{Kty: "EC", Crv: "P-256", X: b64u(pad(ec.X)), Y: b64u(pad(ec.Y))}
+	if _, err := good.publicKey(); err != nil {
+		t.Fatalf("a valid P-256 jwk must parse: %v", err)
+	}
+
+	// Move Y off the curve. x stays put, so (x, y+1) is almost certainly not
+	// a point on P-256.
+	badY := new(big.Int).Add(ec.Y, big.NewInt(1))
+	bad := jwk{Kty: "EC", Crv: "P-256", X: b64u(pad(ec.X)), Y: b64u(pad(badY))}
+	if _, err := bad.publicKey(); err == nil {
+		t.Fatal("a point that is not on P-256 must be rejected, got a usable key")
+	}
+
+	// An over-long coordinate is malformed rather than off-curve; it must not
+	// be silently truncated into a different key.
+	long := jwk{Kty: "EC", Crv: "P-256", X: b64u(make([]byte, size+1)), Y: b64u(pad(ec.Y))}
+	if _, err := long.publicKey(); err == nil {
+		t.Fatal("an over-long coordinate must be rejected")
+	}
+}

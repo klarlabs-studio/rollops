@@ -15,7 +15,29 @@ Rollops is a lightweight, infrastructure-agnostic rollout orchestration system. 
 
 GitOps and progressive-delivery tooling is overwhelmingly Kubernetes-first and operationally heavy. ArgoCD and Flux are powerful but assume your deployment target is a cluster and your operator is a human clicking through a UI or writing pipeline YAML. (Direct experience at Snyk: Argo was painful.) Meanwhile feature-flag platforms (LaunchDarkly, Flagsmith, Statsig) only operate at the application layer, and procedural tools (Ansible) are not declarative or continuously reconciling.
 
-For a **solopreneur or small studio shipping many products across heterogeneous infrastructure** — one product on Kubernetes, another behind an FTP step, another on a bare Hetzner VPS — there is no lean, declarative, agnostic control plane. And nothing treats an autonomous agent as a native operator.
+For a **solopreneur or small studio shipping many products across heterogeneous infrastructure** — one product on Kubernetes, another behind an FTP step, another on a bare Hetzner VPS — there is no lean, declarative, agnostic control plane spanning all of it. Self-hosted PaaS tools serve that operator well when they own the runtime; the gap is what happens across infrastructure they do not own. See *Competitive landscape*.
+
+---
+
+## Competitive landscape
+
+*Verified 2026-08-18. Star counts and versions move; the structural claims are what matter.*
+
+**Dokploy** is the sharpest competitor to the OSS thesis above, and it is not a feature rival — it is a **substitute for the whole category**. Apache 2.0 with a `/proprietary` carve-out, ~36.7k stars, v4.0 stable since early 2026. It is a self-hosted PaaS: Docker Swarm and Traefik on servers it manages, deploying applications from git, databases and compose files, across multiple build and deploy servers. For the solopreneur on a Hetzner VPS — the persona named above — it answers "how do I ship this safely" by owning the runtime, and once it does, there is no separate rollout control plane left to adopt.
+
+Two claims in this document have to survive it honestly:
+
+- **"There is no lean control plane for this operator" was too comfortable.** Dokploy at ~36.7k stars, Coolify at ~60.7k, Dokku at ~32.1k, CapRover at ~15.1k — that audience already reached for something. The opening is not absence; it is what those tools deliberately do not do.
+- **"Agents are first-class operators" is no longer differentiating on its own.** Dokploy ships an official MCP server and CLI covering its API broadly (hundreds of tools and commands). An agent can already drive it end to end, so *reachable by an agent* is table stakes now, not a moat.
+
+Where Rollops stays distinct:
+
+- **It does not own the runtime.** Dokploy *is* the deployment target. Rollops drives targets that already exist — a cluster, a VM, an FTP step — which is the only shape available to anyone whose infrastructure is not up for renegotiation. Adopting Dokploy is a migration; adopting Rollops is not.
+- **A health check is not progressive delivery.** Dokploy's zero-downtime is a Swarm rolling update gated on a health endpoint, and its rollback is Swarm's health-check auto-revert or a manual redeploy of an earlier image. No traffic split by percentage, no metric-based analysis, no blast-radius score deciding whether the rollout proceeds at all.
+- **API coverage is capability, not governance.** A tool per endpoint gives an agent the ability to do anything the API can; it gives the operator no brake and no record. The differentiator is the gate *around* the agent — risk score, approval, actor attribution, audit trail, verify-and-rollback — not that an agent can call in.
+- **Trigger versus reconcile.** Dokploy deploys when something tells it to: push, webhook, schedule. Rollops reconciles declared state and reports drift, which is the difference between "we deployed it" and "it is still what we said."
+
+The uncomfortable read: Dokploy competes for the same first install, with a community several orders of magnitude larger than ours. The winnable operator is the one who has infrastructure they cannot move and wants a gate in front of the agent driving it — not the greenfield VPS, where the PaaS wins on the day and should be conceded rather than argued with.
 
 ---
 
