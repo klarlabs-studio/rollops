@@ -187,3 +187,22 @@ func (s spec) boolVal(key string) bool {
 	b, _ := s[key].(bool)
 	return b
 }
+
+// strSlice reads a list-of-strings setting. YAML decodes an untyped list as
+// []any, so both shapes are accepted; anything else yields nil, which callers
+// read as "unset" and fall back to their default.
+func (s spec) strSlice(key string) []string {
+	switch v := s[key].(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if str, ok := e.(string); ok && str != "" {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
+}

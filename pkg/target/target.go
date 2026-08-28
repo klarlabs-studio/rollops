@@ -115,6 +115,34 @@ type Renderer interface {
 	Referenced(desired Manifest) bool
 }
 
+// Reaper is an OPTIONAL capability: a target that can remove the resources it
+// owns, identified by the marker rollops applied to them.
+//
+// It exists for one case the reconcile loop cannot otherwise reach: the
+// RolloutConfig itself was deleted (#154). Pruning runs as part of APPLYING a
+// target, so it needs the target to still exist — deleting the declaration
+// removes the very thing that would clean up after it, and the resources run on
+// with nothing in Git describing them.
+//
+// This is the FIRST destructive capability in this package. Everything else here
+// observes. Two consequences worth stating rather than discovering:
+//
+//   - Implementing it is opt-in for a target KIND, and invoking it is opt-in for
+//     a target INSTANCE. The engine never calls this because state drifted; only
+//     because the declaration is gone and the operator asked for that to mean
+//     removal.
+//   - A target that cannot scope a deletion precisely should not implement it.
+//     Reaping too little is the bug this fixes; reaping too much is worse.
+type Reaper interface {
+	// ReapTarget removes the resources this target owns and reports how many
+	// were removed. It MUST be scoped to resources this target marked as its
+	// own — never "everything in the namespace".
+	//
+	// Idempotent: reaping an already-reaped target removes nothing and is not
+	// an error, because the caller may retry after a partial failure.
+	ReapTarget(ctx context.Context) (removed int, err error)
+}
+
 // Inspector is an OPTIONAL capability: a target that can list the live resources
 // it manages and their status (e.g. `kubectl get`). Surfaced in the UI.
 type Inspector interface {
