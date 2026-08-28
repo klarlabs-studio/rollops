@@ -108,3 +108,53 @@ func TestReaperNeverReapsUnknownTargets(t *testing.T) {
 type errLoad struct{}
 
 func (errLoad) Error() string { return "load failed" }
+
+// Uncorrected drift must become louder the longer it lasts. Under
+// `verification: detect` rollops alerts and deliberately does not fix, so the
+// alert is the whole mechanism — and tick 1 reads identically to tick 1,100.
+// #154 was 19 hours of a target nobody looked at.
+func TestDriftStreakEscalatesOnceAfterThreshold(t *testing.T) {
+	d := newDriftStreak(3)
+	if got := d.observe("k", true); got != 0 {
+		t.Fatalf("tick 1: %d, want 0", got)
+	}
+	if got := d.observe("k", true); got != 0 {
+		t.Fatalf("tick 2: %d, want 0", got)
+	}
+	if got := d.observe("k", true); got != 3 {
+		t.Fatalf("tick 3 should escalate with the streak, got %d", got)
+	}
+	// Louder once, not once per tick: a target drifting for a day must not
+	// emit a day's worth of identical escalations.
+	for i := 0; i < 5; i++ {
+		if got := d.observe("k", true); got != 0 {
+			t.Fatalf("tick %d after escalating: %d, want 0", 4+i, got)
+		}
+	}
+}
+
+// Recovery resets, and a target that drifts again later is judged afresh
+// rather than escalating on its first tick because of an old streak.
+func TestDriftStreakResetsOnRecovery(t *testing.T) {
+	d := newDriftStreak(2)
+	d.observe("k", true)
+	d.observe("k", true) // escalated
+	d.observe("k", false)
+	if got := d.observe("k", true); got != 0 {
+		t.Fatalf("first drift tick after recovery: %d, want 0", got)
+	}
+	if got := d.observe("k", true); got != 2 {
+		t.Fatalf("second drift tick after recovery should escalate, got %d", got)
+	}
+}
+
+// Targets are independent: one drifting target must not escalate another.
+func TestDriftStreakScopesPerTarget(t *testing.T) {
+	d := newDriftStreak(2)
+	d.observe("a", true)
+	d.observe("b", false)
+	d.observe("a", true)
+	if got := d.observe("b", true); got != 0 {
+		t.Fatalf("b escalated on its first drift tick: %d", got)
+	}
+}

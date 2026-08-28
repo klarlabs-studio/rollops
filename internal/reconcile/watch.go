@@ -58,6 +58,12 @@ type Watcher struct {
 	// target can still be described after its file is gone. Bounded by the
 	// number of configs the watched repos declare.
 	lastSeen map[string]*config.Config
+
+	// drifting counts consecutive ticks a target has reported drift it was not
+	// allowed to correct. Under `verification: detect` the alert is the whole
+	// mechanism, and one alert per tick reads the same on day one as on day
+	// twenty. See driftStreak.
+	drifting *driftStreak
 }
 
 // stuckAfterCycles is how many consecutive waiting cycles turn a proposal from
@@ -330,7 +336,15 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		// kustomize/helm/path points at the polled desired state.
 		root := filepath.Join(r.src.Dir(), filepath.Dir(p.nc.Path))
 		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), p.cfg, r.spec.Initiator)
-		out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Outcome: o, Err: rerr})
+		key := r.spec.Name + "/" + p.nc.Path
+		// Only an error-free reconcile says anything about drift. A failed one
+		// did not observe the target, so it must not extend OR reset a streak.
+		if rerr == nil {
+			if n := w.drifting.observe(key, o.Drift && !o.Reconciled); n > 0 {
+				w.reportPersistentDrift(key, p.cfg, n)
+			}
+		}
+		out = append(out, RepoOutcome{Repo: key, Changed: changed, Outcome: o, Err: rerr})
 	}
 	return out
 }
