@@ -34,7 +34,14 @@ commands:
   # GitHub Actions, and this repository no longer requires those checks —
   # so without this line, switching to warden/gate would delete it.
   vulns: "go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./..."
-  lint: "golangci-lint run ./..."
+  # --allow-parallel-runners: the lock golangci-lint takes is machine-global,
+  # so a lint in any other checkout blocks this one and the gate exits 75 --
+  # measured here, on this repository, on a box running several gates at once.
+  # --timeout=15m: the default is one minute of WALL CLOCK, which the same
+  # contention burns through while the linter is still starting. Neither flag
+  # loosens a check; they stop the gate reporting a busy machine as a verdict
+  # on the code.
+  lint: "golangci-lint run --allow-parallel-runners --timeout=15m ./..."
   test: "go test -race ./..."
 steps:
   pre_commit: [lint]
