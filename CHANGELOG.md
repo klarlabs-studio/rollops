@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.34.1 - The builder is Alpine again
+
+Dependabot #152 bumped the `golang` base image digest across *variants* — same
+repository, Alpine to Debian — while the builder stage still runs `apk`. Every
+image build since 28 August failed with `apk: not found`, including v0.34.0's,
+so that release published binaries and no container.
+
+Repinned to `golang:1.26-alpine` by digest, with the variant named in a comment
+so the next such bump is reviewable rather than an unreadable digest swap.
+Verified by building the image for linux/amd64 before tagging.
+
 ## v0.34.0 - A proposal that is actually open
 
 ### A branch carrying the bump is not proof a pull request exists
