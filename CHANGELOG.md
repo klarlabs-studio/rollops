@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.34.0 - A proposal that is actually open
+
+### A branch carrying the bump is not proof a pull request exists
+
+`proposeViaPR` returned early whenever the proposal branch already contained
+the computed bump, treating that as evidence a proposal stood. It is not: the
+pull request can be closed by a person, or never have been opened because the
+cycle that pushed the branch then failed at `OpenPullRequest`.
+
+Nothing recovered from that. Every later cycle took the early return, reported
+`pending`, and proposed nothing, so the bump sat on a branch nobody was looking
+at while the target waited for a merge that could not happen. The STUCK
+escalation from #98 fired correctly and described a wait that no amount of
+waiting would end.
+
+Seen in production: two pet-medical targets sat `pending` for twelve days, their
+`rollops/image/*` branches ahead of `main`, with no open pull request.
+
+The fix separates two questions the early return had merged — does the *branch*
+carry this bump (do not commit; committing rewrites it and the force-push
+cancels the CI the proposal is waiting on), and does a *pull request* exist
+(open one if not). `OpenPullRequest` is already create-or-find and pushes
+nothing, so ensuring the proposal is safe on the path that must not touch the
+branch.
+
+A failure to ensure the proposal is now an error where it used to report
+`pending`. A proposal that cannot be opened is not something to wait for; it is
+the reason the wait would never end.
+
+### The plugin public key path is guarded
+
+`ROLLOPS_PLUGIN_PUBLIC_KEY` now rejects dot-dot before the read. Not because the
+env var is attacker-controlled — whoever sets the daemon's environment can
+already read any file it can — but because a key path assembled from a template
+or a chart value is the ordinary way an operator ends up with one they did not
+mean, and a verification key read from the wrong file fails open in the sense
+that matters: every plugin then verifies against something else.
+
+Both taint waivers are now tied to tests that fail closed, so the guard's
+removal is caught by the suite rather than trusted to a baseline entry.
+
 ## v0.33.1 - Dependency refresh
 
 Patch release so the tagged image matches `main` after #146.
