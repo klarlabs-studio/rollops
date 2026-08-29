@@ -195,14 +195,24 @@ func (ia ImageAuto) Process(ctx context.Context, src *git.Source, nc config.Name
 func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config.NamedConfig, patched []byte, msg, from, to string, seen ImageStatus) (*config.Config, string, ImageStatus, error) {
 	head := prBranchName(nc.Config.Metadata.Name)
 
-	// Stop before touching Git when the proposal already stands. Committing
+	// Do not COMMIT when the branch already carries this bump. Committing
 	// would produce a new sha for identical content — the branch is rebuilt
 	// from the tracked branch each time — and force-pushing that refreshes the
 	// proposal once per reconcile. Where CI cancels in-progress runs per ref,
 	// that cancels the very checks the pull request is waiting on, so it can
 	// never merge and the bump never deploys.
+	//
+	// It still has to ensure the PULL REQUEST exists. Those are different
+	// questions, and this used to answer only the first: a branch carrying the
+	// bump was taken as proof a proposal stood, so if the PR had been closed —
+	// or was never opened, because the cycle that pushed the branch then failed
+	// at OpenPullRequest — every later cycle took this path, reported `pending`,
+	// and never proposed anything again. The bump sat on a branch nobody was
+	// looking at, and the target waited for a merge that could not happen.
+	// Observed on pet-medical, where server and web sat pending for twelve days
+	// with their branches ahead of main and no open PR.
 	if src.RemoteFileMatches(ctx, head, nc.Path, patched) {
-		return nc.Config, "", withOutcome(seen, ImageOutcomePending), nil
+		return ia.ensureProposal(ctx, src, nc, head, msg, from, to, seen)
 	}
 
 	committed, err := src.CommitFileOnBranch(ctx, head, nc.Path, patched, msg)
@@ -210,19 +220,59 @@ func (ia ImageAuto) proposeViaPR(ctx context.Context, src *git.Source, nc config
 		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: pr commit: %w", err)
 	}
 	if !committed {
-		// The proposal branch already carries exactly this bump; the PR (if any)
-		// stands. Nothing to push or reopen — but Git has still not adopted the
-		// newer image, so this is pending, never current.
-		return nc.Config, "", withOutcome(seen, ImageOutcomePending), nil
+		// Same case reached a different way: the branch already carries exactly
+		// this bump. Ensure the proposal for the same reason as above.
+		//
+		// DEFENSIVE, AND NOT COVERED BY A TEST. RemoteFileMatches above answers
+		// nearly the same question and returns first, so no test reaches here;
+		// mutation testing confirmed that removing this line changes nothing
+		// the suite can see. It stays because the two checks are not identical
+		// — one reads the remote branch, the other the result of resetting from
+		// the tracked branch — and the cost of the belt is a line.
+		return ia.ensureProposal(ctx, src, nc, head, msg, from, to, seen)
 	}
 	if err := src.PushBranch(ctx, head); err != nil {
 		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: pr push: %w", err)
 	}
-	body := fmt.Sprintf("Automated image bump by rollops.\n\n- config: `%s`\n- %s → %s\n\nMerging this deploys the new image through the normal reconcile. Opened as a PR because the tracked branch does not accept direct pushes.", nc.Path, from, to)
-	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, body); err != nil {
+	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, proposalBody(nc.Path, from, to)); err != nil {
 		return nc.Config, "", withOutcome(seen, ImageOutcomeError), fmt.Errorf("imageauto: open pr: %w", err)
 	}
 	return nc.Config, "", withOutcome(seen, ImageOutcomeProposed), nil
+}
+
+// ensureProposal makes sure a pull request exists for a branch that already
+// carries the bump, without touching the branch itself.
+//
+// OpenPullRequest is create-or-find (see createOrFindPR), so this is a no-op
+// against an open proposal and reopens a missing one. It pushes nothing, so the
+// force-push hazard the caller avoids does not apply.
+//
+// A failure here is an ERROR, where this path used to report `pending`. A
+// proposal that cannot be opened is not something to wait for: it is the reason
+// the wait will never end, and saying so is what lets the operator see it.
+func (ia ImageAuto) ensureProposal(
+	ctx context.Context, src *git.Source, nc config.NamedConfig,
+	head, msg, from, to string, seen ImageStatus,
+) (*config.Config, string, ImageStatus, error) {
+	if _, _, err := src.OpenPullRequest(ctx, head, src.Branch(), msg, proposalBody(nc.Path, from, to)); err != nil {
+		return nc.Config, "", withOutcome(seen, ImageOutcomeError),
+			fmt.Errorf("imageauto: ensure pr for %s: %w", head, err)
+	}
+
+	// Pending, not proposed: Git still has not adopted the image. Whether the
+	// pull request was opened just now or was already standing, the deploy is
+	// waiting on the same merge.
+	return nc.Config, "", withOutcome(seen, ImageOutcomePending), nil
+}
+
+// proposalBody is the pull request description, in one place so the body a
+// reopened proposal carries cannot drift from the original.
+func proposalBody(path, from, to string) string {
+	return fmt.Sprintf(
+		"Automated image bump by rollops.\n\n- config: `%s`\n- %s → %s\n\n"+
+			"Merging this deploys the new image through the normal reconcile. "+
+			"Opened as a PR because the tracked branch does not accept direct pushes.",
+		path, from, to)
 }
 
 // prBranchName is the deterministic head branch for a config's image proposals.
