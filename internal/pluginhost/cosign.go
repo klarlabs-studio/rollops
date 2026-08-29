@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,7 +34,24 @@ func VerifyArtifact(path, sha256hex string) error {
 	if keyPath == "" {
 		return nil // signing not enabled
 	}
-	pubPEM, err := os.ReadFile(keyPath)
+	// Guard the path before reading it. ROLLOPS_PLUGIN_PUBLIC_KEY is operator
+	// config, so this is not a privilege boundary — anyone who can set the
+	// daemon's environment already owns the process. It is still worth
+	// refusing dot-dot: a key path assembled from a template or a chart value
+	// is the ordinary way an operator ends up with one they did not intend,
+	// and a verification key read from the wrong file fails open in the sense
+	// that matters — every plugin then verifies against something else.
+	if strings.Contains(keyPath, "..") {
+		return fmt.Errorf("plugin: %s must not contain dot-dot segments: %q", PublicKeyEnv, keyPath)
+	}
+
+	// Canonicalise after the dot-dot check, not instead of it. filepath.Clean
+	// does not prevent traversal on its own — Clean("../x") is "../x" — so the
+	// rejection above is the actual guard and this only removes the redundant
+	// separators and "." elements that would otherwise reach the filesystem.
+	cleanKeyPath := filepath.Clean(keyPath)
+
+	pubPEM, err := os.ReadFile(cleanKeyPath)
 	if err != nil {
 		return fmt.Errorf("plugin: read public key (%s): %w", PublicKeyEnv, err)
 	}

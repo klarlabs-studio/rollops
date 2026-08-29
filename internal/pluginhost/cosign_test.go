@@ -8,9 +8,11 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -133,5 +135,63 @@ func TestVerifyArtifact_NoKeyConfiguredSkipsSignature(t *testing.T) {
 	// A wrong pin still fails (integrity always enforced).
 	if err := VerifyArtifact(bin, "00"); err == nil {
 		t.Fatal("wrong sha256 pin must always fail")
+	}
+}
+
+// The dot-dot guard on ROLLOPS_PLUGIN_PUBLIC_KEY is enforced here, not by the
+// scanner — the same arrangement as TestLoadClustersFile_RejectsUnsafePath.
+//
+// nox flags the env-var → os.ReadFile flow in VerifyArtifact and cannot see
+// this guard, so the finding is accepted in .nox/baseline.json. A baseline
+// entry does not notice when the mitigation it excuses is deleted; this test
+// does, and fails closed.
+func TestVerifyArtifact_RejectsDotDotInKeyPath(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "plugin")
+
+	if err := os.WriteFile(bin, []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte("binary"))
+
+	// Concatenated, NOT filepath.Join: Join calls Clean, which collapses the
+	// dot-dot before the guard ever sees it. The first version of this test did
+	// use Join and passed a path with no ".." in it at all — it failed for the
+	// right reason and is worth remembering, because it would have looked like
+	// coverage of a guard it never reached.
+	// Not t.Parallel(): t.Setenv forbids it, and the env var is process-wide.
+	t.Setenv(PublicKeyEnv, dir+"/../etc/key.pem")
+
+	err := VerifyArtifact(bin, hex.EncodeToString(sum[:]))
+	if err == nil {
+		t.Fatal("a public key path containing dot-dot was accepted")
+	}
+
+	if !strings.Contains(err.Error(), "dot-dot") {
+		t.Errorf("error does not name the reason: %v", err)
+	}
+}
+
+// And the guard must not reject ordinary paths, or enabling signature
+// verification would break every deployment that uses one.
+func TestVerifyArtifact_AcceptsAPlainKeyPath(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "plugin")
+
+	if err := os.WriteFile(bin, []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte("binary"))
+
+	t.Setenv(PublicKeyEnv, filepath.Join(dir, "key.pem"))
+
+	// The key file does not exist, so this fails — but on READING the key,
+	// which is past the guard. A dot-dot rejection here would be the guard
+	// firing on a path that should have passed.
+	err := VerifyArtifact(bin, hex.EncodeToString(sum[:]))
+	if err != nil && strings.Contains(err.Error(), "dot-dot") {
+		t.Errorf("the guard rejected an ordinary absolute path: %v", err)
 	}
 }
