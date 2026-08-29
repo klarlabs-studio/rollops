@@ -46,6 +46,19 @@ func TestLoadClustersFile_EmptyPath(t *testing.T) {
 	}
 }
 
+// This test is what makes the nox baseline entry for TAINT-004 honest.
+//
+// nox flags the env-var → os.ReadFile flow in LoadClustersFile as a path
+// traversal. safeConfigPath does neutralise it — dot-dot rejected, absolute
+// required, and it returns filepath.Clean, which nox's own Go catalog lists as
+// a sanitiser. The analyser cannot see that: it is intraprocedural, so the
+// guard becomes invisible the moment it lives in a helper rather than inline.
+//
+// A baseline entry is a fact about a FINDING, and it does not notice when the
+// mitigation it excuses disappears: delete the safeConfigPath call and the
+// entry keeps covering the flow, or drifts and silently stops matching. This
+// test is a fact about the CODE and fails closed. Keep them together — the
+// baseline records why the finding is accepted, this records that it still is.
 func TestLoadClustersFile_RejectsUnsafePath(t *testing.T) {
 	for _, path := range []string{"clusters.yaml", "./clusters.yaml", "../etc/passwd", "/etc/../passwd"} {
 		if _, err := LoadClustersFile(path); err == nil {

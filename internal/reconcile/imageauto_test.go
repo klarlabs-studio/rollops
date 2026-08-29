@@ -587,13 +587,30 @@ func remoteHead(t *testing.T, src *git.Source, branch string) string {
 // auto-merge never fired. Observed in production: three repos accumulated ~50
 // cancelled runs each and their bumps could not land at all.
 func TestImageAuto_DoesNotRepushAnUnchangedProposal(t *testing.T) {
-	var opened int
+	// The fake models GitHub's actual duplicate behaviour: the first POST for a
+	// head creates, and a second while that PR is open is refused 422 "already
+	// exists", which sends the client to the list endpoint. It used to answer
+	// 201 to every POST, which made "how many POSTs" read as "how many pull
+	// requests" — true only because nothing POSTed twice.
+	var created, posts int
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
-			opened++
+			posts++
+			if created > 0 {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"message":"A pull request already exists for acme:rollops/image/web."}`))
+
+				return
+			}
+
+			created++
+
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}`))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/pulls"):
+			_, _ = w.Write([]byte(`[{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}]`))
 		case r.URL.Path == "/graphql":
 			_, _ = w.Write([]byte(`{"data":{}}`))
 		default:
@@ -638,8 +655,139 @@ func TestImageAuto_DoesNotRepushAnUnchangedProposal(t *testing.T) {
 	if got := remoteHead(t, src, "rollops/image/web"); got != headAfterFirst {
 		t.Errorf("proposal branch was re-pushed: %s -> %s; this cancels the CI the PR waits on", headAfterFirst[:8], got[:8])
 	}
-	if opened != 1 {
-		t.Errorf("opened %d pull requests, want 1", opened)
+	// One pull request, however many times the proposal was checked. The second
+	// cycle asks whether a PR exists (it must — see
+	// TestImageAuto_ReopensAProposalWhosePullRequestIsGone) but must never
+	// leave a second one behind.
+	if created != 1 {
+		t.Errorf("created %d pull requests, want 1", created)
+	}
+
+	if posts < 2 {
+		t.Errorf("the second cycle never checked that a proposal exists (%d POSTs); "+
+			"a branch carrying the bump is not evidence that a PR is open", posts)
+	}
+}
+
+// A proposal whose pull request is gone must be reopened.
+//
+// THE STALL THIS FIXES. proposeViaPR returned early whenever the branch already
+// carried the bump, treating that as proof a proposal stood. It is not: the PR
+// can be closed by a human, or never opened at all when the cycle that pushed
+// the branch then failed at OpenPullRequest. Every later cycle took the early
+// return, reported `pending`, and proposed nothing — so the bump sat on a
+// branch nobody was looking at and the target waited forever for a merge that
+// could not happen.
+//
+// Seen in production: pet-medical's server and web sat `pending` for twelve
+// days, their rollops/image/* branches ahead of main, with no open PR.
+func TestImageAuto_ReopensAProposalWhosePullRequestIsGone(t *testing.T) {
+	var created int
+
+	// No PR is ever open here, so every POST succeeds — the closed-PR case.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
+			created++
+
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/2"}`))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/pulls"):
+			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/graphql":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true\n    writeback: pull-request", 1)
+
+	src := newGitRepo(t, cfgYAML).WithURL("https://github.com/acme/web").WithAPIBase(srv.URL)
+
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nc := config.NamedConfig{Path: "apps/web.yaml", Config: cfg}
+	ia := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}
+
+	if _, _, first, perr := ia.Process(context.Background(), src, nc); perr != nil || first.Outcome != ImageOutcomeProposed {
+		t.Fatalf("first Process: outcome=%q err=%v", first.Outcome, perr)
+	}
+
+	// The branch now carries the bump. Somebody closes the PR.
+	_, _, second, err := ia.Process(context.Background(), src, nc)
+	if err != nil {
+		t.Fatalf("second Process: %v", err)
+	}
+
+	if second.Outcome != ImageOutcomePending {
+		t.Errorf("second outcome = %q, want %q", second.Outcome, ImageOutcomePending)
+	}
+
+	if created < 2 {
+		t.Errorf("created %d pull requests; the closed proposal was never reopened, so this "+
+			"target would wait for a merge that cannot happen", created)
+	}
+}
+
+// And a proposal that cannot be opened is an error, not something to wait for:
+// it is the reason the wait would never end.
+func TestImageAuto_FailingToEnsureAProposalIsAnError(t *testing.T) {
+	var posts int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls"):
+			posts++
+			if posts == 1 {
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"node_id":"n","html_url":"https://github.com/acme/web/pull/1"}`))
+
+				return
+			}
+			// Second cycle: the token lost permission to open pull requests.
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"Resource not accessible by integration"}`))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/pulls"):
+			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/graphql":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfgYAML := strings.Replace(imgConfigYAML, "image: ghcr.io/acme/web:v1.0.0", "image: ghcr.io/acme/web:latest", 1)
+	cfgYAML = strings.Replace(cfgYAML, "mode: minor", "mode: digest\n    allowMutableTags: true\n    writeback: pull-request", 1)
+
+	src := newGitRepo(t, cfgYAML).WithURL("https://github.com/acme/web").WithAPIBase(srv.URL)
+
+	cfg, err := config.Load([]byte(cfgYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nc := config.NamedConfig{Path: "apps/web.yaml", Config: cfg}
+	ia := ImageAuto{Scanner: fakeDigest("sha256:brandnew")}
+
+	if _, _, _, perr := ia.Process(context.Background(), src, nc); perr != nil {
+		t.Fatalf("first Process: %v", perr)
+	}
+
+	_, _, second, err := ia.Process(context.Background(), src, nc)
+	if err == nil {
+		t.Error("a proposal that could not be opened was reported without an error")
+	}
+
+	if second.Outcome != ImageOutcomeError {
+		t.Errorf("outcome = %q, want %q — a silent `pending` here is the stall itself",
+			second.Outcome, ImageOutcomeError)
 	}
 }
 
