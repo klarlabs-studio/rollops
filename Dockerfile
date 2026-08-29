@@ -15,15 +15,18 @@
 # Index digests, not per-architecture ones: both resolve to a manifest list covering amd64 and
 # arm64, so this does not quietly restrict where the image can be built.
 # golang:1.26-alpine
-# golang:1.26-alpine, pinned by digest.
+# TAG AND DIGEST, both, and the tag is not decoration.
 #
-# THE TAG MATTERS EVEN THOUGH THE DIGEST IS WHAT IS USED. Dependabot resolves
-# `golang` and writes back whatever digest that names, and in #152 it moved this
-# from an Alpine image to a Debian one — same repository, different variant. The
-# builder below runs `apk`, so every image build since has failed with
-# "apk: not found". Naming the variant here is what makes the next such bump
-# reviewable instead of a digest swap nobody can read.
-FROM golang@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468 AS build
+# A bare `FROM golang@sha256:...` gives Dependabot no variant to stay within, so
+# it resolves the bare name — `latest`, which is Debian — and writes that digest
+# back. That is #152: the base moved from Alpine to Debian under a builder that
+# runs `apk`, and every image build failed with "apk: not found" for three weeks
+# under a commit message reading only "bump golang from 70b4654 to 0d1d3a7".
+#
+# With the tag present the updater can only move the digest WITHIN that tag, so
+# the distro cannot change underneath. Naming it also gives a reviewer something
+# to check; a bare digest swap is unreadable by design.
+FROM golang:1.26-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468 AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
@@ -35,7 +38,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/rollopsd ./cmd/rollopsd
 
 # alpine:3.20
-FROM alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+# Tag + digest, same reasoning as the builder above. alpine:3.24 resolves to
+# exactly this digest today, so naming it changes nothing about what is built —
+# it only stops a future bump from moving the base somewhere else.
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 # Supplied by BuildKit for the platform being built. Declared here because ARG scope is
 # per-stage: without this line TARGETARCH is empty in this stage and the kubectl download
 # below would silently build a URL with a missing path segment.
