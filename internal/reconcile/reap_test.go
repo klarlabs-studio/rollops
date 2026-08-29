@@ -1,6 +1,8 @@
 package reconcile
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -189,5 +191,39 @@ func TestReapOnDelete_RequiresItsOwnOptIn(t *testing.T) {
 	}
 	if reapOnDelete(nil) {
 		t.Error("a nil config must never authorise a deletion")
+	}
+}
+
+// A reap that removed nothing must not read as a cleanup.
+//
+// defaultReapTypes is kubectl's `all`, which excludes PVCs, ingresses,
+// configmaps and secrets. A target whose resources are all of an excluded kind
+// deletes nothing, succeeds, and — before this — logged "removed 0 resource(s)",
+// which is indistinguishable from "there was nothing left to remove". That is
+// the silent-success failure this whole issue is an instance of.
+func TestReapReport_ZeroRemovedIsNotReportedAsCleanup(t *testing.T) {
+	var logs []string
+	w := &Watcher{logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }}
+
+	w.logOrphanReap(verdict{Repo: "r", Key: "r/pvc.yaml"}, "brotwerk/pvc", 0, nil)
+	if len(logs) != 1 {
+		t.Fatalf("logs = %v", logs)
+	}
+	got := logs[0]
+	if !strings.Contains(got, "reapTypes") {
+		t.Errorf("a zero-removal reap must point at the likely cause: %q", got)
+	}
+	if strings.Contains(got, "removed 0 resource(s)") {
+		t.Errorf("still phrased as a successful cleanup: %q", got)
+	}
+
+	// A reap that actually removed something stays plainly a success.
+	logs = nil
+	w.logOrphanReap(verdict{Repo: "r", Key: "r/api.yaml"}, "brotwerk/api", 3, nil)
+	if !strings.Contains(logs[0], "removed 3") {
+		t.Errorf("a real removal should say so: %q", logs[0])
+	}
+	if strings.Contains(logs[0], "reapTypes") {
+		t.Errorf("a successful reap should not warn about coverage: %q", logs[0])
 	}
 }

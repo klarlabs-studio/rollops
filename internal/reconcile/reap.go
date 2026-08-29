@@ -243,9 +243,20 @@ func (w *Watcher) reapOrphan(v verdict, cfg *config.Config, ref string) {
 
 func (w *Watcher) logOrphanReap(v verdict, ref string, removed int, err error) {
 	if w.logf != nil {
-		if err != nil {
+		switch {
+		case err != nil:
 			w.logf("reap %s (ref %s) FAILED: %v — resources may still be running", v.Key, ref, err)
-		} else {
+		case removed == 0:
+			// Distinct from a successful cleanup on purpose. The default reap
+			// scope is kubectl's `all`, which excludes PVCs, ingresses,
+			// configmaps and secrets — so a target made entirely of those
+			// deletes nothing and succeeds. Reporting that as "removed 0" is
+			// indistinguishable from "there was nothing left", which is the
+			// silent-success failure this whole feature exists to fix.
+			w.logf("reap %s (ref %s) matched NOTHING — the target's resources may be of a kind "+
+				"outside reapTypes (the default excludes pvc, ingress, configmap, secret); "+
+				"check the cluster before assuming it is clean", v.Key, ref)
+		default:
 			w.logf("reaped %s (ref %s): removed %d resource(s)", v.Key, ref, removed)
 		}
 	}
@@ -254,6 +265,11 @@ func (w *Watcher) logOrphanReap(v verdict, ref string, removed int, err error) {
 	}
 	fields := map[string]any{"key": v.Key, "repo": v.Repo, "removed": removed}
 	detail := "reaped resources of a target whose RolloutConfig was deleted"
+	if err == nil && removed == 0 {
+		// The audit trail must not record a cleanup that did not happen.
+		detail = "reap matched no resources; the target's kinds may be outside reapTypes"
+		fields["matched_nothing"] = true
+	}
 	if err != nil {
 		fields["error"] = err.Error()
 		detail = "reap of a deleted target FAILED; resources may still be running"
