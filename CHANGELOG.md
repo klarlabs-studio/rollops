@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.34.2 - The clones did not fit in /tmp
+
+The read-only root filesystem added with the hardened `securityContext` sends
+every write to the `/tmp` emptyDir, and `/tmp/rollops-repos` holds a git clone
+of each watched repository. Measured on the live daemon: 117Mi across 11
+repos, already close to double the 64Mi ceiling.
+
+So the ceiling was enforced. The pod was evicted, rescheduled, and evicted
+again roughly every 30 seconds:
+
+```
+Warning  Evicted  Usage of EmptyDir volume "tmp" exceeds the limit "64Mi"
+```
+
+Nothing reported it as a failure. `kubectl rollout status` said "successfully
+rolled out" throughout, because a replacement pod was always coming up and the
+deployment never stopped having one ready — only the event list showed the
+loop. Found by watching the pods after applying rather than trusting the
+rollout to say so.
+
+`/tmp` is now 2Gi, which keeps the intent the original comment states — bound
+the cache so it cannot consume the node's ephemeral storage — at a size the
+workload actually needs, with room for the clones to grow and for repos to be
+added. `kubecache` stays at 64Mi; nothing suggested it is short.
+
 ## v0.34.1 - The builder is Alpine again
 
 Dependabot #152 bumped the `golang` base image digest across *variants* — same
