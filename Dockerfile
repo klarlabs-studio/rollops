@@ -15,7 +15,15 @@
 # Index digests, not per-architecture ones: both resolve to a manifest list covering amd64 and
 # arm64, so this does not quietly restrict where the image can be built.
 # golang:1.26-alpine
-FROM golang@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS build
+# golang:1.26-alpine, pinned by digest.
+#
+# THE TAG MATTERS EVEN THOUGH THE DIGEST IS WHAT IS USED. Dependabot resolves
+# `golang` and writes back whatever digest that names, and in #152 it moved this
+# from an Alpine image to a Debian one — same repository, different variant. The
+# builder below runs `apk`, so every image build since has failed with
+# "apk: not found". Naming the variant here is what makes the next such bump
+# reviewable instead of a digest swap nobody can read.
+FROM golang@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468 AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
