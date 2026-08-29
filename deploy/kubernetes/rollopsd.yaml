@@ -341,7 +341,18 @@ spec:
         # alone, so writing it in prose here produced a third finding pointing at a comment.
         - name: tmp
           emptyDir:
-            sizeLimit: 64Mi
+            # 2Gi, not 64Mi. /tmp/rollops-repos holds a git clone of every
+            # watched repository — 11 of them, measured at 117Mi on the live
+            # daemon, already ~2x the old ceiling. Under a read-only root
+            # filesystem that ceiling is enforced, so the pod was evicted and
+            # rescheduled every ~30s in a loop that nothing else reported: the
+            # deployment stayed "successfully rolled out" throughout, because a
+            # replacement was always coming up.
+            #
+            # Still bounded, which is the point of the limit — this caps a
+            # runaway cache well below the node's ephemeral storage while
+            # leaving room for the clones to grow and for repos to be added.
+            sizeLimit: 2Gi
         - name: kubecache
           emptyDir:
             sizeLimit: 64Mi
