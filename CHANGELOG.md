@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.34.3 - The leak was git's child, not git
+
+rollopsd accumulated about 11 PIDs a minute until it reached the container's
+cgroup `pids.max` — 8050 in the affected cluster — after roughly twelve hours.
+From then on *every* reconcile failed:
+
+```
+rollopsd: reconcile senat: watch: pull: git ... fetch origin main:
+  exit status 128: error: cannot fork() for git-remote-https: Resource temporarily unavailable
+```
+
+No target in any watched project deployed. Merged writeback PRs were never
+applied; deployments simply stayed on the old image. The pod reported `1/1
+Ready` throughout, so a wedged controller looked exactly like a healthy one,
+and the only evidence was these log lines.
+
+The obvious fix was the wrong one. `internal/git` already used `cmd.Run()`,
+which is Start+Wait, and `git` was always reaped correctly — which is why the
+leak survived inspection. It sits one level down, and the error text names it:
+`git` forks `git-remote-https`, `exec.CommandContext` signals only the DIRECT
+child on cancellation, so the helper is orphaned. It reparents to PID 1, and
+PID 1 was the Go binary itself, which never reaps a child it did not start.
+Every cancelled fetch left a permanent zombie.
+
+Two fixes, because they close different holes:
+
+- `internal/git` runs git in its own process group and cancels by killing the
+  **group**, so the helper dies with it. `WaitDelay` bounds the wait
+  afterwards — the orphan holds the output pipes open, so `Wait` would
+  otherwise block in the very path meant to clean up. This removes the cause.
+- `tini` is now PID 1 and reaps any orphan regardless of origin. This removes
+  the class, so the next tool that forks a helper does not reintroduce a
+  twelve-hour outage.
+
+The process-group helpers move to `internal/procgroup`, shared with
+`pluginhost` instead of duplicated. `pluginhost` already had a correct copy,
+which is why plugins never showed this — the pattern was known, just never
+applied to the git path.
+
+Still missing, and worth its own change: nothing detects the wedged state.
+Readiness stays green while every reconcile fails. A liveness probe comparing
+`pids.current` to `pids.max` would turn a silent twelve-hour outage into a
+restart.
+
 ## v0.34.2 - The clones did not fit in /tmp
 
 The read-only root filesystem added with the hardened `securityContext` sends
