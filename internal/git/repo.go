@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"go.klarlabs.de/rollops/internal/procgroup"
 )
 
 // TokenProvider resolves an https token at command time. It lets short-lived,
@@ -246,6 +249,10 @@ func (s *Source) PushBranch(ctx context.Context, headBranch string) error {
 
 // git runs a git command, threading per-repo auth via env (GIT_SSH_COMMAND for
 // deploy keys; token in the URL is handled by the caller for https).
+// gitWaitDelay bounds how long Wait lingers on the output pipes after the
+// process is signalled. Short: by this point the work is already abandoned.
+const gitWaitDelay = 5 * time.Second
+
 func (s *Source) git(ctx context.Context, workdir string, args ...string) (string, error) {
 	// An https token is passed as a per-command Authorization header so it is
 	// never written to disk (no credential helper, no token in the remote URL).
@@ -259,6 +266,26 @@ func (s *Source) git(ctx context.Context, workdir string, args ...string) (strin
 		args = append([]string{"-c", "http.extraheader=Authorization: Basic " + basic}, args...)
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
+	// git forks its own transport helper (git-remote-https). exec.CommandContext
+	// signals ONLY the direct child, so a cancelled fetch killed git and left the
+	// helper orphaned; it reparented to PID 1 — this binary, with no init to reap
+	// it — and became a zombie. At ~11 PIDs/min that reached the container's
+	// cgroup pids.max in about twelve hours, after which every reconcile failed
+	// with "cannot fork() for git-remote-https" while the pod stayed 1/1 Ready.
+	//
+	// Note this is NOT a missing Wait: cmd.Run below is Start+Wait and reaps git
+	// correctly. The leak was always one level down, in the process git forked.
+	procgroup.Isolate(cmd)
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			procgroup.Kill(cmd.Process.Pid)
+		}
+		return os.ErrProcessDone
+	}
+	// Bound the wait after cancellation. Without it, Wait blocks until every
+	// writer to the output pipes closes — and the orphaned helper is exactly such
+	// a writer, so the call that is supposed to clean up would itself hang.
+	cmd.WaitDelay = gitWaitDelay
 	if workdir != "" {
 		cmd.Dir = workdir
 	}

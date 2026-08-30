@@ -25,6 +25,8 @@ import (
 	"go.klarlabs.de/rollops/internal/security"
 	pubplugin "go.klarlabs.de/rollops/pkg/plugin"
 	"go.klarlabs.de/rollops/pkg/plugin/rollopspluginv1"
+
+	"go.klarlabs.de/rollops/internal/procgroup"
 )
 
 const (
@@ -103,7 +105,7 @@ func (p *Process) Close() error {
 			_ = p.cmd.Process.Kill()
 			<-done
 		}
-		killProcessGroup(pid)
+		procgroup.Kill(pid)
 	}
 	return nil
 }
@@ -116,7 +118,7 @@ func (p *Process) Close() error {
 func Launch(ctx context.Context, path string, allowedEnv []string) (*Process, error) {
 	cmd := exec.CommandContext(ctx, path)
 	cmd.Env = buildPluginEnv(allowedEnv, os.Environ())
-	isolateProcess(cmd)
+	procgroup.Isolate(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("plugin: launch: %w", err)
@@ -164,7 +166,7 @@ func killLaunch(cmd *exec.Cmd, stdin io.Closer) {
 	if cmd.Process != nil {
 		pid := cmd.Process.Pid
 		_ = cmd.Process.Kill()
-		killProcessGroup(pid)
+		procgroup.Kill(pid)
 	}
 }
 
