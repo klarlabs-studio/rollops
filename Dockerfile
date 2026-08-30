@@ -108,6 +108,7 @@ RUN apk add --no-cache ca-certificates curl git \
  && rm /tmp/kubectl.sha256 \
  && chmod +x /usr/local/bin/kubectl \
  && apk del curl \
+ && apk add --no-cache tini \
  && adduser -D -u 10001 rollops \
  && mkdir -p /var/lib/rollops && chown rollops:rollops /var/lib/rollops
 COPY --from=build /out/rollopsd /usr/local/bin/rollopsd
@@ -115,4 +116,17 @@ USER 10001
 ENV ROLLOPS_DB=/var/lib/rollops/rollops.db \
     ROLLOPS_ADDR=:8080
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/rollopsd"]
+# tini as PID 1, for one reason: to REAP ORPHANS.
+#
+# rollopsd shells out to git, and git forks its own transport helper. A cancelled
+# fetch leaves that helper orphaned, and an orphan reparents to PID 1. A Go binary
+# as PID 1 never reaps a child it did not start, so each one became a permanent
+# zombie: ~11 PIDs/min, reaching the cgroup pids.max of 8050 in about twelve
+# hours, after which EVERY reconcile failed with "cannot fork()" and no target in
+# any watched project deployed — while the pod reported 1/1 Ready throughout.
+#
+# The process-group kill in internal/git removes the cause; this removes the
+# CLASS, for any subprocess anything in this image ever forks. Both are wanted:
+# the first stops git leaking, the second means the next tool that forks a helper
+# does not reintroduce a twelve-hour outage.
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/rollopsd"]
