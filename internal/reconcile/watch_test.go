@@ -696,10 +696,13 @@ func TestWatcher_ReportsVanishedConfig(t *testing.T) {
 	if !strings.Contains(found, "b.yaml") {
 		t.Errorf("report does not name the vanished config: %q", found)
 	}
-	// It must say the resources are unreachable rather than claim a cleanup:
-	// this config has no prune setting, so nothing carries the label.
-	if !strings.Contains(found, "no prune label") {
-		t.Errorf("report does not say the resources are unidentifiable: %q", found)
+	// Post-#160 every apply labels resources, so the report must name how to
+	// identify them — and that they will not be deleted without reapOnDelete.
+	if !strings.Contains(found, "rollops.klarlabs.de/target=") {
+		t.Errorf("report does not name the target label: %q", found)
+	}
+	if !strings.Contains(found, "reapOnDelete") {
+		t.Errorf("report does not say deletion requires reapOnDelete: %q", found)
 	}
 
 	// And it must not repeat every tick thereafter.

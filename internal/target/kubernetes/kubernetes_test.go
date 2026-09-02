@@ -10,11 +10,14 @@ import (
 
 // fakeCluster is an in-memory cluster: it records the deployed checksum live.
 type fakeCluster struct {
-	checksum string
-	applied  [][]byte
-	unready  bool
-	drift    bool   // when true, Diff reports a non-empty diff (live ≠ desired)
-	liveYAML []byte // live object; LiveYAML returns this
+	checksum   string
+	applied    [][]byte
+	unready    bool
+	drift      bool   // when true, Diff reports a non-empty diff (live ≠ desired)
+	liveYAML   []byte // live object; LiveYAML returns this
+	reapN      int
+	reapErr    error
+	reapCalled bool
 }
 
 func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string) error {
@@ -42,6 +45,10 @@ func (c *fakeCluster) Resources(context.Context) ([]pt.Resource, error) {
 		{Kind: "Pod", Name: "web-abc", Namespace: "ns", Status: "Running · ready", Parent: "web"},
 		{Kind: "Pod", Name: "web-def", Namespace: "ns", Status: "Running · ready", Parent: "web"},
 	}, nil
+}
+func (c *fakeCluster) ReapTarget(context.Context) (int, error) {
+	c.reapCalled = true
+	return c.reapN, c.reapErr
 }
 
 var sample = pt.Manifest{Kind: "kubernetes", Spec: []byte("apiVersion: apps/v1\nkind: Deployment\n"), Checksum: "sum-k8s-v5"}
@@ -172,5 +179,24 @@ func TestHealth_RolloutReadiness(t *testing.T) {
 	cl.unready = true
 	if hs, _ := tgt.Health(context.Background()); hs.State != pt.HealthUnhealthy {
 		t.Error("progressing rollout should be unhealthy")
+	}
+}
+
+// #154: BuildTarget returns *Target; the orphan reaper type-asserts pt.Reaper.
+// ReapTarget must be on Target (not only kubectlCluster), or reclamation logs
+// "target kind kubernetes cannot reap" and leaves the orphan running.
+func TestTarget_ImplementsReaper(t *testing.T) {
+	cl := &fakeCluster{reapN: 3}
+	tgt := newWith(cl)
+	r, ok := pt.Target(tgt).(pt.Reaper)
+	if !ok {
+		t.Fatal("kubernetes.Target must implement pt.Reaper so orphan reclamation works")
+	}
+	n, err := r.ReapTarget(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 || !cl.reapCalled {
+		t.Fatalf("ReapTarget forwarded incorrectly: n=%d called=%v", n, cl.reapCalled)
 	}
 }
