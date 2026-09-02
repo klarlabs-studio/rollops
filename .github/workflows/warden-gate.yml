@@ -19,10 +19,6 @@ permissions:
   statuses: write
   checks: read
 
-concurrency:
-  group: warden-gate-${{ github.event.pull_request.head.sha }}
-  cancel-in-progress: true
-
 jobs:
   publish:
     name: Publish warden/gate
