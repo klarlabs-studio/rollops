@@ -18,6 +18,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
@@ -123,25 +124,6 @@ func (r *reaper) forget(repo, key string) {
 	delete(r.fired, key)
 }
 
-// reportOrphan names a target that has stopped being declared.
-//
-// It does NOT delete. That is the deliberate half of #154's fix, and the
-// reasoning is worth keeping next to the code:
-//
-// A resource is only reclaimable if it carries the prune label, which only
-// targets configured `prune: true` ever got. For a `prune: false` target —
-// which is what #154 actually hit — a delete-by-label would select nothing,
-// succeed, and log that it had cleaned up. That is the failure mode this
-// codebase keeps finding elsewhere: a path that silently does nothing while
-// reporting success. Saying "these resources may be orphaned, and I cannot
-// reach them" is worth more than a no-op dressed as a cleanup.
-//
-// For a `prune: true` target the label does exist and a reap is possible, but
-// it is not free: the deletion is issued against a cluster from a config that
-// no longer exists in Git, so the operator cannot read the manifest to see what
-// is about to go. That deserves its own change, with its own review, against a
-// real cluster. Detection lands first because 19 hours of silence is the
-// reported harm.
 // ensureOrphanState lazily initialises the reaper's maps. The watcher is
 // constructed directly in tests and by callers that do not use NewWatcher, and
 // a nil map here panics on the first tick rather than at construction — the
@@ -158,17 +140,32 @@ func (w *Watcher) ensureOrphanState() {
 	}
 }
 
+// reportOrphan names a target that has stopped being declared.
+//
+// Detection always runs. Deletion runs only when the target set
+// `reapOnDelete: true` — a separate opt-in from `prune: true`, which only
+// garbage-collects resources dropped from a live apply set.
+//
+// Resources applied since the always-label change (#160) carry
+// rollops.klarlabs.de/target regardless of prune, so they are identifiable
+// after the config is gone. Pre-label leftovers (never applied, or applied
+// before that change with prune:false) still need a manual cluster check.
 func (w *Watcher) reportOrphan(v verdict) {
 	cfg := w.lastSeen[v.Key]
-	ref, pruned := "unknown", false
+	ref := "unknown"
+	marker := ""
 	if cfg != nil {
 		ref = cfg.Spec.Target.Ref
-		pruned = targetPrunes(cfg)
+		marker = labelValueFor(cfg)
 	}
-	reach := "its resources carry no prune label, so rollops cannot identify them — check the cluster by hand"
-	if pruned {
-		reach = "its resources carry the prune label, so they can be identified with " +
-			"kubectl get all -l rollops.klarlabs.de/target=<value>"
+	reach := "resources applied by rollops carry the target label and can be identified with " +
+		"kubectl get all -l rollops.klarlabs.de/target=<value>"
+	if marker != "" {
+		reach = "resources applied by rollops carry rollops.klarlabs.de/target=" + marker +
+			" and can be identified with kubectl get all -l rollops.klarlabs.de/target=" + marker
+	}
+	if !reapOnDelete(cfg) {
+		reach += "; they will not be deleted unless reapOnDelete: true (prune: true only covers resources dropped from a live apply)"
 	}
 	if w.logf != nil {
 		w.logf("orphaned target %s (ref %s): declared until %d ticks ago, absent since; %s",
@@ -180,10 +177,11 @@ func (w *Watcher) reportOrphan(v verdict) {
 			TargetRef: ref,
 			Detail:    "RolloutConfig no longer declared; resources may still be running",
 			Fields: map[string]any{
-				"key":          v.Key,
-				"repo":         v.Repo,
-				"absent_ticks": v.Ticks,
-				"prune":        pruned,
+				"key":            v.Key,
+				"repo":           v.Repo,
+				"absent_ticks":   v.Ticks,
+				"reap_on_delete": reapOnDelete(cfg),
+				"prune":          targetPrunes(cfg),
 			},
 		})
 	}
@@ -198,6 +196,39 @@ func (w *Watcher) reportOrphan(v verdict) {
 	// maps for the life of the process.
 	w.orphans.forget(v.Repo, v.Key)
 	delete(w.lastSeen, v.Key)
+}
+
+// labelValueFor mirrors the kubernetes target's prune-label value derivation so
+// orphan reports can name the selector an operator should use. Kept local to
+// avoid importing the kubernetes package into reconcile.
+func labelValueFor(c *config.Config) string {
+	if c == nil {
+		return ""
+	}
+	ref := c.Spec.Target.Ref
+	if ref == "" {
+		return ""
+	}
+	// Same rules as kubernetes.labelValue (DNS-1123, ≤63). Duplicated deliberately:
+	// reconcile must not depend on a target plugin package.
+	v := strings.ToLower(ref)
+	var b strings.Builder
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-._")
+	if len(out) > 63 {
+		out = out[:63]
+	}
+	if out == "" {
+		out = "rollops"
+	}
+	return out
 }
 
 // reapOnDelete reports whether the target opted into removal when its
@@ -286,8 +317,9 @@ func closeIfCloser(t pt.Target) {
 	}
 }
 
-// targetPrunes reports whether the target opted into prune labelling, which
-// decides whether its resources are identifiable after the config is gone.
+// targetPrunes reports whether the target opted into apply-time pruning
+// (`kubectl apply --prune`). Labelling happens on every apply regardless (#160);
+// prune only adds the destructive garbage-collect flags.
 func targetPrunes(c *config.Config) bool {
 	if c == nil {
 		return false
