@@ -356,7 +356,7 @@ func validateAnalysis(a *Analysis) []error {
 	}
 	metrics := make([]analysis.Metric, 0, len(a.Metrics))
 	for _, m := range a.Metrics {
-		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query})
+		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query, Aggregation: m.Aggregation})
 	}
 	if _, err := analysis.New(nil, analysis.Template{
 		Metrics:      metrics,

@@ -329,7 +329,12 @@
             "required": ["name", "query"],
             "properties": {
               "name": { "type": "string", "minLength": 1 },
-              "query": { "type": "string", "minLength": 1 }
+              "query": { "type": "string", "minLength": 1 },
+              "aggregation": {
+                "type": "string",
+                "enum": ["max", "min", "sum", "any"],
+                "description": "Reduce a multi-series vector to one scalar. Required when the query returns more than one series; without it the query fails closed."
+              }
             }
           }
         }

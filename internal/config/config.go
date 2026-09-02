@@ -81,8 +81,9 @@ type Analysis struct {
 
 // AnalysisMetric binds a CEL variable name to a provider query.
 type AnalysisMetric struct {
-	Name  string `yaml:"name" json:"name"`
-	Query string `yaml:"query" json:"query"`
+	Name        string `yaml:"name" json:"name"`
+	Query       string `yaml:"query" json:"query"`
+	Aggregation string `yaml:"aggregation,omitempty" json:"aggregation,omitempty"` // max|min|sum|any for multi-series vectors
 }
 
 // FeatureFlags couples a rollout to a feature-flag provider plugin: as the
