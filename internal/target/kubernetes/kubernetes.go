@@ -40,6 +40,9 @@ type Cluster interface {
 	Diff(ctx context.Context, manifest []byte) (string, error)
 	// Resources lists the live managed resources.
 	Resources(ctx context.Context) ([]pt.Resource, error)
+	// ReapTarget removes resources carrying this target's marker. Invoked only
+	// when a RolloutConfig was deleted and the instance set reapOnDelete.
+	ReapTarget(ctx context.Context) (removed int, err error)
 }
 
 // Target deploys to a Kubernetes cluster through a Cluster. It renders the
@@ -160,6 +163,13 @@ func (t *Target) Referenced(desired pt.Manifest) bool {
 // Resources implements target.Inspector: the live managed resources.
 func (t *Target) Resources(ctx context.Context) ([]pt.Resource, error) {
 	return t.cl.Resources(ctx)
+}
+
+// ReapTarget implements target.Reaper: remove resources this target marked as
+// its own after the RolloutConfig itself was deleted (#154). Forwards to the
+// cluster backend; kubectlCluster refuses unless reapOnDelete was set.
+func (t *Target) ReapTarget(ctx context.Context) (int, error) {
+	return t.cl.ReapTarget(ctx)
 }
 
 // Health reports rollout readiness.

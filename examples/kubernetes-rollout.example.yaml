@@ -11,6 +11,9 @@ spec:
       context: minikube
       namespace: rollops-dogfood
       resource: deployment/web
+      # prune: true          # GC resources dropped from this target's apply set
+      # reapOnDelete: true   # remove labelled resources when this RolloutConfig is deleted
+      # See docs/prune-and-reap.md — these are separate opt-ins.
       manifest: |
         apiVersion: apps/v1
         kind: Deployment

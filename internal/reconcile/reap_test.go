@@ -1,11 +1,18 @@
 package reconcile
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
+	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/engine"
+	"go.klarlabs.de/rollops/internal/store/sqlite"
+	itarget "go.klarlabs.de/rollops/internal/target"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // A target present every tick is never a candidate.
@@ -226,4 +233,85 @@ func TestReapReport_ZeroRemovedIsNotReportedAsCleanup(t *testing.T) {
 	if strings.Contains(logs[0], "reapTypes") {
 		t.Errorf("a successful reap should not warn about coverage: %q", logs[0])
 	}
+}
+
+// #154: when reapOnDelete is set, reportOrphan must invoke pt.Reaper — not just
+// log. Before Target.ReapTarget was wired, this path logged
+// "target kind cannot reap" and left the orphan running.
+func TestReportOrphan_ReapsWhenOptedIn(t *testing.T) {
+	reaper := &fakeReaperTarget{removed: 2}
+	db, err := sqlite.Open(t.TempDir() + "/reap.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return reaper, nil })
+	eng := engine.New(db, reg)
+	var logs []string
+	w := &Watcher{
+		rec:      New(eng, audit.New(io.Discard)),
+		orphans:  newReaper(1),
+		lastSeen: map[string]*config.Config{},
+		logf:     func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) },
+	}
+	cfg := &config.Config{}
+	cfg.Spec.Target.Kind = "fake"
+	cfg.Spec.Target.Ref = "demo/prod/app"
+	cfg.Spec.Target.Spec = map[string]any{"reapOnDelete": true}
+	w.lastSeen["demo/app.yaml"] = cfg
+	w.orphans.seen["demo"] = map[string]bool{"demo/app.yaml": true}
+
+	w.reportOrphan(verdict{Repo: "demo", Key: "demo/app.yaml", Ticks: 10})
+
+	if reaper.calls != 1 {
+		t.Fatalf("ReapTarget calls = %d, want 1", reaper.calls)
+	}
+	joined := strings.Join(logs, "\n")
+	if !strings.Contains(joined, "removed 2") {
+		t.Errorf("expected successful reap log, got %q", joined)
+	}
+	if strings.Contains(joined, "cannot reap") {
+		t.Errorf("Target must implement Reaper; got %q", joined)
+	}
+}
+
+func TestReportOrphan_DoesNotReapWithoutOptIn(t *testing.T) {
+	reaper := &fakeReaperTarget{removed: 2}
+	db, err := sqlite.Open(t.TempDir() + "/noreap.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return reaper, nil })
+	eng := engine.New(db, reg)
+	w := &Watcher{
+		rec:      New(eng, audit.New(io.Discard)),
+		orphans:  newReaper(1),
+		lastSeen: map[string]*config.Config{},
+		logf:     func(string, ...any) {},
+	}
+	cfg := &config.Config{}
+	cfg.Spec.Target.Kind = "fake"
+	cfg.Spec.Target.Ref = "demo/prod/app"
+	cfg.Spec.Target.Spec = map[string]any{"prune": true} // prune alone must not reap
+	w.lastSeen["demo/app.yaml"] = cfg
+	w.orphans.seen["demo"] = map[string]bool{"demo/app.yaml": true}
+
+	w.reportOrphan(verdict{Repo: "demo", Key: "demo/app.yaml", Ticks: 10})
+	if reaper.calls != 0 {
+		t.Fatalf("ReapTarget calls = %d, want 0 when reapOnDelete unset", reaper.calls)
+	}
+}
+
+type fakeReaperTarget struct {
+	fakeTarget
+	removed int
+	calls   int
+}
+
+func (f *fakeReaperTarget) ReapTarget(context.Context) (int, error) {
+	f.calls++
+	return f.removed, nil
 }

@@ -140,6 +140,7 @@ See `docs/tls.md` for native TLS 1.3 + mTLS (zero-trust transport, cert-manager,
 See `docs/oidc-auth.md` for OIDC bearer auth and external group-to-RBAC mapping.
 See `docs/target-plugins.md` for the plugin architecture (manifest, capabilities, safety policy).
 See `docs/kubernetes-sources.md` for the Kubernetes manifest sources (`manifestFrom` referenced path/kustomize/helm, plus the flat helm/kustomize/oci/bucket keys).
+See `docs/prune-and-reap.md` for apply-time prune vs reclaiming resources when a RolloutConfig is deleted.
 See `docs/feature-flags.md` for coupling a rollout to a feature-flag plugin.
 See `docs/image-automation.md` for image update policy and Git writeback.
 See `docs/studio-boundary.md` for the OSS/studio product boundary.
