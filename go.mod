@@ -17,7 +17,7 @@ require (
 	go.klarlabs.de/mcp v1.27.0
 	go.klarlabs.de/mnemos v0.127.0
 	go.klarlabs.de/statekit v1.13.3
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
