@@ -139,6 +139,106 @@ func TestPrometheus_NoData(t *testing.T) {
 	}
 }
 
+// #175: a multi-series vector must not silently gate on Result[0]. One healthy
+// series plus one fully-broken series would otherwise promote.
+func TestPrometheus_RejectsMultiSeries(t *testing.T) {
+	const twoSeries = `{"status":"success","data":{"resultType":"vector","result":[
+{"metric":{"ecosystem":"npm"},"value":[1,"0"]},
+{"metric":{"ecosystem":"Packagist"},"value":[1,"1"]}]}}`
+	p := Prometheus{Addr: "http://prom", Client: rt{body: twoSeries}}
+	_, err := p.Query(context.Background(), "sum by (ecosystem) (rate(suppressed[5m]))")
+	if err == nil {
+		t.Fatal("multi-series vector must error, not return Result[0]")
+	}
+	if !strings.Contains(err.Error(), "2 series") {
+		t.Errorf("error should name the series count: %v", err)
+	}
+	if !strings.Contains(err.Error(), "aggregation") {
+		t.Errorf("error should tell the author how to opt in: %v", err)
+	}
+	if !strings.Contains(err.Error(), "ecosystem") {
+		t.Errorf("error should name a label set so the query can be narrowed: %v", err)
+	}
+}
+
+func TestPrometheus_Aggregates(t *testing.T) {
+	const twoSeries = `{"status":"success","data":{"resultType":"vector","result":[
+{"metric":{"ecosystem":"npm"},"value":[1,"0"]},
+{"metric":{"ecosystem":"Packagist"},"value":[1,"1"]}]}}`
+	p := Prometheus{Addr: "http://prom", Client: rt{body: twoSeries}}
+	for _, tc := range []struct {
+		agg  string
+		want float64
+	}{
+		{"max", 1},
+		{"min", 0},
+		{"sum", 1},
+		{"any", 0}, // first series, only when aggregation is explicit
+	} {
+		t.Run(tc.agg, func(t *testing.T) {
+			samples, err := p.QuerySeries(context.Background(), "q")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Aggregate(samples, tc.agg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("Aggregate(%s) = %v, want %v", tc.agg, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNew_RejectsUnknownAggregation(t *testing.T) {
+	_, err := New(&scriptProvider{}, Template{
+		Metrics:   []Metric{{Name: "x", Query: "q", Aggregation: "median"}},
+		Condition: "x < 1",
+	})
+	if err == nil {
+		t.Fatal("unknown aggregation must be rejected")
+	}
+	if !strings.Contains(err.Error(), "aggregation") {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestAnalyzer_AggregatesMultiSeries(t *testing.T) {
+	// max of {0, 1} is 1 → condition suppressionRate == 0 fails (fail closed).
+	const twoSeries = `{"status":"success","data":{"resultType":"vector","result":[
+{"metric":{"ecosystem":"npm"},"value":[1,"0"]},
+{"metric":{"ecosystem":"Packagist"},"value":[1,"1"]}]}}`
+	a := newAnalyzer(t, Prometheus{Addr: "http://prom", Client: rt{body: twoSeries}},
+		Template{
+			Metrics:   []Metric{{Name: "suppressionRate", Query: "sum by (ecosystem) (rate(suppressed[5m]))", Aggregation: "max"}},
+			Condition: "suppressionRate == 0.0",
+			Count:     1,
+		})
+	r := a.Run(context.Background())
+	if r.Passed {
+		t.Fatal("max aggregation must surface the broken series; gate must fail")
+	}
+}
+
+func TestAnalyzer_AggregationRequiresSeriesProvider(t *testing.T) {
+	// scriptProvider has no QuerySeries — aggregation must fail closed, not
+	// silently fall back to a scalar Query that cannot see other series.
+	a := newAnalyzer(t, &scriptProvider{series: map[string][]float64{"q": {0}}},
+		Template{
+			Metrics:   []Metric{{Name: "x", Query: "q", Aggregation: "max"}},
+			Condition: "x == 0.0",
+			Count:     1,
+		})
+	r := a.Run(context.Background())
+	if r.Passed {
+		t.Fatal("aggregation without a series provider must fail the measurement")
+	}
+	if !strings.Contains(r.Reason, "aggregation") {
+		t.Errorf("reason = %q", r.Reason)
+	}
+}
+
 // End-to-end: Prometheus provider feeding the analyzer.
 func TestAnalyzer_WithPrometheus(t *testing.T) {
 	body := `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1,"0.01"]}]}}`

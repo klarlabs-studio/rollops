@@ -34,8 +34,14 @@ spec:
     failureLimit: 1        # tolerate one bad sample, abort on the second
     metrics:
       - name: errorRate
+        # Prefer a PromQL that already returns one series. A multi-series
+        # vector fails closed unless aggregation is set (max|min|sum|any).
         query: 'sum(rate(http_requests_total{job="api",code=~"5.."}[1m])) / sum(rate(http_requests_total{job="api"}[1m]))'
       - name: p99
         query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="api"}[1m])) by (le)) * 1000'
+      # When a multi-series vector is intentional (e.g. sum by (ecosystem)):
+      # - name: suppressionRate
+      #   query: 'sum by (ecosystem) (rate(suppressed_total[5m]))'
+      #   aggregation: max   # safe default for a "badness" metric
     # CEL over the metric names; true == healthy → promote
     condition: 'errorRate < 0.05 && p99 < 500'

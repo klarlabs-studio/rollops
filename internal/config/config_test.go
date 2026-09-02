@@ -253,6 +253,7 @@ func TestLoad_AnalysisValidation(t *testing.T) {
 		{name: "missing prometheus address", old: "address: http://prometheus:9090", new: "address: ''", want: "address"},
 		{name: "bad interval", old: "interval: 30s", new: "interval: nope", want: "interval"},
 		{name: "bad condition", old: "condition: errorRate < 0.05", new: "condition: errorRate <", want: "analysis"},
+		{name: "bad aggregation", old: "query: rate(errors[1m])", new: "query: rate(errors[1m])\n        aggregation: median", want: "aggregation"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

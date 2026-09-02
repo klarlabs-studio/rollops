@@ -1183,7 +1183,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 	}
 	metrics := make([]analysis.Metric, 0, len(a.Metrics))
 	for _, m := range a.Metrics {
-		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query})
+		metrics = append(metrics, analysis.Metric{Name: m.Name, Query: m.Query, Aggregation: m.Aggregation})
 	}
 	interval, _ := time.ParseDuration(a.Interval)
 	an, err := analysis.New(provider, analysis.Template{

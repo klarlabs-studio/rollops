@@ -22,10 +22,68 @@ type MetricsProvider interface {
 	Query(ctx context.Context, query string) (float64, error)
 }
 
+// SeriesSample is one labelled value from a multi-series query result.
+type SeriesSample struct {
+	Labels map[string]string
+	Value  float64
+}
+
+// SeriesProvider is an OPTIONAL capability: a MetricsProvider that can return
+// every series of a query. Required when Metric.Aggregation is set, so a
+// multi-series vector is reduced deliberately rather than by taking Result[0].
+type SeriesProvider interface {
+	QuerySeries(ctx context.Context, query string) ([]SeriesSample, error)
+}
+
+// ValidAggregation names the reductions Metric.Aggregation accepts.
+var ValidAggregation = map[string]bool{
+	"max": true,
+	"min": true,
+	"sum": true,
+	"any": true, // first series, only when opted in explicitly
+}
+
+// Aggregate reduces a multi-series result to one scalar. Unknown aggregations
+// and empty inputs are errors (fail closed).
+func Aggregate(samples []SeriesSample, agg string) (float64, error) {
+	if len(samples) == 0 {
+		return 0, fmt.Errorf("analysis: aggregation %q over empty result", agg)
+	}
+	switch agg {
+	case "any":
+		return samples[0].Value, nil
+	case "max":
+		m := samples[0].Value
+		for _, s := range samples[1:] {
+			if s.Value > m {
+				m = s.Value
+			}
+		}
+		return m, nil
+	case "min":
+		m := samples[0].Value
+		for _, s := range samples[1:] {
+			if s.Value < m {
+				m = s.Value
+			}
+		}
+		return m, nil
+	case "sum":
+		var sum float64
+		for _, s := range samples {
+			sum += s.Value
+		}
+		return sum, nil
+	default:
+		return 0, fmt.Errorf("analysis: unknown aggregation %q (want max|min|sum|any)", agg)
+	}
+}
+
 // Metric binds a CEL variable name to a provider query.
 type Metric struct {
-	Name  string // CEL variable name (e.g. "errorRate")
-	Query string // provider query string
+	Name        string // CEL variable name (e.g. "errorRate")
+	Query       string // provider query string
+	Aggregation string // "", or max|min|sum|any — required for intentional multi-series vectors
 }
 
 // Template declares an analysis run.
@@ -82,6 +140,9 @@ func New(provider MetricsProvider, t Template) (*Analyzer, error) {
 	}
 	vars := make([]cel.EnvOption, 0, len(t.Metrics)+1)
 	for _, m := range t.Metrics {
+		if m.Aggregation != "" && !ValidAggregation[m.Aggregation] {
+			return nil, fmt.Errorf("analysis: metric %q: unknown aggregation %q (want max|min|sum|any)", m.Name, m.Aggregation)
+		}
 		vars = append(vars, cel.Variable(m.Name, cel.DoubleType))
 	}
 	// Allow `p99 < 500` (double vs int literal) — friendlier conditions.
@@ -108,7 +169,7 @@ func New(provider MetricsProvider, t Template) (*Analyzer, error) {
 func (a *Analyzer) measure(ctx context.Context) Measurement {
 	vals := make(map[string]float64, len(a.tmpl.Metrics))
 	for _, m := range a.tmpl.Metrics {
-		v, err := a.provider.Query(ctx, m.Query)
+		v, err := a.queryMetric(ctx, m)
 		if err != nil {
 			return Measurement{Values: vals, Err: fmt.Errorf("metric %q: %w", m.Name, err)}
 		}
@@ -154,6 +215,24 @@ func (a *Analyzer) Run(ctx context.Context) Result {
 	}
 	res.Passed = true
 	return res
+}
+
+// queryMetric resolves one metric to a scalar. With Aggregation set, the
+// provider must expose SeriesProvider so every series is visible; without it,
+// MetricsProvider.Query is used (and Prometheus rejects multi-series there).
+func (a *Analyzer) queryMetric(ctx context.Context, m Metric) (float64, error) {
+	if m.Aggregation == "" {
+		return a.provider.Query(ctx, m.Query)
+	}
+	sp, ok := a.provider.(SeriesProvider)
+	if !ok {
+		return 0, fmt.Errorf("aggregation %q requires a series-capable metrics provider", m.Aggregation)
+	}
+	samples, err := sp.QuerySeries(ctx, m.Query)
+	if err != nil {
+		return 0, err
+	}
+	return Aggregate(samples, m.Aggregation)
 }
 
 func toAny(m map[string]float64) map[string]any {

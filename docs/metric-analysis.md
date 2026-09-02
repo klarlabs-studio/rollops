@@ -31,13 +31,21 @@ Fields:
 - `provider`: currently `prometheus`.
 - `address`: provider endpoint. Required for Prometheus.
 - `metrics`: named scalar queries. Names become CEL variables.
+  - `aggregation` (optional): `max` | `min` | `sum` | `any`. Required when a
+    query returns more than one series. Without it, a multi-series vector fails
+    closed — Prometheus does not guarantee series order, and gating on an
+    arbitrary first sample can promote while one label value is fully broken.
+    Prefer narrowing the PromQL (`max by (...)`, `sum(...)`) when a single
+    series is what you mean; set `aggregation` when a multi-series vector is
+    intentional (`max` is the safe default for a "badness" metric).
 - `condition`: CEL boolean expression over metric names. `true` means healthy.
 - `interval`: Go duration between measurements.
 - `count`: number of measurements. Defaults to one.
 - `failureLimit`: consecutive failed measurements tolerated before rollback.
 
 Malformed providers, missing Prometheus addresses, bad durations, invalid metric
-conditions, and non-boolean CEL conditions fail during config load.
+conditions, unknown aggregations, and non-boolean CEL conditions fail during
+config load.
 
 ## Rollback Behavior
 
