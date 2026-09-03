@@ -74,6 +74,11 @@ kubectl -n rollops-system rollout status deploy/rollopsd
 kubectl -n rollops-system port-forward svc/rollopsd 8080:80   # open http://localhost:8080
 ```
 
+Probes: `/readyz` means the process is up; `/livez` means the cgroup still has
+process-slot headroom. Liveness uses `/livez` so a PID leak that fills
+`pids.max` (the v0.34.3 class of failure) restarts the pod instead of sitting
+`1/1 Ready` while every reconcile fails with cannot-fork.
+
 ## Configuration (env)
 
 | Env | Default | Purpose |

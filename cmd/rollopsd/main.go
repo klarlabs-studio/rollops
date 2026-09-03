@@ -35,6 +35,7 @@ import (
 	"go.klarlabs.de/rollops/internal/imageupdate"
 	"go.klarlabs.de/rollops/internal/mcp"
 	"go.klarlabs.de/rollops/internal/metrics"
+	"go.klarlabs.de/rollops/internal/procgroup"
 	"go.klarlabs.de/rollops/internal/reconcile"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/security"
@@ -135,12 +136,20 @@ func run(args []string) error {
 		}
 	}()
 
-	// Self-observability: /metrics and /readyz unauthenticated for scrapers,
-	// everything else behind the authenticated API.
+	// Self-observability: /metrics, /readyz, /livez unauthenticated for
+	// scrapers and kubelet probes; everything else behind the authenticated API.
 	met := metrics.New()
 	top := http.NewServeMux()
 	top.Handle("/metrics", met.Handler())
 	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	// /livez fails when the cgroup is nearly out of process slots — the gap
+	// the v0.34.3 zombie leak exposed: readiness stayed green while every
+	// reconcile failed with "cannot fork". See internal/procgroup.
+	top.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) {
+		code, body := procgroup.LivezStatus(procgroup.DefaultCgroupRoot, procgroup.DefaultHeadroom)
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(body))
+	})
 	// "Sync now" triggers an immediate reconcile of the watched repos.
 	var watcher *reconcile.Watcher
 	// GitHub HMAC webhook sits on the top mux (not the bearer-gated API) so

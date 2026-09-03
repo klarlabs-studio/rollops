@@ -92,7 +92,7 @@ bin/rollops rollback <target-ref>
 
 # Daemon (HTTP :8080, gRPC :8090, UI behind basic auth):
 make run-daemon
-#   GET  /healthz /readyz /metrics
+#   GET  /healthz /readyz /livez /metrics
 #   POST /v1/plan /v1/apply /v1/rollback   (Authorization: Bearer <token>)
 #   GET  /ui                  (basic auth: ROLLOPS_UI_USER/PASSWORD)
 
