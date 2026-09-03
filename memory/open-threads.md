@@ -24,8 +24,8 @@
 4. **[OPEN] relicta is broken in the nox repo** — `relicta notes` / `approve`.
    Fix before the next nox cut.
 5. **`k3s-ghcr-pull` expires 2026-08-29** — rotate before end of Aug 2026.
-6. **Cluster pin lag** — `deploy/kubernetes/rollopsd.yaml` still references
-   `v0.29.0`; cut/roll a release after #135 merges.
+6. ~~**Cluster pin lag**~~ — deploy pin is `v0.34.4` (was stale at v0.29.0).
+   Rolling the live cluster is still operator work.
 
 ## ACTUALLY OPEN (as of 2026-08-14) — superseded by the list above
 
