@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.34.5 - Ready stayed green while nothing could fork
+
+The v0.34.3 zombie leak left the pod `1/1 Ready` while every reconcile failed
+with `cannot fork() for git-remote-https`. Process-group kill and `tini` as
+PID 1 stop the leak; they do not turn a full cgroup into a restart.
+
+`GET /livez` now returns 503 when the container cgroup's `pids.current` is
+within 64 of a finite `pids.max` (cgroup v1 and v2). The deploy liveness
+probe points at `/livez`; readiness stays on `/readyz` ("process is up").
+Missing cgroups pass open so hosts without the controller do not flap.
+
+Also hardens the CI `warden/gate` publisher so a cancelled sibling check run
+from a re-triggered CI workflow is not treated as failure.
+
 ## v0.34.4 - A canary that saw one series, and a retirement that deleted nothing
 
 Two production gaps that looked like "nothing happened":
