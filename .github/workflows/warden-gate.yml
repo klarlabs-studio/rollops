@@ -38,17 +38,42 @@ jobs:
             ];
             const deadline = Date.now() + 25 * 60 * 1000;
             while (Date.now() < deadline) {
-              const { data } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: sha,
-                per_page: 100,
+              // Paginate: a SHA can accumulate cancelled + successful runs for
+              // the same check name when CI is re-triggered.
+              const runs = [];
+              let page = 1;
+              for (;;) {
+                const { data } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: sha,
+                  per_page: 100,
+                  page,
+                });
+                runs.push(...data.check_runs);
+                if (data.check_runs.length < 100) break;
+                page++;
+              }
+              // Latest run per name (by started_at). fromEntries alone is wrong:
+              // a cancelled sibling from a superseded CI workflow would look like
+              // failure and abort the publisher before the green run is seen.
+              const byName = {};
+              for (const c of runs) {
+                const prev = byName[c.name];
+                if (!prev || Date.parse(c.started_at) >= Date.parse(prev.started_at)) {
+                  byName[c.name] = c;
+                }
+              }
+              const pending = required.filter(n => {
+                const c = byName[n];
+                if (!c || c.status !== 'completed') return true;
+                // Cancelled = wait for a replacement run, not a hard fail.
+                return c.conclusion === 'cancelled';
               });
-              const byName = Object.fromEntries(data.check_runs.map(c => [c.name, c]));
-              const pending = required.filter(n => !byName[n] || byName[n].status !== 'completed');
               const failed = required.filter(n => {
-                const c = byName[n]?.conclusion;
-                return c === 'failure' || c === 'cancelled' || c === 'timed_out';
+                const c = byName[n];
+                if (!c || c.status !== 'completed') return false;
+                return c.conclusion === 'failure' || c.conclusion === 'timed_out';
               });
               if (failed.length) {
                 core.setFailed('Required CI checks failed: ' + failed.join(', '));
