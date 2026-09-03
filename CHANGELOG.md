@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.34.4 - A canary that saw one series, and a retirement that deleted nothing
+
+Two production gaps that looked like "nothing happened":
+
+### Analysis gated on one arbitrary series (#175)
+
+`Prometheus.Query` took `Result[0]` of an N-series instant vector. A query
+like `sum by (ecosystem) (…)` could pass the gate while one label value was
+fully broken — no error, no warning, and Prometheus does not guarantee series
+order, so which series decided the rollout was not even stable.
+
+That is the same class of failure the analysis engine already refuses elsewhere
+(empty result is an error; `failureLimit >= count` is rejected at construction).
+Taking the first sample of a multi-series vector had none of that protection.
+
+Fail closed: more than one series is now an error that names the count and an
+example label set. When a multi-series vector is intentional, set
+`metrics[].aggregation` to `max` | `min` | `sum` | `any` (`max` is the safe
+default for a "badness" metric). Prefer narrowing the PromQL when a single
+series is what you mean.
+
+### Deleting a RolloutConfig left its resources running (#154)
+
+Detection for vanished configs already existed, but reclamation was a no-op:
+`BuildTarget` returns `*kubernetes.Target`, which did not implement
+`pt.Reaper`, so `reapOnDelete: true` logged `target kind "kubernetes" cannot
+reap` and left the Deployment serving with nothing in Git describing it.
+
+`Target.ReapTarget` now forwards to the kubectl backend. Orphan reports name
+the always-on target label and that deletion still requires `reapOnDelete`
+(separate from `prune`). See `docs/prune-and-reap.md`.
+
+Also bumps `golang.org/x/crypto` to v0.56.0 and `google.golang.org/grpc` to
+v1.83.1 (govulncheck / nox), and adds a CI publisher for the required
+`warden/gate` status so cloud PRs are not permanently blocked when the local
+warden token cannot write commit statuses.
+
 ## v0.34.3 - The leak was git's child, not git
 
 rollopsd accumulated about 11 PIDs a minute until it reached the container's
