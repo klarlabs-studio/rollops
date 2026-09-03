@@ -1,12 +1,12 @@
 # Status — Rollops
 
-*Updated: 2026-08-15*
+*Updated: 2026-09-03*
 
 ## Current State
 
-Rollops is cutting **v0.33.1** (deps refresh #146 on top of escalate-from-evidence).
-Deploy pin `v0.33.1`. Cluster auto-deploys after ghcr. Rotate `k3s-ghcr-pull`
-before 2026-08-29. Outside repo: agent-go CRITICAL vulns.
+Cutting **v0.34.4** — multi-series Prometheus fail-closed + aggregation (#175 /
+#176), and `Target.ReapTarget` so `reapOnDelete` actually reclaims (#154 / #177).
+Deploy pin `v0.34.4`.
 
 ---
 
