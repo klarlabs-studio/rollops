@@ -41,7 +41,7 @@ zero-trust by default:
 | REST API (`/`) | Server TLS 1.3 | **Required** — a verified client cert, else `401` |
 | gRPC (`ROLLOPS_GRPC_ADDR`) | Server TLS 1.3 | **Required** — `RequireAndVerifyClientCert` |
 | MCP (`ROLLOPS_MCP_ADDR`) | Server TLS 1.3 | **Required** — `RequireAndVerifyClientCert` |
-| `/metrics`, `/readyz` | Server TLS 1.3 | None — unauthenticated scrape/probe endpoints |
+| `/metrics`, `/readyz`, `/livez` | Server TLS 1.3 | None — unauthenticated scrape/probe endpoints |
 
 The REST API and the web console share one HTTPS listener. That listener runs
 `ClientAuth = VerifyClientCertIfGiven`, so the TLS stack verifies a client cert

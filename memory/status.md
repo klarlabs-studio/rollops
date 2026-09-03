@@ -4,9 +4,11 @@
 
 ## Current State
 
-Cutting **v0.34.4** — multi-series Prometheus fail-closed + aggregation (#175 /
-#176), and `Target.ReapTarget` so `reapOnDelete` actually reclaims (#154 / #177).
-Deploy pin `v0.34.4`.
+**v0.34.4** released (multi-series analysis fail-closed #175; orphan reap #154;
+Go 1.27-alpine builder). Deploy pin `v0.34.4`.
+
+In flight: `/livez` PID-pressure probe so a cgroup full of zombies restarts
+instead of staying Ready while reconciles cannot fork (follow-up from v0.34.3).
 
 ---
 
