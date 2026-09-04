@@ -149,6 +149,28 @@ rules:
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
     verbs: [get, list, watch, create, update, patch, delete]
+  # Traefik middlewares, because an Ingress that references one is not
+  # independent of it. `traefik.io` was absent from this role entirely, so a
+  # repository declaring both an Ingress and the Middleware its
+  # router.middlewares annotation names got the worst possible outcome: the
+  # Ingress applied, the Middleware failed with
+  #
+  #   middlewares.traefik.io "security-headers" is forbidden: User
+  #   "system:serviceaccount:rollops-system:rollopsd" cannot get resource
+  #   "middlewares" in API group "traefik.io"
+  #
+  # and only the Middleware target rolled back. Traefik could not resolve the
+  # dangling reference, never built the router, and the site served 404 until
+  # the Middleware was applied by hand. See #182 — the batch should fail as a
+  # unit, and this grant is not a substitute for that.
+  #
+  # No `delete`, for the same reason as PVCs and CronJobs: a middleware is
+  # frequently the only thing enforcing a security control — response headers,
+  # rate limits, body limits, metrics blocking — and removing one strips that
+  # control silently, while the route it protected keeps serving.
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, list, watch, create, update, patch]
   # Read CRDs and their instances for status.conditions health assessment.
   - apiGroups: [apiextensions.k8s.io]
     resources: [customresourcedefinitions]
