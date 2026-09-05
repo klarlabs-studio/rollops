@@ -28,6 +28,8 @@ const ChecksumAnnotation = "rollops.klarlabs.de/checksum"
 type Cluster interface {
 	// Apply applies the manifest and records checksum as the resource annotation.
 	Apply(ctx context.Context, manifest []byte, checksum string) error
+	// Preflight reports whether Apply would be accepted, changing nothing.
+	Preflight(ctx context.Context, manifest []byte) error
 	// LiveChecksum reads the recorded checksum from the live cluster (empty if
 	// the resource is absent or unmanaged).
 	LiveChecksum(ctx context.Context) (string, error)
@@ -81,6 +83,20 @@ func newWith(cl Cluster) *Target { return &Target{cl: cl, run: execRunner} }
 // matches desired, it is a no-op. A matching stamp alone is not trusted — an
 // out-of-band field edit (e.g. `kubectl set image`) leaves the stamp intact, so
 // Apply re-applies when the diff shows drift, correcting it.
+// Preflight implements pt.Preflighter: it asks the API server whether this
+// manifest would be accepted, without applying it.
+//
+// Rendering happens exactly as Apply renders it, because a manifest that fails
+// to render is a failure this must report too — a batch that cannot produce
+// one of its manifests should not apply the others.
+func (t *Target) Preflight(ctx context.Context, m pt.Manifest) error {
+	manifest, err := desiredManifest(ctx, m, t.run)
+	if err != nil {
+		return err
+	}
+	return t.cl.Preflight(ctx, manifest)
+}
+
 func (t *Target) Apply(ctx context.Context, m pt.Manifest) (pt.Result, error) {
 	manifest, err := desiredManifest(ctx, m, t.run)
 	if err != nil {

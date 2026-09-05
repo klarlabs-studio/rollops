@@ -18,12 +18,21 @@ type fakeCluster struct {
 	reapN      int
 	reapErr    error
 	reapCalled bool
+
+	// preflightErr, when set, makes Preflight refuse. preflightN counts calls,
+	// so a test can assert the batch asked BEFORE it applied.
+	preflightErr error
+	preflightN   int
 }
 
 func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string) error {
 	c.applied = append(c.applied, manifest)
 	c.checksum = checksum
 	return nil
+}
+func (c *fakeCluster) Preflight(_ context.Context, _ []byte) error {
+	c.preflightN++
+	return c.preflightErr
 }
 func (c *fakeCluster) LiveChecksum(context.Context) (string, error) { return c.checksum, nil }
 func (c *fakeCluster) LiveYAML(context.Context) ([]byte, error)     { return c.liveYAML, nil }

@@ -104,6 +104,32 @@ func (k *kubectlCluster) run(ctx context.Context, stdin []byte, args ...string) 
 	return out.String(), nil
 }
 
+// Preflight asks the API server whether this manifest would apply, changing
+// nothing.
+//
+// `--dry-run=server` runs the whole admission path — RBAC, validation,
+// mutating and validating webhooks, CRD schema — and returns the same error a
+// real apply would. That makes it a stronger check than a
+// SelfSubjectAccessReview, which answers only the authorisation half: a
+// manifest can be permitted and still rejected by a webhook or a missing CRD.
+//
+// The manifest is labelled first, exactly as Apply labels it, because the
+// label is part of what gets submitted and a policy could reject on it.
+func (k *kubectlCluster) Preflight(ctx context.Context, manifest []byte) error {
+	labeled, err := labelManifest(manifest, k.pruneVal)
+	if err != nil {
+		return fmt.Errorf("kubernetes: label target resources: %w", err)
+	}
+	// Deliberately no --prune. Prune decides what to DELETE by comparing the
+	// applied set against the live labelled set, and a dry run cannot express
+	// "these would be deleted" without the caller mistaking it for a failure.
+	// Preflight answers one question: would applying this be accepted.
+	if _, err := k.run(ctx, labeled, "apply", "--dry-run=server", "-f", "-"); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum string) error {
 	args := []string{"apply", "-f", "-"}
 	// Label ALWAYS, prune only when asked. These were one decision and are two
@@ -121,7 +147,7 @@ func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum st
 	// and would fail every subsequent apply, nor spec.template.metadata.labels,
 	// which would roll every pod. TestLabelManifest_LeavesSelectorAndPodTemplateAlone
 	// holds that line.
-	labeled, err := labelManifest(manifest, PruneLabel, k.pruneVal)
+	labeled, err := labelManifest(manifest, k.pruneVal)
 	if err != nil {
 		return fmt.Errorf("kubernetes: label target resources: %w", err)
 	}
