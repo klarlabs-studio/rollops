@@ -1,12 +1,13 @@
 # Status — Rollops
 
-*Updated: 2026-09-03*
+*Updated: 2026-09-06*
 
 ## Current State
 
-Cutting **v0.34.5** — `/livez` PID-pressure probe (#180) so a full cgroup
-restarts instead of staying Ready while reconciles cannot fork. Deploy pin
-`v0.34.5`.
+Cutting **v0.34.6** — batch preflight (#185/#186) + Traefik middleware RBAC
+(#183) so a repo cannot ship an Ingress while its Middleware is refused.
+Deploy pin `v0.34.6`. #182 suggestions 3–4 (stop retrying Forbidden; warn on
+dangling refs) still open.
 
 ---
 
