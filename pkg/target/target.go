@@ -159,3 +159,40 @@ type Resource struct {
 	Status    string // ready/healthy summary, target-defined
 	Parent    string // owner resource name; empty = root
 }
+
+// Preflighter is an optional capability: a target that can answer "would this
+// apply succeed?" without applying it.
+//
+// It exists because reconciling each target independently let a batch apply
+// half of itself. A repository declared an Ingress and the Traefik Middleware
+// its router.middlewares annotation named; the Ingress applied, the Middleware
+// failed on RBAC the service account did not hold, and only the Middleware's
+// own target rolled back. Traefik could not resolve the dangling reference,
+// never built the router, and the apex domain served 404 until the Middleware
+// was applied by hand.
+//
+// Neither target was wrong on its own terms — one applied, one rolled back
+// cleanly. The breakage lived in the relationship between them, which nothing
+// modelled.
+//
+// Compensating rollback cannot fix that, because rolling back a CREATE means
+// deleting the resource, and rollops deliberately holds no delete verb on the
+// types where removal is destructive (PVCs would lose data, CronJobs would
+// silently drop scheduled work, a Middleware is often the only thing enforcing
+// a security control). So the batch has to fail BEFORE it applies anything
+// rather than unwind afterwards, and that requires asking each target whether
+// it would succeed.
+//
+// A target that cannot answer simply does not implement this: the caller then
+// learns nothing about it and proceeds as before, which is strictly the
+// current behaviour.
+type Preflighter interface {
+	// Preflight reports whether Apply(desired) would succeed, WITHOUT changing
+	// anything. A nil error means "as far as can be told, yes".
+	//
+	// It must not mutate the target. An implementation that cannot check
+	// without mutating must not implement this interface at all — a preflight
+	// with side effects is worse than none, because the batch it was meant to
+	// protect has already been half-applied by the check.
+	Preflight(ctx context.Context, desired Manifest) error
+}

@@ -314,6 +314,47 @@ func defaultOwner() string {
 // Plan computes what an apply would change without applying it: the desired
 // manifest, the target's current fingerprint, and whether they differ. Drift =
 // current fingerprint != desired checksum.
+// Preflight reports whether every target in cs would apply, without applying
+// any of them. A nil error means none of them objected.
+//
+// It renders and builds each target exactly as Plan does, because a config that
+// cannot render or whose target cannot be constructed is a failure the batch
+// must hear about before it starts applying the others.
+//
+// Targets that do not implement pt.Preflighter are skipped rather than assumed
+// good: they contribute nothing to the decision, which is precisely the
+// behaviour that existed before this method.
+func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
+	var out []error
+	for _, c := range cs {
+		m, err := manifestFromConfig(c, rootFromContext(ctx))
+		if err != nil {
+			out = append(out, fmt.Errorf("%s: render: %w", c.Spec.Target.Ref, err))
+			continue
+		}
+		if _, err := e.stampReferencedChecksum(ctx, c.Spec.Target.Ref, &m); err != nil {
+			out = append(out, fmt.Errorf("%s: render: %w", c.Spec.Target.Ref, err))
+			continue
+		}
+		tgt, err := e.build(c.Spec.Target)
+		if err != nil {
+			out = append(out, fmt.Errorf("%s: build target: %w", c.Spec.Target.Ref, err))
+			continue
+		}
+		pf, ok := tgt.(pt.Preflighter)
+		if !ok {
+			closeTarget(tgt)
+			continue
+		}
+		err = pf.Preflight(ctx, m)
+		closeTarget(tgt)
+		if err != nil {
+			out = append(out, fmt.Errorf("%s: %w", c.Spec.Target.Ref, err))
+		}
+	}
+	return out
+}
+
 func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	m, err := manifestFromConfig(c, rootFromContext(ctx))
 	if err != nil {

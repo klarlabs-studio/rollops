@@ -46,6 +46,15 @@ type Watcher struct {
 	logf      func(format string, args ...any)
 	imageAuto *ImageAuto
 
+	// preflight asks every target in a repo whether its apply would be
+	// accepted, and refuses the whole tick if any says no. Default ON: the
+	// alternative is a batch that applies half of itself, which is how a
+	// dangling Ingress→Middleware reference took an apex domain to 404.
+	//
+	// WithoutPreflight exists for the case where the extra server dry-run per
+	// target per tick is genuinely unaffordable, not as a default.
+	preflight bool
+
 	// awaiting counts CONSECUTIVE cycles a config has spent waiting on Git,
 	// keyed by "repo/path". See stuckAfterCycles.
 	awaiting map[string]int
@@ -88,6 +97,16 @@ type watched struct {
 
 type WatcherOption func(*Watcher)
 
+// WithoutPreflight disables the batch preflight.
+//
+// Off means a target that cannot apply is discovered halfway through the
+// batch, with the targets before it already applied — the half-applied state
+// this check exists to prevent. Use it only where the extra server-side dry
+// run per target per tick is measurably unaffordable.
+func WithoutPreflight() WatcherOption {
+	return func(w *Watcher) { w.preflight = false }
+}
+
 func WithLeaderElection(leases store.LeaseStore, owner string, ttl time.Duration) WatcherOption {
 	return func(w *Watcher) {
 		w.leases = leases
@@ -111,7 +130,8 @@ func WithImageAutomation(ia *ImageAuto) WatcherOption {
 
 // NewWatcher clones each repo into baseDir and returns a ready watcher.
 func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec, opts ...WatcherOption) (*Watcher, error) {
-	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now,
+	// preflight defaults ON — see the field comment.
+	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now, preflight: true,
 		orphans: newReaper(stuckAfterCycles), lastSeen: map[string]*config.Config{}}
 	for _, opt := range opts {
 		opt(w)
@@ -319,8 +339,55 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		w.logf("image automation %s: %d config(s) [%s]", r.spec.Name, len(decisions), strings.Join(decisions, " "))
 	}
 
+	ordered := orderByDependsOn(configs, cfgs)
+
+	// Preflight the WHOLE batch before applying any of it.
+	//
+	// Reconciling each target independently let a batch apply half of itself. A
+	// repository declared an Ingress and the Traefik Middleware its
+	// router.middlewares annotation named; the Ingress applied, the Middleware
+	// failed on RBAC the service account did not hold, and only the
+	// Middleware's own target rolled back. Traefik could not resolve the
+	// dangling reference, never built the router, and the apex domain served
+	// 404 until the Middleware was applied by hand.
+	//
+	// Neither target was wrong on its own terms — one applied, one rolled back
+	// cleanly. The breakage lived in the relationship between them, and nothing
+	// modelled it.
+	//
+	// Compensating rollback cannot fix that: rolling back a CREATE means
+	// deleting the resource, and rollopsd deliberately holds no delete verb on
+	// the types where removal is destructive (a PVC loses data, a CronJob
+	// silently drops scheduled work, a Middleware is often the only thing
+	// enforcing a security control). So the batch fails BEFORE it applies
+	// anything rather than unwinding afterwards.
+	//
+	// Refusing the tick is safe: nothing was applied, the previously-live state
+	// is untouched, and the next tick retries. That is strictly better than the
+	// half-applied state it replaces.
+	if w.preflight {
+		pcfgs := make([]*config.Config, 0, len(ordered))
+		for _, p := range ordered {
+			pcfgs = append(pcfgs, p.cfg)
+		}
+		root := r.src.Dir()
+		if errs := w.rec.eng.Preflight(engine.WithRoot(ctx, root), pcfgs); len(errs) > 0 {
+			msgs := make([]string, 0, len(errs))
+			for _, e := range errs {
+				msgs = append(msgs, e.Error())
+			}
+			err := fmt.Errorf(
+				"preflight refused %s: %d of %d target(s) would not apply, so NONE were applied — %s",
+				r.spec.Name, len(errs), len(ordered), strings.Join(msgs, "; "))
+			if w.logf != nil {
+				w.logf("%v", err)
+			}
+			return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: err}}
+		}
+	}
+
 	out := make([]RepoOutcome, 0, len(configs))
-	for _, p := range orderByDependsOn(configs, cfgs) {
+	for _, p := range ordered {
 		if wait, werr := w.rec.waitingOn(ctx, p.cfg); werr != nil {
 			out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Err: werr})
 			continue

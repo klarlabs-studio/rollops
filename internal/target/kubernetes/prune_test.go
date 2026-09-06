@@ -36,7 +36,7 @@ metadata:
   labels:
     app: web
 `)
-	out, err := labelManifest(manifest, PruneLabel, "shop-web")
+	out, err := labelManifest(manifest, "shop-web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ spec:
         - name: api
           image: api:1
 `
-	out, err := labelManifest([]byte(deploy), PruneLabel, "demo-prod-app")
+	out, err := labelManifest([]byte(deploy), "demo-prod-app")
 	if err != nil {
 		t.Fatalf("labelManifest: %v", err)
 	}

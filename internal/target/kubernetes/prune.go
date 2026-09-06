@@ -31,7 +31,10 @@ func labelValue(ref string) string {
 
 // labelManifest injects key=val into every document's metadata.labels so the
 // whole set is selectable for pruning. Multi-doc YAML is preserved doc-by-doc.
-func labelManifest(manifest []byte, key, val string) ([]byte, error) {
+// key is always PruneLabel — the identity marker that ties a resource to the
+// target that manages it — so it is not a parameter.
+func labelManifest(manifest []byte, val string) ([]byte, error) {
+	const key = PruneLabel
 	dec := yaml.NewDecoder(bytes.NewReader(manifest))
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
