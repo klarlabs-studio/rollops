@@ -325,3 +325,20 @@ func TestHonestStrategy(t *testing.T) {
 		t.Errorf("rolling = %q, want empty", rolling.HonestStrategy())
 	}
 }
+
+func TestLoad_ContinueOnFailure(t *testing.T) {
+	c, err := Load([]byte(validYAML + "  continueOnFailure: true\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.Spec.ContinueOnFailure {
+		t.Fatal("continueOnFailure not set")
+	}
+	c2, err := Load([]byte(validYAML))
+	if err != nil {
+		t.Fatalf("Load default: %v", err)
+	}
+	if c2.Spec.ContinueOnFailure {
+		t.Fatal("continueOnFailure must default false")
+	}
+}
