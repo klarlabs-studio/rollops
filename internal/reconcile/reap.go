@@ -138,6 +138,9 @@ func (w *Watcher) ensureOrphanState() {
 	if w.drifting == nil {
 		w.drifting = newDriftStreak(stuckAfterCycles)
 	}
+	if w.failures == nil {
+		w.failures = newFailStreak(stuckAfterCycles)
+	}
 }
 
 // reportOrphan names a target that has stopped being declared.
