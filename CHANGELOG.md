@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.34.6 - Refuse the whole batch rather than apply half of it
+
+An Ingress applied while the Traefik Middleware its `router.middlewares`
+annotation named was rolled back on RBAC. Traefik never built the router; the
+apex domain served 404. Neither target was wrong on its own — the breakage
+lived only in the pair (#182).
+
+Compensating rollback cannot fix that: rolling back a create means deleting,
+and rollopsd deliberately holds no `delete` on PVCs, CronJobs, or middlewares.
+So the batch must fail **before** it applies anything (#184 / #185):
+
+- optional `pt.Preflighter` — skipped when absent (ftp/ssh/plugin unchanged)
+- `kubernetes.Preflight` — `kubectl apply --dry-run=server` (full admission)
+- watcher runs it across the repo and refuses the tick if any target objects
+
+Also grants `traefik.io/middlewares` (`get/list/watch/create/update/patch`, no
+`delete`) so the service account can manage what Ingress annotations reference
+(#183).
+
+And a wiring fix: `Engine.Preflight` had built targets through `step.Guarded`,
+which drops optional capabilities, so every Kubernetes preflight was silently
+skipped (#186). It now uses `BuildTarget`, same as Diff/Resources/Reap.
+
 ## v0.34.5 - Ready stayed green while nothing could fork
 
 The v0.34.3 zombie leak left the pod `1/1 Ready` while every reconcile failed
