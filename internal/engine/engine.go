@@ -317,9 +317,14 @@ func defaultOwner() string {
 // Preflight reports whether every target in cs would apply, without applying
 // any of them. A nil error means none of them objected.
 //
-// It renders and builds each target exactly as Plan does, because a config that
-// cannot render or whose target cannot be constructed is a failure the batch
-// must hear about before it starts applying the others.
+// It renders each target exactly as Plan does, because a config that cannot
+// render or whose target cannot be constructed is a failure the batch must
+// hear about before it starts applying the others.
+//
+// The target is built WITHOUT the fortify wrapper (BuildTarget, same path as
+// Diff/Resources/Reap). Preflighter is an optional capability on the concrete
+// target; step.Guarded only forwards Apply/Observe/Health, so wrapping would
+// silently drop the capability and the batch gate would never fire (#185).
 //
 // Targets that do not implement pt.Preflighter are skipped rather than assumed
 // good: they contribute nothing to the decision, which is precisely the
@@ -336,7 +341,7 @@ func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
 			out = append(out, fmt.Errorf("%s: render: %w", c.Spec.Target.Ref, err))
 			continue
 		}
-		tgt, err := e.build(c.Spec.Target)
+		tgt, err := e.BuildTarget(c.Spec.Target)
 		if err != nil {
 			out = append(out, fmt.Errorf("%s: build target: %w", c.Spec.Target.Ref, err))
 			continue
