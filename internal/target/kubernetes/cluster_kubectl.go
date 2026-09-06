@@ -130,6 +130,37 @@ func (k *kubectlCluster) Preflight(ctx context.Context, manifest []byte) error {
 	return nil
 }
 
+// MiddlewareExists reports whether a Traefik Middleware CR is live. Used by
+// dangling-reference warnings (#182): an Ingress that names a Middleware which
+// is neither in the apply batch nor already on the cluster is almost always a
+// mistake, and the only way to know the second half is to ask.
+//
+// Absence is not an error — NotFound means "not live". Other kubectl failures
+// (RBAC, unreachable API) return false with the error so the caller can choose
+// to warn rather than assume the Middleware exists.
+func (k *kubectlCluster) MiddlewareExists(ctx context.Context, namespace, name string) (bool, error) {
+	if namespace == "" || name == "" {
+		return false, nil
+	}
+	_, err := k.run(ctx, nil, "get", "middleware.traefik.io/"+name, "-n", namespace, "-o", "name")
+	if err != nil {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "notfound") || strings.Contains(msg, "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// AmbientMiddlewareExists checks Middleware presence with the daemon's ambient
+// kubectl credentials (in-cluster config). Warn paths that do not hold a
+// per-target Cluster use this.
+func AmbientMiddlewareExists(ctx context.Context, namespace, name string) (bool, error) {
+	k := &kubectlCluster{}
+	return k.MiddlewareExists(ctx, namespace, name)
+}
+
 func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum string) error {
 	args := []string{"apply", "-f", "-"}
 	// Label ALWAYS, prune only when asked. These were one decision and are two
