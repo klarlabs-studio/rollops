@@ -34,7 +34,7 @@ func TestConfigsForPreflightGate_AllContinueLeavesEmptyGate(t *testing.T) {
 }
 
 func TestConfigsForPreflightGate_NilSafe(t *testing.T) {
-	if got := configsForPreflightGate(nil); got != nil && len(got) != 0 {
+	if got := configsForPreflightGate(nil); len(got) != 0 {
 		t.Fatalf("nil in → %v", got)
 	}
 }
