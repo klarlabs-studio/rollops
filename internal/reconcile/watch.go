@@ -384,15 +384,19 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		for _, p := range ordered {
 			pcfgs = append(pcfgs, p.cfg)
 		}
+		// continueOnFailure: true opts a target OUT of the batch gate (#184).
+		// Its own apply may still fail; it must not refuse siblings. Targets
+		// that stay in the gate keep the all-or-nothing rule from #185.
+		gate := configsForPreflightGate(pcfgs)
 		root := r.src.Dir()
-		if errs := w.rec.eng.Preflight(engine.WithRoot(ctx, root), pcfgs); len(errs) > 0 {
+		if errs := w.rec.eng.Preflight(engine.WithRoot(ctx, root), gate); len(errs) > 0 {
 			msgs := make([]string, 0, len(errs))
 			for _, e := range errs {
 				msgs = append(msgs, e.Error())
 			}
 			err := fmt.Errorf(
-				"preflight refused %s: %d of %d target(s) would not apply, so NONE were applied — %s",
-				r.spec.Name, len(errs), len(ordered), strings.Join(msgs, "; "))
+				"preflight refused %s: %d of %d gating target(s) would not apply, so NONE were applied — %s",
+				r.spec.Name, len(errs), len(gate), strings.Join(msgs, "; "))
 			// Logging is owned by logOutcomes via failStreak — logging here as
 			// well would double every fresh refusal and undo the quiet hold.
 			return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: err}}
