@@ -73,6 +73,11 @@ type Watcher struct {
 	// mechanism, and one alert per tick reads the same on day one as on day
 	// twenty. See driftStreak.
 	drifting *driftStreak
+
+	// failures counts consecutive IDENTICAL apply/preflight errors per key.
+	// Forbidden is not transient (#182): escalate once, then hold rather than
+	// logging the same refusal every reconcile interval forever. See failStreak.
+	failures *failStreak
 }
 
 // stuckAfterCycles is how many consecutive waiting cycles turn a proposal from
@@ -363,9 +368,18 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	// anything rather than unwinding afterwards.
 	//
 	// Refusing the tick is safe: nothing was applied, the previously-live state
-	// is untouched, and the next tick retries. That is strictly better than the
-	// half-applied state it replaces.
+	// is untouched. A permanent refusal (Forbidden) is held after the first
+	// escalation — retrying RBAC every interval cannot heal it (#182). Anything
+	// else retries on the next tick.
+	w.ensureOrphanState()
+	if changed {
+		// Desired state moved: a previously permanent refusal deserves another look.
+		w.failures.clearRepo(r.spec.Name)
+	}
 	if w.preflight {
+		if msg, held := w.failures.held(r.spec.Name); held {
+			return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("%s", msg)}}
+		}
 		pcfgs := make([]*config.Config, 0, len(ordered))
 		for _, p := range ordered {
 			pcfgs = append(pcfgs, p.cfg)
@@ -379,23 +393,28 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 			err := fmt.Errorf(
 				"preflight refused %s: %d of %d target(s) would not apply, so NONE were applied — %s",
 				r.spec.Name, len(errs), len(ordered), strings.Join(msgs, "; "))
-			if w.logf != nil {
-				w.logf("%v", err)
-			}
+			// Logging is owned by logOutcomes via failStreak — logging here as
+			// well would double every fresh refusal and undo the quiet hold.
 			return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: err}}
 		}
+		w.failures.clear(r.spec.Name)
 	}
 
 	out := make([]RepoOutcome, 0, len(configs))
 	for _, p := range ordered {
+		key := r.spec.Name + "/" + p.nc.Path
 		if wait, werr := w.rec.waitingOn(ctx, p.cfg); werr != nil {
-			out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed, Err: werr})
+			out = append(out, RepoOutcome{Repo: key, Changed: changed, Err: werr})
 			continue
 		} else if wait != "" {
 			if w.logf != nil {
 				w.logf("reconcile %s/%s: skipping this tick — dependsOn %q is not promoted", r.spec.Name, p.nc.Path, wait)
 			}
-			out = append(out, RepoOutcome{Repo: r.spec.Name + "/" + p.nc.Path, Changed: changed})
+			out = append(out, RepoOutcome{Repo: key, Changed: changed})
+			continue
+		}
+		if msg, held := w.failures.held(key); held {
+			out = append(out, RepoOutcome{Repo: key, Changed: changed, Err: fmt.Errorf("%s", msg)})
 			continue
 		}
 		// Relative referenced manifest sources resolve against the config file's
@@ -403,10 +422,10 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		// kustomize/helm/path points at the polled desired state.
 		root := filepath.Join(r.src.Dir(), filepath.Dir(p.nc.Path))
 		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), p.cfg, r.spec.Initiator)
-		key := r.spec.Name + "/" + p.nc.Path
 		// Only an error-free reconcile says anything about drift. A failed one
 		// did not observe the target, so it must not extend OR reset a streak.
 		if rerr == nil {
+			w.failures.clear(key)
 			if n := w.drifting.observe(key, o.Drift && !o.Reconciled); n > 0 {
 				w.reportPersistentDrift(key, p.cfg, n)
 			}
@@ -487,13 +506,28 @@ func (w *Watcher) logOutcomes(outcomes []RepoOutcome) {
 	if w.logf == nil {
 		return
 	}
+	w.ensureOrphanState()
 	for _, o := range outcomes {
 		switch {
 		case o.Err != nil && !errors.Is(o.Err, ErrNotLeader):
-			w.logf("reconcile %s: %v", o.Repo, o.Err)
+			switch w.failures.note(o.Repo, o.Err.Error()) {
+			case failEscalate:
+				if permanentFailure(o.Err.Error()) {
+					w.logf("reconcile %s: PERMANENT — %v (not retrying until desired state changes or the process restarts)", o.Repo, o.Err)
+					w.reportPermanentFailure(o.Repo, o.Err.Error())
+				} else {
+					w.logf("reconcile %s: still failing after %d identical ticks — %v", o.Repo, stuckAfterCycles, o.Err)
+				}
+			case failFresh:
+				w.logf("reconcile %s: %v", o.Repo, o.Err)
+			case failQuiet:
+				// Same refusal already named. Silence is the feature (#182).
+			}
 		case o.Outcome.Reconciled && o.Outcome.Rollout != nil:
+			w.failures.clear(o.Repo)
 			w.logf("reconcile %s: applied %s → %s (%s)", o.Repo, o.Outcome.Rollout.TargetRef, o.Outcome.Rollout.Phase, o.Outcome.Plan.Summary)
 		case o.Outcome.Drift && o.Outcome.Rollout != nil:
+			w.failures.clear(o.Repo)
 			w.logf("reconcile %s: drift on %s → %s", o.Repo, o.Outcome.Rollout.TargetRef, o.Outcome.Rollout.Phase)
 		}
 	}
