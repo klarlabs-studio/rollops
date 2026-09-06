@@ -39,6 +39,7 @@ import (
 	"go.klarlabs.de/rollops/internal/step"
 	"go.klarlabs.de/rollops/internal/store"
 	itarget "go.klarlabs.de/rollops/internal/target"
+	k8s "go.klarlabs.de/rollops/internal/target/kubernetes"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
@@ -358,6 +359,49 @@ func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
 		}
 	}
 	return out
+}
+
+// WarnDanglingMiddlewares reports Ingress→Middleware references that are
+// neither in this batch nor live in the cluster (#182 suggestion 4).
+//
+// Warn-only: a dangling reference is almost always a mistake, but refusing the
+// batch here would reinvent Preflight. Callers log the strings and continue.
+func (e *Engine) WarnDanglingMiddlewares(ctx context.Context, cs []*config.Config) []string {
+	var docs [][]byte
+	for _, c := range cs {
+		m, err := manifestFromConfig(c, rootFromContext(ctx))
+		if err != nil {
+			continue
+		}
+		if _, err := e.stampReferencedChecksum(ctx, c.Spec.Target.Ref, &m); err != nil {
+			continue
+		}
+		if len(m.Rendered) > 0 {
+			docs = append(docs, m.Rendered)
+			continue
+		}
+		tgt, err := e.BuildTarget(c.Spec.Target)
+		if err != nil {
+			continue
+		}
+		r, ok := tgt.(pt.Renderer)
+		if !ok {
+			closeTarget(tgt)
+			continue
+		}
+		out, err := r.Render(ctx, m)
+		closeTarget(tgt)
+		if err != nil || len(out) == 0 {
+			continue
+		}
+		docs = append(docs, out)
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	return k8s.DanglingMiddlewareWarnings(docs, func(ns, name string) (bool, error) {
+		return k8s.AmbientMiddlewareExists(ctx, ns, name)
+	})
 }
 
 func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {

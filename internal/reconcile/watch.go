@@ -400,6 +400,22 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		w.failures.clear(r.spec.Name)
 	}
 
+	// Warn on Ingress→Middleware refs that are neither in this batch nor live.
+	// Soft only: Preflight already decided every target would apply; a dangling
+	// Traefik annotation is still almost always a mistake (#182 suggestion 4).
+	{
+		pcfgs := make([]*config.Config, 0, len(ordered))
+		for _, p := range ordered {
+			pcfgs = append(pcfgs, p.cfg)
+		}
+		root := r.src.Dir()
+		for _, warn := range w.rec.eng.WarnDanglingMiddlewares(engine.WithRoot(ctx, root), pcfgs) {
+			if w.logf != nil {
+				w.logf("reconcile %s: warning: %s", r.spec.Name, warn)
+			}
+		}
+	}
+
 	out := make([]RepoOutcome, 0, len(configs))
 	for _, p := range ordered {
 		key := r.spec.Name + "/" + p.nc.Path
