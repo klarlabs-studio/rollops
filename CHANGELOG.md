@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.34.8 - Name the dangling Middleware before Traefik does
+
+An Ingress whose `router.middlewares` annotation names a Middleware that is
+neither in the same apply batch nor already live left Traefik unable to build
+the router (#182). Preflight stops the half-apply; this release **warns** when
+the reference itself is dangling — soft only, so a hand-applied Middleware
+still in the cluster stays quiet.
+
+Also closes the remaining #182 suggestions for the incident:
+
+- suggestion 3 (v0.34.7): stop retrying permanent `Forbidden`
+- suggestion 4 (this): warn on dangling Traefik middleware refs
+
 ## v0.34.7 - Forbidden is not a blip
 
 After the Ingress/Middleware outage in #182, a permanent RBAC refusal

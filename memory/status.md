@@ -4,9 +4,9 @@
 
 ## Current State
 
-Cutting **v0.34.7** — stop retrying permanent Forbidden forever (#188 / #182
-suggestion 3). Deploy pin `v0.34.7`. #182 suggestion 4 (dangling middleware
-refs) and design leftovers on #184 still open.
+Cutting **v0.34.8** — warn on dangling Traefik middleware refs (#190 / #182
+suggestion 4). Deploy pin `v0.34.8`. Incident #182 suggestions 1–4 are shipped;
+#184 design leftovers (escape hatch / cost) remain optional follow-ups.
 
 ---
 
