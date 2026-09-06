@@ -4,10 +4,9 @@
 
 ## Current State
 
-Cutting **v0.34.6** — batch preflight (#185/#186) + Traefik middleware RBAC
-(#183) so a repo cannot ship an Ingress while its Middleware is refused.
-Deploy pin `v0.34.6`. #182 suggestions 3–4 (stop retrying Forbidden; warn on
-dangling refs) still open.
+Cutting **v0.34.7** — stop retrying permanent Forbidden forever (#188 / #182
+suggestion 3). Deploy pin `v0.34.7`. #182 suggestion 4 (dangling middleware
+refs) and design leftovers on #184 still open.
 
 ---
 

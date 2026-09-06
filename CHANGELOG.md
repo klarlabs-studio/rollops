@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.34.7 - Forbidden is not a blip
+
+After the Ingress/Middleware outage in #182, a permanent RBAC refusal
+(`Forbidden`) still retried every reconcile interval with the same log line.
+Waiting cannot heal missing ClusterRole rules.
+
+Identical apply/preflight failures now escalate once and go quiet (#188):
+
+- `Forbidden` / `Unauthorized` escalate on the **first** tick, audit once, then
+  **hold** — further dry-run/apply attempts are skipped until desired state
+  changes or the process restarts
+- other identical errors still retry, but escalate once after ten identical
+  ticks and stop repeating the same line every interval
+
+#182 suggestion 4 (warn on dangling middleware references) is still open.
+
 ## v0.34.6 - Refuse the whole batch rather than apply half of it
 
 An Ingress applied while the Traefik Middleware its `router.middlewares`

@@ -238,7 +238,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: rollopsd
-          image: ghcr.io/klarlabs-studio/rollopsd:v0.34.6
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.34.7
           # Container hardening. The pod already runs as uid 10001; these remove the
           # privileges that a non-root process can still acquire or retain.
           #
