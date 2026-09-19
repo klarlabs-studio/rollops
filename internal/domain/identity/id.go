@@ -33,6 +33,7 @@ const (
 	prefixPipelineRun     = "run_"
 	prefixExecution       = "exe_"
 	prefixEvent           = "evt_"
+	prefixApproval        = "apr_"
 )
 
 // The typed IDs. Each is a distinct type so the compiler refuses a swap that a
@@ -48,6 +49,7 @@ type (
 	PipelineRunID     string
 	ExecutionID       string
 	EventID           string
+	ApprovalID        string
 )
 
 func newID(g Generator, prefix string) (string, error) {
@@ -92,7 +94,7 @@ func isKnownPrefix(s string) bool {
 	switch s[:4] {
 	case prefixProject, prefixEnvironment, prefixArtifact, prefixRelease,
 		prefixDeployment, prefixPlan, prefixVerificationRun, prefixPipelineRun,
-		prefixExecution, prefixEvent:
+		prefixExecution, prefixEvent, prefixApproval:
 		return true
 	}
 	return false
@@ -148,6 +150,11 @@ func NewEventID(g Generator) (EventID, error) {
 	return EventID(s), err
 }
 
+func NewApprovalID(g Generator) (ApprovalID, error) {
+	s, err := newID(g, prefixApproval)
+	return ApprovalID(s), err
+}
+
 func ParseProjectID(s string) (ProjectID, error) {
 	got, err := parseID(s, prefixProject)
 	return ProjectID(got), err
@@ -196,4 +203,9 @@ func ParseExecutionID(s string) (ExecutionID, error) {
 func ParseEventID(s string) (EventID, error) {
 	got, err := parseID(s, prefixEvent)
 	return EventID(got), err
+}
+
+func ParseApprovalID(s string) (ApprovalID, error) {
+	got, err := parseID(s, prefixApproval)
+	return ApprovalID(got), err
 }

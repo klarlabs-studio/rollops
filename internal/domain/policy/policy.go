@@ -197,6 +197,10 @@ func (d Decision) Validate() error {
 // Satisfied reports whether the decision permits an apply outright. A decision
 // that allows but attaches requirements does not: something still has to happen
 // first, and this is the method that keeps that from being forgotten.
+//
+// This is the admission-time question — may this proceed with nothing else
+// happening? SatisfiedBy is the later one: given these approvals, may it
+// proceed now. A decision that is not Satisfied is not refused, it is waiting.
 func (d Decision) Satisfied() bool { return d.Allowed && len(d.Requirements) == 0 }
 
 // Encode writes the decision into a canonical encoding so that a plan hash
