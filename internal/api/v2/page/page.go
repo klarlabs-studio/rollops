@@ -52,6 +52,33 @@ type Request struct {
 	Size int
 }
 
+// Limit is the most rows this page will hold, with the caller's ask clamped.
+func (r Request) Limit() int {
+	switch {
+	case r.Size <= 0:
+		return DefaultSize
+	case r.Size > MaxSize:
+		return MaxSize
+	default:
+		return r.Size
+	}
+}
+
+// Fetch is how many rows to ask a repository for: one more than the page
+// holds. There is no other way to tell a list that ended from one that ended on
+// the boundary, and guessing wrong drops the last page.
+func (r Request) Fetch() int { return r.Limit() + 1 }
+
+// Start is the key to resume after, or empty at the beginning. A caller hands
+// it to a repository that can page for itself, so a forged cursor is refused
+// before it becomes a query.
+func (r Request) Start() (string, error) {
+	if r.Cursor == "" {
+		return "", nil
+	}
+	return decode(r.Cursor)
+}
+
 // Response is one page and the way to ask for the next.
 type Response[T any] struct {
 	Items []T
@@ -69,20 +96,18 @@ func Of[T any](items []T, req Request, key func(T) string) (Response[T], error) 
 	if err != nil {
 		return Response[T]{}, err
 	}
-	rest := items[start:]
+	return Trim(items[start:], req, key), nil
+}
 
-	size := req.Size
-	switch {
-	case size <= 0:
-		size = DefaultSize
-	case size > MaxSize:
-		size = MaxSize
+// Trim turns what a repository returned for Fetch rows into a page. The extra
+// row is dropped: it was only there to prove there was more.
+func Trim[T any](fetched []T, req Request, key func(T) string) Response[T] {
+	limit := req.Limit()
+	if len(fetched) <= limit {
+		return Response[T]{Items: fetched}
 	}
-	if len(rest) <= size {
-		return Response[T]{Items: rest}, nil
-	}
-	got := rest[:size]
-	return Response[T]{Items: got, Next: encode(key(got[len(got)-1]))}, nil
+	got := fetched[:limit]
+	return Response[T]{Items: got, Next: encode(key(got[len(got)-1]))}
 }
 
 // offset finds where the cursor left off.

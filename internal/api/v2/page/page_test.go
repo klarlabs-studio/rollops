@@ -171,3 +171,96 @@ func TestExactlyOneFullPageStillOffersACursor(t *testing.T) {
 		t.Fatal("a page with more behind it offered no cursor")
 	}
 }
+
+func TestTheLimitIsWhatAPageWillHold(t *testing.T) {
+	for _, tc := range []struct {
+		req  page.Request
+		want int
+	}{
+		{page.Request{}, page.DefaultSize},
+		{page.Request{Size: -1}, page.DefaultSize},
+		{page.Request{Size: 10}, 10},
+		{page.Request{Size: page.MaxSize * 2}, page.MaxSize},
+	} {
+		if got := tc.req.Limit(); got != tc.want {
+			t.Errorf("Limit of %+v is %d, want %d", tc.req, got, tc.want)
+		}
+	}
+}
+
+func TestARepositoryIsAskedForOneMoreThanThePageHolds(t *testing.T) {
+	// There is no other way to tell a list that ended from one that ended on
+	// the boundary, and guessing wrong drops the last page.
+	req := page.Request{Size: 10}
+
+	if got := req.Fetch(); got != req.Limit()+1 {
+		t.Fatalf("Fetch %d, want %d", got, req.Limit()+1)
+	}
+}
+
+func TestTheStartIsTheRowTheCursorNamed(t *testing.T) {
+	issued := of(t, rows("a", "b", "c"), page.Request{Size: 1}).Next
+
+	got, err := page.Request{Cursor: issued}.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got != "a" {
+		t.Fatalf("start %q, want a", got)
+	}
+}
+
+func TestNoCursorStartsAtNothing(t *testing.T) {
+	got, err := page.Request{}.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("start %q, want empty", got)
+	}
+}
+
+func TestAForgedCursorIsRefusedBeforeAnythingIsRead(t *testing.T) {
+	// Start is what a caller hands a repository. Refusing here means a bad
+	// cursor never becomes a query.
+	if _, err := (page.Request{Cursor: "not-ours"}).Start(); !errors.Is(err, page.ErrBadCursor) {
+		t.Fatalf("err %v, want ErrBadCursor", err)
+	}
+}
+
+func TestTrimDropsTheRowThatOnlyProvedThereWasMore(t *testing.T) {
+	req := page.Request{Size: 2}
+	fetched := rows("a", "b", "c") // what Fetch asked for
+
+	got := page.Trim(fetched, req, key)
+
+	if want := []string{"a", "b"}; !slices.Equal(ids(got.Items), want) {
+		t.Errorf("items %v, want %v", ids(got.Items), want)
+	}
+	if got.Next == "" {
+		t.Error("the page offered no cursor although a row was held back")
+	}
+}
+
+func TestTrimOffersNoCursorWhenTheRepositoryHadNoMore(t *testing.T) {
+	got := page.Trim(rows("a", "b"), page.Request{Size: 2}, key)
+
+	if want := []string{"a", "b"}; !slices.Equal(ids(got.Items), want) {
+		t.Errorf("items %v, want %v", ids(got.Items), want)
+	}
+	if got.Next != "" {
+		t.Errorf("next %q, want none", got.Next)
+	}
+}
+
+func TestACursorFromTrimResumesWhereItStopped(t *testing.T) {
+	first := page.Trim(rows("a", "b", "c"), page.Request{Size: 2}, key)
+
+	start, err := (page.Request{Cursor: first.Next}).Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if start != "b" {
+		t.Fatalf("start %q, want b", start)
+	}
+}
