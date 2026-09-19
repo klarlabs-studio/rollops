@@ -3,6 +3,7 @@ package conformancev2_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -387,4 +388,89 @@ func TestRunReportsThroughTheTestingHarness(t *testing.T) {
 		},
 		Desired: desired(),
 	}.Run(t)
+}
+
+// bones implements the mandatory v2 contract and nothing else, while
+// declaring every optional capability. It is the target ADR-0006 was written
+// about: the optional verbs live behind interfaces, so a capability the target
+// declared and did not implement is a type assertion away from a panic.
+//
+// It cannot embed mem, because embedding would promote the very methods it is
+// meant not to have.
+type bones struct{ inner *mem }
+
+func newBones(caps targetv2.Capabilities) *bones { return &bones{inner: newMem(caps)} }
+
+// overclaiming declares every optional capability without implementing one.
+func overclaiming() targetv2.Capabilities {
+	return targetv2.Capabilities{
+		HealthObservation:   true,
+		DriftDetection:      true,
+		NativeRollback:      true,
+		ProgressiveDelivery: true,
+		Prune:               true,
+	}
+}
+
+func (b *bones) Metadata() targetv2.Metadata { return b.inner.Metadata() }
+
+func (b *bones) Capabilities(ctx context.Context) (targetv2.Capabilities, error) {
+	return b.inner.Capabilities(ctx)
+}
+
+func (b *bones) Inspect(ctx context.Context, r targetv2.InspectRequest) (targetv2.ObservedState, error) {
+	return b.inner.Inspect(ctx, r)
+}
+
+func (b *bones) Plan(ctx context.Context, r targetv2.PlanRequest) (targetv2.PlanResult, error) {
+	return b.inner.Plan(ctx, r)
+}
+
+func (b *bones) Apply(ctx context.Context, r targetv2.ApplyRequest) (targetv2.ApplyResult, error) {
+	return b.inner.Apply(ctx, r)
+}
+
+func (b *bones) Observe(ctx context.Context, r targetv2.ObserveRequest) (targetv2.Observation, error) {
+	return b.inner.Observe(ctx, r)
+}
+
+func (b *bones) Rollback(ctx context.Context, r targetv2.RollbackRequest) (targetv2.RollbackResult, error) {
+	return b.inner.Rollback(ctx, r)
+}
+
+// TestADeclaredCapabilityWithNoMethodIsReportedNotPanicked is the axis doing
+// the job it exists for on the target most likely to need it. A suite that
+// panics tells the author their test binary crashed; it does not tell them
+// which capability they declared and did not build — and it takes the rest of
+// the axes down with it, so nothing else they got wrong is reported either.
+func TestADeclaredCapabilityWithNoMethodIsReportedNotPanicked(t *testing.T) {
+	errs := conformancev2.Suite{
+		New:     func() (targetv2.Target, error) { return newBones(overclaiming()), nil },
+		Desired: desired(),
+	}.Check(context.Background())
+
+	if len(errs) == 0 {
+		t.Fatalf("a target declaring four capabilities it does not implement passed every axis")
+	}
+	joined := fmt.Sprint(errs)
+	for _, want := range []string{"drift", "progressive-delivery", "prune"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("nothing reported the undeclared %s method; got %v", want, errs)
+		}
+	}
+}
+
+// TestAMandatoryOnlyTargetPassesEveryAxis is the shape most targets are: it
+// implements the six methods the contract requires and none of the optional
+// interfaces, and declares nothing it cannot do. A suite that fails this
+// pushes every target to implement verbs it has no use for, which is how a
+// contract ends up with four methods that all answer unsupported.
+func TestAMandatoryOnlyTargetPassesEveryAxis(t *testing.T) {
+	errs := conformancev2.Suite{
+		New:     func() (targetv2.Target, error) { return newBones(healthy()), nil },
+		Desired: desired(),
+	}.Check(context.Background())
+	if len(errs) != 0 {
+		t.Fatalf("a target implementing only the mandatory contract failed: %v", errs)
+	}
 }

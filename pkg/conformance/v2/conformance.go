@@ -168,45 +168,71 @@ func SuiteForV1(newV1 func() (v1.Target, error), meta targetv2.Metadata, desired
 // Prune is checked in the negative direction only. It is the one destructive
 // method in the contract, and a suite that deletes the operator's resources to
 // prove it could is a suite nobody runs twice.
+//
+// Every mismatch is reported rather than the first: a target that declared
+// four capabilities it does not have should learn all four in one run, and a
+// suite that stops at the first sends its author round the loop once per
+// mistake.
 func CheckCapabilitiesAreTruthful(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) error {
 	caps, err := tgt.Capabilities(ctx)
 	if err != nil {
 		return fmt.Errorf("conformance: capabilities: %w", err)
 	}
 
+	// The optional verbs live behind interfaces, so the assertion is made once
+	// and checked. Asserting it unchecked is what ADR-0006 forbids: a target
+	// that declares a capability it did not implement is a defect to report,
+	// and a panic reports it by taking every other axis down with it.
+	drifter, hasDrift := tgt.(targetv2.Drifter)
+	promoter, hasPromote := tgt.(targetv2.Promoter)
+	pruner, hasPrune := tgt.(targetv2.Pruner)
+
 	probes := []struct {
-		cap  targetv2.Capability
-		call func() error
+		cap         targetv2.Capability
+		implemented bool
+		call        func() error
 	}{
-		{targetv2.CapabilityDriftDetection, func() error {
-			_, err := tgt.(targetv2.Drifter).DetectDrift(ctx, targetv2.DriftRequest{Desired: desired})
+		{targetv2.CapabilityDriftDetection, hasDrift, func() error {
+			_, err := drifter.DetectDrift(ctx, targetv2.DriftRequest{Desired: desired})
 			return err
 		}},
-		{targetv2.CapabilityNativeRollback, func() error {
+		// Rollback is on Target itself, so there is always a method to call.
+		{targetv2.CapabilityNativeRollback, true, func() error {
 			_, err := tgt.Rollback(ctx, targetv2.RollbackRequest{})
 			return err
 		}},
-		{targetv2.CapabilityProgressiveDelivery, func() error {
-			_, err := tgt.(targetv2.Promoter).Promote(ctx, targetv2.PromoteRequest{})
+		{targetv2.CapabilityProgressiveDelivery, hasPromote, func() error {
+			_, err := promoter.Promote(ctx, targetv2.PromoteRequest{})
 			return err
 		}},
-		{targetv2.CapabilityPrune, func() error {
-			_, err := tgt.(targetv2.Pruner).Prune(ctx, targetv2.PruneRequest{})
+		{targetv2.CapabilityPrune, hasPrune, func() error {
+			_, err := pruner.Prune(ctx, targetv2.PruneRequest{})
 			return err
 		}},
 	}
 
+	var found []error
 	for _, p := range probes {
 		declared := caps.Has(p.cap)
+		if !p.implemented {
+			// Not declared and not implemented is the ordinary shape of a
+			// target that does not do this: the host routes on the
+			// declaration, so it will never reach for the method.
+			if declared {
+				found = append(found, fmt.Errorf(
+					"conformance: the target declares %s but does not implement its method", p.cap))
+			}
+			continue
+		}
 		if declared && p.cap == targetv2.CapabilityPrune {
 			continue
 		}
 		err := p.call()
 		switch {
 		case declared && targetv2.IsUnsupported(err):
-			return fmt.Errorf("conformance: the target declares %s but answers unsupported", p.cap)
+			found = append(found, fmt.Errorf("conformance: the target declares %s but answers unsupported", p.cap))
 		case !declared && !targetv2.IsUnsupported(err):
-			return fmt.Errorf("conformance: the target does not declare %s but did not refuse it: %v", p.cap, err)
+			found = append(found, fmt.Errorf("conformance: the target does not declare %s but did not refuse it: %v", p.cap, err))
 		}
 	}
 
@@ -215,12 +241,12 @@ func CheckCapabilitiesAreTruthful(ctx context.Context, tgt targetv2.Target, desi
 	// Unknown has told the engine nothing while claiming otherwise.
 	obs, err := tgt.Observe(ctx, targetv2.ObserveRequest{})
 	if err != nil {
-		return fmt.Errorf("conformance: observe: %w", err)
+		return errors.Join(append(found, fmt.Errorf("conformance: observe: %w", err))...)
 	}
 	if caps.HealthObservation && obs.Health.State == targetv2.HealthUnknown {
-		return fmt.Errorf("conformance: the target declares health observation but reports unknown health")
+		found = append(found, fmt.Errorf("conformance: the target declares health observation but reports unknown health"))
 	}
-	return nil
+	return errors.Join(found...)
 }
 
 // CheckInspectIsStable verifies that looking twice at an unchanged target
@@ -464,7 +490,14 @@ func CheckDriftWhenDeclared(ctx context.Context, tgt targetv2.Target, desired ta
 	}
 	drifter, ok := tgt.(targetv2.Drifter)
 	if !ok {
-		return fmt.Errorf("conformance: the target does not implement DetectDrift; every v2 method is mandatory, and one that cannot be done answers unsupported")
+		if caps.DriftDetection {
+			return fmt.Errorf("conformance: the target declares %s but does not implement DetectDrift",
+				targetv2.CapabilityDriftDetection)
+		}
+		// A target that neither declares drift nor implements it is not
+		// hiding anything — the host routes on the declaration and will never
+		// reach for the method. There is nothing here to measure.
+		return ErrNotApplicable
 	}
 	if !caps.DriftDetection {
 		if _, err := drifter.DetectDrift(ctx, targetv2.DriftRequest{Desired: desired}); !targetv2.IsUnsupported(err) {
