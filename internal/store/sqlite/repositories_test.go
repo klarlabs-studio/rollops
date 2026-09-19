@@ -19,6 +19,8 @@ func TestSQLiteStoreSatisfiesThePorts(t *testing.T) {
 			Environments: s.Environments(),
 			Artifacts:    s.Artifacts(),
 			Releases:     s.Releases(),
+			Plans:        s.Plans(),
+			Deployments:  s.Deployments(),
 			Tx:           s,
 		}
 	})

@@ -49,6 +49,36 @@ func TestTheTerminalStatusesAreTheOnesThatEndADeployment(t *testing.T) {
 	}
 }
 
+// Storage asks "which of these is finished" without being told the vocabulary
+// twice, so the list is exported. It must agree with IsTerminal, and it must
+// hand out a copy: a caller that sorted or truncated the result would otherwise
+// change what every later caller sees.
+func TestTheTerminalStatusesAreListedForCallersThatNeedThem(t *testing.T) {
+	listed := deployment.TerminalStatuses()
+	seen := map[deployment.Status]bool{}
+	for _, s := range listed {
+		if !s.IsTerminal() {
+			t.Errorf("%s is listed as terminal but IsTerminal says otherwise", s)
+		}
+		if seen[s] {
+			t.Errorf("%s is listed twice", s)
+		}
+		seen[s] = true
+	}
+	for _, s := range all {
+		if s.IsTerminal() && !seen[s] {
+			t.Errorf("%s is terminal but is not listed", s)
+		}
+	}
+
+	listed[0] = deployment.Status("tampered")
+	for _, s := range deployment.TerminalStatuses() {
+		if s == "tampered" {
+			t.Error("editing the returned slice changed the next call")
+		}
+	}
+}
+
 // A terminal status is the end of the record. Allowing anything out of one
 // would mean a deployment that reported success could later report failure,
 // and every consumer of the timeline would have to guess which was true.

@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/value"
 )
@@ -44,6 +47,60 @@ type policyBindingRow struct {
 	Name string `json:"name"`
 	Ref  string `json:"ref"`
 	Mode string `json:"mode"`
+}
+
+type changeRow struct {
+	Path      string `json:"path"`
+	From      string `json:"from,omitempty"`
+	To        string `json:"to,omitempty"`
+	Sensitive bool   `json:"sensitive,omitempty"`
+}
+
+type operationRow struct {
+	ID           string      `json:"id"`
+	Target       string      `json:"target"`
+	Kind         string      `json:"kind"`
+	Summary      string      `json:"summary,omitempty"`
+	Changes      []changeRow `json:"changes,omitempty"`
+	Dependencies []string    `json:"dependencies,omitempty"`
+	Reversible   bool        `json:"reversible,omitempty"`
+}
+
+type rollbackRow struct {
+	FromRelease string         `json:"from_release"`
+	ToRelease   string         `json:"to_release"`
+	Operations  []operationRow `json:"operations,omitempty"`
+	Automatic   bool           `json:"automatic,omitempty"`
+}
+
+type riskFactorRow struct {
+	Code    string `json:"code"`
+	Message string `json:"message,omitempty"`
+}
+
+type riskRow struct {
+	Level   string          `json:"level"`
+	Score   float64         `json:"score"`
+	Factors []riskFactorRow `json:"factors,omitempty"`
+}
+
+type requirementRow struct {
+	Type   string `json:"type"`
+	Role   string `json:"role,omitempty"`
+	Count  int    `json:"count,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type reasonRow struct {
+	Code    string `json:"code"`
+	Message string `json:"message,omitempty"`
+}
+
+type decisionRow struct {
+	Allowed      bool             `json:"allowed"`
+	Requirements []requirementRow `json:"requirements,omitempty"`
+	Reasons      []reasonRow      `json:"reasons,omitempty"`
+	Risk         riskRow          `json:"risk"`
 }
 
 // encodeJSON renders v, or the given empty literal when there is nothing to
@@ -231,6 +288,186 @@ func decodePrincipal(s string) (identity.Principal, error) {
 		DisplayName: row.DisplayName,
 		Claims:      row.Claims,
 	}, nil
+}
+
+// encodeTimePtr stores an absent instant as NULL rather than as a zero time,
+// because "has not started" and "started at the epoch" are different facts and
+// a column that spelled them alike would lose one of them.
+func encodeTimePtr(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return encodeTime(*t)
+}
+
+func decodeTimePtr(s sql.NullString) (*time.Time, error) {
+	if !s.Valid {
+		return nil, nil
+	}
+	t, err := decodeTime(s.String)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// operationRows redacts as it builds. The value of a change marked sensitive
+// never reaches a column (INV-011), and every operation a plan stores passes
+// through here, so the boundary enforces it rather than trusting each caller to
+// have called Redacted first. The plan hash already excludes these values, so
+// what is read back still verifies against the hash it was approved under.
+func operationRows(ops []plan.PlannedOperation) []operationRow {
+	rows := make([]operationRow, len(ops))
+	for i, o := range ops {
+		row := operationRow{
+			ID:         string(o.ID),
+			Target:     o.Target,
+			Kind:       string(o.Kind),
+			Summary:    o.Summary,
+			Reversible: o.Reversible,
+		}
+		for _, d := range o.Dependencies {
+			row.Dependencies = append(row.Dependencies, string(d))
+		}
+		for _, c := range o.Diff.Changes {
+			cr := changeRow{Path: c.Path, Sensitive: c.Sensitive}
+			if !c.Sensitive {
+				cr.From, cr.To = c.From, c.To
+			}
+			row.Changes = append(row.Changes, cr)
+		}
+		rows[i] = row
+	}
+	return rows
+}
+
+func operationsFrom(rows []operationRow) []plan.PlannedOperation {
+	if len(rows) == 0 {
+		return nil
+	}
+	ops := make([]plan.PlannedOperation, len(rows))
+	for i, row := range rows {
+		o := plan.PlannedOperation{
+			ID:         plan.OperationID(row.ID),
+			Target:     row.Target,
+			Kind:       plan.OperationKind(row.Kind),
+			Summary:    row.Summary,
+			Reversible: row.Reversible,
+		}
+		for _, d := range row.Dependencies {
+			o.Dependencies = append(o.Dependencies, plan.OperationID(d))
+		}
+		for _, c := range row.Changes {
+			o.Diff.Changes = append(o.Diff.Changes, plan.Change{
+				Path:      c.Path,
+				From:      c.From,
+				To:        c.To,
+				Sensitive: c.Sensitive,
+			})
+		}
+		ops[i] = o
+	}
+	return ops
+}
+
+func encodeOperations(ops []plan.PlannedOperation) (string, error) {
+	if len(ops) == 0 {
+		return "[]", nil
+	}
+	return encodeJSON(operationRows(ops), "[]")
+}
+
+func decodeOperations(s string) ([]plan.PlannedOperation, error) {
+	var rows []operationRow
+	if err := decodeJSON(s, &rows); err != nil {
+		return nil, err
+	}
+	return operationsFrom(rows), nil
+}
+
+// encodeRollback stores an absent rollback as NULL. A plan that names no way
+// back is a real answer — some changes have none — and spelling it as an empty
+// object would make it indistinguishable from one whose fields were lost.
+func encodeRollback(r plan.RollbackPlan) (string, error) {
+	if r.FromRelease == "" && r.ToRelease == "" && len(r.Operations) == 0 && !r.Automatic {
+		return "null", nil
+	}
+	return encodeJSON(rollbackRow{
+		FromRelease: string(r.FromRelease),
+		ToRelease:   string(r.ToRelease),
+		Operations:  operationRows(r.Operations),
+		Automatic:   r.Automatic,
+	}, "null")
+}
+
+func decodeRollback(s string) (plan.RollbackPlan, error) {
+	var row *rollbackRow
+	if err := decodeJSON(s, &row); err != nil {
+		return plan.RollbackPlan{}, err
+	}
+	if row == nil {
+		return plan.RollbackPlan{}, nil
+	}
+	return plan.RollbackPlan{
+		FromRelease: identity.ReleaseID(row.FromRelease),
+		ToRelease:   identity.ReleaseID(row.ToRelease),
+		Operations:  operationsFrom(row.Operations),
+		Automatic:   row.Automatic,
+	}, nil
+}
+
+func encodeDecision(d policy.Decision) (string, error) {
+	row := decisionRow{
+		Allowed: d.Allowed,
+		Risk: riskRow{
+			Level: string(d.Risk.Level),
+			Score: d.Risk.Score,
+		},
+	}
+	for _, f := range d.Risk.Factors {
+		row.Risk.Factors = append(row.Risk.Factors, riskFactorRow{Code: f.Code, Message: f.Message})
+	}
+	for _, r := range d.Requirements {
+		row.Requirements = append(row.Requirements, requirementRow{
+			Type:   string(r.Type),
+			Role:   r.Role,
+			Count:  r.Count,
+			Detail: r.Detail,
+		})
+	}
+	for _, r := range d.Reasons {
+		row.Reasons = append(row.Reasons, reasonRow{Code: r.Code, Message: r.Message})
+	}
+	return encodeJSON(row, "{}")
+}
+
+func decodeDecision(s string) (policy.Decision, error) {
+	var row decisionRow
+	if err := decodeJSON(s, &row); err != nil {
+		return policy.Decision{}, err
+	}
+	d := policy.Decision{
+		Allowed: row.Allowed,
+		Risk: policy.RiskAssessment{
+			Level: policy.RiskLevel(row.Risk.Level),
+			Score: row.Risk.Score,
+		},
+	}
+	for _, f := range row.Risk.Factors {
+		d.Risk.Factors = append(d.Risk.Factors, policy.RiskFactor{Code: f.Code, Message: f.Message})
+	}
+	for _, r := range row.Requirements {
+		d.Requirements = append(d.Requirements, policy.Requirement{
+			Type:   policy.RequirementType(r.Type),
+			Role:   r.Role,
+			Count:  r.Count,
+			Detail: r.Detail,
+		})
+	}
+	for _, r := range row.Reasons {
+		d.Reasons = append(d.Reasons, policy.Reason{Code: r.Code, Message: r.Message})
+	}
+	return d, nil
 }
 
 func encodePolicyBindings(ps []environment.PolicyBinding) (string, error) {

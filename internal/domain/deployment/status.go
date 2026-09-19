@@ -1,5 +1,7 @@
 package deployment
 
+import "slices"
+
 // Status is where a deployment has got to. The vocabulary is fixed by spec 4.8
 // and is deliberately the same whatever the target is: an operator reading a
 // timeline should not have to know whether the environment is Kubernetes or a
@@ -94,6 +96,21 @@ var terminalStatuses = map[Status]bool{
 	StatusFailed:     true,
 	StatusRolledBack: true,
 	StatusCancelled:  true,
+}
+
+// TerminalStatuses returns the statuses that end a deployment, in a stable
+// order. Storage needs to ask for the deployment that has *not* finished, and
+// restating which ones those are — in a schema, a query, a partial index —
+// would create a second copy of a vocabulary this package owns, to go stale the
+// first time a status is added. The slice is freshly built on each call so that
+// a caller cannot edit the table through it.
+func TerminalStatuses() []Status {
+	out := make([]Status, 0, len(terminalStatuses))
+	for s := range terminalStatuses {
+		out = append(out, s)
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (s Status) String() string { return string(s) }

@@ -1,15 +1,19 @@
 package memory
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -347,6 +351,163 @@ func findReleaseByVersion(st *state, p identity.ProjectID, version string) (iden
 	return "", false
 }
 
+type plans struct{ s *Store }
+
+// Create stores the plan redacted. The value of a change marked sensitive is
+// never persisted (INV-011), and the SQLite store enforces that at its encoder,
+// so this one has to do the same or the two would differ in exactly the way the
+// conformance suite exists to prevent. The plan hash excludes those values, so
+// what is read back still verifies against the hash it was approved under.
+func (r plans) Create(ctx context.Context, p plan.DeploymentPlan) error {
+	return r.s.write(ctx, func(st *state) error {
+		if err := mustHaveSubject(st, p.ProjectID, p.EnvironmentID, p.ReleaseID); err != nil {
+			return err
+		}
+		if _, taken := st.plans[p.ID]; taken {
+			return fmt.Errorf("plan %s: %w", p.ID, port.ErrAlreadyExists)
+		}
+		st.plans[p.ID] = copyPlan(p.Redacted())
+		return nil
+	})
+}
+
+func (r plans) Get(ctx context.Context, id identity.PlanID) (plan.DeploymentPlan, error) {
+	var out plan.DeploymentPlan
+	err := r.s.read(ctx, func(st *state) error {
+		p, ok := st.plans[id]
+		if !ok {
+			return fmt.Errorf("plan %s: %w", id, port.ErrNotFound)
+		}
+		out = copyPlan(p)
+		return nil
+	})
+	return out, err
+}
+
+type deployments struct{ s *Store }
+
+func (r deployments) Create(ctx context.Context, d deployment.Deployment) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.write(ctx, func(st *state) error {
+		if err := mustHaveSubject(st, d.ProjectID, d.EnvironmentID, d.ReleaseID); err != nil {
+			return err
+		}
+		if _, ok := st.plans[d.PlanID]; !ok {
+			return fmt.Errorf("plan %s: %w", d.PlanID, port.ErrNotFound)
+		}
+		// The deployment this one replaces has to be one we recorded, or the
+		// rollback target would be unresolvable at the moment it is needed.
+		if d.Previous != nil {
+			if _, ok := st.deployments[*d.Previous]; !ok {
+				return fmt.Errorf("deployment %s: %w", *d.Previous, port.ErrNotFound)
+			}
+		}
+		if _, taken := st.deployments[d.ID]; taken {
+			return fmt.Errorf("deployment %s: %w", d.ID, port.ErrAlreadyExists)
+		}
+		d.Revision = first
+		st.deployments[d.ID] = copyDeployment(d)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
+}
+
+func (r deployments) Update(ctx context.Context, d deployment.Deployment) (identity.Revision, error) {
+	var committed identity.Revision
+	err := r.s.write(ctx, func(st *state) error {
+		stored, ok := st.deployments[d.ID]
+		if !ok {
+			return fmt.Errorf("deployment %s: %w", d.ID, port.ErrNotFound)
+		}
+		if !stored.Revision.Matches(d.Revision) {
+			return fmt.Errorf("deployment %s: %w", d.ID, port.ErrRevisionConflict)
+		}
+		committed = stored.Revision.Next()
+		d.Revision = committed
+		st.deployments[d.ID] = copyDeployment(d)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return committed, nil
+}
+
+func (r deployments) Get(ctx context.Context, id identity.DeploymentID) (deployment.Deployment, error) {
+	var out deployment.Deployment
+	err := r.s.read(ctx, func(st *state) error {
+		d, ok := st.deployments[id]
+		if !ok {
+			return fmt.Errorf("deployment %s: %w", id, port.ErrNotFound)
+		}
+		out = copyDeployment(d)
+		return nil
+	})
+	return out, err
+}
+
+func (r deployments) ListForEnvironment(ctx context.Context, e identity.EnvironmentID) ([]deployment.Deployment, error) {
+	var out []deployment.Deployment
+	err := r.s.read(ctx, func(st *state) error {
+		for _, d := range deploymentsIn(st, e) {
+			out = append(out, copyDeployment(d))
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (r deployments) FindActive(ctx context.Context, e identity.EnvironmentID) (deployment.Deployment, error) {
+	var out deployment.Deployment
+	err := r.s.read(ctx, func(st *state) error {
+		for _, d := range deploymentsIn(st, e) {
+			if !d.Status.IsTerminal() {
+				out = copyDeployment(d)
+				return nil
+			}
+		}
+		return fmt.Errorf("active deployment in environment %s: %w", e, port.ErrNotFound)
+	})
+	return out, err
+}
+
+// deploymentsIn returns an environment's deployments most recent first, with
+// the id breaking a tie so that two created in the same instant still have one
+// order. Ordering is part of the contract: the first result is how a caller
+// asks what is currently deployed.
+func deploymentsIn(st *state, e identity.EnvironmentID) []deployment.Deployment {
+	var ds []deployment.Deployment
+	for _, d := range st.deployments {
+		if d.EnvironmentID == e {
+			ds = append(ds, d)
+		}
+	}
+	slices.SortFunc(ds, func(a, b deployment.Deployment) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
+	return ds
+}
+
+// mustHaveSubject checks the three aggregates a plan and a deployment both name.
+func mustHaveSubject(st *state, p identity.ProjectID, e identity.EnvironmentID, rel identity.ReleaseID) error {
+	if _, ok := st.projects[p]; !ok {
+		return fmt.Errorf("project %s: %w", p, port.ErrNotFound)
+	}
+	if _, ok := st.environments[e]; !ok {
+		return fmt.Errorf("environment %s: %w", e, port.ErrNotFound)
+	}
+	if _, ok := st.releases[rel]; !ok {
+		return fmt.Errorf("release %s: %w", rel, port.ErrNotFound)
+	}
+	return nil
+}
+
 func copyProject(p project.Project) project.Project {
 	p.Labels = maps.Clone(p.Labels)
 	return p
@@ -376,4 +537,52 @@ func copyRelease(r release.Release) release.Release {
 	r.Labels = maps.Clone(r.Labels)
 	r.Annotations = maps.Clone(r.Annotations)
 	return r
+}
+
+func copyPlan(p plan.DeploymentPlan) plan.DeploymentPlan {
+	p.Operations = copyOperations(p.Operations)
+	p.Rollback.Operations = copyOperations(p.Rollback.Operations)
+	p.Policy.Requirements = slices.Clone(p.Policy.Requirements)
+	p.Policy.Reasons = slices.Clone(p.Policy.Reasons)
+	p.Policy.Risk.Factors = slices.Clone(p.Policy.Risk.Factors)
+	return p
+}
+
+// copyOperations clones the nested slices too. A shallow copy would leave every
+// stored operation sharing its changes with the caller's, so editing a diff
+// after the plan was persisted would edit the plan — and the hash would then
+// disagree with contents nobody knowingly changed.
+func copyOperations(ops []plan.PlannedOperation) []plan.PlannedOperation {
+	if ops == nil {
+		return nil
+	}
+	out := slices.Clone(ops)
+	for i := range out {
+		out[i].Diff.Changes = slices.Clone(out[i].Diff.Changes)
+		out[i].Dependencies = slices.Clone(out[i].Dependencies)
+	}
+	return out
+}
+
+// copyDeployment copies what the pointers point at, not the pointers. Sharing
+// one would let a caller stamp a start time onto persisted state by writing
+// through a value it merely read, which is the one thing copy-out exists to
+// stop.
+func copyDeployment(d deployment.Deployment) deployment.Deployment {
+	d.Actor.Claims = maps.Clone(d.Actor.Claims)
+	d.StartedAt = copyTime(d.StartedAt)
+	d.FinishedAt = copyTime(d.FinishedAt)
+	if d.Previous != nil {
+		id := *d.Previous
+		d.Previous = &id
+	}
+	return d
+}
+
+func copyTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	at := *t
+	return &at
 }

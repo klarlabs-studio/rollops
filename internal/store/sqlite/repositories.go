@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -27,6 +30,12 @@ func (s *Store) Artifacts() port.ArtifactRepository { return artifactRepo{s} }
 
 // Releases returns the release repository over this store.
 func (s *Store) Releases() port.ReleaseRepository { return releaseRepo{s} }
+
+// Plans returns the deployment plan repository over this store.
+func (s *Store) Plans() port.PlanRepository { return planRepo{s} }
+
+// Deployments returns the deployment repository over this store.
+func (s *Store) Deployments() port.DeploymentRepository { return deploymentRepo{s} }
 
 // Uniqueness and existence are checked with a query rather than by reading the
 // driver's constraint errors. The constraints stay in the schema as the
@@ -666,6 +675,288 @@ func withReleaseArtifacts(ctx context.Context, q querier, rel release.Release) (
 		return release.Release{}, err
 	}
 	return rel, nil
+}
+
+type planRepo struct{ s *Store }
+
+func (r planRepo) Create(ctx context.Context, p plan.DeploymentPlan) error {
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		for _, ref := range []struct{ query, id, what string }{
+			{`SELECT 1 FROM projects WHERE id = ?`, string(p.ProjectID), "project"},
+			{`SELECT 1 FROM environments WHERE id = ?`, string(p.EnvironmentID), "environment"},
+			{`SELECT 1 FROM releases WHERE id = ?`, string(p.ReleaseID), "release"},
+		} {
+			if err := mustExist(ctx, q, ref.query, ref.id,
+				fmt.Sprintf("%s %s", ref.what, ref.id)); err != nil {
+				return err
+			}
+		}
+		if err := mustNotExist(ctx, q,
+			`SELECT 1 FROM plans WHERE id = ?`, p.ID,
+			fmt.Sprintf("plan %s", p.ID),
+		); err != nil {
+			return err
+		}
+		operations, err := encodeOperations(p.Operations)
+		if err != nil {
+			return err
+		}
+		decision, err := encodeDecision(p.Policy)
+		if err != nil {
+			return err
+		}
+		rollback, err := encodeRollback(p.Rollback)
+		if err != nil {
+			return err
+		}
+		createdBy, err := encodePrincipal(p.CreatedBy)
+		if err != nil {
+			return err
+		}
+		_, err = q.ExecContext(ctx,
+			`INSERT INTO plans
+			   (id, project_id, environment_id, release_id, base_revision, strategy,
+			    operations, policy, rollback_plan, created_by, created_at, expires_at, hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.ID, p.ProjectID, p.EnvironmentID, p.ReleaseID, p.BaseRevision, string(p.Strategy),
+			operations, decision, rollback, createdBy,
+			encodeTime(p.CreatedAt), encodeTime(p.ExpiresAt), p.Hash.String(),
+		)
+		return wrap("insert plan", err)
+	})
+}
+
+func (r planRepo) Get(ctx context.Context, id identity.PlanID) (plan.DeploymentPlan, error) {
+	p, err := scanPlan(r.s.conn(ctx).QueryRowContext(ctx, planColumns+` WHERE id = ?`, id))
+	if err != nil {
+		return plan.DeploymentPlan{}, notFoundAs(err, fmt.Sprintf("plan %s", id))
+	}
+	return p, nil
+}
+
+const planColumns = `SELECT id, project_id, environment_id, release_id, base_revision, strategy,
+	operations, policy, rollback_plan, created_by, created_at, expires_at, hash FROM plans`
+
+func scanPlan(sc scanner) (plan.DeploymentPlan, error) {
+	var (
+		p                               plan.DeploymentPlan
+		strategy                        string
+		operations, decision, rollback  string
+		createdBy, createdAt, expiresAt string
+		hash                            string
+	)
+	if err := sc.Scan(&p.ID, &p.ProjectID, &p.EnvironmentID, &p.ReleaseID, &p.BaseRevision,
+		&strategy, &operations, &decision, &rollback, &createdBy, &createdAt, &expiresAt,
+		&hash); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	p.Strategy = deployment.Strategy(strategy)
+
+	var err error
+	if p.Operations, err = decodeOperations(operations); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.Policy, err = decodeDecision(decision); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.Rollback, err = decodeRollback(rollback); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.CreatedBy, err = decodePrincipal(createdBy); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.CreatedAt, err = decodeTime(createdAt); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.ExpiresAt, err = decodeTime(expiresAt); err != nil {
+		return plan.DeploymentPlan{}, err
+	}
+	if p.Hash, err = digest.Parse(hash); err != nil {
+		return plan.DeploymentPlan{}, fmt.Errorf("sqlite: plan %s: %w", p.ID, err)
+	}
+	return p, nil
+}
+
+type deploymentRepo struct{ s *Store }
+
+func (r deploymentRepo) Create(ctx context.Context, d deployment.Deployment) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		for _, ref := range []struct{ query, id, what string }{
+			{`SELECT 1 FROM projects WHERE id = ?`, string(d.ProjectID), "project"},
+			{`SELECT 1 FROM environments WHERE id = ?`, string(d.EnvironmentID), "environment"},
+			{`SELECT 1 FROM releases WHERE id = ?`, string(d.ReleaseID), "release"},
+			{`SELECT 1 FROM plans WHERE id = ?`, string(d.PlanID), "plan"},
+		} {
+			if err := mustExist(ctx, q, ref.query, ref.id,
+				fmt.Sprintf("%s %s", ref.what, ref.id)); err != nil {
+				return err
+			}
+		}
+		// The deployment this one replaces has to be one we recorded. A
+		// dangling reference would make the rollback target unresolvable at
+		// exactly the moment it is needed.
+		if d.Previous != nil {
+			if err := mustExist(ctx, q,
+				`SELECT 1 FROM deployments WHERE id = ?`, string(*d.Previous),
+				fmt.Sprintf("deployment %s", *d.Previous),
+			); err != nil {
+				return err
+			}
+		}
+		if err := mustNotExist(ctx, q,
+			`SELECT 1 FROM deployments WHERE id = ?`, d.ID,
+			fmt.Sprintf("deployment %s", d.ID),
+		); err != nil {
+			return err
+		}
+		actor, err := encodePrincipal(d.Actor)
+		if err != nil {
+			return err
+		}
+		_, err = q.ExecContext(ctx,
+			`INSERT INTO deployments
+			   (id, project_id, environment_id, release_id, plan_id, strategy, status,
+			    trigger_type, trigger_detail, actor, created_at, started_at, finished_at,
+			    previous_id, revision)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.ID, d.ProjectID, d.EnvironmentID, d.ReleaseID, d.PlanID,
+			string(d.Strategy), string(d.Status), string(d.Trigger.Type), d.Trigger.Detail,
+			actor, encodeTime(d.CreatedAt), encodeTimePtr(d.StartedAt), encodeTimePtr(d.FinishedAt),
+			deploymentRef(d.Previous), uint64(first),
+		)
+		return wrap("insert deployment", err)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
+}
+
+func (r deploymentRepo) Update(ctx context.Context, d deployment.Deployment) (identity.Revision, error) {
+	var committed identity.Revision
+	err := r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		stored, err := scanDeployment(q.QueryRowContext(ctx, deploymentColumns+` WHERE id = ?`, d.ID))
+		if err != nil {
+			return notFoundAs(err, fmt.Sprintf("deployment %s", d.ID))
+		}
+		if !stored.Revision.Matches(d.Revision) {
+			return fmt.Errorf("deployment %s: %w", d.ID, port.ErrRevisionConflict)
+		}
+		actor, err := encodePrincipal(d.Actor)
+		if err != nil {
+			return err
+		}
+		committed = stored.Revision.Next()
+		_, err = q.ExecContext(ctx,
+			`UPDATE deployments
+			    SET strategy = ?, status = ?, trigger_type = ?, trigger_detail = ?, actor = ?,
+			        started_at = ?, finished_at = ?, previous_id = ?, revision = ?
+			  WHERE id = ? AND revision = ?`,
+			string(d.Strategy), string(d.Status), string(d.Trigger.Type), d.Trigger.Detail, actor,
+			encodeTimePtr(d.StartedAt), encodeTimePtr(d.FinishedAt), deploymentRef(d.Previous),
+			committed, d.ID, stored.Revision,
+		)
+		return wrap("update deployment", err)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return committed, nil
+}
+
+func (r deploymentRepo) Get(ctx context.Context, id identity.DeploymentID) (deployment.Deployment, error) {
+	d, err := scanDeployment(r.s.conn(ctx).QueryRowContext(ctx, deploymentColumns+` WHERE id = ?`, id))
+	if err != nil {
+		return deployment.Deployment{}, notFoundAs(err, fmt.Sprintf("deployment %s", id))
+	}
+	return d, nil
+}
+
+// ListForEnvironment orders by creation time descending, with the id breaking a
+// tie so that two deployments created in the same instant still have one order
+// rather than the driver's. Ordering is part of the contract: the first result
+// is how a caller asks what is currently deployed.
+func (r deploymentRepo) ListForEnvironment(ctx context.Context, e identity.EnvironmentID) ([]deployment.Deployment, error) {
+	rows, err := r.s.conn(ctx).QueryContext(ctx,
+		deploymentColumns+` WHERE environment_id = ? ORDER BY created_at DESC, id DESC`, e)
+	if err != nil {
+		return nil, wrap("list deployments", err)
+	}
+	return collect(rows, scanDeployment)
+}
+
+// FindActive asks for the deployment that has not finished. Which statuses
+// count as finished comes from the domain rather than from the schema, so a new
+// status is added in one place; the query only has to know how to exclude them.
+func (r deploymentRepo) FindActive(ctx context.Context, e identity.EnvironmentID) (deployment.Deployment, error) {
+	terminal := deployment.TerminalStatuses()
+	marks := make([]string, len(terminal))
+	args := make([]any, 0, len(terminal)+1)
+	args = append(args, e)
+	for i, s := range terminal {
+		marks[i] = "?"
+		args = append(args, string(s))
+	}
+	query := deploymentColumns + ` WHERE environment_id = ? AND status NOT IN (` +
+		strings.Join(marks, ", ") + `) ORDER BY created_at DESC, id DESC LIMIT 1`
+
+	d, err := scanDeployment(r.s.conn(ctx).QueryRowContext(ctx, query, args...))
+	if err != nil {
+		return deployment.Deployment{}, notFoundAs(err,
+			fmt.Sprintf("active deployment in environment %s", e))
+	}
+	return d, nil
+}
+
+const deploymentColumns = `SELECT id, project_id, environment_id, release_id, plan_id,
+	strategy, status, trigger_type, trigger_detail, actor, created_at, started_at,
+	finished_at, previous_id, revision FROM deployments`
+
+func scanDeployment(sc scanner) (deployment.Deployment, error) {
+	var (
+		d                                 deployment.Deployment
+		strategy, status, triggerType     string
+		actor, createdAt                  string
+		startedAt, finishedAt, previousID sql.NullString
+	)
+	if err := sc.Scan(&d.ID, &d.ProjectID, &d.EnvironmentID, &d.ReleaseID, &d.PlanID,
+		&strategy, &status, &triggerType, &d.Trigger.Detail, &actor, &createdAt,
+		&startedAt, &finishedAt, &previousID, &d.Revision); err != nil {
+		return deployment.Deployment{}, err
+	}
+	d.Strategy = deployment.Strategy(strategy)
+	d.Status = deployment.Status(status)
+	d.Trigger.Type = deployment.TriggerType(triggerType)
+
+	var err error
+	if d.Actor, err = decodePrincipal(actor); err != nil {
+		return deployment.Deployment{}, err
+	}
+	if d.CreatedAt, err = decodeTime(createdAt); err != nil {
+		return deployment.Deployment{}, err
+	}
+	if d.StartedAt, err = decodeTimePtr(startedAt); err != nil {
+		return deployment.Deployment{}, err
+	}
+	if d.FinishedAt, err = decodeTimePtr(finishedAt); err != nil {
+		return deployment.Deployment{}, err
+	}
+	if previousID.Valid {
+		id := identity.DeploymentID(previousID.String)
+		d.Previous = &id
+	}
+	return d, nil
+}
+
+func deploymentRef(id *identity.DeploymentID) any {
+	if id == nil {
+		return nil
+	}
+	return string(*id)
 }
 
 // scanner is what *sql.Row and *sql.Rows have in common, so one scan function

@@ -14,8 +14,10 @@ import (
 
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -38,6 +40,8 @@ type state struct {
 	environments map[identity.EnvironmentID]environment.Environment
 	artifacts    map[identity.ArtifactID]artifact.Artifact
 	releases     map[identity.ReleaseID]release.Release
+	plans        map[identity.PlanID]plan.DeploymentPlan
+	deployments  map[identity.DeploymentID]deployment.Deployment
 }
 
 func newState() *state {
@@ -46,6 +50,8 @@ func newState() *state {
 		environments: map[identity.EnvironmentID]environment.Environment{},
 		artifacts:    map[identity.ArtifactID]artifact.Artifact{},
 		releases:     map[identity.ReleaseID]release.Release{},
+		plans:        map[identity.PlanID]plan.DeploymentPlan{},
+		deployments:  map[identity.DeploymentID]deployment.Deployment{},
 	}
 }
 
@@ -57,6 +63,8 @@ func (s *state) clone() *state {
 		environments: maps.Clone(s.environments),
 		artifacts:    maps.Clone(s.artifacts),
 		releases:     maps.Clone(s.releases),
+		plans:        maps.Clone(s.plans),
+		deployments:  maps.Clone(s.deployments),
 	}
 }
 
@@ -125,6 +133,12 @@ func (s *Store) Artifacts() port.ArtifactRepository { return artifacts{s} }
 
 // Releases returns the release repository over this store.
 func (s *Store) Releases() port.ReleaseRepository { return releases{s} }
+
+// Plans returns the deployment plan repository over this store.
+func (s *Store) Plans() port.PlanRepository { return plans{s} }
+
+// Deployments returns the deployment repository over this store.
+func (s *Store) Deployments() port.DeploymentRepository { return deployments{s} }
 
 // sortedByID returns the values of m ordered by key. Identifiers are UUIDv7, so
 // this is creation order — and it is stable, which map iteration is not.
