@@ -2,6 +2,7 @@ package conformancev2_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -196,6 +197,29 @@ func TestAMinimalTargetPassesEveryAxis(t *testing.T) {
 	errs := suiteFor(t, func() *mem { return newMem(healthy()) })
 	if len(errs) != 0 {
 		t.Fatalf("a target with no optional capabilities failed: %v", errs)
+	}
+}
+
+// TestAnAxisWithNothingToMeasureSaysSo separates "passed" from "never ran".
+// A suite that names no secret has nothing to look for, and reporting that as
+// a green tick is the same quiet lie about capability the suite exists to
+// catch — one axis short of what the reader was told was measured.
+func TestAnAxisWithNothingToMeasureSaysSo(t *testing.T) {
+	tgt := newMem(healthy())
+	desired := targetv2.DesiredState{Kind: "mem", Spec: []byte("x"), Checksum: "sum-1"}
+
+	err := conformancev2.CheckSecretsStayOut(context.Background(), tgt, desired, nil)
+	if !errors.Is(err, conformancev2.ErrNotApplicable) {
+		t.Fatalf("an axis with no secret to look for returned %v, want ErrNotApplicable", err)
+	}
+
+	// Not applicable is not a failure either: Check must not report it.
+	errs := conformancev2.Suite{
+		New:     func() (targetv2.Target, error) { return newMem(healthy()), nil },
+		Desired: desired,
+	}.Check(context.Background())
+	if len(errs) != 0 {
+		t.Fatalf("a skipped axis was reported as a failure: %v", errs)
 	}
 }
 

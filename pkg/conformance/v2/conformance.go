@@ -35,6 +35,14 @@ import (
 // the suite waits before reporting that the target ignored one.
 const callBudget = 30 * time.Second
 
+// ErrNotApplicable reports that an axis had nothing to measure — which is not
+// the same as the target having passed it. Run turns it into a skipped
+// subtest and Check leaves it out of the failures, so that the one thing a
+// reader cannot conclude from a green run is that an axis was checked when it
+// was not. That is the same quiet lie about capability the suite exists to
+// catch, and it would be embarrassing to ship it here.
+var ErrNotApplicable = errors.New("conformance: nothing to measure on this axis")
+
 // Factory returns a fresh target. Each axis gets its own, because an axis that
 // inherits the state another left behind is an axis whose verdict depends on
 // the order they ran in.
@@ -107,7 +115,10 @@ func (s Suite) Run(t *testing.T) {
 			if err != nil {
 				t.Fatalf("construct target: %v", err)
 			}
-			if err := a.run(ctx, tgt, s); err != nil {
+			switch err := a.run(ctx, tgt, s); {
+			case errors.Is(err, ErrNotApplicable):
+				t.Skip(err)
+			case err != nil:
 				t.Error(err)
 			}
 		})
@@ -125,7 +136,7 @@ func (s Suite) Check(ctx context.Context) []error {
 			errs = append(errs, fmt.Errorf("conformance: %s: construct target: %w", a.name, err))
 			continue
 		}
-		if err := a.run(ctx, tgt, s); err != nil {
+		if err := a.run(ctx, tgt, s); err != nil && !errors.Is(err, ErrNotApplicable) {
 			errs = append(errs, err)
 		}
 	}
@@ -347,7 +358,7 @@ func checkAbandoned(ctx context.Context, what string, want targetv2.Kind, call f
 // persisted it in every audit record that plan appears in.
 func CheckSecretsStayOut(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState, secrets []string) error {
 	if len(secrets) == 0 {
-		return nil
+		return ErrNotApplicable
 	}
 
 	var said []string
