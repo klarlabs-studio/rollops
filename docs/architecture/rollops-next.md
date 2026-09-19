@@ -1349,6 +1349,7 @@ artifact.registered
 release.created
 
 deployment.plan.created
+deployment.queued
 deployment.approval.requested
 deployment.approved
 deployment.started
@@ -1375,6 +1376,14 @@ reconcile.failed
 policy.evaluated
 security.access_denied
 ```
+
+`deployment.queued` is not in the original list and was added once apply and
+execution were separated. §42.3 describes them as adjacent steps, but apply
+admits a deployment and stops: what carries it through is the engine, which may
+pick it up much later. Without this event a deployment has no timeline at all
+between being admitted and being started, so an operator asking what happened
+to their apply sees nothing — and the one question they are asking is whether
+it went through.
 
 Pipeline phase later:
 
@@ -2809,7 +2818,7 @@ Engine:
 5. re-evaluate required policy conditions;
 6. verify approvals;
 7. acquire environment/target lease;
-8. create Deployment;
+8. create Deployment and append `deployment.queued`;
 9. append `deployment.started`;
 10. execute operation DAG;
 11. observe;

@@ -172,6 +172,7 @@ func newHarness(t *testing.T) *harness {
 		Policy:       pol,
 		Clock:        clk,
 		IDs:          gen,
+		Events:       store.Events(),
 		PlanLifetime: time.Hour,
 	})
 	if err != nil {

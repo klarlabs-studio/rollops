@@ -355,7 +355,8 @@ func TestTheVocabularyMatchesTheSpec(t *testing.T) {
 	// the canon, or the reverse, is a failing test rather than a silent drift.
 	want := strings.Fields(`
 		project.created environment.created artifact.registered release.created
-		deployment.plan.created deployment.approval.requested deployment.approved
+		deployment.plan.created deployment.queued
+		deployment.approval.requested deployment.approved
 		deployment.started deployment.operation.started
 		deployment.operation.completed deployment.operation.failed
 		deployment.verification.started deployment.verification.completed

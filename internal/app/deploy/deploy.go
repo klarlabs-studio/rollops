@@ -110,6 +110,12 @@ type Config struct {
 	Clock        identity.Clock
 	IDs          identity.Generator
 
+	// Events is the domain event log. Both calls write to it inside the same
+	// transaction as the aggregate they are recording, so the timeline cannot
+	// describe a plan that was never stored or omit a deployment that was
+	// (ADR-0003).
+	Events port.EventLog
+
 	// PlanLifetime is how long a plan stays applicable. It bounds the window in
 	// which the world can drift away from what was reviewed.
 	PlanLifetime time.Duration
@@ -136,6 +142,7 @@ func New(cfg Config) (*Service, error) {
 		{"policy engine", cfg.Policy != nil},
 		{"clock", cfg.Clock != nil},
 		{"id generator", cfg.IDs != nil},
+		{"event log", cfg.Events != nil},
 		{"plan lifetime", cfg.PlanLifetime > 0},
 	} {
 		if !d.present {
@@ -218,8 +225,13 @@ func (s *Service) Plan(ctx context.Context, cmd PlanCommand) (plan.DeploymentPla
 	if err != nil {
 		return plan.DeploymentPlan{}, err
 	}
-	if err := s.cfg.Plans.Create(ctx, p); err != nil {
-		return plan.DeploymentPlan{}, fmt.Errorf("deploy: storing plan: %w", err)
+	if err := s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := s.cfg.Plans.Create(ctx, p); err != nil {
+			return fmt.Errorf("deploy: storing plan: %w", err)
+		}
+		return s.recordPlan(ctx, cmd.Actor, p)
+	}); err != nil {
+		return plan.DeploymentPlan{}, err
 	}
 	return p, nil
 }
@@ -308,6 +320,9 @@ func (s *Service) Apply(ctx context.Context, cmd ApplyCommand) (deployment.Deplo
 			return fmt.Errorf("deploy: storing deployment: %w", err)
 		}
 		d.Revision = rev
+		if err := s.recordAdmission(ctx, cmd, p, d, next); err != nil {
+			return err
+		}
 		admitted = d
 		return nil
 	})

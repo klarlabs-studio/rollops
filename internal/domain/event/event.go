@@ -49,6 +49,7 @@ const (
 	ReleaseCreated     Type = "release.created"
 
 	DeploymentPlanCreated         Type = "deployment.plan.created"
+	DeploymentQueued              Type = "deployment.queued"
 	DeploymentApprovalRequested   Type = "deployment.approval.requested"
 	DeploymentApproved            Type = "deployment.approved"
 	DeploymentStarted             Type = "deployment.started"
@@ -77,7 +78,8 @@ const (
 
 var types = []Type{
 	ProjectCreated, EnvironmentCreated, ArtifactRegistered, ReleaseCreated,
-	DeploymentPlanCreated, DeploymentApprovalRequested, DeploymentApproved,
+	DeploymentPlanCreated, DeploymentQueued,
+	DeploymentApprovalRequested, DeploymentApproved,
 	DeploymentStarted, DeploymentOperationStarted, DeploymentOperationCompleted,
 	DeploymentOperationFailed, DeploymentVerificationStarted,
 	DeploymentVerificationDone, DeploymentPaused, DeploymentPromotionStarted,
