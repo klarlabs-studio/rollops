@@ -195,11 +195,53 @@ func TestAnAlreadyAppliedVersionIsSkipped(t *testing.T) {
 }
 
 func TestTheDomainMigrationsAreWellFormed(t *testing.T) {
-	if len(domainMigrations) == 0 {
-		t.Skip("no domain migrations yet")
-	}
-	if err := applyVersioned(context.Background(), openRaw(t), domainMigrations); err != nil {
+	db := openRaw(t)
+	if err := applyVersioned(context.Background(), db, domainMigrations); err != nil {
 		t.Fatalf("domain migrations do not apply to an empty database: %v", err)
+	}
+	got := appliedVersions(t, db)
+	if len(got) != len(domainMigrations) {
+		t.Fatalf("applied = %v, want %d versions", got, len(domainMigrations))
+	}
+	for i, m := range domainMigrations {
+		if got[i] != m.version {
+			t.Errorf("applied[%d] = %d, want %d", i, got[i], m.version)
+		}
+	}
+}
+
+// Spec 36 asks for an upgrade test from the latest released schema. The legacy
+// path is that schema, so opening a database is the upgrade: what this asserts
+// is that the domain tables arrive on top of it rather than only onto an empty
+// file.
+func TestOpeningUpgradesTheLegacySchemaToTheDomainModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollops.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	last := domainMigrations[len(domainMigrations)-1].version
+	applied := appliedVersions(t, s.db)
+	if applied[len(applied)-1] != last {
+		t.Errorf("applied = %v, want it to end at %d", applied, last)
+	}
+
+	if _, err := s.db.Exec(
+		`INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		"prj_1", "checkout", "2026-09-19T00:00:00Z", "2026-09-19T00:00:00Z",
+	); err != nil {
+		t.Fatalf("the domain schema is not usable: %v", err)
+	}
+
+	// An environment may not name a project that does not exist: the foreign
+	// keys have to be live, not merely declared.
+	if _, err := s.db.Exec(
+		`INSERT INTO environments (id, project_id, name, kind) VALUES (?, ?, ?, ?)`,
+		"env_1", "prj_missing", "production", "production",
+	); err == nil {
+		t.Error("an environment was accepted for a project that does not exist")
 	}
 }
 

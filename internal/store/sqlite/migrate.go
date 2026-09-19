@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"fmt"
 )
 
@@ -19,9 +20,14 @@ type migration struct {
 	sql     string
 }
 
+//go:embed migrations/0012_domain_model.sql
+var migration0012 string
+
 // domainMigrations holds the schema for the domain model, starting above the
 // legacy baseline.
-var domainMigrations []migration
+var domainMigrations = []migration{
+	{version: 12, name: "domain_model", sql: migration0012},
+}
 
 // applyVersioned brings db up to the last migration in ms. Each migration runs
 // in its own transaction together with the row recording it, so a failure
