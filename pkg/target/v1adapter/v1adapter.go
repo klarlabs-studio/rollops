@@ -10,6 +10,8 @@ package v1adapter
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 
 	v1 "go.klarlabs.de/rollops/pkg/target"
@@ -130,6 +132,14 @@ func (a *Adapter) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.
 			return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindInternal, "Plan", err, "render: %v", err)
 		}
 		res.Rendered = rendered
+		// Referenced is v1's way of saying the desired checksum is over a
+		// pointer rather than over what the pointer resolved to. v2 says it by
+		// carrying the second checksum instead, so the host never has to ask
+		// why the bytes are what they are.
+		if r.Referenced(m) {
+			sum := sha256.Sum256(rendered)
+			res.RenderedChecksum = hex.EncodeToString(sum[:])
+		}
 	}
 	// A refused preflight is a blocker, not an error: the plan succeeded in
 	// establishing that the apply would not.

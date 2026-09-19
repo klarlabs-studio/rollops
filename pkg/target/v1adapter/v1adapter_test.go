@@ -2,6 +2,8 @@ package v1adapter_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -38,6 +40,7 @@ type rich struct {
 	diff         string
 	preflightErr error
 	reaped       int
+	inline       bool // the spec is the manifest, so its checksum already identifies it
 }
 
 func (r *rich) Diff(context.Context, v1.Manifest) (string, error) { return r.diff, nil }
@@ -48,7 +51,7 @@ func (r *rich) Render(_ context.Context, m v1.Manifest) ([]byte, error) {
 	return append([]byte("rendered:"), m.Spec...), nil
 }
 
-func (r *rich) Referenced(v1.Manifest) bool { return true }
+func (r *rich) Referenced(v1.Manifest) bool { return !r.inline }
 
 func (r *rich) Resources(context.Context) ([]v1.Resource, error) {
 	return []v1.Resource{{Kind: "Deployment", Name: "api", Status: "ready"}}, nil
@@ -192,6 +195,37 @@ func TestPlanLooksWithoutTouching(t *testing.T) {
 	}
 	if len(res.Blockers) != 0 {
 		t.Errorf("a passing preflight produced blockers %v", res.Blockers)
+	}
+}
+
+// TestAPointerSpecGetsAChecksumOverWhatItRenderedTo is how drift stays
+// measurable against a referenced source. A spec that names a Helm chart or a
+// path has a checksum over the pointer, and editing the files behind it leaves
+// that checksum untouched — so the plan carries a second one, taken over the
+// bytes the pointer actually resolved to.
+func TestAPointerSpecGetsAChecksumOverWhatItRenderedTo(t *testing.T) {
+	a := v1adapter.New(&rich{}, meta())
+	res, err := a.Plan(context.Background(), targetv2.PlanRequest{Desired: desired("abc")})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	sum := sha256.Sum256(res.Rendered)
+	if want := hex.EncodeToString(sum[:]); res.RenderedChecksum != want {
+		t.Errorf("rendered checksum %q, want %q — the sum of what Plan rendered", res.RenderedChecksum, want)
+	}
+}
+
+// TestAnInlineSpecKeepsItsOwnChecksum is the other half. The spec is the
+// manifest, so its checksum already identifies what gets applied and a second
+// one would be the engine re-keying a manifest that never moved.
+func TestAnInlineSpecKeepsItsOwnChecksum(t *testing.T) {
+	a := v1adapter.New(&rich{inline: true}, meta())
+	res, err := a.Plan(context.Background(), targetv2.PlanRequest{Desired: desired("abc")})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if res.RenderedChecksum != "" {
+		t.Errorf("an inline spec was re-keyed to %q", res.RenderedChecksum)
 	}
 }
 

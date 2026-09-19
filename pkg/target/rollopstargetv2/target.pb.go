@@ -582,13 +582,20 @@ func (x *PlanRequest) GetDesired() *DesiredState {
 // MUST NOT apply. Empty means nothing is known to block it — which is also what
 // a target that could not check says, because it does not claim success.
 type PlanResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Changes       bool                   `protobuf:"varint,1,opt,name=changes,proto3" json:"changes,omitempty"`
-	Diff          string                 `protobuf:"bytes,2,opt,name=diff,proto3" json:"diff,omitempty"`
-	Rendered      []byte                 `protobuf:"bytes,3,opt,name=rendered,proto3" json:"rendered,omitempty"`
-	Blockers      []string               `protobuf:"bytes,4,rep,name=blockers,proto3" json:"blockers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Changes  bool                   `protobuf:"varint,1,opt,name=changes,proto3" json:"changes,omitempty"`
+	Diff     string                 `protobuf:"bytes,2,opt,name=diff,proto3" json:"diff,omitempty"`
+	Rendered []byte                 `protobuf:"bytes,3,opt,name=rendered,proto3" json:"rendered,omitempty"`
+	Blockers []string               `protobuf:"bytes,4,rep,name=blockers,proto3" json:"blockers,omitempty"`
+	// rendered_checksum identifies the bytes in rendered, and is set only when
+	// the desired checksum does not. A desired state that points at an external
+	// source — a Helm chart, a kustomization, a path — is checksummed over the
+	// pointer, and editing the files behind it leaves that checksum untouched.
+	// The host records this one instead, so drift is measured against what was
+	// deployed rather than against what it was asked for.
+	RenderedChecksum string `protobuf:"bytes,5,opt,name=rendered_checksum,json=renderedChecksum,proto3" json:"rendered_checksum,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PlanResponse) Reset() {
@@ -647,6 +654,13 @@ func (x *PlanResponse) GetBlockers() []string {
 		return x.Blockers
 	}
 	return nil
+}
+
+func (x *PlanResponse) GetRenderedChecksum() string {
+	if x != nil {
+		return x.RenderedChecksum
+	}
+	return ""
 }
 
 // ApplyRequest converges on desired. idempotency_key is mandatory and is minted
@@ -1280,12 +1294,13 @@ const file_rollops_target_v2_target_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"H\n" +
 	"\vPlanRequest\x129\n" +
-	"\adesired\x18\x01 \x01(\v2\x1f.rollops.target.v2.DesiredStateR\adesired\"t\n" +
+	"\adesired\x18\x01 \x01(\v2\x1f.rollops.target.v2.DesiredStateR\adesired\"\xa1\x01\n" +
 	"\fPlanResponse\x12\x18\n" +
 	"\achanges\x18\x01 \x01(\bR\achanges\x12\x12\n" +
 	"\x04diff\x18\x02 \x01(\tR\x04diff\x12\x1a\n" +
 	"\brendered\x18\x03 \x01(\fR\brendered\x12\x1a\n" +
-	"\bblockers\x18\x04 \x03(\tR\bblockers\"r\n" +
+	"\bblockers\x18\x04 \x03(\tR\bblockers\x12+\n" +
+	"\x11rendered_checksum\x18\x05 \x01(\tR\x10renderedChecksum\"r\n" +
 	"\fApplyRequest\x129\n" +
 	"\adesired\x18\x01 \x01(\v2\x1f.rollops.target.v2.DesiredStateR\adesired\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\"Y\n" +

@@ -71,10 +71,11 @@ func (s *Server) Plan(ctx context.Context, req *pb.PlanRequest) (*pb.PlanRespons
 		return nil, toStatus(err)
 	}
 	return &pb.PlanResponse{
-		Changes:  res.Changes,
-		Diff:     res.Diff,
-		Rendered: res.Rendered,
-		Blockers: res.Blockers,
+		Changes:          res.Changes,
+		Diff:             res.Diff,
+		Rendered:         res.Rendered,
+		Blockers:         res.Blockers,
+		RenderedChecksum: res.RenderedChecksum,
 	}, nil
 }
 

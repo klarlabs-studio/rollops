@@ -140,6 +140,14 @@ message PlanResponse {
   string diff = 2;
   bytes rendered = 3;
   repeated string blockers = 4;
+
+  // rendered_checksum identifies the bytes in rendered, and is set only when
+  // the desired checksum does not. A desired state that points at an external
+  // source — a Helm chart, a kustomization, a path — is checksummed over the
+  // pointer, and editing the files behind it leaves that checksum untouched.
+  // The host records this one instead, so drift is measured against what was
+  // deployed rather than against what it was asked for.
+  string rendered_checksum = 5;
 }
 
 // ApplyRequest converges on desired. idempotency_key is mandatory and is minted

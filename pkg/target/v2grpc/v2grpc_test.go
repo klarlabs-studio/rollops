@@ -288,10 +288,11 @@ func TestTheDesiredStateArrivesByteForByte(t *testing.T) {
 
 func TestAPlanCrossesWithItsBlockers(t *testing.T) {
 	c := dial(t, &fake{plan: targetv2.PlanResult{
-		Changes:  true,
-		Diff:     "- replicas: 3",
-		Rendered: []byte("rendered"),
-		Blockers: []string{"rbac: cannot create middlewares"},
+		Changes:          true,
+		Diff:             "- replicas: 3",
+		Rendered:         []byte("rendered"),
+		Blockers:         []string{"rbac: cannot create middlewares"},
+		RenderedChecksum: "sha:over-the-rendered-bytes",
 	}})
 
 	res, err := c.Plan(context.Background(), targetv2.PlanRequest{})
@@ -303,6 +304,11 @@ func TestAPlanCrossesWithItsBlockers(t *testing.T) {
 	}
 	if len(res.Blockers) != 1 {
 		t.Fatalf("blockers arrived as %v", res.Blockers)
+	}
+	// Losing this in transit would silently restore the bug it exists to fix:
+	// the host would key drift on the pointer's checksum again.
+	if res.RenderedChecksum != "sha:over-the-rendered-bytes" {
+		t.Errorf("rendered checksum arrived as %q", res.RenderedChecksum)
 	}
 }
 

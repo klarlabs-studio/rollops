@@ -70,10 +70,11 @@ func (c *Client) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.P
 		return targetv2.PlanResult{}, fromStatus("Plan", err)
 	}
 	return targetv2.PlanResult{
-		Changes:  res.GetChanges(),
-		Diff:     res.GetDiff(),
-		Rendered: res.GetRendered(),
-		Blockers: res.GetBlockers(),
+		Changes:          res.GetChanges(),
+		Diff:             res.GetDiff(),
+		Rendered:         res.GetRendered(),
+		Blockers:         res.GetBlockers(),
+		RenderedChecksum: res.GetRenderedChecksum(),
 	}, nil
 }
 

@@ -121,6 +121,14 @@ type PlanResult struct {
 	Diff     string
 	Rendered []byte
 	Blockers []string
+
+	// RenderedChecksum identifies the bytes in Rendered, and is set only when
+	// the desired checksum does not. A desired state that points at an external
+	// source — a Helm chart, a kustomization, a path — is checksummed over the
+	// pointer, and editing the files behind it leaves that checksum untouched.
+	// The host records this one instead, so drift is measured against what was
+	// deployed rather than against what it was asked for.
+	RenderedChecksum string
 }
 
 // ApplyRequest converges on Desired. IdempotencyKey is mandatory and is minted
