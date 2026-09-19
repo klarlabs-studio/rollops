@@ -4,7 +4,9 @@ updated: 2026-08-14
 
 # Architecture (reference)
 
-Canonical source: `rollops-tdd.md`. This is the quick map.
+Quick map of what ships today; the record of it is
+`docs/legacy/rollops-tdd.md`. The intended architecture — Release-centric
+delivery control plane — is `docs/architecture/rollops-next.md`.
 
 ## Shape
 

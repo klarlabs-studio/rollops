@@ -1,5 +1,12 @@
 # Rollops — Vision Document
 
+> **SUPERSEDED (2026-09-19).** This document describes the v0.x product as
+> *rollout orchestration*. The intended architecture is now
+> `docs/architecture/rollops-next.md`, which reframes Rollops as a software
+> delivery control plane built around an immutable Release. This file is kept
+> because it still describes the **implemented baseline** accurately — not
+> because it describes the direction. Do not cite it as direction.
+
 *Rollout operations for the agentic web*
 **Umbrella:** Klarlatz · **Status:** Dogfooded OSS (v0.30.0)
 

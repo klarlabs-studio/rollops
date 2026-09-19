@@ -25,7 +25,7 @@ func TestHonestyDocsDoNotClaimUnwiredSurfaces(t *testing.T) {
 			},
 		},
 		{
-			rel: "rollops-vision.md",
+			rel: "docs/legacy/rollops-vision.md",
 			forbidden: []string{
 				"Concept / pre-MVP",
 				"uses decision-kit directly",
@@ -34,7 +34,7 @@ func TestHonestyDocsDoNotClaimUnwiredSurfaces(t *testing.T) {
 			},
 		},
 		{
-			rel: "rollops-tdd.md",
+			rel: "docs/legacy/rollops-tdd.md",
 			forbidden: []string{
 				"SQLite/PG/mnemos",
 				"runnable standalone",

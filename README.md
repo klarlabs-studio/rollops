@@ -28,7 +28,9 @@ Kubernetes: [`examples/hetero/`](examples/hetero/).
 The **engine is a Go library** at the center; every interface — CLI, daemon,
 MCP, UI — is a thin client over it. One-shot CLI runs the engine in-process
 (no daemon); the daemon wraps the same engine behind authenticated HTTP/JSON
-and gRPC surfaces, with the MCP server embedded. See `rollops-tdd.md`.
+and gRPC surfaces, with the MCP server embedded. This describes what ships
+today — see [`docs/legacy/rollops-tdd.md`](docs/legacy/rollops-tdd.md). Where
+the product is going is [`docs/architecture/rollops-next.md`](docs/architecture/rollops-next.md).
 
 ## Layout
 

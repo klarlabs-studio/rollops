@@ -1,5 +1,14 @@
 # Rollops — Technical Design Document
 
+> **SUPERSEDED (2026-09-19).** The intended architecture is now
+> `docs/architecture/rollops-next.md`. This document remains an accurate record
+> of the **implemented v0.x baseline** — the engine, targets, conformance suite,
+> risk gates and reconcile loop that the new architecture migrates rather than
+> discards (spec §2). Two of its constraints are explicitly reversed by the new
+> spec: verification/metric analysis is now a first-class subsystem rather than
+> Phase 2 deferred work, and the Target contract moves to SDK v2. Do not cite
+> this file as direction.
+
 *Rollout operations for the agentic web*
 **Umbrella:** Klarlatz · **Status:** Dogfooded OSS design · **Companion to:** `rollops-vision.md`
 
