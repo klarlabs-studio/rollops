@@ -77,19 +77,31 @@ func (p Principal) Validate() error {
 // Redacted returns a copy safe to render in an audit entry, an API response or
 // a log (INV-012). The receiver is untouched.
 func (p Principal) Redacted() Principal {
-	if p.Claims == nil {
-		return p
+	p.Claims = RedactSecrets(p.Claims)
+	return p
+}
+
+// RedactSecrets returns a copy of m with the value of every secret-looking key
+// replaced (INV-012). A nil map stays nil, so an absent map does not quietly
+// become an empty one on the way through.
+//
+// It is exported because claims are not the only string map that travels with a
+// mutation: an event envelope carries metadata of the same shape, and metadata
+// is where a forwarded request header lands. One denylist guarding both beats
+// two that drift apart.
+func RedactSecrets(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
 	}
-	claims := make(map[string]string, len(p.Claims))
-	for k, v := range p.Claims {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
 		if isSecretClaim(k) {
-			claims[k] = redacted
+			out[k] = redacted
 			continue
 		}
-		claims[k] = v
+		out[k] = v
 	}
-	p.Claims = claims
-	return p
+	return out
 }
 
 func isSecretClaim(key string) bool {

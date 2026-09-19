@@ -356,6 +356,30 @@ func TestPrincipalRedactsCredentialBearingClaims(t *testing.T) {
 	}
 }
 
+// Claims are not the only string map that travels with a mutation — an event
+// envelope carries metadata of the same shape, and metadata is exactly where a
+// forwarded header ends up. The denylist is worth one implementation rather
+// than two that drift apart, so it is reachable without a Principal.
+func TestRedactSecretsGuardsAnyStringMap(t *testing.T) {
+	in := map[string]string{
+		"source":          "webhook",
+		"x-authorization": "Bearer abc.def",
+	}
+	got := RedactSecrets(in)
+	if got["source"] != "webhook" {
+		t.Errorf("benign entry was altered: %q", got["source"])
+	}
+	if got["x-authorization"] != redacted {
+		t.Errorf("x-authorization = %q, want %q", got["x-authorization"], redacted)
+	}
+	if in["x-authorization"] != "Bearer abc.def" {
+		t.Error("RedactSecrets mutated its argument")
+	}
+	if RedactSecrets(nil) != nil {
+		t.Error("a nil map should stay nil rather than become an empty one")
+	}
+}
+
 func TestPrincipalWithoutClaimsRedactsCleanly(t *testing.T) {
 	p := Principal{ID: "reconciler", Type: PrincipalSystem}
 	got := p.Redacted()
