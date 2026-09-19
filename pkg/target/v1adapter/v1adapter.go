@@ -6,6 +6,13 @@
 // the one place a type assertion on a target is still correct, and it is
 // correct because both sides are in this process, on a value this code holds
 // — which is exactly what stops being true once the target is a subprocess.
+//
+// Failures keep the kind their cause carried. A v1 target that returns a plain
+// error still reads as KindInternal, which is what KindOf says of anything it
+// does not recognise; one that already speaks v2's vocabulary, or that returns
+// a context error, is not flattened on the way through. The adapter cannot
+// classify a v1 error itself, and a kind that callers branch on is not
+// something to put behind a heuristic.
 package v1adapter
 
 import (
@@ -82,7 +89,7 @@ func (a *Adapter) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targe
 	}
 	fp, err := a.inner.Observe(ctx)
 	if err != nil {
-		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindInternal, "Inspect", err, "observe: %v", err)
+		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindOf(err), "Inspect", err, "observe: %v", err)
 	}
 	state := targetv2.ObservedState{Fingerprint: fp.Value, Meta: fp.Meta}
 	insp, ok := a.inner.(v1.Inspector)
@@ -91,7 +98,7 @@ func (a *Adapter) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targe
 	}
 	rs, err := insp.Resources(ctx)
 	if err != nil {
-		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindInternal, "Inspect", err, "resources: %v", err)
+		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindOf(err), "Inspect", err, "resources: %v", err)
 	}
 	for _, r := range rs {
 		state.Resources = append(state.Resources, targetv2.Resource{
@@ -122,7 +129,7 @@ func (a *Adapter) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.
 	if d, ok := a.inner.(v1.Differ); ok {
 		diff, err := d.Diff(ctx, m)
 		if err != nil {
-			return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindInternal, "Plan", err, "diff: %v", err)
+			return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindOf(err), "Plan", err, "diff: %v", err)
 		}
 		res.Diff = diff
 		res.Changes = diff != ""
@@ -130,7 +137,7 @@ func (a *Adapter) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.
 	if r, ok := a.inner.(v1.Renderer); ok {
 		rendered, err := r.Render(ctx, m)
 		if err != nil {
-			return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindInternal, "Plan", err, "render: %v", err)
+			return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindOf(err), "Plan", err, "render: %v", err)
 		}
 		res.Rendered = rendered
 		// Referenced is v1's way of saying the desired checksum is over a
@@ -196,11 +203,11 @@ func (a *Adapter) Observe(ctx context.Context, _ targetv2.ObserveRequest) (targe
 	}
 	fp, err := a.inner.Observe(ctx)
 	if err != nil {
-		return targetv2.Observation{}, targetv2.Failf(targetv2.KindInternal, "Observe", err, "observe: %v", err)
+		return targetv2.Observation{}, targetv2.Failf(targetv2.KindOf(err), "Observe", err, "observe: %v", err)
 	}
 	hs, err := a.inner.Health(ctx)
 	if err != nil {
-		return targetv2.Observation{}, targetv2.Failf(targetv2.KindInternal, "Observe", err, "health: %v", err)
+		return targetv2.Observation{}, targetv2.Failf(targetv2.KindOf(err), "Observe", err, "health: %v", err)
 	}
 	return targetv2.Observation{
 		Fingerprint: fp.Value,
@@ -232,7 +239,7 @@ func (a *Adapter) DetectDrift(ctx context.Context, req targetv2.DriftRequest) (t
 	}
 	diff, err := d.Diff(ctx, manifest(req.Desired))
 	if err != nil {
-		return targetv2.DriftResult{}, targetv2.Failf(targetv2.KindInternal, "DetectDrift", err, "diff: %v", err)
+		return targetv2.DriftResult{}, targetv2.Failf(targetv2.KindOf(err), "DetectDrift", err, "diff: %v", err)
 	}
 	return targetv2.DriftResult{Drifted: diff != "", Detail: diff}, nil
 }
@@ -248,7 +255,7 @@ func (a *Adapter) Prune(ctx context.Context, _ targetv2.PruneRequest) (targetv2.
 	}
 	removed, err := r.ReapTarget(ctx)
 	if err != nil {
-		return targetv2.PruneResult{}, targetv2.Failf(targetv2.KindInternal, "Prune", err, "reap: %v", err)
+		return targetv2.PruneResult{}, targetv2.Failf(targetv2.KindOf(err), "Prune", err, "reap: %v", err)
 	}
 	return targetv2.PruneResult{Removed: removed}, nil
 }
