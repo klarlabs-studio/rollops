@@ -1352,6 +1352,7 @@ deployment.plan.created
 deployment.queued
 deployment.approval.requested
 deployment.approved
+deployment.approval.rejected
 deployment.started
 deployment.operation.started
 deployment.operation.completed

@@ -357,6 +357,7 @@ func TestTheVocabularyMatchesTheSpec(t *testing.T) {
 		project.created environment.created artifact.registered release.created
 		deployment.plan.created deployment.queued
 		deployment.approval.requested deployment.approved
+		deployment.approval.rejected
 		deployment.started deployment.operation.started
 		deployment.operation.completed deployment.operation.failed
 		deployment.verification.started deployment.verification.completed

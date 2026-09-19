@@ -166,6 +166,7 @@ func newHarness(t *testing.T) *harness {
 		Transactor:   store,
 		Plans:        store.Plans(),
 		Deployments:  store.Deployments(),
+		Approvals:    store.Approvals(),
 		Releases:     store.Releases(),
 		Environments: store.Environments(),
 		Planner:      planner,

@@ -54,6 +54,17 @@ type deploymentAdmitted struct {
 	Requirements  []string               `json:"requirements,omitempty"`
 }
 
+// approvalRecorded is one principal's answer. The approver is not in the
+// payload: the event envelope already carries who acted, and a second copy
+// could disagree with the first.
+type approvalRecorded struct {
+	ApprovalID identity.ApprovalID     `json:"approval_id"`
+	PlanID     identity.PlanID         `json:"plan_id"`
+	Revision   string                  `json:"revision"`
+	Decision   policy.ApprovalDecision `json:"decision"`
+	Reason     string                  `json:"reason,omitempty"`
+}
+
 // recordPlan writes the two events a plan produces. The created event is the
 // root of the intent — everything an operator later asks about this deployment
 // hangs off its correlation id — and the evaluation is caused by it rather than

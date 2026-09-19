@@ -14,6 +14,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -585,4 +586,39 @@ func copyTime(t *time.Time) *time.Time {
 	}
 	at := *t
 	return &at
+}
+
+type approvals struct{ s *Store }
+
+// Create stores the approval. Claims are redacted for the same reason the plan
+// encoder redacts sensitive values: an approval carries the approver's
+// principal, and an identity provider's claims can include credential material
+// (INV-012).
+func (r approvals) Create(ctx context.Context, a policy.Approval) error {
+	return r.s.write(ctx, func(st *state) error {
+		if err := a.Validate(); err != nil {
+			return err
+		}
+		for _, existing := range st.approvals {
+			if existing.ID == a.ID {
+				return fmt.Errorf("approval %s: %w", a.ID, port.ErrAlreadyExists)
+			}
+		}
+		a.Principal = a.Principal.Redacted()
+		st.approvals = append(st.approvals, a)
+		return nil
+	})
+}
+
+func (r approvals) ListForSubject(ctx context.Context, kind, id string) ([]policy.Approval, error) {
+	var out []policy.Approval
+	err := r.s.read(ctx, func(st *state) error {
+		for _, a := range st.approvals {
+			if a.Subject.Kind == kind && a.Subject.ID == id {
+				out = append(out, a)
+			}
+		}
+		return nil
+	})
+	return out, err
 }

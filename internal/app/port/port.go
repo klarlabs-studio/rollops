@@ -19,6 +19,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -131,6 +132,25 @@ type PlanRepository interface {
 	// caller's decision, because a plan is also fetched to be explained, and
 	// refusing to show a tampered plan would hide the evidence.
 	Get(ctx context.Context, id identity.PlanID) (plan.DeploymentPlan, error)
+}
+
+// ApprovalRepository persists approvals.
+//
+// There is no Update and no Delete. An approval is a statement somebody made
+// about a revision at a moment; editing one would rewrite what they said, and
+// withdrawing one is a new approval recording the withdrawal rather than the
+// disappearance of the old. This is the same reason PlanRepository has no
+// Update — both are records apply reads to decide whether to proceed.
+type ApprovalRepository interface {
+	Create(ctx context.Context, a policy.Approval) error
+
+	// ListForSubject returns every approval recorded against the subject,
+	// oldest first. It takes the kind and id rather than a full SubjectRef
+	// because the caller is asking what has been said about this subject across
+	// all its revisions — filtering to the one under apply is the domain's job
+	// (policy.Decision.SatisfiedBy), and doing it here would hide from an
+	// operator that an earlier revision was approved and then re-planned.
+	ListForSubject(ctx context.Context, kind, id string) ([]policy.Approval, error)
 }
 
 // DeploymentRepository persists deployments. Unlike a release a deployment

@@ -19,6 +19,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -43,6 +44,10 @@ type state struct {
 	releases     map[identity.ReleaseID]release.Release
 	plans        map[identity.PlanID]plan.DeploymentPlan
 	deployments  map[identity.DeploymentID]deployment.Deployment
+
+	// approvals is a slice because approvals are append-only and read in the
+	// order they were given: who answered first is part of the record.
+	approvals []policy.Approval
 
 	// events is a slice rather than a map because the log is ordered and
 	// append-only. A position in it is the sequence, so the two cannot drift,
@@ -72,6 +77,7 @@ func (s *state) clone() *state {
 		releases:     maps.Clone(s.releases),
 		plans:        maps.Clone(s.plans),
 		deployments:  maps.Clone(s.deployments),
+		approvals:    slices.Clone(s.approvals),
 		events:       slices.Clone(s.events),
 	}
 }
@@ -149,6 +155,9 @@ func (s *Store) Plans() port.PlanRepository { return plans{s} }
 func (s *Store) Deployments() port.DeploymentRepository { return deployments{s} }
 
 // Events returns the domain event log over this store.
+// Approvals returns the approval repository.
+func (s *Store) Approvals() port.ApprovalRepository { return approvals{s} }
+
 func (s *Store) Events() port.EventLog { return events{s} }
 
 // sortedByID returns the values of m ordered by key. Identifiers are UUIDv7, so

@@ -103,6 +103,7 @@ type Config struct {
 	Transactor   port.Transactor
 	Plans        port.PlanRepository
 	Deployments  port.DeploymentRepository
+	Approvals    port.ApprovalRepository
 	Releases     port.ReleaseRepository
 	Environments port.EnvironmentRepository
 	Planner      Planner
@@ -136,6 +137,7 @@ func New(cfg Config) (*Service, error) {
 		{"transactor", cfg.Transactor != nil},
 		{"plan repository", cfg.Plans != nil},
 		{"deployment repository", cfg.Deployments != nil},
+		{"approval repository", cfg.Approvals != nil},
 		{"release repository", cfg.Releases != nil},
 		{"environment repository", cfg.Environments != nil},
 		{"planner", cfg.Planner != nil},
