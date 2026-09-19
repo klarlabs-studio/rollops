@@ -265,7 +265,9 @@ func (e *Engine) driveStepper(ctx context.Context, lc *rollout.Lifecycle, r *rol
 // good manifest when configured, otherwise mark rolled-back. The caller MUST
 // already hold the target lock (Apply and Tick both do).
 func (e *Engine) failProgressive(ctx context.Context, lc *rollout.Lifecycle, r *rollout.Rollout, cfg *config.Config, m pt.Manifest, runErr error, actor rollout.Identity) (*rollout.Rollout, error) {
-	if cfg.Spec.Rollback.Auto {
+	if cfg.Spec.Rollback.Auto && r.RollbackBlocked != "" {
+		runErr = fmt.Errorf("%w; auto-rollback was not attempted: %s", runErr, r.RollbackBlocked)
+	} else if cfg.Spec.Rollback.Auto {
 		if prior, ok := e.priorManifest(ctx, r.TargetRef, m.Checksum); ok {
 			prior.Root = m.Root
 			rb, rbErr := e.applyRollback(ctx, r, prior, "auto-rollback on deploy failure: "+runErr.Error(), cfg.Spec.DatabaseRollbackHook(), true)

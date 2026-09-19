@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -16,7 +17,7 @@ import (
 // health gate fails and rollback.auto is set, Apply reverts to the prior good
 // manifest AND resets delivery, instead of leaving the broken version live.
 func TestApply_CrashloopAutoRollsBackToPrior(t *testing.T) {
-	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}, liveAwareDiff: true}
 	rec := &recordingRouter{}
 	flag := &recordingFlagProvider{}
 	e, db := newEngine(t, fake,
@@ -270,4 +271,62 @@ func flagDisabled(r *recordingFlagProvider) bool {
 		}
 	}
 	return false
+}
+
+// TestApply_AutoRollbackRefusesABaselineThatWasNotLive is the 2026-09-19
+// production incident. The target was deployed outside rollops after its last
+// recorded rollout, so the recorded manifest was stale. A new rollout's health
+// gate failed, and auto-rollback "restored" the stale manifest — replacing a
+// working service with a month-old one. The recorded manifest is now compared
+// with live before deploying; when they differ, a failure is left for a human.
+func TestApply_AutoRollbackRefusesABaselineThatWasNotLive(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}, liveAwareDiff: true}
+	e, db := newEngine(t, fake, WithIDGen(incIDs()))
+	ctx := context.Background()
+	felix := rollout.Identity{Kind: "human", Name: "felix"}
+
+	old, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 1}`), Initiator: felix})
+	if err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+	// Out of band: something else is live now, and rollops has no record of it.
+	fake.applied = append(fake.applied, pt.Manifest{Checksum: "deployed-with-kubectl"})
+
+	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "Waiting for deployment rollout to finish"}
+	bad, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 3}`), Initiator: felix})
+	if err == nil || !strings.Contains(err.Error(), "auto-rollback was not attempted") {
+		t.Fatalf("a failed deploy over a stale baseline must say rollback was not attempted, got %v", err)
+	}
+	for _, m := range fake.applied[2:] {
+		if m.Checksum == old.Desired.Checksum {
+			t.Fatalf("the stale recorded manifest %s was re-applied", short(m.Checksum))
+		}
+	}
+	got, _ := db.LoadRollout(ctx, bad.ID)
+	if !strings.Contains(got.RollbackBlocked, "changed outside rollops") {
+		t.Errorf("persisted reason = %q", got.RollbackBlocked)
+	}
+}
+
+// A comparison that cannot be made is not evidence the baseline is live, so it
+// blocks auto-rollback too.
+func TestApply_AutoRollbackFailsClosedWhenTheBaselineCannotBeCompared(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}, liveAwareDiff: true}
+	e, db := newEngine(t, fake, WithIDGen(incIDs()))
+	ctx := context.Background()
+	felix := rollout.Identity{Kind: "human", Name: "felix"}
+
+	if _, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 1}`), Initiator: felix}); err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+	fake.diffErr = fmt.Errorf("kubectl: connection refused")
+	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "boom"}
+	bad, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 2}`), Initiator: felix})
+	if err == nil || !strings.Contains(err.Error(), "auto-rollback was not attempted") {
+		t.Fatalf("got %v", err)
+	}
+	got, _ := db.LoadRollout(ctx, bad.ID)
+	if !strings.Contains(got.RollbackBlocked, "could not be compared") {
+		t.Errorf("persisted reason = %q", got.RollbackBlocked)
+	}
 }
