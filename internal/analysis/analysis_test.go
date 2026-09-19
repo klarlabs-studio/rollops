@@ -2,11 +2,14 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
 // scriptProvider returns scripted values per query; each query string advances
@@ -52,8 +55,8 @@ func TestAnalyzer_PassesWhenHealthy(t *testing.T) {
 	p := &scriptProvider{series: map[string][]float64{"err": {0.01, 0.02, 0.01}, "lat": {120, 130, 110}}}
 	a := newAnalyzer(t, p, tmpl("errorRate < 0.05 && p99 < 500", 3, 0))
 	r := a.Run(context.Background())
-	if !r.Passed {
-		t.Fatalf("expected pass; reason=%q measurements=%d", r.Reason, len(r.Measurements))
+	if r.Verdict != verifyv1.VerdictPass {
+		t.Fatalf("verdict = %q; reason=%q measurements=%d", r.Verdict, r.Reason, len(r.Measurements))
 	}
 }
 
@@ -62,8 +65,8 @@ func TestAnalyzer_FailsWhenConditionBreaches(t *testing.T) {
 	p := &scriptProvider{series: map[string][]float64{"err": {0.2, 0.2, 0.2}, "lat": {120, 120, 120}}}
 	a := newAnalyzer(t, p, tmpl("errorRate < 0.05 && p99 < 500", 3, 1))
 	r := a.Run(context.Background())
-	if r.Passed {
-		t.Fatal("expected fail when error rate breaches threshold")
+	if r.Verdict != verifyv1.VerdictFail {
+		t.Fatalf("verdict = %q, want a fail when the error rate breaches threshold", r.Verdict)
 	}
 	if !strings.Contains(r.Reason, "failed") {
 		t.Errorf("reason = %q", r.Reason)
@@ -74,8 +77,8 @@ func TestAnalyzer_ToleratesTransientWithinLimit(t *testing.T) {
 	// One bad sample then recovery; FailureLimit=1 tolerates a single failure.
 	p := &scriptProvider{series: map[string][]float64{"err": {0.2, 0.01, 0.01}, "lat": {120, 120, 120}}}
 	a := newAnalyzer(t, p, tmpl("errorRate < 0.05", 3, 1))
-	if r := a.Run(context.Background()); !r.Passed {
-		t.Fatalf("single transient failure should be tolerated; reason=%q", r.Reason)
+	if r := a.Run(context.Background()); r.Verdict != verifyv1.VerdictPass {
+		t.Fatalf("single transient breach should be tolerated; verdict=%q reason=%q", r.Verdict, r.Reason)
 	}
 }
 
@@ -216,8 +219,8 @@ func TestAnalyzer_AggregatesMultiSeries(t *testing.T) {
 			Count:     1,
 		})
 	r := a.Run(context.Background())
-	if r.Passed {
-		t.Fatal("max aggregation must surface the broken series; gate must fail")
+	if r.Verdict != verifyv1.VerdictFail {
+		t.Fatalf("verdict = %q: max aggregation must surface the broken series", r.Verdict)
 	}
 }
 
@@ -231,8 +234,11 @@ func TestAnalyzer_AggregationRequiresSeriesProvider(t *testing.T) {
 			Count:     1,
 		})
 	r := a.Run(context.Background())
-	if r.Passed {
-		t.Fatal("aggregation without a series provider must fail the measurement")
+	// Inconclusive rather than fail: a provider that cannot answer the query
+	// has said nothing about the canary, which is exactly the distinction the
+	// verdict vocabulary exists to keep.
+	if r.Verdict != verifyv1.VerdictInconclusive {
+		t.Fatalf("verdict = %q, want %q", r.Verdict, verifyv1.VerdictInconclusive)
 	}
 	if !strings.Contains(r.Reason, "aggregation") {
 		t.Errorf("reason = %q", r.Reason)
@@ -244,7 +250,72 @@ func TestAnalyzer_WithPrometheus(t *testing.T) {
 	body := `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1,"0.01"]}]}}`
 	a := newAnalyzer(t, Prometheus{Addr: "http://prom", Client: rt{body: body}},
 		Template{Metrics: []Metric{{Name: "errorRate", Query: "rate(err[1m])"}}, Condition: "errorRate < 0.05", Count: 2})
-	if r := a.Run(context.Background()); !r.Passed {
-		t.Fatalf("prometheus-fed analysis should pass; reason=%q", r.Reason)
+	if r := a.Run(context.Background()); r.Verdict != verifyv1.VerdictPass {
+		t.Fatalf("prometheus-fed analysis verdict = %q; reason=%q", r.Verdict, r.Reason)
+	}
+}
+
+// flakyProvider answers, or refuses, on a per-measurement script. It is the
+// backend being down rather than the canary being bad.
+type flakyProvider struct {
+	up   []bool // whether the backend answers measurement N
+	n    int
+	last float64
+}
+
+func (p *flakyProvider) Query(_ context.Context, _ string) (float64, error) {
+	i := p.n
+	p.n++
+	if i >= len(p.up) {
+		i = len(p.up) - 1
+	}
+	if !p.up[i] {
+		return 0, errors.New("connection refused")
+	}
+	return p.last, nil
+}
+
+// TestABackendThatNeverAnsweredIsNotAPass is §11.3's MUST measured where it
+// actually bites. A provider error and a breaching metric are not the same
+// observation: the first means nobody looked, and a run that tolerated enough
+// of them to fall out of the loop used to report a pass the backend never gave.
+func TestABackendThatNeverAnsweredIsNotAPass(t *testing.T) {
+	// The query is answered on the middle sample only, so neither error is
+	// consecutive enough to trip FailureLimit — the tolerance window is exactly
+	// what used to carry an unmeasured run to the end.
+	p := &flakyProvider{up: []bool{false, true, false}, last: 0.01}
+	a := newAnalyzer(t, p, tmpl("errorRate < 0.05 && p99 < 500", 3, 1))
+
+	r := a.Run(context.Background())
+	if r.Verdict == verifyv1.VerdictPass {
+		t.Fatal("a run whose metrics backend refused two of three samples reported a pass")
+	}
+	if r.Verdict != verifyv1.VerdictInconclusive {
+		t.Errorf("verdict = %q, want %q", r.Verdict, verifyv1.VerdictInconclusive)
+	}
+	if !strings.Contains(r.Reason, "connection refused") {
+		t.Errorf("reason = %q, want it to name what went unanswered", r.Reason)
+	}
+}
+
+// TestABreachingMetricIsStillAFail keeps the two apart from the other side: an
+// unreachable backend must not launder a real breach into "we could not tell".
+func TestABreachingMetricIsStillAFail(t *testing.T) {
+	p := &scriptProvider{series: map[string][]float64{"err": {0.2, 0.2, 0.2}, "lat": {120, 120, 120}}}
+	a := newAnalyzer(t, p, tmpl("errorRate < 0.05", 3, 1))
+	if r := a.Run(context.Background()); r.Verdict != verifyv1.VerdictFail {
+		t.Errorf("verdict = %q, want %q", r.Verdict, verifyv1.VerdictFail)
+	}
+}
+
+// TestAnAbandonedRunSaysSo: a caller who walked away gets that answer rather
+// than the failure their own cancellation caused.
+func TestAnAbandonedRunSaysSo(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := &scriptProvider{series: map[string][]float64{"err": {0.01}, "lat": {120}}}
+	a := newAnalyzer(t, p, tmpl("errorRate < 0.05", 3, 1))
+	if r := a.Run(ctx); r.Verdict != verifyv1.VerdictCancelled {
+		t.Errorf("verdict = %q, want %q", r.Verdict, verifyv1.VerdictCancelled)
 	}
 }

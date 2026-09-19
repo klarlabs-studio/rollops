@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -406,6 +407,48 @@ func TestVerify_RunsMetricAnalysisPasses(t *testing.T) {
 	}
 	if !rep.OK {
 		t.Fatalf("healthy target + passing analysis should verify: %+v", rep.Gates)
+	}
+}
+
+// flakyMetrics refuses the first query and answers the rest healthily: the
+// metrics backend being briefly unreachable, not the canary being bad.
+type flakyMetrics struct{ n int }
+
+func (f *flakyMetrics) Query(context.Context, string) (float64, error) {
+	f.n++
+	if f.n == 1 {
+		return 0, errors.New("dial tcp 10.0.0.9:9090: connect: connection refused")
+	}
+	return 0.01, nil
+}
+
+// TestVerify_UnansweredMetricsBlockRatherThanPass is §11.3's MUST carried all
+// the way to the promotion decision. failureLimit is there to tolerate a flaky
+// canary, and it used to tolerate a flaky backend on the same counter — so an
+// analysis where half the samples were never answered fell out of the loop and
+// reported a pass. That is a promotion granted on evidence nobody gathered
+// (P8, INV-010). Blocking is the only direction the MUST permits: inconclusive
+// may become a fail, never a pass.
+func TestVerify_UnansweredMetricsBlockRatherThanPass(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	// analysisYAML samples twice tolerating one failure, so the single refusal
+	// sits exactly inside the window that used to carry the run to a pass.
+	e, _ := newEngine(t, fake, WithMetricAnalysis(), WithMetricsProvider(&flakyMetrics{}))
+	ctx := context.Background()
+	c, _ := config.Load([]byte(analysisYAML))
+	r, err := e.Apply(ctx, ApplyRequest{Config: c})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("an unanswerable gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("verify passed with a metrics backend that answered nothing")
+	}
+	if !strings.Contains(rep.Reason, "inconclusive") {
+		t.Errorf("reason = %q, want it to say the analysis was inconclusive rather than that the canary failed", rep.Reason)
 	}
 }
 

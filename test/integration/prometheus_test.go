@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rollops/internal/analysis"
+	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
 // TestPrometheusAnalysis_Live drives the metric-analysis seam against a real
@@ -44,8 +45,10 @@ func TestPrometheusAnalysis_Live(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := pass.Run(ctx); !r.Passed {
-		t.Fatalf("healthy condition should pass against live prometheus; reason=%q", r.Reason)
+	// A live backend is the only place the inconclusive verdict can be earned
+	// rather than simulated: the fakes always answer.
+	if r := pass.Run(ctx); r.Verdict != verifyv1.VerdictPass {
+		t.Fatalf("healthy condition against live prometheus gave %q; reason=%q", r.Verdict, r.Reason)
 	}
 
 	// A breaching condition fails (the analyzer would trigger a rollback).
@@ -55,7 +58,7 @@ func TestPrometheusAnalysis_Live(t *testing.T) {
 		Count:        2,
 		FailureLimit: 0,
 	})
-	if r := fail.Run(ctx); r.Passed {
-		t.Fatal("breaching condition should fail against live prometheus")
+	if r := fail.Run(ctx); r.Verdict != verifyv1.VerdictFail {
+		t.Fatalf("breaching condition against live prometheus gave %q, want %q", r.Verdict, verifyv1.VerdictFail)
 	}
 }

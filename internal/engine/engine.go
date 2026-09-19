@@ -41,6 +41,7 @@ import (
 	"go.klarlabs.de/rollops/internal/trafficrouting"
 	pt "go.klarlabs.de/rollops/pkg/target"
 	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
+	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
 // Engine orchestrates rollouts over a Store and a target Registry.
@@ -1181,9 +1182,15 @@ func (e *Engine) gateSmoke(ctx context.Context, st *config.SmokeTest) GateResult
 	return GateResult{Gate: GateSmoke, Status: GatePass}
 }
 
+// gateAnalysis runs the metric analysis and reports it as a gate. The gate
+// model has two outcomes and the analysis has five, so everything short of a
+// pass blocks: that is the direction §11.3's MUST allows — an inconclusive run
+// may become a fail, never a pass — and the detail carries which verdict it
+// actually was so the operator can tell a breaching canary from a metrics
+// backend that was never reachable.
 func (e *Engine) gateAnalysis(ctx context.Context, a *config.Analysis) GateResult {
-	ok, note := e.runAnalysis(ctx, a)
-	if !ok {
+	verdict, note := e.runAnalysis(ctx, a)
+	if verdict != verifyv1.VerdictPass {
 		return GateResult{Gate: GateAnalysis, Status: GateFail, Detail: note}
 	}
 	return GateResult{Gate: GateAnalysis, Status: GatePass, Detail: note}
@@ -1218,7 +1225,7 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 
 // runAnalysis builds an analyzer from config (using the injected metrics
 // provider, or a Prometheus provider from the config address) and runs it.
-func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, string) {
+func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (verifyv1.Verdict, string) {
 	provider := e.metrics
 	if provider == nil {
 		switch {
@@ -1227,7 +1234,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 			// a custom metrics service). Launched per analysis run, then closed.
 			p, err := e.metricsBuild(ctx, a)
 			if err != nil {
-				return false, "analysis: " + err.Error()
+				return verifyv1.VerdictError, "analysis: " + err.Error()
 			}
 			if c, ok := p.(interface{ Close() error }); ok {
 				defer func() { _ = c.Close() }()
@@ -1236,7 +1243,7 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 		case a.Provider == "prometheus":
 			provider = analysis.Prometheus{Addr: a.Address}
 		default:
-			return false, fmt.Sprintf("analysis: no metrics provider for %q", a.Provider)
+			return verifyv1.VerdictError, fmt.Sprintf("analysis: no metrics provider for %q", a.Provider)
 		}
 	}
 	metrics := make([]analysis.Metric, 0, len(a.Metrics))
@@ -1252,13 +1259,20 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (bool, str
 		FailureLimit: a.FailureLimit,
 	})
 	if err != nil {
-		return false, "analysis: " + err.Error()
+		return verifyv1.VerdictError, "analysis: " + err.Error()
 	}
 	res := an.Run(ctx)
-	if !res.Passed {
-		return false, "analysis failed: " + res.Reason
+	if res.Verdict != verifyv1.VerdictPass {
+		// "failed" rather than "fail" for the one verdict that already had a
+		// note: the phrasing is read by operators and matched by surfaces that
+		// predate the other four.
+		word := string(res.Verdict)
+		if res.Verdict == verifyv1.VerdictFail {
+			word = "failed"
+		}
+		return res.Verdict, fmt.Sprintf("analysis %s: %s", word, res.Reason)
 	}
-	return true, fmt.Sprintf("analysis passed: %d measurement(s)", len(res.Measurements))
+	return verifyv1.VerdictPass, fmt.Sprintf("analysis passed: %d measurement(s)", len(res.Measurements))
 }
 
 // Approve resolves an awaiting-approval rollout: it deploys to the target and

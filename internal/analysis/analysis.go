@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
+
+	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
 // MetricsProvider answers a provider-specific query with a single scalar value
@@ -103,8 +105,13 @@ type Measurement struct {
 }
 
 // Result is the outcome of an analysis run.
+//
+// The verdict is not a bool on purpose (§11.3). A canary whose error rate
+// breached and a canary whose metrics backend was unreachable are different
+// observations, and only the first is evidence about the deploy — collapsing
+// them loses the distinction the promotion decision needs.
 type Result struct {
-	Passed       bool
+	Verdict      verifyv1.Verdict
 	Measurements []Measurement
 	Reason       string
 }
@@ -126,11 +133,11 @@ func New(provider MetricsProvider, t Template) (*Analyzer, error) {
 		return nil, fmt.Errorf("analysis: at least one metric is required")
 	}
 	// Fail CLOSED at construction: Run fails the analysis only once the
-	// consecutive-failure streak EXCEEDS FailureLimit, so a FailureLimit at or
-	// above the measurement count can never trip — a canary that fails every
-	// sample (or whose provider errors every time) would be reported Passed.
-	// Reject that impossible-to-fail configuration outright. Count defaults to 1
-	// in Run, so mirror that default here.
+	// consecutive-breach streak EXCEEDS FailureLimit, so a FailureLimit at or
+	// above the measurement count can never trip — a canary that breaches every
+	// sample would still be reported as a pass. Reject that impossible-to-fail
+	// configuration outright. Count defaults to 1 in Run, so mirror that default
+	// here.
 	count := t.Count
 	if count <= 0 {
 		count = 1
@@ -184,36 +191,60 @@ func (a *Analyzer) measure(ctx context.Context) Measurement {
 }
 
 // Run measures Count times (waiting Interval between), failing the run once
-// consecutive failing measurements exceed FailureLimit.
+// consecutive breaching measurements exceed FailureLimit.
+//
+// A measurement the provider could not answer is tracked separately from one
+// whose condition breached, because they are not the same claim. FailureLimit
+// tolerates a flaky canary, and reusing it to tolerate a flaky backend meant a
+// run could fall out of the loop having measured nothing and report a pass —
+// §11.3's "inconclusive MUST NOT silently become pass". An unanswered sample
+// now taints the whole run: the tolerance window still stops a dead backend
+// from stalling the bake, but the verdict it reaches is inconclusive.
 func (a *Analyzer) Run(ctx context.Context) Result {
 	count := a.tmpl.Count
 	if count <= 0 {
 		count = 1
 	}
 	var res Result
-	consecutiveFail := 0
+	breaches, unanswered := 0, 0
+	var lastErr error
 	for i := 0; i < count; i++ {
+		if v := verifyv1.Interrupted(ctx); v != "" {
+			res.Verdict, res.Reason = v, ctx.Err().Error()
+			return res
+		}
 		if i > 0 && a.tmpl.Interval > 0 {
 			a.sleep(a.tmpl.Interval)
 		}
 		mm := a.measure(ctx)
 		res.Measurements = append(res.Measurements, mm)
-		if mm.Err != nil || !mm.Passed {
-			consecutiveFail++
-			if consecutiveFail > a.tmpl.FailureLimit {
-				res.Passed = false
-				if mm.Err != nil {
-					res.Reason = mm.Err.Error()
-				} else {
-					res.Reason = fmt.Sprintf("condition %q failed %d consecutive times", a.tmpl.Condition, consecutiveFail)
-				}
+		switch {
+		case mm.Err != nil:
+			// The breach streak is left intact: a sample nobody could read
+			// neither confirms nor clears the one before it, and resetting
+			// would let a flaky backend buy a breaching canary extra rope.
+			lastErr = mm.Err
+			unanswered++
+			if unanswered > a.tmpl.FailureLimit {
+				res.Verdict, res.Reason = verifyv1.VerdictInconclusive, mm.Err.Error()
 				return res
 			}
-			continue
+		case !mm.Passed:
+			breaches++
+			if breaches > a.tmpl.FailureLimit {
+				res.Verdict = verifyv1.VerdictFail
+				res.Reason = fmt.Sprintf("condition %q failed %d consecutive times", a.tmpl.Condition, breaches)
+				return res
+			}
+		default:
+			breaches = 0
 		}
-		consecutiveFail = 0
 	}
-	res.Passed = true
+	if unanswered > 0 {
+		res.Verdict, res.Reason = verifyv1.VerdictInconclusive, lastErr.Error()
+		return res
+	}
+	res.Verdict = verifyv1.VerdictPass
 	return res
 }
 
