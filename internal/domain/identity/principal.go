@@ -13,18 +13,25 @@ import (
 type PrincipalType string
 
 const (
-	PrincipalHuman   PrincipalType = "human"
-	PrincipalAgent   PrincipalType = "agent"
-	PrincipalService PrincipalType = "service"
-	PrincipalSystem  PrincipalType = "system"
+	PrincipalHuman     PrincipalType = "human"
+	PrincipalService   PrincipalType = "service"
+	PrincipalAgent     PrincipalType = "agent"
+	PrincipalGit       PrincipalType = "git"
+	PrincipalScheduler PrincipalType = "scheduler"
+	PrincipalSystem    PrincipalType = "system"
 )
 
 // Principal is the actor a mutation is attributed to (INV-005). Every command
 // that changes state carries one; there is no anonymous path.
+//
+// It carries no authorization decision (spec §4.10). Who someone is and what
+// they may do are answered by different layers, and merging them here would put
+// the answer where nothing can re-evaluate it.
 type Principal struct {
-	ID     string
-	Type   PrincipalType
-	Claims map[string]string
+	ID          string
+	Type        PrincipalType
+	DisplayName string
+	Claims      map[string]string
 }
 
 // redacted replaces any claim value that may carry credential material.
@@ -59,7 +66,8 @@ func (p Principal) Validate() error {
 		return fmt.Errorf("%w: missing id", ErrInvalidPrincipal)
 	}
 	switch p.Type {
-	case PrincipalHuman, PrincipalAgent, PrincipalService, PrincipalSystem:
+	case PrincipalHuman, PrincipalService, PrincipalAgent,
+		PrincipalGit, PrincipalScheduler, PrincipalSystem:
 	default:
 		return fmt.Errorf("%w: unknown type %q", ErrInvalidPrincipal, p.Type)
 	}

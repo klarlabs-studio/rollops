@@ -296,9 +296,13 @@ func TestPrincipalValidation(t *testing.T) {
 		ok   bool
 	}{
 		{"human", Principal{ID: "alice", Type: PrincipalHuman}, true},
+		{"service", Principal{ID: "ci", Type: PrincipalService}, true},
 		{"agent", Principal{ID: "claude", Type: PrincipalAgent}, true},
+		{"git", Principal{ID: "webhook", Type: PrincipalGit}, true},
+		{"scheduler", Principal{ID: "cron", Type: PrincipalScheduler}, true},
 		{"system", Principal{ID: "reconciler", Type: PrincipalSystem}, true},
 		{"missing id", Principal{Type: PrincipalHuman}, false},
+		{"blank id", Principal{ID: "   ", Type: PrincipalHuman}, false},
 		{"missing type", Principal{ID: "alice"}, false},
 		{"unknown type", Principal{ID: "alice", Type: PrincipalType("wizard")}, false},
 	}
