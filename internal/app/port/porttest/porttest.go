@@ -37,6 +37,7 @@ type Repositories struct {
 	Releases     port.ReleaseRepository
 	Plans        port.PlanRepository
 	Deployments  port.DeploymentRepository
+	Events       port.EventLog
 	Tx           port.Transactor
 }
 
@@ -53,6 +54,7 @@ func Run(t *testing.T, newRepos Factory) {
 		"releases":     runReleases,
 		"plans":        runPlans,
 		"deployments":  runDeployments,
+		"events":       runEvents,
 		"transactions": runTransactions,
 	}
 	for name, run := range suites {

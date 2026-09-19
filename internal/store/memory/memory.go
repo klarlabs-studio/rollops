@@ -16,6 +16,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
+	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
@@ -42,6 +43,12 @@ type state struct {
 	releases     map[identity.ReleaseID]release.Release
 	plans        map[identity.PlanID]plan.DeploymentPlan
 	deployments  map[identity.DeploymentID]deployment.Deployment
+
+	// events is a slice rather than a map because the log is ordered and
+	// append-only. A position in it is the sequence, so the two cannot drift,
+	// and a rolled-back transaction discards its working copy — which is what
+	// makes the sequence gapless without a counter to reconcile.
+	events []event.Event
 }
 
 func newState() *state {
@@ -65,6 +72,7 @@ func (s *state) clone() *state {
 		releases:     maps.Clone(s.releases),
 		plans:        maps.Clone(s.plans),
 		deployments:  maps.Clone(s.deployments),
+		events:       slices.Clone(s.events),
 	}
 }
 
@@ -139,6 +147,9 @@ func (s *Store) Plans() port.PlanRepository { return plans{s} }
 
 // Deployments returns the deployment repository over this store.
 func (s *Store) Deployments() port.DeploymentRepository { return deployments{s} }
+
+// Events returns the domain event log over this store.
+func (s *Store) Events() port.EventLog { return events{s} }
 
 // sortedByID returns the values of m ordered by key. Identifiers are UUIDv7, so
 // this is creation order — and it is stable, which map iteration is not.

@@ -235,3 +235,12 @@ type EventReader interface {
 	// one story, across the several aggregates it touched.
 	ForCorrelation(ctx context.Context, c identity.EventID, p Page) ([]event.Event, error)
 }
+
+// EventLog is both halves, which is what a store implements and what the
+// composition root wires. It does not undo the split above: what matters is
+// that a consumer declares the half it needs, and a query handed an EventReader
+// still has no method that could write.
+type EventLog interface {
+	EventAppender
+	EventReader
+}
