@@ -44,6 +44,8 @@ type Config struct {
 	Environments port.EnvironmentRepository
 	Releases     port.ReleaseRepository
 	Artifacts    port.ArtifactRepository
+	Deployments  port.DeploymentRepository
+	Plans        port.PlanRepository
 }
 
 // Service answers the v2 API.
@@ -52,6 +54,8 @@ type Service struct {
 	environments port.EnvironmentRepository
 	releases     port.ReleaseRepository
 	artifacts    port.ArtifactRepository
+	deployments  port.DeploymentRepository
+	plans        port.PlanRepository
 }
 
 // New returns a service, naming the first dependency it was not given.
@@ -65,12 +69,18 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no release repository")
 	case cfg.Artifacts == nil:
 		return nil, errors.New("apiv2: no artifact repository")
+	case cfg.Deployments == nil:
+		return nil, errors.New("apiv2: no deployment repository")
+	case cfg.Plans == nil:
+		return nil, errors.New("apiv2: no plan repository")
 	}
 	return &Service{
 		projects:     cfg.Projects,
 		environments: cfg.Environments,
 		releases:     cfg.Releases,
 		artifacts:    cfg.Artifacts,
+		deployments:  cfg.Deployments,
+		plans:        cfg.Plans,
 	}, nil
 }
 

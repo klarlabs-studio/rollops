@@ -11,6 +11,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/project"
@@ -36,6 +37,8 @@ func setup(t *testing.T) *world {
 		Environments: store.Environments(),
 		Releases:     store.Releases(),
 		Artifacts:    store.Artifacts(),
+		Deployments:  store.Deployments(),
+		Plans:        store.Plans(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -369,8 +372,8 @@ func TestAnIDThatIsNotAnEnvironmentIDIsTheCallersMistake(t *testing.T) {
 	}
 }
 
-// brokenProjects and brokenEnvironments fail their list read with something
-// nothing has classified — the shape a driver error arrives in.
+// The broken repositories below fail their list read with something nothing has
+// classified — the shape a driver error arrives in.
 type brokenProjects struct {
 	port.ProjectRepository
 	err error
@@ -409,6 +412,17 @@ func (b brokenArtifacts) List(context.Context, identity.ProjectID) ([]artifact.A
 	return nil, b.err
 }
 
+type brokenDeployments struct {
+	port.DeploymentRepository
+	err error
+}
+
+func (b brokenDeployments) ListForEnvironment(
+	context.Context, identity.EnvironmentID,
+) ([]deployment.Deployment, error) {
+	return nil, b.err
+}
+
 // TestNoListHandsTheCallerAnUnclassifiedMessage states the rule once for every
 // list read rather than per endpoint: whatever storage says on the way out, the
 // caller gets INTERNAL and nothing about the estate.
@@ -416,12 +430,12 @@ func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		breaks func(*memory.Store, *apiv2.Config)
-		lists  func(*apiv2.Service, string) error
+		lists  func(*apiv2.Service, scene) error
 	}{
 		{
 			name:   "projects",
 			breaks: func(st *memory.Store, c *apiv2.Config) { c.Projects = brokenProjects{st.Projects(), errLeak} },
-			lists: func(svc *apiv2.Service, p string) error {
+			lists: func(svc *apiv2.Service, s scene) error {
 				_, err := svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{})
 				return err
 			},
@@ -431,36 +445,56 @@ func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
 			breaks: func(st *memory.Store, c *apiv2.Config) {
 				c.Environments = brokenEnvironments{st.Environments(), errLeak}
 			},
-			lists: func(svc *apiv2.Service, p string) error {
-				_, err := svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{ProjectID: p})
+			lists: func(svc *apiv2.Service, s scene) error {
+				_, err := svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{
+					ProjectID: string(s.environment.ProjectID),
+				})
 				return err
 			},
 		},
 		{
 			name:   "releases",
 			breaks: func(st *memory.Store, c *apiv2.Config) { c.Releases = brokenReleases{st.Releases(), errLeak} },
-			lists: func(svc *apiv2.Service, p string) error {
-				_, err := svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{ProjectID: p})
+			lists: func(svc *apiv2.Service, s scene) error {
+				_, err := svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{
+					ProjectID: string(s.environment.ProjectID),
+				})
 				return err
 			},
 		},
 		{
 			name:   "artifacts",
 			breaks: func(st *memory.Store, c *apiv2.Config) { c.Artifacts = brokenArtifacts{st.Artifacts(), errLeak} },
-			lists: func(svc *apiv2.Service, p string) error {
-				_, err := svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{ProjectID: p})
+			lists: func(svc *apiv2.Service, s scene) error {
+				_, err := svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{
+					ProjectID: string(s.environment.ProjectID),
+				})
+				return err
+			},
+		},
+		{
+			name: "deployments",
+			breaks: func(st *memory.Store, c *apiv2.Config) {
+				c.Deployments = brokenDeployments{st.Deployments(), errLeak}
+			},
+			lists: func(svc *apiv2.Service, s scene) error {
+				_, err := svc.ListDeployments(context.Background(), apiv2.ListDeploymentsRequest{
+					EnvironmentID: string(s.environment.ID),
+				})
 				return err
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := setup(t)
-			p := w.project(t, "checkout")
+			s := w.scene(t)
 			cfg := apiv2.Config{
 				Projects:     w.store.Projects(),
 				Environments: w.store.Environments(),
 				Releases:     w.store.Releases(),
 				Artifacts:    w.store.Artifacts(),
+				Deployments:  w.store.Deployments(),
+				Plans:        w.store.Plans(),
 			}
 			tc.breaks(w.store, &cfg)
 			svc, err := apiv2.New(cfg)
@@ -468,7 +502,7 @@ func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
 				t.Fatalf("New: %v", err)
 			}
 
-			err = tc.lists(svc, string(p.ID))
+			err = tc.lists(svc, s)
 
 			var e *apierr.Error
 			if !errors.As(err, &e) {
@@ -487,36 +521,47 @@ func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
 	}
 }
 
-// TestACursorThisAPIDidNotIssueIsRefusedByEveryList keeps the four lists from
+// TestACursorThisAPIDidNotIssueIsRefusedByEveryList keeps the lists from
 // drifting apart on what a forged cursor means.
 func TestACursorThisAPIDidNotIssueIsRefusedByEveryList(t *testing.T) {
 	forged := page.Request{Cursor: "not-a-cursor"}
 	for _, tc := range []struct {
 		name string
-		list func(*world, string) error
+		list func(scene) error
 	}{
-		{"projects", func(w *world, p string) error {
-			_, err := w.svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{Page: forged})
+		{"projects", func(s scene) error {
+			_, err := s.svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{Page: forged})
 			return err
 		}},
-		{"environments", func(w *world, p string) error {
-			_, err := w.svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{ProjectID: p, Page: forged})
+		{"environments", func(s scene) error {
+			_, err := s.svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{
+				ProjectID: string(s.environment.ProjectID), Page: forged,
+			})
 			return err
 		}},
-		{"releases", func(w *world, p string) error {
-			_, err := w.svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{ProjectID: p, Page: forged})
+		{"releases", func(s scene) error {
+			_, err := s.svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{
+				ProjectID: string(s.environment.ProjectID), Page: forged,
+			})
 			return err
 		}},
-		{"artifacts", func(w *world, p string) error {
-			_, err := w.svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{ProjectID: p, Page: forged})
+		{"artifacts", func(s scene) error {
+			_, err := s.svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{
+				ProjectID: string(s.environment.ProjectID), Page: forged,
+			})
+			return err
+		}},
+		{"deployments", func(s scene) error {
+			_, err := s.svc.ListDeployments(context.Background(), apiv2.ListDeploymentsRequest{
+				EnvironmentID: string(s.environment.ID), Page: forged,
+			})
 			return err
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := setup(t)
-			p := w.project(t, "checkout")
+			s := setup(t).scene(t)
 
-			if got := codeOf(t, tc.list(w, string(p.ID))); got != apierr.InvalidArgument {
+			if got := codeOf(t, tc.list(s)); got != apierr.InvalidArgument {
 				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
 			}
 		})
@@ -534,6 +579,8 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 		{"environment", func(c *apiv2.Config) { c.Environments = nil }},
 		{"release", func(c *apiv2.Config) { c.Releases = nil }},
 		{"artifact", func(c *apiv2.Config) { c.Artifacts = nil }},
+		{"deployment", func(c *apiv2.Config) { c.Deployments = nil }},
+		{"plan", func(c *apiv2.Config) { c.Plans = nil }},
 	} {
 		t.Run(tc.missing, func(t *testing.T) {
 			st := memory.New()
@@ -542,6 +589,8 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 				Environments: st.Environments(),
 				Releases:     st.Releases(),
 				Artifacts:    st.Artifacts(),
+				Deployments:  st.Deployments(),
+				Plans:        st.Plans(),
 			}
 			tc.drop(&cfg)
 
