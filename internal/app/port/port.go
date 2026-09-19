@@ -16,6 +16,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
+	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
@@ -36,6 +37,12 @@ var (
 	// recourse differs: a conflict is worth retrying from a fresh read, a
 	// missing aggregate is not.
 	ErrRevisionConflict = errors.New("revision conflict")
+
+	// ErrNoTransaction reports an event appended outside a transaction. It is
+	// the enforcement of ADR-0003: an event whose aggregate write was rolled
+	// back is a lie in the timeline, so the append fails loudly at the first
+	// test that forgets the transaction rather than producing one.
+	ErrNoTransaction = errors.New("no transaction")
 )
 
 // Transactor runs a unit of work atomically. The application layer says "these
@@ -152,4 +159,79 @@ type DeploymentRepository interface {
 	// environment is idle — an answer, not a failure, and the caller branches
 	// on it to decide whether a new deployment may start.
 	FindActive(ctx context.Context, e identity.EnvironmentID) (deployment.Deployment, error)
+}
+
+// Page selects a slice of the event log. Every read takes one because §24 asks
+// for pagination from the start: a timeline that returns everything is one that
+// stops working on the estate it was built for, and adding a limit later means
+// changing a response shape clients already depend on.
+type Page struct {
+	// After is an exclusive cursor — the sequence of the last event already
+	// seen. Zero means the beginning, which is unambiguous because sequences
+	// start at one. Paging by sequence rather than by offset is what makes a
+	// page stable while the log is being appended to (ADR-0003).
+	After uint64
+
+	// Limit caps the page. Zero or less means DefaultPageSize, and anything
+	// above MaxPageSize is clamped to it rather than refused: a caller asking
+	// for too much wants as much as it can have.
+	Limit int
+}
+
+// Page size bounds. They live here rather than in each store so that the two
+// implementations cannot disagree about what an unset limit means.
+const (
+	DefaultPageSize = 100
+	MaxPageSize     = 1000
+)
+
+// Normalized applies the limit bounds. Every implementation calls it, so the
+// conformance suite can assert the behaviour once.
+func (p Page) Normalized() Page {
+	switch {
+	case p.Limit <= 0:
+		p.Limit = DefaultPageSize
+	case p.Limit > MaxPageSize:
+		p.Limit = MaxPageSize
+	}
+	return p
+}
+
+// EventAppender writes to the domain event log.
+//
+// It declares one method. There is no update and no delete, so INV-013 is
+// enforced by the absence of a call site rather than by a rule someone has to
+// remember (ADR-0005) — a rewritten event is the one thing a timeline cannot
+// survive.
+type EventAppender interface {
+	// Append stores e and returns it carrying the Sequence the log assigned.
+	// The returned copy is the one to keep: a caller that held onto its own
+	// would have an event with no position in the log.
+	//
+	// It returns ErrNoTransaction when called outside one. A record of a change
+	// that did not happen, or a change with no record, is worse than a failed
+	// command (ADR-0003).
+	Append(ctx context.Context, e event.Event) (event.Event, error)
+}
+
+// EventReader reads the log back. It is separate from the appender because the
+// two are used by different things — commands append, the API and projections
+// read — and a reader handed to a query has no method that could write.
+//
+// Neither method validates the event type it returns. §16.4 requires consumers
+// to tolerate unknown types, and a binary that refused to hand back a row
+// written by a newer one would turn a downgrade into data loss.
+type EventReader interface {
+	// ForAggregate returns one aggregate's events in sequence order, oldest
+	// first. This is what GET /v2/deployments/{id}/events reads.
+	ForAggregate(ctx context.Context, a event.AggregateType, id string, p Page) ([]event.Event, error)
+
+	// Timeline returns events across every aggregate in sequence order. The
+	// global sequence is what makes this pageable without gaps or repeats.
+	Timeline(ctx context.Context, p Page) ([]event.Event, error)
+
+	// ForCorrelation returns every event of one user intent, in sequence order.
+	// It is the read §16.4 exists for: what a single plan/apply/verify did, as
+	// one story, across the several aggregates it touched.
+	ForCorrelation(ctx context.Context, c identity.EventID, p Page) ([]event.Event, error)
 }
