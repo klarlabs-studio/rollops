@@ -68,7 +68,7 @@ func wiredEngine(t *testing.T, opts ...Option) (*Engine, *captureTarget, *bytes.
 	t.Cleanup(func() { _ = db.Close() })
 	cap := &captureTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(c config.Target) (pt.Target, error) { cap.spec = c.Spec; return cap, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(c config.Target) (pt.Target, error) { cap.spec = c.Spec; return cap, nil }))
 	var buf bytes.Buffer
 	base := []Option{
 		WithClock(func() time.Time { return time.Unix(0, 0) }),

@@ -55,7 +55,7 @@ func setup(t *testing.T, fake *fakeTarget) (*Reconciler, *bytes.Buffer, *config.
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { return "ro1" }))
 
@@ -103,7 +103,7 @@ func TestReconcile_FailedPostDeployRollsBackToPriorNotNew(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	n := 0
 	eng := engine.New(db, reg,
@@ -195,7 +195,7 @@ func TestReconcile_TicksInFlightCanary(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	eng := engine.New(db, reg,
 		engine.WithClock(func() time.Time { return now }),

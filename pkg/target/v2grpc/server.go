@@ -155,6 +155,7 @@ func desiredToWire(d targetv2.DesiredState) *pb.DesiredState {
 		Spec:     d.Spec,
 		Checksum: d.Checksum,
 		Labels:   d.Labels,
+		Rendered: d.Rendered,
 	}
 }
 
@@ -164,6 +165,7 @@ func desiredFromWire(d *pb.DesiredState) targetv2.DesiredState {
 		Spec:     d.GetSpec(),
 		Checksum: d.GetChecksum(),
 		Labels:   d.GetLabels(),
+		Rendered: d.GetRendered(),
 	}
 }
 

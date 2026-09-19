@@ -108,16 +108,24 @@ func BuildV2(cfg config.Target) (*targetv2.Bound, error) {
 
 	meta := targetv2.Metadata{Kind: "plugin", Name: cfg.Ref, Version: m.Version}
 
+	// Exactly one thing closes the subprocess. The v1 path reaches it through
+	// the adapter, which forwards Close to the target it wraps; the typed path
+	// has no such chain, so the binding carries the release step itself. Giving
+	// both to either path closes the process twice, and the second close kills
+	// a pid that has already been reaped — one that the kernel may since have
+	// handed to somebody else.
+	//
+	// The release step belongs on the binding rather than on a wrapper around
+	// the target, because anything in between would swallow the optional
+	// capabilities the binding exists to resolve.
 	var inner targetv2.Target
+	var opts []targetv2.BoundOption
 	if typed {
 		inner = v2grpc.NewClient(rollopstargetv2.NewTargetClient(proc.Conn()), meta)
+		opts = append(opts, targetv2.OnClose(proc.Close))
 	} else {
 		inner = v1adapter.New(&adapter{proc: proc}, meta)
 	}
-	// The subprocess is owned by the transport, not by the target, so closing
-	// it is a step on the binding rather than a wrapper around the target —
-	// anything in between would swallow the optional capabilities.
-	teardown := targetv2.OnClose(proc.Close)
 
 	cctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
 	claimed, err := inner.Capabilities(cctx)
@@ -133,10 +141,10 @@ func BuildV2(cfg config.Target) (*targetv2.Bound, error) {
 	// stands. That is the truthful outcome, not a gap: nothing was authorized
 	// separately, so nothing is refused separately.
 	if !typed {
-		return targetv2.NewBound(inner, claimed, teardown), nil
+		return targetv2.NewBound(inner, claimed, opts...), nil
 	}
 	ceiling, _ := targetv2.ParseCapabilities(contract.Capabilities)
-	return targetv2.NewNarrowedBound(inner, ceiling, claimed, teardown), nil
+	return targetv2.NewNarrowedBound(inner, ceiling, claimed, opts...), nil
 }
 
 // adapter turns target-capability tool invocations into a pt.Target.

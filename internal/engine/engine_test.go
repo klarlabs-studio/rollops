@@ -44,6 +44,12 @@ type fakeTarget struct {
 	// existing tests are unaffected).
 	referenced bool
 	rendered   []byte
+
+	// renders and diffs count what a plan costs. v2 answers "what would change"
+	// and "what would be sent" in one verb, so a caller that wants both is cheap
+	// to write and expensive to run if it asks twice.
+	renders int
+	diffs   int
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -56,6 +62,7 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) { return f.health, nil }
 func (f *fakeTarget) Diff(_ context.Context, m pt.Manifest) (string, error) {
+	f.diffs++
 	if f.diffErr != nil {
 		return "", f.diffErr
 	}
@@ -66,6 +73,7 @@ func (f *fakeTarget) Resources(context.Context) ([]pt.Resource, error) {
 }
 func (f *fakeTarget) Referenced(pt.Manifest) bool { return f.referenced }
 func (f *fakeTarget) Render(context.Context, pt.Manifest) ([]byte, error) {
+	f.renders++
 	return f.rendered, nil
 }
 
@@ -77,7 +85,7 @@ func newEngine(t *testing.T, fake *fakeTarget, extra ...Option) (*Engine, *sqlit
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	n := 0

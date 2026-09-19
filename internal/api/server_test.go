@@ -68,7 +68,7 @@ func newServerWithAuthAndID(t *testing.T, idgen func() string, auth Authenticato
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil }))
 	tick := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time {
 		tick++

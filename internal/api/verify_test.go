@@ -48,7 +48,7 @@ func newServerUnhealthyAfterDeploy(t *testing.T) http.Handler {
 
 	tgt := &degradingTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return tgt, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return tgt, nil }))
 	tick := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time {
 		tick++

@@ -55,7 +55,7 @@ func newTools(t *testing.T) *Tools {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil }))
 	n := 0
 	eng := engine.New(db, reg,
 		engine.WithClock(func() time.Time { return time.Unix(int64(n+1), 0) }),

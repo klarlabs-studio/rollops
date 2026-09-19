@@ -122,7 +122,7 @@ func TestTick_RestartMidPauseResumesFromSnapshot(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	clock := func() time.Time { return now }
 	e1 := New(db, reg, WithClock(clock), WithIDGen(func() string { return "ro-restart" }))
 	ctx := context.Background()

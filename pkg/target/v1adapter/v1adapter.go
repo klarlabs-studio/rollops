@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"sync"
 
 	v1 "go.klarlabs.de/rollops/pkg/target"
@@ -252,6 +253,18 @@ func (a *Adapter) Prune(ctx context.Context, _ targetv2.PruneRequest) (targetv2.
 	return targetv2.PruneResult{Removed: removed}, nil
 }
 
+// Close releases what the v1 target holds, and is a no-op for one that holds
+// nothing. Without it the adapter is one more layer that forwards the contract
+// and swallows everything beside it: the binding looks for a closer and finds
+// the adapter rather than the target behind it, so whatever the target held
+// would leak — and leak silently, because a leaked resource still answers.
+func (a *Adapter) Close() error {
+	if c, ok := a.inner.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
 // manifest converts desired state to v1's shape. Root does not survive: it is
 // ambient local context that v1 already excludes from the checksum and from
 // the wire, so a target reached through this adapter resolves from Spec the
@@ -262,5 +275,6 @@ func manifest(d targetv2.DesiredState) v1.Manifest {
 		Spec:     d.Spec,
 		Labels:   d.Labels,
 		Checksum: d.Checksum,
+		Rendered: d.Rendered,
 	}
 }

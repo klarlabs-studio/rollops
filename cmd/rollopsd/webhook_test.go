@@ -28,7 +28,7 @@ func daemonTopMux(t *testing.T, secret string, tick func(context.Context, string
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return stubTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return stubTarget{}, nil }))
 	eng := engine.New(db, reg)
 	auth := api.TokenAuth{"tok": {Kind: "human", Name: "admin"}}
 	pol := security.DefaultRBACPolicy()

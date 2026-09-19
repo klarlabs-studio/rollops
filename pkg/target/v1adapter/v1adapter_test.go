@@ -17,10 +17,12 @@ import (
 type bare struct {
 	applies int
 	live    string
+	last    v1.Manifest
 }
 
 func (b *bare) Apply(_ context.Context, m v1.Manifest) (v1.Result, error) {
 	b.applies++
+	b.last = m
 	changed := b.live != m.Checksum
 	b.live = m.Checksum
 	return v1.Result{Changed: changed, Detail: "applied " + m.Checksum}, nil
@@ -113,6 +115,57 @@ func TestAnAbsentCapabilityIsUnsupportedRatherThanBroken(t *testing.T) {
 
 	if !targetv2.IsUnsupported(err) {
 		t.Fatalf("DetectDrift on a target that cannot diff gave %v, want unsupported", err)
+	}
+}
+
+// closingBare is a v1 target that holds a resource, the way a plugin-backed one
+// holds a subprocess.
+type closingBare struct {
+	bare
+	closed int
+}
+
+func (c *closingBare) Close() error { c.closed++; return nil }
+
+func TestTheAdapterClosesThroughToTheV1TargetExactlyOnce(t *testing.T) {
+	// The binding looks for a closer and finds the adapter, not the target
+	// behind it, so an adapter that does not forward leaks whatever the target
+	// held — silently, because a leaked resource still answers. Forwarding
+	// twice is the opposite failure and just as real: the second close of a
+	// plugin subprocess kills a pid the kernel may have handed to somebody else.
+	inner := &closingBare{}
+	a := v1adapter.New(inner, meta())
+
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if inner.closed != 1 {
+		t.Errorf("the v1 target was closed %d times, want 1", inner.closed)
+	}
+
+	// A v1 target with nothing to release is the common case and must not be an
+	// error: the caller closes unconditionally and cannot tell the two apart.
+	if err := v1adapter.New(&bare{}, meta()).Close(); err != nil {
+		t.Errorf("closing a target that holds nothing failed: %v", err)
+	}
+}
+
+func TestResolvedBytesReachTheV1Target(t *testing.T) {
+	// A spec that points somewhere is checksummed over the pointer, and the
+	// bytes it resolved to are the only thing a rollback can restore without
+	// resolving it again from a checkout it may not have. An adapter that drops
+	// them turns a rollback into a fresh render of whatever the source says now.
+	tgt := &bare{}
+	a := v1adapter.New(tgt, meta())
+	d := desired("abc")
+	d.Rendered = []byte("kind: Deployment\n")
+
+	if _, err := a.Apply(context.Background(), targetv2.ApplyRequest{Desired: d, IdempotencyKey: "dep-1/op-1"}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	if string(tgt.last.Rendered) != string(d.Rendered) {
+		t.Errorf("the v1 target was handed Rendered %q, want %q", tgt.last.Rendered, d.Rendered)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"go.klarlabs.de/rollops/internal/progressive"
 	"go.klarlabs.de/rollops/internal/rollout"
 	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 	"go.klarlabs.de/statekit"
 )
 
@@ -119,32 +120,36 @@ func (e *Engine) InFlight(ctx context.Context, targetRef string) (rollout.Rollou
 	return rollout.Rollout{}, false, nil
 }
 
-func (e *Engine) stepHealth(ctx context.Context, tgt pt.Target, healthErr *error) progressive.StepHealth {
+func (e *Engine) stepHealth(ctx context.Context, tgt *targetv2.Bound, healthErr *error) progressive.StepHealth {
 	return func(stepIndex, weight int) bool {
-		hs, herr := tgt.Health(ctx)
+		obs, herr := tgt.Observe(ctx, targetv2.ObserveRequest{})
 		if herr != nil {
 			*healthErr = herr
 			return false
 		}
-		if hs.State == pt.HealthUnhealthy {
-			*healthErr = fmt.Errorf("unhealthy: %s", hs.Reason)
+		if obs.Health.State == targetv2.HealthUnhealthy {
+			*healthErr = fmt.Errorf("unhealthy: %s", obs.Health.Reason)
 			return false
 		}
 		return true
 	}
 }
 
-func (e *Engine) deployOnce(ctx context.Context, cfg *config.Config, tgt pt.Target, m pt.Manifest) error {
+// deployOnce applies one step of a progressive rollout. Every step of one
+// rollout shares a key, because they are one intent converging rather than
+// several: a step that repeats after a lost response must not land as a second
+// deploy.
+func (e *Engine) deployOnce(ctx context.Context, cfg *config.Config, tgt *targetv2.Bound, rolloutID string, m pt.Manifest) error {
 	if mig := cfg.Spec.DatabaseMigrate(); mig != nil && cfg.Spec.DatabaseMigrateWhen() == config.MigratePreDeploy {
 		if err := e.runDatabaseCommand(ctx, mig); err != nil {
 			return fmt.Errorf("database migrate: %w", err)
 		}
 	}
-	_, err := tgt.Apply(ctx, m)
+	_, err := tgt.Apply(ctx, applyOf(rolloutID, m))
 	return err
 }
 
-func (e *Engine) startStepper(ctx context.Context, lc *rollout.Lifecycle, r *rollout.Rollout, cfg *config.Config, tgt pt.Target, actor rollout.Identity) (*rollout.Rollout, error) {
+func (e *Engine) startStepper(ctx context.Context, lc *rollout.Lifecycle, r *rollout.Rollout, cfg *config.Config, tgt *targetv2.Bound, actor rollout.Identity) (*rollout.Rollout, error) {
 	plan := progressive.PlanFor(cfg.Spec.Strategy)
 	var healthErr error
 	health := e.stepHealth(ctx, tgt, &healthErr)

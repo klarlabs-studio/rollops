@@ -45,7 +45,7 @@ func newCanaryServer(t *testing.T) http.Handler {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil }))
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return now }), engine.WithIDGen(func() string { return "ro-api" }))
 

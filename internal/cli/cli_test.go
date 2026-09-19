@@ -66,7 +66,7 @@ func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	tick := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time {

@@ -246,7 +246,7 @@ func TestReportOrphan_ReapsWhenOptedIn(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return reaper, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return reaper, nil }))
 	eng := engine.New(db, reg)
 	var logs []string
 	w := &Watcher{
@@ -284,7 +284,7 @@ func TestReportOrphan_DoesNotReapWithoutOptIn(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return reaper, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return reaper, nil }))
 	eng := engine.New(db, reg)
 	w := &Watcher{
 		rec:      New(eng, audit.New(io.Discard)),

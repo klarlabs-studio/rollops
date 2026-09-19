@@ -109,7 +109,7 @@ func newTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fakeTarget{}, nil }))
 	eng := engine.New(db, reg)
 	pol := security.NewPolicy()
 	pol.DefineRole(security.Role{Name: "op", Grants: []security.Grant{{Perm: security.PermStatus}}})

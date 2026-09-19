@@ -193,9 +193,10 @@ v1's `Health` maps through the adapter; `HealthState`'s values are unchanged.
 
 - **The silent-capability bug is fixed as a consequence of the contract, not as
   a patch.** Each of the six assertion sites becomes a `Capabilities` lookup.
-  Until R6 lands they remain wrong, and a plugin-backed target keeps losing
-  diff, render, inspect, reap and preflight without saying so. This ADR does not
-  fix it; it is the reason the fix is shaped the way it is.
+  R6 builds the contract the lookup reads; R7 converts the sites. Until then a
+  plugin-backed target keeps losing diff, render, inspect, reap and preflight
+  without saying so. This ADR does not fix it; it is the reason the fix is
+  shaped the way it is.
 - **Every target grows a method it has to think about.** `Capabilities` cannot
   be defaulted to "everything" without reintroducing the lie in the other
   direction, so a new target author now answers six questions before anything
@@ -205,10 +206,11 @@ v1's `Health` maps through the adapter; `HealthState`'s values are unchanged.
   v1 warns. v1 is removed only at a major boundary — this ADR does not schedule
   that.
 - **`internal/engine` gets worse before it gets better.** It is written against
-  v1 `Target` throughout; R6 introduces v2 and the adapter, and R7 (Kubernetes)
-  is what proves the contract by porting a real target. An engine that speaks v2
-  natively is a later change, and until then first-party targets travel through
-  the adapter in the opposite direction from the one §9.6 names.
+  v1 `Target` throughout; R6 introduces v2 and the adapter, and R7 turns the
+  engine over to v2 before porting a real target to prove the contract. Until
+  each first-party target is ported it travels through the adapter in the
+  opposite direction from the one §9.6 names — which is what makes the port a
+  deletion rather than a rewrite.
 - **Proto generation is now two packages**, and `.coverctl.yaml`'s exclusion
   list grows a third generated path beside `internal/grpcapi/rollopsv1/*` and
   `pkg/plugin/rollopspluginv1/*`.

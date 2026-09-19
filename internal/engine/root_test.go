@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 // TestManifestFromConfig_RootThreadedNotChecksummed proves Root is carried on
@@ -89,6 +91,37 @@ func TestPlan_InlineSource_KeepsSpecChecksum(t *testing.T) {
 	}
 	if p.Rendered != nil {
 		t.Errorf("inline plan must have no rendered preview, got %q", p.Rendered)
+	}
+}
+
+// TestPlan_AsksTheTargetOnce is a cost bound, not a behaviour. Plan reaches the
+// target twice for two different reasons — to re-key the checksum over the
+// rendered bytes, and to live-diff an in-sync target — and in v2 both arrive on
+// the same verb. Asking for it twice is correct (§9.5 makes Plan side-effect
+// free) and it is what reconcile pays for, once per in-sync target per tick, in
+// renders and diffs against real infrastructure.
+func TestPlan_AsksTheTargetOnce(t *testing.T) {
+	rendered := []byte("kind: Deployment\nmetadata: {name: rendered}\n")
+	fake := &fakeTarget{referenced: true, rendered: rendered}
+	e, _ := newEngine(t, fake)
+	c, err := config.Load([]byte(fullVerifyYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make the shallow stamp match the rendered checksum, so the live diff runs
+	// — the most expensive path, and the one a reconcile tick takes.
+	sum := sha256.Sum256(rendered)
+	fake.fp = pt.Fingerprint{Value: hex.EncodeToString(sum[:])}
+
+	if _, err := e.Plan(context.Background(), c); err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if fake.renders != 1 {
+		t.Errorf("the target rendered %d times, want 1", fake.renders)
+	}
+	if fake.diffs != 1 {
+		t.Errorf("the target diffed %d times, want 1", fake.diffs)
 	}
 }
 

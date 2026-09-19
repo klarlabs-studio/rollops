@@ -22,7 +22,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/audit"
 	"go.klarlabs.de/rollops/internal/config"
-	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 // reaper tracks which target keys each repo declared, and how many consecutive
@@ -249,10 +249,10 @@ func reapOnDelete(c *config.Config) bool {
 //
 // Everything about this is deliberately narrow. It runs only for a target that
 // set reapOnDelete, only after the absence threshold, only through a target
-// kind that implements pt.Reaper, and the deletion itself is scoped to the
-// marker rollops applied. A failure is recorded and left alone rather than
-// retried: the orphan report already named the target, and a reap that keeps
-// failing should be read by a person, not hammered.
+// kind that was granted the prune capability, and the deletion itself is scoped
+// to the marker rollops applied. A failure is recorded and left alone rather
+// than retried: the orphan report already named the target, and a reap that
+// keeps failing should be read by a person, not hammered.
 func (w *Watcher) reapOrphan(v verdict, cfg *config.Config, ref string) {
 	if w.rec == nil || w.rec.eng == nil {
 		return
@@ -262,14 +262,13 @@ func (w *Watcher) reapOrphan(v verdict, cfg *config.Config, ref string) {
 		w.logOrphanReap(v, ref, 0, fmt.Errorf("build target: %w", err))
 		return
 	}
-	defer closeIfCloser(tgt)
-	r, ok := tgt.(pt.Reaper)
-	if !ok {
+	defer func() { _ = tgt.Close() }()
+	if !tgt.Can(targetv2.CapabilityPrune) {
 		w.logOrphanReap(v, ref, 0, fmt.Errorf("target kind %q cannot reap", cfg.Spec.Target.Kind))
 		return
 	}
-	removed, err := r.ReapTarget(context.Background())
-	w.logOrphanReap(v, ref, removed, err)
+	res, err := tgt.Prune(context.Background(), targetv2.PruneRequest{})
+	w.logOrphanReap(v, ref, res.Removed, err)
 }
 
 func (w *Watcher) logOrphanReap(v verdict, ref string, removed int, err error) {
@@ -309,12 +308,6 @@ func (w *Watcher) logOrphanReap(v verdict, ref string, removed int, err error) {
 		Action: audit.ActionOrphan, TargetRef: ref, Phase: "reap",
 		Detail: detail, Fields: fields,
 	})
-}
-
-func closeIfCloser(t pt.Target) {
-	if c, ok := t.(interface{ Close() error }); ok {
-		_ = c.Close()
-	}
 }
 
 // targetPrunes reports whether the target opted into apply-time pruning

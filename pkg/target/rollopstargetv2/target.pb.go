@@ -80,11 +80,20 @@ func (HealthState) EnumDescriptor() ([]byte, []int) {
 // everything but the target that declared kind, which is what keeps the host
 // ignorant of any particular substrate (INV-007).
 type DesiredState struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	Spec          []byte                 `protobuf:"bytes,2,opt,name=spec,proto3" json:"spec,omitempty"`
-	Checksum      string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Kind     string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Spec     []byte                 `protobuf:"bytes,2,opt,name=spec,proto3" json:"spec,omitempty"`
+	Checksum string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	Labels   map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// rendered carries the bytes a pointer spec already resolved to, and is set
+	// only for a spec that points somewhere. It is the other half of
+	// PlanResult.rendered_checksum: a host that records a checksum over resolved
+	// bytes but cannot hand those bytes back has recorded the identity of
+	// something it can no longer produce, so a rollback would have to resolve the
+	// pointer a second time — against files that may have changed since, which is
+	// the drift that checksum exists to catch, and from a checkout the manual
+	// rollback path does not have.
+	Rendered      []byte `protobuf:"bytes,5,opt,name=rendered,proto3" json:"rendered,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,6 +152,13 @@ func (x *DesiredState) GetChecksum() string {
 func (x *DesiredState) GetLabels() map[string]string {
 	if x != nil {
 		return x.Labels
+	}
+	return nil
+}
+
+func (x *DesiredState) GetRendered() []byte {
+	if x != nil {
+		return x.Rendered
 	}
 	return nil
 }
@@ -1257,12 +1273,13 @@ var File_rollops_target_v2_target_proto protoreflect.FileDescriptor
 
 const file_rollops_target_v2_target_proto_rawDesc = "" +
 	"\n" +
-	"\x1erollops/target/v2/target.proto\x12\x11rollops.target.v2\"\xd2\x01\n" +
+	"\x1erollops/target/v2/target.proto\x12\x11rollops.target.v2\"\xee\x01\n" +
 	"\fDesiredState\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04spec\x18\x02 \x01(\fR\x04spec\x12\x1a\n" +
 	"\bchecksum\x18\x03 \x01(\tR\bchecksum\x12C\n" +
-	"\x06labels\x18\x04 \x03(\v2+.rollops.target.v2.DesiredState.LabelsEntryR\x06labels\x1a9\n" +
+	"\x06labels\x18\x04 \x03(\v2+.rollops.target.v2.DesiredState.LabelsEntryR\x06labels\x12\x1a\n" +
+	"\brendered\x18\x05 \x01(\fR\brendered\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"z\n" +

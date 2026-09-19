@@ -72,7 +72,7 @@ func TestOptions_OneShotHonorsPersistedFreeze(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(c config.Target) (pt.Target, error) { fake.spec = c.Spec; return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(c config.Target) (pt.Target, error) { fake.spec = c.Spec; return fake, nil }))
 
 	opts, err := Config{Getenv: getenv(nil), Store: db}.Options(ctx)
 	if err != nil {
@@ -199,10 +199,10 @@ func TestOptions_OneShotResolvesSecretsAndAudits(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(c config.Target) (pt.Target, error) {
+	reg.Register("fake", itarget.FromV1("fake", func(c config.Target) (pt.Target, error) {
 		fake.spec = c.Spec
 		return fake, nil
-	})
+	}))
 	var log bytes.Buffer
 	opts, err := Config{Getenv: getenv(nil), Store: db, Log: &log}.Options(ctx)
 	if err != nil {
@@ -241,7 +241,7 @@ func TestOptions_OneShotEnforcesArtifactGate(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	opts, err := Config{Getenv: getenv(map[string]string{"ROLLOPS_COSIGN_KEY": key}), Store: db}.Options(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestOptions_OneShotRollbackUsesSameEngine(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeTarget{}
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	var log bytes.Buffer
 	opts, err := Config{Getenv: getenv(nil), Store: db, Log: &log}.Options(ctx)
 	if err != nil {

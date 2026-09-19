@@ -73,7 +73,7 @@ func newWatcher(t *testing.T, fake *fakeTarget) *Watcher {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
@@ -159,7 +159,7 @@ template:
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+	reg.Register("fake", itarget.FromV1("fake", func(tgt config.Target) (pt.Target, error) {
 		switch tgt.Ref {
 		case "web@east":
 			return east, nil
@@ -168,7 +168,7 @@ template:
 		default:
 			return &fakeTarget{}, nil
 		}
-	})
+	}))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
@@ -230,7 +230,7 @@ spec:
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+	reg.Register("fake", itarget.FromV1("fake", func(tgt config.Target) (pt.Target, error) {
 		switch tgt.Ref {
 		case "demo/prod/app":
 			return appTgt, nil
@@ -239,7 +239,7 @@ spec:
 		default:
 			return &fakeTarget{}, nil
 		}
-	})
+	}))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(store, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
@@ -327,7 +327,7 @@ func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(tgt config.Target) (pt.Target, error) {
+	reg.Register("fake", itarget.FromV1("fake", func(tgt config.Target) (pt.Target, error) {
 		switch tgt.Ref {
 		case "demo/prod/east":
 			return east, nil
@@ -336,7 +336,7 @@ func TestWatcher_TickHintMatchesRepoOrAll(t *testing.T) {
 		default:
 			return &fakeTarget{}, nil
 		}
-	})
+	}))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
@@ -503,7 +503,7 @@ func TestWatcher_ImageAutoDecoupledFromReconcile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return &orderTarget{log: log}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return &orderTarget{log: log}, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))
@@ -564,7 +564,7 @@ func TestWatcher_ImageAutoLogsCoverageSummary(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return &fakeTarget{}, nil }))
 	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	id := 0
 	eng := engine.New(db, reg, engine.WithClock(func() time.Time { return clock }), engine.WithIDGen(func() string { id++; return "ro" }))

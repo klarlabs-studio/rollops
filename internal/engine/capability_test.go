@@ -48,7 +48,7 @@ func engineCounterIDs(t *testing.T, fake *fakeTarget) *Engine {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
-	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	reg.Register("fake", itarget.FromV1("fake", func(config.Target) (pt.Target, error) { return fake, nil }))
 	n := 0
 	tick := 0
 	return New(db, reg,

@@ -265,6 +265,7 @@ func TestTheDesiredStateArrivesByteForByte(t *testing.T) {
 			Spec:     spec,
 			Checksum: "sha256:abc",
 			Labels:   map[string]string{"env": "prod"},
+			Rendered: []byte("kind: Deployment\n"),
 		},
 		IdempotencyKey: "dep-1/op-1",
 	}); err != nil {
@@ -280,6 +281,12 @@ func TestTheDesiredStateArrivesByteForByte(t *testing.T) {
 	}
 	if got.Desired.Labels["env"] != "prod" {
 		t.Errorf("labels arrived as %v", got.Desired.Labels)
+	}
+	// A pointer spec's resolved bytes are what a rollback restores; a wire that
+	// drops them makes the plugin resolve the pointer again, against a source
+	// that may have moved on.
+	if string(got.Desired.Rendered) != "kind: Deployment\n" {
+		t.Errorf("rendered bytes arrived as %q", got.Desired.Rendered)
 	}
 	if got.IdempotencyKey != "dep-1/op-1" {
 		t.Errorf("idempotency key arrived as %q", got.IdempotencyKey)

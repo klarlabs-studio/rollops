@@ -67,6 +67,16 @@ message DesiredState {
   bytes spec = 2;
   string checksum = 3;
   map<string, string> labels = 4;
+
+  // rendered carries the bytes a pointer spec already resolved to, and is set
+  // only for a spec that points somewhere. It is the other half of
+  // PlanResult.rendered_checksum: a host that records a checksum over resolved
+  // bytes but cannot hand those bytes back has recorded the identity of
+  // something it can no longer produce, so a rollback would have to resolve the
+  // pointer a second time — against files that may have changed since, which is
+  // the drift that checksum exists to catch, and from a checkout the manual
+  // rollback path does not have.
+  bytes rendered = 5;
 }
 
 // TargetError rides along with a failed RPC as a status detail, so that what

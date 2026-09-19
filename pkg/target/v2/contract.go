@@ -82,6 +82,16 @@ type DesiredState struct {
 	Spec     []byte
 	Checksum string
 	Labels   map[string]string
+
+	// Rendered carries the bytes a pointer Spec already resolved to, and is set
+	// only for a Spec that points somewhere. It is the other half of
+	// PlanResult.RenderedChecksum: a host that records a checksum over resolved
+	// bytes but cannot hand those bytes back has recorded the identity of
+	// something it can no longer produce, so a rollback would have to resolve
+	// the pointer a second time — against files that may have changed since,
+	// which is the drift that checksum exists to catch, and from a checkout the
+	// manual rollback path does not have.
+	Rendered []byte
 }
 
 // InspectRequest has no fields yet. It exists so that Inspect can grow one
