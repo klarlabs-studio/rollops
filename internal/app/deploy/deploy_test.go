@@ -285,8 +285,9 @@ func TestPlanningCarriesThePolicyDecisionIntoThePlan(t *testing.T) {
 	if len(p.Policy.Requirements) != 1 || p.Policy.Requirements[0].Count != 2 {
 		t.Fatalf("the plan does not carry the requirement: %+v", p.Policy.Requirements)
 	}
-	if p.Policy.Satisfied() {
-		t.Error("a plan with an outstanding approval reported itself satisfied")
+	subject := policy.SubjectRef{Kind: "plan", ID: string(p.ID), Revision: p.Hash.String()}
+	if err := p.Policy.SatisfiedBy(subject, nil, h.clock.Now()); !errors.Is(err, policy.ErrRequirementUnmet) {
+		t.Errorf("err = %v, want the plan to still need approving", err)
 	}
 }
 

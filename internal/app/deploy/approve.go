@@ -33,6 +33,13 @@ var (
 // runs, and an approval of a moving thing is an approval of nothing.
 const subjectPlan = "plan"
 
+// planSubject names the plan an approval is about. Apply and Approve build it
+// the same way on purpose: a reference the two disagreed on would let one
+// record approvals the other could never find.
+func planSubject(p plan.DeploymentPlan) policy.SubjectRef {
+	return policy.SubjectRef{Kind: subjectPlan, ID: string(p.ID), Revision: p.Hash.String()}
+}
+
 // ApproveCommand is one principal's answer about one plan.
 //
 // Revision is required. It is the hash of the plan the approver actually read,
@@ -81,7 +88,7 @@ func (s *Service) Approve(ctx context.Context, cmd ApproveCommand) (deployment.D
 			"%w: approving %s, stored plan is %s", plan.ErrPlanStale, cmd.Revision, p.Hash)
 	}
 
-	subject := policy.SubjectRef{Kind: subjectPlan, ID: string(p.ID), Revision: p.Hash.String()}
+	subject := planSubject(p)
 	id, err := identity.NewApprovalID(s.cfg.IDs)
 	if err != nil {
 		return deployment.Deployment{}, fmt.Errorf("deploy: approval id: %w", err)

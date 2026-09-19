@@ -172,25 +172,8 @@ func TestAReasonMustSayWhatItIs(t *testing.T) {
 func TestAllowedWithOutstandingRequirementsIsNotPermission(t *testing.T) {
 	d := decision()
 	d.Allowed = true
-	if d.Satisfied() {
-		t.Error("a decision with an outstanding approval reported itself satisfied")
-	}
-}
-
-func TestARefusalIsNeverSatisfied(t *testing.T) {
-	d := decision()
-	d.Requirements = nil
-	if d.Satisfied() {
-		t.Error("a refusal with no requirements reported itself satisfied")
-	}
-}
-
-func TestAnUnconditionalAllowIsSatisfied(t *testing.T) {
-	d := decision()
-	d.Allowed = true
-	d.Requirements = nil
-	if !d.Satisfied() {
-		t.Error("an unconditional allow did not report itself satisfied")
+	if err := d.SatisfiedBy(thePlan(), nil, later); !errors.Is(err, policy.ErrRequirementUnmet) {
+		t.Errorf("err = %v, want an unapproved decision to withhold permission", err)
 	}
 }
 

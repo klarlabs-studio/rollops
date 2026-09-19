@@ -313,3 +313,97 @@ func contains(xs []string, want string) bool {
 	}
 	return false
 }
+
+// record stores an answer about the plan without going through the service, so
+// that a test can set up a plan that was answered before it was applied.
+func (h *harness) record(
+	t *testing.T, p plan.DeploymentPlan, d policy.ApprovalDecision, reason string,
+) {
+	t.Helper()
+	id, err := identity.NewApprovalID(identity.NewSequenceGenerator())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := policy.Approval{
+		ID:        identity.ApprovalID(string(id) + "_" + string(p.ID)),
+		Subject:   policy.SubjectRef{Kind: "plan", ID: string(p.ID), Revision: p.Hash.String()},
+		Principal: approver("ana"),
+		Decision:  d,
+		Reason:    reason,
+		CreatedAt: h.clock.Now(),
+	}
+	if err := h.store.Approvals().Create(context.Background(), a); err != nil {
+		t.Fatalf("recording an approval: %v", err)
+	}
+}
+
+// TestApplyingAnAlreadyApprovedPlanQueuesItStraightAway is §4.9's "required
+// approvals exist". Apply asked only whether the plan carried requirements,
+// never whether anyone had met them, so a plan approved before it was applied
+// was sent back to a gate it had already cleared.
+func TestApplyingAnAlreadyApprovedPlanQueuesItStraightAway(t *testing.T) {
+	h := newHarness(t)
+	h.policy.decision = needsApproval(1)
+	p := h.plan(t)
+	h.record(t, p, policy.ApprovalGranted, "")
+
+	d := h.apply(t, p)
+	if d.Status != deployment.StatusQueued {
+		t.Fatalf("status = %q, want queued — the plan was already approved", d.Status)
+	}
+}
+
+// TestApplyingAPlanWithOnlySomeApprovalsStillGates keeps the previous case from
+// passing by ignoring the count.
+func TestApplyingAPlanWithOnlySomeApprovalsStillGates(t *testing.T) {
+	h := newHarness(t)
+	h.policy.decision = needsApproval(2)
+	p := h.plan(t)
+	h.record(t, p, policy.ApprovalGranted, "")
+
+	d := h.apply(t, p)
+	if d.Status != deployment.StatusAwaitingApproval {
+		t.Fatalf("status = %q, want the deployment still at the gate", d.Status)
+	}
+}
+
+// TestApplyingAPlanAnApproverRefusedIsRefused: admitting a deployment that
+// would be cancelled on its first approval would put a refused change into the
+// queue, however briefly, and record it as having been admitted.
+func TestApplyingAPlanAnApproverRefusedIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.policy.decision = needsApproval(1)
+	p := h.plan(t)
+	h.record(t, p, policy.ApprovalDenied, "the migration has not been rehearsed")
+
+	_, err := h.service.Apply(context.Background(), deploy.ApplyCommand{
+		PlanID:  p.ID,
+		Trigger: deployment.Trigger{Type: deployment.TriggerManual, Detail: "ship it"},
+		Actor:   actor(),
+	})
+	if !errors.Is(err, policy.ErrApprovalDenied) {
+		t.Fatalf("err = %v, want ErrApprovalDenied", err)
+	}
+	if _, err := h.store.Deployments().FindActive(context.Background(), h.env.ID); !errors.Is(err, port.ErrNotFound) {
+		t.Errorf("a refused plan was admitted anyway: %v", err)
+	}
+}
+
+// TestAnApprovalOfAnEarlierPlanDoesNotAdmitTheNewOne: re-planning has to
+// invalidate approvals, and it does so by construction — the approval names
+// the hash it was given.
+func TestAnApprovalOfAnEarlierPlanDoesNotAdmitTheNewOne(t *testing.T) {
+	h := newHarness(t)
+	h.policy.decision = needsApproval(1)
+	first := h.plan(t)
+	h.record(t, first, policy.ApprovalGranted, "")
+
+	second := h.plan(t)
+	if second.Hash == first.Hash {
+		t.Fatal("the two plans hash the same; the case proves nothing")
+	}
+	d := h.apply(t, second)
+	if d.Status != deployment.StatusAwaitingApproval {
+		t.Fatalf("status = %q, want a re-planned change to need approving again", d.Status)
+	}
+}

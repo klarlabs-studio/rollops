@@ -186,8 +186,8 @@ func TestAnOutstandingRequirementDoesNotBlockTheStructuralCheck(t *testing.T) {
 	if err := p.CheckApplicable(at.Add(time.Minute), 42); err != nil {
 		t.Errorf("CheckApplicable: %v", err)
 	}
-	if p.Policy.Satisfied() {
-		t.Error("the plan reported policy as satisfied with an approval outstanding")
+	if err := p.Policy.SatisfiedBy(subjectOf(p), nil, at); !errors.Is(err, policy.ErrRequirementUnmet) {
+		t.Errorf("err = %v, want the plan to still need approving", err)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestARefusedPlanIsNotApplicable(t *testing.T) {
 	}
 	p := newPlanFrom(t, d)
 
-	if p.Policy.Satisfied() {
-		t.Error("a refused plan reported policy as satisfied")
+	if err := p.Policy.SatisfiedBy(subjectOf(p), nil, at); !errors.Is(err, policy.ErrDecisionRefuses) {
+		t.Errorf("err = %v, want a refusal to stay a refusal", err)
 	}
 	if err := p.CheckApplicable(at.Add(time.Minute), 42); err != nil {
 		t.Errorf("the structural check should still pass: %v", err)
@@ -276,4 +276,10 @@ func newPlanFrom(t *testing.T, d plan.DeploymentPlan) plan.DeploymentPlan {
 		t.Fatalf("New: %v", err)
 	}
 	return p
+}
+
+// subjectOf names the plan an approval would bind to, the way the application
+// layer builds it.
+func subjectOf(p plan.DeploymentPlan) policy.SubjectRef {
+	return policy.SubjectRef{Kind: "plan", ID: string(p.ID), Revision: p.Hash.String()}
 }

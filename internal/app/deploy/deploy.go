@@ -310,9 +310,28 @@ func (s *Service) Apply(ctx context.Context, cmd ApplyCommand) (deployment.Deplo
 			d.Previous = &id
 		}
 
+		// Read the approvals inside the transaction, for the same reason the
+		// busy check is inside it: one landing between the read and the write
+		// would admit a deployment against a record that had already moved.
+		//
+		// This is spec 4.9's "required approvals exist". Asking the decision
+		// alone would send a plan approved before it was applied back to a gate
+		// it had already cleared, and would queue one an approver had refused —
+		// briefly, until the next answer cancelled it, but the timeline would
+		// still record it as admitted.
+		recorded, err := s.cfg.Approvals.ListForSubject(ctx, subjectPlan, string(p.ID))
+		if err != nil {
+			return fmt.Errorf("deploy: reading the approvals: %w", err)
+		}
 		next := deployment.StatusQueued
-		if !p.Policy.Satisfied() {
+		// The refusal is returned as it came, so the caller is told who refused
+		// and why rather than that something unnamed is outstanding.
+		switch err := p.Policy.SatisfiedBy(planSubject(p), recorded, s.cfg.Clock.Now()); {
+		case err == nil:
+		case errors.Is(err, policy.ErrRequirementUnmet):
 			next = deployment.StatusAwaitingApproval
+		default:
+			return err
 		}
 		if d, err = d.TransitionTo(next, s.cfg.Clock.Now()); err != nil {
 			return err
