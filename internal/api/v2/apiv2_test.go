@@ -9,12 +9,15 @@ import (
 	apiv2 "go.klarlabs.de/rollops/internal/api/v2"
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
+	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 	"go.klarlabs.de/rollops/internal/domain/value"
@@ -23,17 +26,59 @@ import (
 
 var at = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 
-type world struct {
-	svc   *apiv2.Service
-	store *memory.Store
-	ids   identity.Generator
-	clock identity.Clock
+// movableClock is how an idempotency window is made to lapse without
+// sleeping.
+type movableClock struct{ now time.Time }
+
+func (c *movableClock) Now() time.Time { return c.now }
+
+// stubPlanner and stubPolicy stand in for the two adapters a deploy.Service
+// dispatches to. Everything else behind the write side is the real thing:
+// these tests are about what the API does with an answer, and a fake
+// deploy.Service would let the API disagree with it.
+type stubPlanner struct {
+	proposal deploy.Proposal
+	err      error
+	calls    int
 }
 
-func setup(t *testing.T) *world {
-	t.Helper()
-	store := memory.New()
-	svc, err := apiv2.New(apiv2.Config{
+func (p *stubPlanner) PlanDeployment(context.Context, deploy.PlanRequest) (deploy.Proposal, error) {
+	p.calls++
+	return p.proposal, p.err
+}
+
+type stubPolicy struct {
+	decision policy.Decision
+	err      error
+}
+
+func (p *stubPolicy) Evaluate(context.Context, deploy.PolicyRequest) (policy.Decision, error) {
+	return p.decision, p.err
+}
+
+// stubDeployer stands where a test never reaches the write side. New refuses a
+// nil deployer, and a read test that somehow planned would fail on this error
+// rather than quietly pass.
+type stubDeployer struct{}
+
+func (stubDeployer) Plan(context.Context, deploy.PlanCommand) (plan.DeploymentPlan, error) {
+	return plan.DeploymentPlan{}, errors.New("the deployer was not meant to be called")
+}
+
+type world struct {
+	svc       *apiv2.Service
+	store     *memory.Store
+	ids       identity.Generator
+	clock     *movableClock
+	deployer  apiv2.Deployer
+	proposals *stubPlanner
+	decisions *stubPolicy
+}
+
+// config is every dependency a service needs, so that a test wanting one
+// broken or absent says which rather than repeating the other nine.
+func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) apiv2.Config {
+	return apiv2.Config{
 		Projects:     store.Projects(),
 		Environments: store.Environments(),
 		Releases:     store.Releases(),
@@ -41,15 +86,49 @@ func setup(t *testing.T) *world {
 		Deployments:  store.Deployments(),
 		Plans:        store.Plans(),
 		Events:       store.Events(),
+		Deployer:     deployer,
+		Keys:         store.Idempotency(),
+		Clock:        clock,
+	}
+}
+
+func setup(t *testing.T) *world {
+	t.Helper()
+	store := memory.New()
+	clock := &movableClock{now: at}
+	ids := identity.NewGenerator()
+	proposals := &stubPlanner{proposal: deploy.Proposal{Operations: oneApply()}}
+	decisions := &stubPolicy{decision: allowed()}
+
+	deployer, err := deploy.New(deploy.Config{
+		Transactor:   store,
+		Plans:        store.Plans(),
+		Deployments:  store.Deployments(),
+		Approvals:    store.Approvals(),
+		Releases:     store.Releases(),
+		Environments: store.Environments(),
+		Planner:      proposals,
+		Policy:       decisions,
+		Clock:        clock,
+		IDs:          ids,
+		Events:       store.Events(),
+		PlanLifetime: time.Hour,
 	})
+	if err != nil {
+		t.Fatalf("deploy.New: %v", err)
+	}
+	svc, err := apiv2.New(config(store, clock, deployer))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	return &world{
-		svc:   svc,
-		store: store,
-		ids:   identity.NewGenerator(),
-		clock: identity.ClockFunc(func() time.Time { return at }),
+		svc:       svc,
+		store:     store,
+		ids:       ids,
+		clock:     clock,
+		deployer:  deployer,
+		proposals: proposals,
+		decisions: decisions,
 	}
 }
 
@@ -464,15 +543,7 @@ func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := setup(t)
 			s := w.scene(t)
-			cfg := apiv2.Config{
-				Projects:     w.store.Projects(),
-				Environments: w.store.Environments(),
-				Releases:     w.store.Releases(),
-				Artifacts:    w.store.Artifacts(),
-				Deployments:  w.store.Deployments(),
-				Plans:        w.store.Plans(),
-				Events:       w.store.Events(),
-			}
+			cfg := config(w.store, w.clock, stubDeployer{})
 			tc.breaks(w.store, &cfg)
 			svc, err := apiv2.New(cfg)
 			if err != nil {
@@ -566,18 +637,13 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 		{"deployment", func(c *apiv2.Config) { c.Deployments = nil }},
 		{"plan", func(c *apiv2.Config) { c.Plans = nil }},
 		{"event", func(c *apiv2.Config) { c.Events = nil }},
+		{"deployer", func(c *apiv2.Config) { c.Deployer = nil }},
+		{"idempotency", func(c *apiv2.Config) { c.Keys = nil }},
+		{"clock", func(c *apiv2.Config) { c.Clock = nil }},
 	} {
 		t.Run(tc.missing, func(t *testing.T) {
 			st := memory.New()
-			cfg := apiv2.Config{
-				Projects:     st.Projects(),
-				Environments: st.Environments(),
-				Releases:     st.Releases(),
-				Artifacts:    st.Artifacts(),
-				Deployments:  st.Deployments(),
-				Plans:        st.Plans(),
-				Events:       st.Events(),
-			}
+			cfg := config(st, &movableClock{now: at}, stubDeployer{})
 			tc.drop(&cfg)
 
 			_, err := apiv2.New(cfg)

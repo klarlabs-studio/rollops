@@ -13,6 +13,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/value"
 )
 
 var planner = identity.Principal{
@@ -23,7 +24,9 @@ var planner = identity.Principal{
 }
 
 // scene is a project with one environment and one release in it — everything a
-// plan needs to exist.
+// plan needs to exist. The environment binds a target because an environment
+// with none cannot be deployed to at all, and a fixture that could not be
+// planned against would make every write test set one up for itself.
 type scene struct {
 	*world
 	environment environment.Environment
@@ -33,7 +36,14 @@ type scene struct {
 func (w *world) scene(t *testing.T) scene {
 	t.Helper()
 	p := w.project(t, "checkout")
-	env := w.environment(t, p.ID, environment.Environment{Name: "production"})
+	env := w.environment(t, p.ID, environment.Environment{
+		Name: "production",
+		Targets: []environment.TargetBinding{{
+			Name:   "api",
+			Driver: "kubernetes",
+			Config: map[string]value.Ref{"namespace": value.Literal("payments")},
+		}},
+	})
 	rel := w.release(t, p.ID, "2.0.0", map[string]identity.ArtifactID{"app": w.artifact(t, p.ID, "app").ID})
 	return scene{world: w, environment: env, release: rel}
 }

@@ -50,6 +50,22 @@ type Config struct {
 	// Events is the reader half. The API has no business appending, and taking
 	// only the half it needs means there is no call site that could.
 	Events port.EventReader
+
+	// Deployer performs the mutations. Everything this service knows about
+	// planning and applying it knows through this one interface.
+	Deployer Deployer
+
+	// Keys remembers what a mutation already answered, so that a retry
+	// replays rather than repeats (§18.3).
+	Keys port.IdempotencyRepository
+
+	// Clock stamps the window an idempotency key is recognised within.
+	Clock identity.Clock
+
+	// KeyLifetime is how long that window is. Zero means DefaultKeyLifetime —
+	// this one is optional because there is a defensible answer, where a
+	// missing repository has none.
+	KeyLifetime time.Duration
 }
 
 // Service answers the v2 API.
@@ -61,6 +77,10 @@ type Service struct {
 	deployments  port.DeploymentRepository
 	plans        port.PlanRepository
 	events       port.EventReader
+	deployer     Deployer
+	keys         port.IdempotencyRepository
+	clock        identity.Clock
+	keyLifetime  time.Duration
 }
 
 // New returns a service, naming the first dependency it was not given.
@@ -80,6 +100,15 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no plan repository")
 	case cfg.Events == nil:
 		return nil, errors.New("apiv2: no event reader")
+	case cfg.Deployer == nil:
+		return nil, errors.New("apiv2: no deployer")
+	case cfg.Keys == nil:
+		return nil, errors.New("apiv2: no idempotency repository")
+	case cfg.Clock == nil:
+		return nil, errors.New("apiv2: no clock")
+	}
+	if cfg.KeyLifetime <= 0 {
+		cfg.KeyLifetime = DefaultKeyLifetime
 	}
 	return &Service{
 		projects:     cfg.Projects,
@@ -89,6 +118,10 @@ func New(cfg Config) (*Service, error) {
 		deployments:  cfg.Deployments,
 		plans:        cfg.Plans,
 		events:       cfg.Events,
+		deployer:     cfg.Deployer,
+		keys:         cfg.Keys,
+		clock:        cfg.Clock,
+		keyLifetime:  cfg.KeyLifetime,
 	}, nil
 }
 
