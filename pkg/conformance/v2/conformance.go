@@ -301,6 +301,14 @@ func CheckPlanHasNoSideEffects(ctx context.Context, tgt targetv2.Target, desired
 // CheckApplyIsIdempotent verifies §9.4 from the side that matters: the case the
 // key exists for is a crash between the call and its response, so the retry
 // carries the key the lost call used and must not apply a second time.
+//
+// §9.4 allows two answers, and the suite has to accept both or it is holding
+// targets to a contract the spec does not state. A provider that can remember
+// the key replays the first result; one whose substrate cannot promise that
+// refuses with a typed conflict. What neither may do is apply a second time
+// and call it a replay — nor refuse with a bare error, because a caller
+// retrying after a lost response has to tell a conflict it can stop on from a
+// failure it must try again.
 func CheckApplyIsIdempotent(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) error {
 	key := targetv2.IdempotencyKeyFor("conformance", "op-1")
 	first, err := tgt.Apply(ctx, targetv2.ApplyRequest{Desired: desired, IdempotencyKey: key})
@@ -308,10 +316,15 @@ func CheckApplyIsIdempotent(ctx context.Context, tgt targetv2.Target, desired ta
 		return fmt.Errorf("conformance: first apply: %w", err)
 	}
 	replay, err := tgt.Apply(ctx, targetv2.ApplyRequest{Desired: desired, IdempotencyKey: key})
-	if err != nil {
-		return fmt.Errorf("conformance: replayed apply: %w", err)
-	}
-	if replay != first {
+	switch {
+	case targetv2.KindOf(err) == targetv2.KindConflict:
+		// The provider cannot guarantee replay and said so. §9.4's second
+		// branch: the caller learns the key is spent rather than being handed
+		// a result the target did not stand behind.
+	case err != nil:
+		return fmt.Errorf("conformance: a repeated idempotency key was refused as kind %q, want a replayed result or %q: %w",
+			targetv2.KindOf(err), targetv2.KindConflict, err)
+	case replay != first:
 		return fmt.Errorf("conformance: the same key did not replay: got %+v, want the first result %+v",
 			replay, first)
 	}

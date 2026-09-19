@@ -33,6 +33,7 @@ type mem struct {
 	acceptEmptyKey bool   // applies without an idempotency key
 	forgetKeys     bool   // never replays, so a retry applies twice
 	untypedErrors  bool   // fails with a bare error carrying no kind
+	cannotReplay   bool   // refuses a repeated key with a typed conflict (§9.4)
 	sickHealth     bool   // claims health observation, answers Unknown
 }
 
@@ -107,6 +108,12 @@ func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.Ap
 	}
 	if !m.forgetKeys {
 		if prior, seen := m.applied[req.IdempotencyKey]; seen {
+			if m.cannotReplay {
+				if m.untypedErrors {
+					return targetv2.ApplyResult{}, errString("key already used")
+				}
+				return targetv2.ApplyResult{}, targetv2.IdempotencyConflict("Apply", req.IdempotencyKey)
+			}
 			return prior, nil
 		}
 	}
@@ -472,5 +479,36 @@ func TestAMandatoryOnlyTargetPassesEveryAxis(t *testing.T) {
 	}.Check(context.Background())
 	if len(errs) != 0 {
 		t.Fatalf("a target implementing only the mandatory contract failed: %v", errs)
+	}
+}
+
+// TestAProviderThatCannotReplaySaysSo is the second branch §9.4 allows, and
+// the suite has to accept it or it is holding targets to a contract the spec
+// does not state. A provider whose substrate has no way to remember the key
+// can refuse the repeat outright: what it must not do is apply a second time
+// and call that a replay.
+func TestAProviderThatCannotReplaySaysSo(t *testing.T) {
+	errs := suiteFor(t, func() *mem {
+		m := newMem(healthy())
+		m.cannotReplay = true
+		return m
+	})
+	if len(errs) != 0 {
+		t.Fatalf("a target that refused a repeated key with a typed conflict failed: %v", errs)
+	}
+}
+
+// TestAnUntypedRefusalOfARepeatedKeyIsStillAFailure keeps the branch above
+// from becoming a hole. "It errored" is not the same as "it refused": a caller
+// retrying after a lost response has to tell a conflict it can stop on from a
+// failure it must try again.
+func TestAnUntypedRefusalOfARepeatedKeyIsStillAFailure(t *testing.T) {
+	tgt := newMem(healthy())
+	tgt.cannotReplay = true
+	tgt.untypedErrors = true
+
+	err := conformancev2.CheckApplyIsIdempotent(context.Background(), tgt, desired())
+	if err == nil {
+		t.Fatalf("a bare error on a repeated key passed the idempotency axis")
 	}
 }
