@@ -84,23 +84,6 @@ func launch(cfg config.Target) (*pluginhost.Process, pub.Manifest, error) {
 	return proc, m, nil
 }
 
-// Target is a plugin-backed v2 target bound to its resolved capabilities,
-// together with the handle that tears its subprocess down.
-type Target struct {
-	*targetv2.Bound
-
-	// Overclaimed names capabilities the bound target claimed without the
-	// plugin having been installed with them. They are refused rather than
-	// honoured; the list is kept because an executable asking for more than it
-	// was authorized is a trust signal (§33.4), not a nuisance.
-	Overclaimed []targetv2.Capability
-
-	proc *pluginhost.Process
-}
-
-// Close releases the plugin subprocess.
-func (t *Target) Close() error { return t.proc.Close() }
-
 // BuildV2 constructs a plugin-backed v2 target. A plugin that declares the
 // target contract is reached over the typed service; one that does not is
 // reached over the generic tool wire and adapted, so a plugin written before v2
@@ -110,7 +93,7 @@ func (t *Target) Close() error { return t.proc.Close() }
 // narrowed by what the bound target claims now, and the engine acts on the
 // intersection — which is why this returns a *targetv2.Bound rather than a
 // Target: the optional verbs are reachable only through it.
-func BuildV2(cfg config.Target) (*Target, error) {
+func BuildV2(cfg config.Target) (*targetv2.Bound, error) {
 	proc, m, err := launch(cfg)
 	if err != nil {
 		return nil, err
@@ -131,6 +114,10 @@ func BuildV2(cfg config.Target) (*Target, error) {
 	} else {
 		inner = v1adapter.New(&adapter{proc: proc}, meta)
 	}
+	// The subprocess is owned by the transport, not by the target, so closing
+	// it is a step on the binding rather than a wrapper around the target —
+	// anything in between would swallow the optional capabilities.
+	teardown := targetv2.OnClose(proc.Close)
 
 	cctx, cancel := context.WithTimeout(context.Background(), pluginhost.ManifestTimeout)
 	claimed, err := inner.Capabilities(cctx)
@@ -145,17 +132,11 @@ func BuildV2(cfg config.Target) (*Target, error) {
 	// actually implements — so there is nothing to over-claim and the claim
 	// stands. That is the truthful outcome, not a gap: nothing was authorized
 	// separately, so nothing is refused separately.
-	effective, overclaimed := claimed, []targetv2.Capability(nil)
-	if typed {
-		ceiling, _ := targetv2.ParseCapabilities(contract.Capabilities)
-		effective, overclaimed = ceiling.Narrow(claimed)
+	if !typed {
+		return targetv2.NewBound(inner, claimed, teardown), nil
 	}
-
-	return &Target{
-		Bound:       targetv2.NewBound(inner, effective),
-		Overclaimed: overclaimed,
-		proc:        proc,
-	}, nil
+	ceiling, _ := targetv2.ParseCapabilities(contract.Capabilities)
+	return targetv2.NewNarrowedBound(inner, ceiling, claimed, teardown), nil
 }
 
 // adapter turns target-capability tool invocations into a pt.Target.

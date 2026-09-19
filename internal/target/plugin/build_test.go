@@ -181,8 +181,8 @@ func TestBuildV2_TheCeilingRefusesAnOverclaimedCapability(t *testing.T) {
 	} else if got := targetv2.KindOf(err); got != targetv2.KindUnsupported {
 		t.Errorf("prune failed with kind %q, want %q", got, targetv2.KindUnsupported)
 	}
-	if len(tgt.Overclaimed) != 1 || tgt.Overclaimed[0] != targetv2.CapabilityPrune {
-		t.Errorf("overclaimed = %v, want [%s]", tgt.Overclaimed, targetv2.CapabilityPrune)
+	if len(tgt.Overclaimed()) != 1 || tgt.Overclaimed()[0] != targetv2.CapabilityPrune {
+		t.Errorf("overclaimed = %v, want [%s]", tgt.Overclaimed(), targetv2.CapabilityPrune)
 	}
 }
 
@@ -210,8 +210,8 @@ func TestBuildV2_APluginFromBeforeV2StillWorks(t *testing.T) {
 	// There was nowhere for a v1 author to declare a ceiling, so the adapter's
 	// claim stands unnarrowed — nothing was authorized separately, so nothing
 	// is refused separately.
-	if len(tgt.Overclaimed) != 0 {
-		t.Errorf("a v1 plugin overclaimed %v", tgt.Overclaimed)
+	if len(tgt.Overclaimed()) != 0 {
+		t.Errorf("a v1 plugin overclaimed %v", tgt.Overclaimed())
 	}
 	if !tgt.Can(targetv2.CapabilityHealthObservation) {
 		t.Error("the adapter's own claim was dropped")

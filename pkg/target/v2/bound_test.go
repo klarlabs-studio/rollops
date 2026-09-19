@@ -191,3 +191,80 @@ func TestAnIdempotencyKeyIsStableAcrossRetriesAndUniquePerIntent(t *testing.T) {
 		t.Errorf("the key is empty, which Apply refuses")
 	}
 }
+
+// closingCore is a target that holds a resource, the way a plugin-backed one
+// holds a subprocess.
+type closingCore struct {
+	core
+	closed int
+}
+
+func (c *closingCore) Close() error { c.closed++; return nil }
+
+// TestTheBindingClosesWhatItHolds keeps the subprocess from outliving the
+// caller. A host that holds a Bound has nothing else to release, so if the
+// binding does not pass Close through, every plugin-backed target leaks — and
+// it leaks silently, because a leaked process still answers.
+func TestTheBindingClosesWhatItHolds(t *testing.T) {
+	inner := &closingCore{}
+	b := targetv2.NewBound(inner, targetv2.Capabilities{})
+	if err := b.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if inner.closed != 1 {
+		t.Errorf("the inner target was closed %d times, want 1", inner.closed)
+	}
+
+	// A target with nothing to release is the common case and must not be an
+	// error: the caller closes unconditionally and cannot tell the two apart.
+	if err := targetv2.NewBound(&core{}, targetv2.Capabilities{}).Close(); err != nil {
+		t.Errorf("closing a target that holds nothing failed: %v", err)
+	}
+}
+
+// TestAReleaseStepBelongsToTheBindingNotAWrapper is why OnClose exists. The
+// subprocess behind a plugin target is owned by the transport, not by the
+// target, and the obvious fix — wrap the target in something that closes it —
+// is the capability-dropping bug in miniature: the wrapper forwards the
+// mandatory methods and every optional one vanishes behind it.
+func TestAReleaseStepBelongsToTheBindingNotAWrapper(t *testing.T) {
+	released := 0
+	b := targetv2.NewBound(&drifting{}, targetv2.Capabilities{DriftDetection: true},
+		targetv2.OnClose(func() error { released++; return nil }))
+
+	// The optional verb still resolves, which is the point: the release step
+	// did not come between the binding and the target.
+	if _, err := b.DetectDrift(context.Background(), targetv2.DriftRequest{}); err != nil {
+		t.Errorf("DetectDrift: %v", err)
+	}
+	if err := b.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if released != 1 {
+		t.Errorf("the release step ran %d times, want 1", released)
+	}
+}
+
+// TestTheBindingRemembersWhatItRefused keeps §33.4's trust signal attached to
+// the thing that resolved it. Narrowing already refuses the capability; what
+// would otherwise be lost is that the target asked for it at all, and an
+// executable asking for more than it was installed with is worth surfacing
+// rather than dropping on the floor.
+func TestTheBindingRemembersWhatItRefused(t *testing.T) {
+	// core claims drift detection. The ceiling authorizes only prune.
+	ceiling := targetv2.Capabilities{Prune: true}
+	claimed := targetv2.Capabilities{DriftDetection: true}
+
+	b := targetv2.NewNarrowedBound(&core{}, ceiling, claimed)
+
+	if b.Can(targetv2.CapabilityDriftDetection) {
+		t.Error("a capability outside the ceiling survived the narrowing")
+	}
+	if b.Can(targetv2.CapabilityPrune) {
+		t.Error("a capability the target did not claim was granted by the ceiling alone")
+	}
+	got := b.Overclaimed()
+	if len(got) != 1 || got[0] != targetv2.CapabilityDriftDetection {
+		t.Errorf("overclaimed = %v, want [%s]", got, targetv2.CapabilityDriftDetection)
+	}
+}

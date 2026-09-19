@@ -2,7 +2,9 @@ package targetv2
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 )
 
 // Bound is a Target together with the capabilities the host resolved for it —
@@ -15,13 +17,64 @@ import (
 // The optional capabilities are reachable only through its methods, so the
 // capability check cannot be skipped by calling the method directly.
 type Bound struct {
-	target Target
-	caps   Capabilities
+	target      Target
+	caps        Capabilities
+	overclaimed []Capability
+	release     func() error
+}
+
+// BoundOption configures a binding at construction.
+type BoundOption func(*Bound)
+
+// OnClose attaches a release step to the binding — a plugin subprocess, a
+// connection — for a resource the target itself does not own. It belongs here
+// rather than on a wrapper around the target, because a wrapper that forwards
+// only the mandatory methods silently drops every optional capability behind
+// it, and one that forwards them all is the 2ⁿ generated types ADR-0006
+// rejected.
+func OnClose(release func() error) BoundOption {
+	return func(b *Bound) { b.release = release }
 }
 
 // NewBound ties a target to its resolved capabilities.
-func NewBound(t Target, caps Capabilities) *Bound {
-	return &Bound{target: t, caps: caps}
+func NewBound(t Target, caps Capabilities, opts ...BoundOption) *Bound {
+	return newBound(&Bound{target: t, caps: caps}, opts)
+}
+
+// NewNarrowedBound resolves the capabilities here, from the ceiling the
+// operator authorized and the claim the target makes now, keeping both the
+// intersection and what it refused.
+func NewNarrowedBound(t Target, ceiling, claimed Capabilities, opts ...BoundOption) *Bound {
+	effective, overclaimed := ceiling.Narrow(claimed)
+	return newBound(&Bound{target: t, caps: effective, overclaimed: overclaimed}, opts)
+}
+
+func newBound(b *Bound, opts []BoundOption) *Bound {
+	for _, o := range opts {
+		o(b)
+	}
+	return b
+}
+
+// Overclaimed names capabilities the target claimed beyond its ceiling. They
+// were refused, and the list is kept because an executable asking for more
+// than it was installed with is a trust signal (§33.4) rather than a nuisance
+// — worth reading even though acting on it was already prevented.
+func (b *Bound) Overclaimed() []Capability { return b.overclaimed }
+
+// Close releases whatever the target holds — a plugin subprocess, a connection
+// — and is a no-op for one that holds nothing. The caller has only the binding
+// to release, so a binding that did not pass this through would leak every
+// plugin-backed target, and leak it silently: a leaked process still answers.
+func (b *Bound) Close() error {
+	var errs []error
+	if c, ok := b.target.(io.Closer); ok {
+		errs = append(errs, c.Close())
+	}
+	if b.release != nil {
+		errs = append(errs, b.release())
+	}
+	return errors.Join(errs...)
 }
 
 // Unwrap returns the underlying target. It exists for adapters that must pass
