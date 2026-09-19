@@ -114,11 +114,33 @@ func (f *fixture) artifact(t *testing.T, p identity.ProjectID, content string) a
 		Size:      4096,
 		MediaType: "application/vnd.oci.image.manifest.v1+json",
 		Metadata:  map[string]string{"builder": "ci"},
+		// Provenance is populated because a document reference carries a digest,
+		// and a digest is the one field in the model whose contents are
+		// unreachable from outside its package. A store that serialises it
+		// structurally loses it silently and still returns a plausible record.
+		Provenance: f.document(provenance.DocumentProvenance, "slsa", content+"/provenance"),
+		SBOMs: []provenance.DocumentRef{
+			f.document(provenance.DocumentSBOM, "spdx-json", content+"/sbom"),
+		},
+		Signatures: []provenance.DocumentRef{
+			f.document(provenance.DocumentSignature, "cosign", content+"/sig"),
+		},
 	})
 	if err != nil {
 		t.Fatalf("build artifact: %v", err)
 	}
 	return a
+}
+
+// document builds a reference whose digest is derived from seed, so that two
+// references in one fixture differ in the field most likely to be dropped.
+func (f *fixture) document(k provenance.DocumentKind, format, seed string) provenance.DocumentRef {
+	return provenance.DocumentRef{
+		Kind:    k,
+		Format:  format,
+		Locator: fmt.Sprintf("https://artifacts.example/%s/%s", k, format),
+		Digest:  digest.Of([]byte(seed)),
+	}
 }
 
 func (f *fixture) release(t *testing.T, p identity.ProjectID, version string, as []artifact.Artifact) release.Release {
@@ -139,7 +161,8 @@ func (f *fixture) release(t *testing.T, p identity.ProjectID, version string, as
 			Revision:   "5f2a1c9e7b3d4a6f8e0c2b4d6a8f0c2e4b6d8a0f",
 			Ref:        "refs/heads/main",
 		},
-		Labels: map[string]string{"channel": "stable"},
+		Labels:     map[string]string{"channel": "stable"},
+		Provenance: f.document(provenance.DocumentProvenance, "slsa", version),
 	})
 	if err != nil {
 		t.Fatalf("build release: %v", err)

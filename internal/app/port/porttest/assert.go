@@ -7,6 +7,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/project"
+	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
 
@@ -139,12 +140,8 @@ func assertArtifact(t *testing.T, got, want artifact.Artifact) {
 	if got.Provenance != want.Provenance {
 		t.Errorf("Provenance = %+v, want %+v", got.Provenance, want.Provenance)
 	}
-	if len(got.SBOMs) != len(want.SBOMs) {
-		t.Errorf("got %d sboms, want %d", len(got.SBOMs), len(want.SBOMs))
-	}
-	if len(got.Signatures) != len(want.Signatures) {
-		t.Errorf("got %d signatures, want %d", len(got.Signatures), len(want.Signatures))
-	}
+	assertDocuments(t, "sboms", got.SBOMs, want.SBOMs)
+	assertDocuments(t, "signatures", got.Signatures, want.Signatures)
 	if !sameTime(got.CreatedAt, want.CreatedAt) {
 		t.Errorf("CreatedAt = %s, want %s", got.CreatedAt, want.CreatedAt)
 	}
@@ -152,6 +149,22 @@ func assertArtifact(t *testing.T, got, want artifact.Artifact) {
 	// a field can produce a record the domain would have refused to write.
 	if err := got.Validate(); err != nil {
 		t.Errorf("the stored artifact is no longer valid: %v", err)
+	}
+}
+
+// assertDocuments compares references one by one rather than by count. The
+// digest is the field a structural encoder drops, and a list of the right
+// length whose digests are all zero is the exact shape that failure takes.
+func assertDocuments(t *testing.T, field string, got, want []provenance.DocumentRef) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("got %d %s, want %d", len(got), field, len(want))
+		return
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s[%d] = %+v, want %+v", field, i, got[i], want[i])
+		}
 	}
 }
 
