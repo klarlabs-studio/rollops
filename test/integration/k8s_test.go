@@ -9,7 +9,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/target/kubernetes"
-	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 // A tiny always-ready Deployment (pause container — no real workload needed to
@@ -68,10 +68,14 @@ func TestKubernetesTarget_Live(t *testing.T) {
 		t.Fatalf("new k8s target: %v", err)
 	}
 	ctx := context.Background()
-	m := pt.Manifest{Kind: "kubernetes", Spec: []byte(echoDeployment), Checksum: "k8s-live-v1"}
+	d := targetv2.DesiredState{Kind: "kubernetes", Spec: []byte(echoDeployment), Checksum: "k8s-live-v1"}
 
-	// Apply: kubectl apply + annotate the live resource with the checksum.
-	res, err := tgt.Apply(ctx, m)
+	// Apply: kubectl apply + annotate the live resource with the checksum and
+	// the key that produced it.
+	res, err := tgt.Apply(ctx, targetv2.ApplyRequest{
+		Desired:        d,
+		IdempotencyKey: targetv2.IdempotencyKeyFor("integration", "k8s-live-1"),
+	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -79,37 +83,37 @@ func TestKubernetesTarget_Live(t *testing.T) {
 		t.Error("first apply should report changed")
 	}
 
-	// Observe reads the checksum annotation back from the LIVE cluster (rich).
-	fp, err := tgt.Observe(ctx)
+	// Observe reads the checksum annotation back from the LIVE cluster (rich),
+	// alongside rollout readiness.
+	obs, err := tgt.Observe(ctx, targetv2.ObserveRequest{})
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
-	if fp.Value != "k8s-live-v1" {
-		t.Errorf("live cluster observed %q, want k8s-live-v1", fp.Value)
+	if obs.Fingerprint != "k8s-live-v1" {
+		t.Errorf("live cluster observed %q, want k8s-live-v1", obs.Fingerprint)
+	}
+	if obs.Health.State != targetv2.HealthHealthy {
+		t.Logf("health = %v (%s) — acceptable if rollout still progressing", obs.Health.State, obs.Health.Reason)
 	}
 
-	// Idempotent: re-applying the same checksum is a no-op.
-	res2, err := tgt.Apply(ctx, m)
+	// A second key over the same desired state is a new operation, not a
+	// replay, so this measures convergence against a real cluster rather than
+	// the annotation that records the key.
+	res2, err := tgt.Apply(ctx, targetv2.ApplyRequest{
+		Desired:        d,
+		IdempotencyKey: targetv2.IdempotencyKeyFor("integration", "k8s-live-2"),
+	})
 	if err != nil {
 		t.Fatalf("re-apply: %v", err)
 	}
 	if res2.Changed {
 		t.Error("re-applying the same checksum must be a no-op")
 	}
-
-	// Health: rollout status of the deployment.
-	hs, err := tgt.Health(ctx)
-	if err != nil {
-		t.Fatalf("health: %v", err)
-	}
-	if hs.State != pt.HealthHealthy {
-		t.Logf("health = %v (%s) — acceptable if rollout still progressing", hs.State, hs.Reason)
-	}
 }
 
 const pruneNS = "rollops-prune-it"
 
-func k8sTarget(t *testing.T) pt.Target {
+func k8sTarget(t *testing.T) *targetv2.Bound {
 	t.Helper()
 	tgt, err := kubernetes.New(config.Target{
 		Kind: "kubernetes", Ref: "int/prune",
@@ -157,7 +161,10 @@ spec:
     spec:
       containers: [{name: pause, image: registry.k8s.io/pause:3.9}]
 `
-	if _, err := tgt.Apply(ctx, pt.Manifest{Kind: "kubernetes", Spec: []byte(withCM), Checksum: "v1"}); err != nil {
+	if _, err := tgt.Apply(ctx, targetv2.ApplyRequest{
+		Desired:        targetv2.DesiredState{Kind: "kubernetes", Spec: []byte(withCM), Checksum: "v1"},
+		IdempotencyKey: targetv2.IdempotencyKeyFor("integration", "prune-with-cm"),
+	}); err != nil {
 		t.Fatalf("apply with cm: %v", err)
 	}
 	if out, _ := kubectlGet("get", "configmap", "extra", "-n", pruneNS, "-o", "name"); out == "" {
@@ -165,7 +172,10 @@ spec:
 	}
 
 	// Remove the configmap from desired → prune deletes it.
-	if _, err := tgt.Apply(ctx, pt.Manifest{Kind: "kubernetes", Spec: []byte(withoutCM), Checksum: "v2"}); err != nil {
+	if _, err := tgt.Apply(ctx, targetv2.ApplyRequest{
+		Desired:        targetv2.DesiredState{Kind: "kubernetes", Spec: []byte(withoutCM), Checksum: "v2"},
+		IdempotencyKey: targetv2.IdempotencyKeyFor("integration", "prune-without-cm"),
+	}); err != nil {
 		t.Fatalf("apply without cm: %v", err)
 	}
 	if out, err := kubectlGet("get", "configmap", "extra", "-n", pruneNS, "-o", "name"); err == nil && out != "" {

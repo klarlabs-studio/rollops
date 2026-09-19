@@ -13,8 +13,8 @@ import (
 // also register additional kinds directly.
 func Builtin() *Registry {
 	r := NewRegistry()
-	r.Register("ssh", FromV1("ssh", ssh.New))
-	r.Register("ftp", FromV1("ftp", ftp.New))
+	r.Register("ssh", ssh.New)
+	r.Register("ftp", ftp.New)
 	r.Register("kubernetes", kubernetes.New)
 	r.Register("plugin", plugin.BuildV2)
 	return r
