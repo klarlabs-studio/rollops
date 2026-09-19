@@ -320,6 +320,19 @@ type IdempotencyRepository interface {
 	// than absorbed.
 	Complete(ctx context.Context, operation, key, result string) error
 
+	// Discard releases a claim whose call did not return an answer, so the
+	// caller may retry under the same key. It returns ErrNotFound if the key
+	// was never claimed and ErrAlreadyExists if it was completed — a completed
+	// record is a fact about work that happened, and dropping it would let
+	// that work run a second time.
+	//
+	// A claim is only released by the call that made it. One abandoned by a
+	// crash stays until it is swept, and a retry meanwhile is refused rather
+	// than performed: nobody can tell from here whether the first attempt
+	// landed, and 9.4 allows a typed conflict where replay cannot be
+	// guaranteed.
+	Discard(ctx context.Context, operation, key string) error
+
 	// Get returns the record for a key within an operation, or ErrNotFound if
 	// the key has not been used.
 	Get(ctx context.Context, operation, key string) (IdempotencyRecord, error)

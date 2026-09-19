@@ -171,6 +171,63 @@ func runIdempotency(t *testing.T, newRepos Factory) {
 		}
 	})
 
+	// The commonest retry is the one after a failure, and it must be allowed to
+	// reuse the key: a claim held past a call that returned nothing would turn
+	// every retryable error into a permanent conflict.
+	t.Run("a discarded claim leaves the key free to try again", func(t *testing.T) {
+		r := newRepos(t)
+		c := claim(`{"plan":"pln_1"}`, at)
+		if err := r.Idempotency.Create(ctx, c); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := r.Idempotency.Discard(ctx, c.Operation, c.Key); err != nil {
+			t.Fatalf("Discard: %v", err)
+		}
+
+		if _, err := r.Idempotency.Get(ctx, c.Operation, c.Key); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Get = %v, want ErrNotFound; the claim outlived the call it stood for", err)
+		}
+		if err := r.Idempotency.Create(ctx, c); err != nil {
+			t.Errorf("Create after Discard: %v", err)
+		}
+	})
+
+	// Dropping a completed record would let the work it records run again,
+	// which is the whole thing the key is there to stop.
+	t.Run("a completed record cannot be discarded", func(t *testing.T) {
+		r := newRepos(t)
+		c := claim(`{"plan":"pln_1"}`, at)
+		if err := r.Idempotency.Create(ctx, c); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := r.Idempotency.Complete(ctx, c.Operation, c.Key, deploymentID); err != nil {
+			t.Fatalf("Complete: %v", err)
+		}
+
+		err := r.Idempotency.Discard(ctx, c.Operation, c.Key)
+
+		if !errors.Is(err, port.ErrAlreadyExists) {
+			t.Fatalf("Discard = %v, want ErrAlreadyExists", err)
+		}
+		got, err := r.Idempotency.Get(ctx, c.Operation, c.Key)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.Result != deploymentID {
+			t.Errorf("result = %q, want %q", got.Result, deploymentID)
+		}
+	})
+
+	t.Run("a key nobody claimed cannot be discarded", func(t *testing.T) {
+		r := newRepos(t)
+
+		err := r.Idempotency.Discard(ctx, "ApplyPlan", oneKey)
+
+		if !errors.Is(err, port.ErrNotFound) {
+			t.Fatalf("Discard = %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("a key nobody has used is not found", func(t *testing.T) {
 		r := newRepos(t)
 

@@ -657,6 +657,22 @@ func (r idempotency) Complete(ctx context.Context, operation, key, result string
 	})
 }
 
+// Discard releases a claim whose call returned nothing to record.
+func (r idempotency) Discard(ctx context.Context, operation, key string) error {
+	return r.s.write(ctx, func(st *state) error {
+		k := idempotencyKey{operation, key}
+		rec, claimed := st.idempotency[k]
+		switch {
+		case !claimed:
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrNotFound)
+		case rec.Result != "":
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrAlreadyExists)
+		}
+		delete(st.idempotency, k)
+		return nil
+	})
+}
+
 func (r idempotency) Get(ctx context.Context, operation, key string) (port.IdempotencyRecord, error) {
 	var out port.IdempotencyRecord
 	err := r.s.read(ctx, func(st *state) error {

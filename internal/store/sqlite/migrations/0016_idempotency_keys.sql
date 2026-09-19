@@ -32,10 +32,13 @@
 -- A row is written in two steps. Create claims the key with result = '', and
 -- Complete fills it in; the claim is what a concurrent retry sees while the
 -- first call is still running, which is the case a key exists for. The only
--- UPDATE is that one transition, and it names result = '' in its WHERE clause
--- so a completed row can never be rewritten: a record states what one call
--- returned, and editing it would make a replay answer for a request that never
--- happened.
+-- UPDATE is that one transition. A claim whose call returned nothing to record
+-- is deleted instead, so the caller may retry under the same key.
+--
+-- Both writes name result = '' in their WHERE clause, so a completed row can
+-- never be rewritten or dropped: a record states what one call returned, and
+-- editing it would make a replay answer for a request that never happened,
+-- while deleting it would let the work it records run a second time.
 CREATE TABLE idempotency_keys (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
     operation   TEXT NOT NULL,

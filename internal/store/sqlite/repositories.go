@@ -1186,6 +1186,38 @@ func (r idempotencyRepo) Complete(ctx context.Context, operation, key, result st
 	})
 }
 
+// Discard releases a claim whose call returned nothing to record. Like
+// Complete it names the empty result in its WHERE clause, so a completed
+// record survives: it states that work happened, and dropping it would let
+// that work run again.
+func (r idempotencyRepo) Discard(ctx context.Context, operation, key string) error {
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		if err := mustExist(ctx, q,
+			`SELECT 1 FROM idempotency_keys WHERE operation = ? AND key = ?`,
+			[]any{operation, key},
+			fmt.Sprintf("idempotency key %s/%s", operation, key),
+		); err != nil {
+			return err
+		}
+		res, err := q.ExecContext(ctx,
+			`DELETE FROM idempotency_keys WHERE operation = ? AND key = ? AND result = ''`,
+			operation, key,
+		)
+		if err != nil {
+			return wrap("discard idempotency key", err)
+		}
+		changed, err := res.RowsAffected()
+		if err != nil {
+			return wrap("discard idempotency key", err)
+		}
+		if changed == 0 {
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrAlreadyExists)
+		}
+		return nil
+	})
+}
+
 // Get returns the record whatever its expiry. The window is the caller's to
 // judge against its own clock: hiding a lapsed record would turn a stale retry
 // into a second mutation, where returning it lets the caller refuse.
