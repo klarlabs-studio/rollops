@@ -53,7 +53,7 @@ type Release struct {
 // New stamps identity, attribution and time onto r, then validates it. The
 // author's claims are redacted before they are stored: a release is persisted
 // and rendered on every surface, so a credential that reached it would be
-// impossible to recall (INV-011).
+// impossible to recall (INV-012).
 func New(g identity.Generator, c identity.Clock, by identity.Principal, r Release) (Release, error) {
 	id, err := identity.NewReleaseID(g)
 	if err != nil {

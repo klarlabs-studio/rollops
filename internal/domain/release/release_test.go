@@ -269,7 +269,7 @@ func TestNewStampsIdentityAttributionAndTime(t *testing.T) {
 	}
 }
 
-// INV-011: a release is persisted and rendered widely. A credential that
+// INV-012: a release is persisted and rendered widely. A credential that
 // arrived in the author's claims must not travel with it.
 func TestNewRedactsTheAuthorsClaims(t *testing.T) {
 	by := identity.Principal{

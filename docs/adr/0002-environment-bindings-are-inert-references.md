@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-09-19
 - **Spec:** `docs/architecture/rollops-next.md` §4.4, §9, §12, §22.5 · **Backlog:** R2
-- **Invariants touched:** INV-007 (infrastructure independence), INV-011 (secret non-persistence)
+- **Invariants touched:** INV-007 (infrastructure independence), INV-012 (secret non-persistence)
 
 ## Context
 
@@ -64,7 +64,7 @@ type TargetBinding struct {
   exists to prevent. An unknown driver fails loudly at resolution.
 - `Config` is `map[string]value.Ref`, not `map[string]string`, so a
   registry password or kubeconfig is a reference the environment can carry
-  without the material ever being stored in it (§22.5, INV-011).
+  without the material ever being stored in it (§22.5, INV-012).
 
 The `Target` interface itself (§9.2) is untouched by this ADR. Decision #4
 can land whatever contract it likes; a binding that only names a driver and
@@ -138,6 +138,6 @@ not. Zero is the safe default in both fields.
 - **`Driver` as a typed enum.** Rejected above: it makes the domain the
   registry of every plugin that will ever exist.
 - **`Config map[string]string`.** A target needs credentials. Plain strings
-  mean credentials in the environment record, which INV-011 forbids.
+  mean credentials in the environment record, which INV-012 forbids.
 - **`PolicyBinding` scoped to decision points.** Rejected above: two places
   to express one rule, contradicting §12.3.

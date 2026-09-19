@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-09-19
 - **Spec:** `docs/architecture/rollops-next.md` §16, §17, §18, §36 · **Backlog:** R2, R5
-- **Invariants touched:** INV-005 (universal attribution), INV-006 (transport independence), INV-011 (secret non-persistence)
+- **Invariants touched:** INV-005 (universal attribution), INV-006 (transport independence), INV-012 (secret non-persistence)
 - **Decides:** pending decision #3
 
 ## Context
@@ -138,7 +138,7 @@ takes no new migrations.
   the in-memory fakes used in tests implement the same interfaces.
 - A use case that forgets its transaction fails at its first event append
   rather than producing a silently untimelined mutation.
-- Attribution (INV-005) and redaction (INV-011) belong to the envelope, not
+- Attribution (INV-005) and redaction (INV-012) belong to the envelope, not
   to each call site: the appender takes a `Principal` and stores it
   `Redacted()`. A caller cannot append an unattributed event because there is
   no method that omits it.

@@ -13,7 +13,7 @@
 -- Operations, the policy decision and the rollback are stored as JSON on the
 -- row because a plan is only ever read whole: nothing queries one operation.
 --
--- The value of a change marked sensitive is never written here (INV-011). The
+-- The value of a change marked sensitive is never written here (INV-012). The
 -- plan's own hash excludes those values for exactly this reason, so a redacted
 -- plan read back out still verifies against the hash it was approved under.
 CREATE TABLE plans (

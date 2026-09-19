@@ -241,7 +241,7 @@ func TestTargetLookupByName(t *testing.T) {
 	}
 }
 
-// INV-011: an environment is persisted and rendered on every surface, so a
+// INV-012: an environment is persisted and rendered on every surface, so a
 // credential in its target configuration must travel as a reference.
 func TestEnvironmentConfigurationNeverRendersSecretMaterial(t *testing.T) {
 	e := valid()

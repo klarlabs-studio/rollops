@@ -4,7 +4,7 @@
 // A Ref never holds secret material. Resolution happens at the moment of use
 // and the result is handed to the caller, not stored back — so a secret cannot
 // reach normalized config, a plan, an event, a log or an API response by
-// travelling inside the value that referenced it (INV-011).
+// travelling inside the value that referenced it (INV-012).
 package value
 
 import (

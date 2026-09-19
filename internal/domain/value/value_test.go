@@ -52,7 +52,7 @@ func TestResolveWithoutAProviderRefusesRatherThanReturningEmpty(t *testing.T) {
 	}
 }
 
-// INV-011: a secret must not appear in normalized config, plans, events, logs
+// INV-012: a secret must not appear in normalized config, plans, events, logs
 // or API responses. The reference is what travels; the value is fetched at the
 // moment of use and never stored on the reference itself.
 func TestASecretReferenceNeverRendersItsValue(t *testing.T) {

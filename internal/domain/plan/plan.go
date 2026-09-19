@@ -74,7 +74,7 @@ func (k OperationKind) valid() bool {
 // Change is one field-level difference an operation would make. Path is in the
 // target's own vocabulary; From and To are rendered values.
 //
-// Sensitive marks a value that must not be stored or displayed (INV-011). The
+// Sensitive marks a value that must not be stored or displayed (INV-012). The
 // path stays visible — knowing that a database URL changed is the point of a
 // diff, and only the value is the secret.
 type Change struct {
@@ -156,7 +156,7 @@ type DeploymentPlan struct {
 //
 // The author's claims are redacted before hashing: a plan is persisted and
 // rendered wherever a release is explained, so a credential that reached it
-// would be impossible to recall (INV-011).
+// would be impossible to recall (INV-012).
 func New(
 	g identity.Generator,
 	c identity.Clock,
@@ -337,7 +337,7 @@ func (p DeploymentPlan) CheckApplicable(now time.Time, current identity.Revision
 }
 
 // Redacted returns a copy safe to store and render, with the value of every
-// change marked sensitive removed (INV-011). The receiver is untouched, and the
+// change marked sensitive removed (INV-012). The receiver is untouched, and the
 // copy still verifies its hash: sensitive values were never inside it.
 func (p DeploymentPlan) Redacted() DeploymentPlan {
 	p.Operations = redactOperations(p.Operations)

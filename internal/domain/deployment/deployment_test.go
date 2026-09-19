@@ -69,7 +69,7 @@ func TestANewDeploymentIsPlannedAndNotYetRunning(t *testing.T) {
 }
 
 // A deployment is persisted and rendered on every surface, so a credential that
-// reached it would be impossible to recall (INV-011).
+// reached it would be impossible to recall (INV-012).
 func TestTheActorIsRecordedAndRedacted(t *testing.T) {
 	by := author()
 	by.Claims = map[string]string{"token": "s3cret"}

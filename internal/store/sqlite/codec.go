@@ -266,7 +266,7 @@ func decodeSourceRevision(s string) (provenance.SourceRevision, error) {
 
 // encodePrincipal redacts before storing. Attribution is written on every
 // surface that renders a release, so a credential that reached the column would
-// be impossible to recall (INV-011).
+// be impossible to recall (INV-012).
 func encodePrincipal(p identity.Principal) (string, error) {
 	p = p.Redacted()
 	return encodeJSON(principalRow{
@@ -312,7 +312,7 @@ func decodeTimePtr(s sql.NullString) (*time.Time, error) {
 }
 
 // operationRows redacts as it builds. The value of a change marked sensitive
-// never reaches a column (INV-011), and every operation a plan stores passes
+// never reaches a column (INV-012), and every operation a plan stores passes
 // through here, so the boundary enforces it rather than trusting each caller to
 // have called Redacted first. The plan hash already excludes these values, so
 // what is read back still verifies against the hash it was approved under.

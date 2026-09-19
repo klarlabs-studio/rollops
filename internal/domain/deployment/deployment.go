@@ -112,7 +112,7 @@ type Deployment struct {
 //
 // The actor's claims are redacted first: a deployment is persisted and rendered
 // on every surface, so a credential that reached it would be impossible to
-// recall (INV-011).
+// recall (INV-012).
 func New(g identity.Generator, c identity.Clock, by identity.Principal, d Deployment) (Deployment, error) {
 	id, err := identity.NewDeploymentID(g)
 	if err != nil {

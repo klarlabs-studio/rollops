@@ -88,7 +88,7 @@ func (b TargetBinding) Validate() error {
 
 // String renders the binding. Configuration is deliberately omitted: a target
 // is configured with credentials, and a binding is rendered wherever an
-// environment is (INV-011).
+// environment is (INV-012).
 func (b TargetBinding) String() string {
 	return fmt.Sprintf("%s (%s)", b.Name, b.Driver)
 }

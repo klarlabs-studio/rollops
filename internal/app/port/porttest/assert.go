@@ -322,7 +322,7 @@ func assertOperations(t *testing.T, field string, got, want []plan.PlannedOperat
 
 // assertChanges expects a sensitive value to have been dropped on the way in.
 // The comparison is written against the redacted form deliberately: storing the
-// value is the defect (INV-011), so a store that round-tripped it faithfully
+// value is the defect (INV-012), so a store that round-tripped it faithfully
 // would be the one failing.
 func assertChanges(t *testing.T, field string, got, want []plan.Change) {
 	t.Helper()

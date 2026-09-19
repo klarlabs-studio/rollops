@@ -215,7 +215,7 @@ func TestARefusedPlanIsNotApplicable(t *testing.T) {
 }
 
 // Diffs are rendered wherever a plan is explained and stored alongside it, so a
-// value marked sensitive must not survive into either (INV-011).
+// value marked sensitive must not survive into either (INV-012).
 func TestASensitiveChangeIsRedacted(t *testing.T) {
 	d := draft()
 	d.Operations[0].Diff = plan.Diff{Changes: []plan.Change{

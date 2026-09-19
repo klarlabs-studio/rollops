@@ -1010,7 +1010,7 @@ func runPlans(t *testing.T, newRepos Factory) {
 		}
 
 		// The path has to survive: knowing that a database URL changed is the
-		// point of a diff, and only the value is the secret (INV-011).
+		// point of a diff, and only the value is the secret (INV-012).
 		var found bool
 		for _, o := range got.Operations {
 			for _, c := range o.Diff.Changes {

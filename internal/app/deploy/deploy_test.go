@@ -658,7 +658,7 @@ func TestTheFirstDeploymentReplacesNothing(t *testing.T) {
 }
 
 // A deployment is persisted and rendered on every surface, so a credential that
-// reached it would be impossible to recall (INV-011). Attribution is the point
+// reached it would be impossible to recall (INV-012). Attribution is the point
 // of keeping the actor at all, so the claims that are not credentials survive —
 // what must not is the value behind a claim named like a secret.
 func TestASecretClaimDoesNotReachTheStoredDeployment(t *testing.T) {

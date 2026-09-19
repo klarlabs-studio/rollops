@@ -354,7 +354,7 @@ func findReleaseByVersion(st *state, p identity.ProjectID, version string) (iden
 type plans struct{ s *Store }
 
 // Create stores the plan redacted. The value of a change marked sensitive is
-// never persisted (INV-011), and the SQLite store enforces that at its encoder,
+// never persisted (INV-012), and the SQLite store enforces that at its encoder,
 // so this one has to do the same or the two would differ in exactly the way the
 // conformance suite exists to prevent. The plan hash excludes those values, so
 // what is read back still verifies against the hash it was approved under.

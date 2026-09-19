@@ -120,7 +120,7 @@ func TestTheAuthorIsRecordedAndRedacted(t *testing.T) {
 		t.Errorf("CreatedBy.ID = %q, want %q", p.CreatedBy.ID, "u1")
 	}
 	// A plan is persisted and rendered wherever a release is explained, so a
-	// credential that reached it would be impossible to recall (INV-011).
+	// credential that reached it would be impossible to recall (INV-012).
 	if got, ok := p.CreatedBy.Claims["token"]; ok && got == "s3cret" {
 		t.Error("the author's credential survived into the plan")
 	}
