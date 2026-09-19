@@ -51,6 +51,12 @@ type Safety struct {
 type DeclaredContract struct {
 	Kind    string
 	Version int
+
+	// Capabilities is the ceiling: everything this plugin could ever be asked
+	// to do on this contract, and so what an operator authorizes at install
+	// time. What the bound target can do here and now is asked separately, and
+	// the host acts on the intersection of the two.
+	Capabilities []string
 }
 
 // Manifest is what a plugin advertises at handshake.
@@ -62,14 +68,14 @@ type Manifest struct {
 	Safety       Safety
 }
 
-// Contract reports the version of the named contract this manifest declares.
-func (m Manifest) Contract(kind string) (int, bool) {
+// Contract returns the named contract this manifest declares.
+func (m Manifest) Contract(kind string) (DeclaredContract, bool) {
 	for _, c := range m.Contracts {
 		if c.Kind == kind {
-			return c.Version, true
+			return c, true
 		}
 	}
-	return 0, false
+	return DeclaredContract{}, false
 }
 
 // ManifestBuilder assembles a Manifest fluently:

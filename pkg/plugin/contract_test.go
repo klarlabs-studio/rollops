@@ -58,7 +58,8 @@ func manifestOf(t *testing.T, srv *pub.Server) *rollopspluginv1.GetManifestRespo
 func TestServingAContractDeclaresIt(t *testing.T) {
 	var registered bool
 	srv := pub.NewServer(pub.NewManifest("acme/one", "1.0.0").Build()).
-		ServeContract("target", 2, func(grpc.ServiceRegistrar) { registered = true })
+		ServeContract(pub.DeclaredContract{Kind: "target", Version: 2},
+			func(grpc.ServiceRegistrar) { registered = true })
 
 	got := manifestOf(t, srv).GetContracts()
 	if len(got) != 1 {
@@ -94,6 +95,7 @@ func TestAPluginWithNoTypedServiceDeclaresNoContract(t *testing.T) {
 // arrive over a typed service rather than as JSON tool calls.
 func TestATargetV2PluginAdvertisesTheTypedContract(t *testing.T) {
 	srv := pub.NewTargetV2Server("acme/exotic", "1.0.0", nullTarget{},
+		targetv2.Capabilities{HealthObservation: true, DriftDetection: true},
 		pub.Safety{RiskClass: pub.RiskActive})
 
 	m := manifestOf(t, srv)
@@ -108,13 +110,50 @@ func TestATargetV2PluginAdvertisesTheTypedContract(t *testing.T) {
 	if m.GetSafety().GetRiskClass() != string(pub.RiskActive) {
 		t.Errorf("risk class %q did not survive", m.GetSafety().GetRiskClass())
 	}
+
+	// The ceiling travels with the contract, in the manifest's name form.
+	got, _ := targetv2.ParseCapabilities(contracts[0].GetCapabilities())
+	want := targetv2.Capabilities{HealthObservation: true, DriftDetection: true}
+	if got != want {
+		t.Errorf("declared ceiling %+v, want %+v", got, want)
+	}
+}
+
+// TestTheCeilingIsWhatThePluginDeclaredNotWhatTheTargetClaims keeps the two
+// answers apart. nullTarget claims health observation at runtime; a plugin
+// installed without it must not be able to reach it by claiming louder.
+func TestTheCeilingIsWhatThePluginDeclaredNotWhatTheTargetClaims(t *testing.T) {
+	srv := pub.NewTargetV2Server("acme/narrow", "1.0.0", nullTarget{},
+		targetv2.Capabilities{}, pub.Safety{})
+
+	contracts := manifestOf(t, srv).GetContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("declared %d contracts, want 1", len(contracts))
+	}
+	if n := len(contracts[0].GetCapabilities()); n != 0 {
+		t.Errorf("a plugin authorized for nothing declared %d capabilities", n)
+	}
+
+	claimed, err := nullTarget{}.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ceiling, _ := targetv2.ParseCapabilities(contracts[0].GetCapabilities())
+	effective, overclaimed := ceiling.Narrow(claimed)
+	if effective != (targetv2.Capabilities{}) {
+		t.Errorf("effective = %+v, want nothing", effective)
+	}
+	if len(overclaimed) != 1 || overclaimed[0] != targetv2.CapabilityHealthObservation {
+		t.Errorf("overclaimed = %v, want [%s]", overclaimed, targetv2.CapabilityHealthObservation)
+	}
 }
 
 // TestNoV2ToolsAreAdvertisedGenerically keeps the two wires from being confused
 // for one another. Listing apply as a tool would invite a host to invoke it
 // through the generic service, where nothing is listening.
 func TestNoV2ToolsAreAdvertisedGenerically(t *testing.T) {
-	srv := pub.NewTargetV2Server("acme/exotic", "1.0.0", nullTarget{}, pub.Safety{})
+	srv := pub.NewTargetV2Server("acme/exotic", "1.0.0", nullTarget{},
+		targetv2.Capabilities{}, pub.Safety{})
 
 	for _, c := range manifestOf(t, srv).GetCapabilities() {
 		if c.GetName() != pub.CapabilityTarget {

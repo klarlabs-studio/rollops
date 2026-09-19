@@ -42,7 +42,7 @@ func TestADeclaredContractSurvivesTheManifestRead(t *testing.T) {
 		Name:    "acme/exotic",
 		Version: "1.0.0",
 		Contracts: []*rollopspluginv1.DeclaredContract{
-			{Kind: "target", Version: 2},
+			{Kind: "target", Version: 2, Capabilities: []string{"drift", "prune"}},
 		},
 	}}}
 
@@ -50,12 +50,15 @@ func TestADeclaredContractSurvivesTheManifestRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Manifest: %v", err)
 	}
-	v, ok := m.Contract("target")
+	got, ok := m.Contract("target")
 	if !ok {
 		t.Fatal("the declared target contract did not survive the read")
 	}
-	if v != 2 {
-		t.Errorf("target contract version %d, want 2", v)
+	if got.Version != 2 {
+		t.Errorf("target contract version %d, want 2", got.Version)
+	}
+	if len(got.Capabilities) != 2 || got.Capabilities[0] != "drift" || got.Capabilities[1] != "prune" {
+		t.Errorf("ceiling = %v, want [drift prune]", got.Capabilities)
 	}
 	if _, ok := m.Contract("featureflag"); ok {
 		t.Error("a contract the plugin never declared was reported as declared")

@@ -40,8 +40,8 @@ func (s *Server) HandleTool(capability, tool string, fn ToolFunc) *Server {
 // manifest says one is, so a service registered without a declaration is one
 // nobody calls, and a declaration without a service is a promise the plugin
 // breaks on the first request.
-func (s *Server) ServeContract(kind string, version int, register func(grpc.ServiceRegistrar)) *Server {
-	s.manifest.Contracts = append(s.manifest.Contracts, DeclaredContract{Kind: kind, Version: version})
+func (s *Server) ServeContract(c DeclaredContract, register func(grpc.ServiceRegistrar)) *Server {
+	s.manifest.Contracts = append(s.manifest.Contracts, c)
 	s.contracts = append(s.contracts, register)
 	return s
 }
@@ -84,7 +84,11 @@ func manifestToProto(m Manifest) *rollopspluginv1.GetManifestResponse {
 	}
 	contracts := make([]*rollopspluginv1.DeclaredContract, 0, len(m.Contracts))
 	for _, c := range m.Contracts {
-		contracts = append(contracts, &rollopspluginv1.DeclaredContract{Kind: c.Kind, Version: int32(c.Version)}) //nolint:gosec // a contract version is a small integer
+		contracts = append(contracts, &rollopspluginv1.DeclaredContract{
+			Kind:         c.Kind,
+			Version:      int32(c.Version), //nolint:gosec // a contract version is a small integer
+			Capabilities: c.Capabilities,
+		})
 	}
 	return &rollopspluginv1.GetManifestResponse{
 		Name:         m.Name,

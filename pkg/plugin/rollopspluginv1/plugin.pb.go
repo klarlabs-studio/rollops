@@ -156,9 +156,16 @@ func (x *GetManifestResponse) GetContracts() []*DeclaredContract {
 // plugin talk at all, and bumping it to advertise a new contract would refuse
 // every plugin that does not serve it.
 type DeclaredContract struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Kind    string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Version int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	// capabilities is the ceiling: everything this plugin could ever be asked to
+	// do on this contract, and so what an operator authorizes at install time. It
+	// is not what the bound target can do here and now — that answer may need the
+	// substrate, and is asked for separately over the typed service. The host acts
+	// on the intersection (ADR-0006), so a name missing here is refused however
+	// loudly the running target claims it.
+	Capabilities  []string `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -205,6 +212,13 @@ func (x *DeclaredContract) GetVersion() int32 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *DeclaredContract) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
 }
 
 // Capability groups related tools under a named feature (e.g. "target",
@@ -535,10 +549,11 @@ const file_rollops_plugin_v1_plugin_proto_rawDesc = "" +
 	"apiVersion\x12A\n" +
 	"\fcapabilities\x18\x04 \x03(\v2\x1d.rollops.plugin.v1.CapabilityR\fcapabilities\x12=\n" +
 	"\x06safety\x18\x05 \x01(\v2%.rollops.plugin.v1.SafetyRequirementsR\x06safety\x12A\n" +
-	"\tcontracts\x18\x06 \x03(\v2#.rollops.plugin.v1.DeclaredContractR\tcontracts\"@\n" +
+	"\tcontracts\x18\x06 \x03(\v2#.rollops.plugin.v1.DeclaredContractR\tcontracts\"d\n" +
 	"\x10DeclaredContract\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\x05R\aversion\"t\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\x12\"\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"t\n" +
 	"\n" +
 	"Capability\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +

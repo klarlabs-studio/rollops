@@ -59,28 +59,45 @@ func ServeTarget(name, version string, t pt.Target, safety Safety) error {
 // ServeTargetV2 runs a pkg/target/v2.Target as a Rollops target plugin over the
 // typed contract, so a v2 target plugin's main is one line:
 //
-//	func main() { panic(plugin.ServeTargetV2("acme/exotic", "1.0.0", newTarget(), plugin.Safety{RiskClass: plugin.RiskActive})) }
-func ServeTargetV2(name, version string, t targetv2.Target, safety Safety) error {
-	return Serve(NewTargetV2Server(name, version, t, safety))
+//	func main() {
+//		panic(plugin.ServeTargetV2("acme/exotic", "1.0.0", newTarget(),
+//			targetv2.Capabilities{HealthObservation: true, DriftDetection: true},
+//			plugin.Safety{RiskClass: plugin.RiskActive}))
+//	}
+func ServeTargetV2(name, version string, t targetv2.Target, caps targetv2.Capabilities, safety Safety) error {
+	return Serve(NewTargetV2Server(name, version, t, caps, safety))
 }
 
 // NewTargetV2Server builds what ServeTargetV2 runs. It is separate so a plugin
 // that serves more than one contract, or that owns its own gRPC server, can
 // still assemble the target half the same way.
 //
+// caps is the ceiling — everything this plugin could ever do, which is what the
+// operator authorizes. It is declared statically and separately from the
+// target's own Capabilities call because the two answer different questions:
+// this one is about the plugin, that one is about the substrate it is pointed
+// at, and only the second can change between one bind and the next.
+//
 // The "target" capability is declared with no tools. The capability is what the
 // host's safety policy ranks and admits, so it still has to be there; the tools
 // are not, because listing apply would invite a host to invoke it through the
 // generic service, where for a v2 plugin nothing is listening. Which wire the
 // verbs arrive on is what the declared contract says.
-func NewTargetV2Server(name, version string, t targetv2.Target, safety Safety) *Server {
+func NewTargetV2Server(name, version string, t targetv2.Target, caps targetv2.Capabilities, safety Safety) *Server {
 	m := NewManifest(name, version).
 		Capability(CapabilityTarget, "Deployment target (contract v2)").
 		Done().
 		Safety(safety).
 		Build()
 
-	return NewServer(m).ServeContract(ContractTarget, 2, func(r grpc.ServiceRegistrar) {
+	names := caps.Names()
+	declared := make([]string, 0, len(names))
+	for _, n := range names {
+		declared = append(declared, string(n))
+	}
+
+	contract := DeclaredContract{Kind: ContractTarget, Version: 2, Capabilities: declared}
+	return NewServer(m).ServeContract(contract, func(r grpc.ServiceRegistrar) {
 		rollopstargetv2.RegisterTargetServer(r, v2grpc.NewServer(t))
 	})
 }

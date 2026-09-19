@@ -41,6 +41,14 @@ message GetManifestResponse {
 message DeclaredContract {
   string kind = 1;
   int32 version = 2;
+
+  // capabilities is the ceiling: everything this plugin could ever be asked to
+  // do on this contract, and so what an operator authorizes at install time. It
+  // is not what the bound target can do here and now — that answer may need the
+  // substrate, and is asked for separately over the typed service. The host acts
+  // on the intersection (ADR-0006), so a name missing here is refused however
+  // loudly the running target claims it.
+  repeated string capabilities = 3;
 }
 
 // Capability groups related tools under a named feature (e.g. "target",
