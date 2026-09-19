@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-09-19
 - **Spec:** `docs/architecture/rollops-next.md` §16, §17.1, §17.3, §36 · **Backlog:** R5
-- **Invariants touched:** INV-011 (secret non-persistence), INV-013 (persisted domain events are append-only)
+- **Invariants touched:** INV-012 (secret non-persistence), INV-013 (persisted domain events are append-only)
 - **Decides:** pending decision #2
 - **Amends:** spec §17.3, which rests on a false premise (see Consequences)
 
@@ -59,13 +59,21 @@ same way, naming `eventstore/sqlite/` the "preferred convergence target".
 Two further requirements follow from the transaction and are not incidental:
 `Sequence` is gapless and monotonic per ADR-0003's global autoincrement, which
 a log stream cannot offer; and events are redacted before persistence
-(INV-011), which is a property of the writer, not of the sink.
+(INV-012), which is a property of the writer, not of the sink.
 
 ### The audit logger stays, and stops being called durable.
 
 `internal/audit` is a useful operational log and is not replaced by the event
 table. What it is not — and what §17.3 assumed it was — is a record anyone can
 read back. It keeps its job; it loses the implication that history lives in it.
+
+### Append-only is a property of the port, not a rule in a document.
+
+INV-013 is enforced the way plan immutability already is: `EventAppender`
+declares `Append`, `EventReader` declares the reads, and neither declares an
+update or a delete. There is no method to call, so there is no call site to
+review. A rewritten event is the one thing a timeline cannot survive, and a
+convention that only holds while everyone remembers it is not a guarantee.
 
 ### The event schema lands as migration 0014.
 
@@ -89,6 +97,14 @@ and 0012 and 0013 are taken.
   option is ever taken.
 - **The `eventstore/bolt/` directory in §17.1's layout is not created.** It was
   scaffolding for a migration that has no source.
+- **The database now grows without bound.** Aggregate tables grow with the
+  estate; the event log grows with everything that has ever happened to it, and
+  a deployment's per-operation events will dominate it. §16.5 already concedes
+  this by saying a projection can be rebuilt from retained events "where
+  practical". What the retention window is, and which projections can survive
+  losing the history behind them, is deliberately not decided here — it becomes
+  answerable once there is a real event volume to measure, and guessing now
+  would set a limit nobody can justify.
 
 ## Alternatives rejected
 
