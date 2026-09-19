@@ -39,9 +39,6 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 	default:
 		return &r, nil
 	}
-	if len(r.StepperSnap) == 0 {
-		return &r, fmt.Errorf("engine: tick: rollout %s is deploying without a stepper snapshot", r.ID)
-	}
 	if cfg.Spec.Target.Ref != r.TargetRef {
 		return &r, fmt.Errorf("engine: tick: config target %q does not match rollout %q", cfg.Spec.Target.Ref, r.TargetRef)
 	}
@@ -64,6 +61,15 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 		return &r, err
 	}
 	defer closeTarget(tgt)
+
+	// A deploying rollout with no snapshot is an orphan: Apply persisted the
+	// deploying phase and then died before driveStepper wrote the first
+	// snapshot. This check must stay *after* acquireTarget — holding the lease
+	// is what proves no Apply is mid-flight, and it is the whole reason
+	// recovery is safe rather than a race against a peer.
+	if len(r.StepperSnap) == 0 {
+		return e.recoverOrphanedDeploy(ctx, &r, cfg, tgt)
+	}
 
 	var persisted stepperPersist
 	if err := json.Unmarshal(r.StepperSnap, &persisted); err != nil {
@@ -103,6 +109,37 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 		}
 	}
 	return e.driveStepper(ctx, lc, &r, cfg, persisted.Plan, s, clk, persisted.EnteredAt, &healthErr, r.Initiator)
+}
+
+// recoverOrphanedDeploy restarts a canary whose Apply died between the
+// deploying phase write and the first stepper snapshot. Before this existed
+// the state was terminal: Tick refused it, and because occupancy IS the
+// deploying phase the target stayed claimed, so every later rollout for it got
+// ErrTargetBusy indefinitely. Four production targets sat that way for up to a
+// month.
+//
+// The desired manifest is re-applied rather than assumed live, because
+// deployOnce is the most likely thing the crash interrupted; Apply is
+// idempotent, and treating the cluster as already converged is how a recovery
+// deploys nothing while reporting success. Recovery moves toward the desired
+// state, never backward — a rollback here would fight the operator's intent,
+// which is whatever Git currently declares.
+//
+// The caller MUST hold the target lease.
+func (e *Engine) recoverOrphanedDeploy(ctx context.Context, r *rollout.Rollout, cfg *config.Config, tgt pt.Target) (*rollout.Rollout, error) {
+	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+	if err != nil {
+		return r, err
+	}
+	e.record(audit.Entry{
+		Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef,
+		Phase: string(r.Phase), Actor: r.Initiator,
+		Detail: "recovered orphaned deploy (no stepper snapshot); re-applying desired manifest",
+	})
+	if err := e.deployOnce(ctx, cfg, tgt, r.Desired); err != nil {
+		return e.failProgressive(ctx, lc, r, cfg, r.Desired, err, r.Initiator)
+	}
+	return e.startStepper(ctx, lc, r, cfg, tgt, r.Initiator)
 }
 
 // InFlight returns the newest deploying or paused rollout for targetRef.
