@@ -17,6 +17,7 @@ func TestMemoryStoreSatisfiesThePorts(t *testing.T) {
 			Releases:     s.Releases(),
 			Plans:        s.Plans(),
 			Deployments:  s.Deployments(),
+			Approvals:    s.Approvals(),
 			Events:       s.Events(),
 			Tx:           s,
 		}

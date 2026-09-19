@@ -37,6 +37,7 @@ type Repositories struct {
 	Releases     port.ReleaseRepository
 	Plans        port.PlanRepository
 	Deployments  port.DeploymentRepository
+	Approvals    port.ApprovalRepository
 	Events       port.EventLog
 	Tx           port.Transactor
 }
@@ -54,6 +55,7 @@ func Run(t *testing.T, newRepos Factory) {
 		"releases":     runReleases,
 		"plans":        runPlans,
 		"deployments":  runDeployments,
+		"approvals":    runApprovals,
 		"events":       runEvents,
 		"transactions": runTransactions,
 	}
@@ -1527,4 +1529,244 @@ func runTransactions(t *testing.T, newRepos Factory) {
 			t.Errorf("Get = %v, want ErrNotFound", err)
 		}
 	})
+}
+
+// approval builds one principal's answer about a subject. Claims carry both a
+// role, which a requirement matches on and which must survive, and a token,
+// which must not (INV-012).
+func (f *fixture) approval(
+	t *testing.T, subject policy.SubjectRef, by string, d policy.ApprovalDecision,
+) policy.Approval {
+	t.Helper()
+	id, err := identity.NewApprovalID(f.gen)
+	if err != nil {
+		t.Fatalf("build approval id: %v", err)
+	}
+	reason := ""
+	if d == policy.ApprovalDenied {
+		reason = "the migration has not been rehearsed"
+	}
+	return policy.Approval{
+		ID:      id,
+		Subject: subject,
+		Principal: identity.Principal{
+			ID: by, Type: identity.PrincipalHuman, DisplayName: by,
+			Claims: map[string]string{"role": "release-manager", "token": "s3cr3t"},
+		},
+		Decision:  d,
+		Reason:    reason,
+		CreatedAt: f.clock.Now(),
+	}
+}
+
+// subjectOf names a plan the way the deploy service does, so that the suite
+// exercises the reference shape the application actually writes.
+func subjectOf(p plan.DeploymentPlan) policy.SubjectRef {
+	return policy.SubjectRef{Kind: "plan", ID: string(p.ID), Revision: p.Hash.String()}
+}
+
+func runApprovals(t *testing.T, newRepos Factory) {
+	ctx := context.Background()
+
+	t.Run("a stored approval reads back whole", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)
+		a.ExpiresAt = a.CreatedAt.Add(24 * time.Hour)
+		if err := w.r.Approvals.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, a.Subject.Kind, a.Subject.ID)
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("read back %d approvals, want 1", len(got))
+		}
+		assertApproval(t, got[0], a)
+	})
+
+	// The revision is the load-bearing field: an approval that came back
+	// without it would discharge nothing, and one that came back with the
+	// wrong one would discharge a plan its approver never read (§13).
+	t.Run("the revision an approval is bound to survives", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)
+		if err := w.r.Approvals.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if err := p.Policy.SatisfiedBy(subjectOf(p), got, w.f.clock.Now()); err == nil {
+			t.Fatal("one approval satisfied a two-approval requirement")
+		}
+
+		second := w.f.approval(t, subjectOf(p), "ben", policy.ApprovalGranted)
+		if err := w.r.Approvals.Create(ctx, second); err != nil {
+			t.Fatalf("Create second: %v", err)
+		}
+		got, err = w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if err := p.Policy.SatisfiedBy(subjectOf(p), got, w.f.clock.Now()); err != nil {
+			t.Fatalf("two stored approvals did not satisfy the plan's own policy: %v", err)
+		}
+	})
+
+	t.Run("a denial keeps the reason it gave", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalDenied)
+		if err := w.r.Approvals.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != 1 || got[0].Reason != a.Reason {
+			t.Fatalf("stored reason = %q, want %q", got[0].Reason, a.Reason)
+		}
+		// Whoever is stopped has to be told what stopped them, so a stored
+		// denial that lost its reason is one that no longer validates.
+		if err := got[0].Validate(); err != nil {
+			t.Errorf("the stored denial is no longer a complete record: %v", err)
+		}
+	})
+
+	t.Run("approvals come back in the order they were given", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		want := []string{"ana", "ben", "cai"}
+		for _, by := range want {
+			if err := w.r.Approvals.Create(ctx, w.f.approval(t, subjectOf(p), by, policy.ApprovalGranted)); err != nil {
+				t.Fatalf("Create %s: %v", by, err)
+			}
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("read back %d approvals, want %d", len(got), len(want))
+		}
+		for i, by := range want {
+			if got[i].Principal.ID != by {
+				t.Errorf("approval %d is %q, want %q — who answered first is part of the record",
+					i, got[i].Principal.ID, by)
+			}
+		}
+	})
+
+	t.Run("approvals of another subject are not returned", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		other := w.f.plan(t, w.env, w.prev, w.next)
+		if err := w.r.Plans.Create(ctx, other); err != nil {
+			t.Fatalf("Create other plan: %v", err)
+		}
+		if err := w.r.Approvals.Create(ctx, w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(other.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("another plan's approvals leaked in: %+v", got)
+		}
+
+		// A different kind with the same id is a different thing entirely.
+		got, err = w.r.Approvals.ListForSubject(ctx, "release", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("a release's approvals matched a plan id: %+v", got)
+		}
+	})
+
+	t.Run("a subject nobody has answered has no approvals, not an error", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("an unanswered plan has %d approvals", len(got))
+		}
+	})
+
+	t.Run("the same approval twice is refused", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)
+		if err := w.r.Approvals.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := w.r.Approvals.Create(ctx, a); !errors.Is(err, port.ErrAlreadyExists) {
+			t.Fatalf("err = %v, want ErrAlreadyExists", err)
+		}
+	})
+
+	t.Run("an incomplete approval is refused", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)
+		a.Subject.Revision = ""
+		if err := w.r.Approvals.Create(ctx, a); err == nil {
+			t.Fatal("an approval bound to no revision was stored")
+		}
+	})
+
+	// INV-012. An approval carries the approver's principal, and an identity
+	// provider's claims are where a bearer token arrives.
+	t.Run("a secret in the approver's claims is never stored", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		a := w.f.approval(t, subjectOf(p), "ana", policy.ApprovalGranted)
+		if err := w.r.Approvals.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := w.r.Approvals.ListForSubject(ctx, "plan", string(p.ID))
+		if err != nil {
+			t.Fatalf("ListForSubject: %v", err)
+		}
+		if got[0].Principal.Claims["token"] == "s3cr3t" {
+			t.Error("the approver's token reached storage")
+		}
+		// The role has to survive: it is what a role requirement matches on,
+		// and redacting it would silently stop approvals from counting.
+		if got[0].Principal.Claims["role"] != "release-manager" {
+			t.Errorf("role claim = %q, want release-manager", got[0].Principal.Claims["role"])
+		}
+	})
+}
+
+func assertApproval(t *testing.T, got, want policy.Approval) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
+	}
+	if got.Subject != want.Subject {
+		t.Errorf("Subject = %v, want %v", got.Subject, want.Subject)
+	}
+	if got.Principal.ID != want.Principal.ID || got.Principal.Type != want.Principal.Type {
+		t.Errorf("Principal = %+v, want %+v", got.Principal, want.Principal)
+	}
+	if got.Decision != want.Decision {
+		t.Errorf("Decision = %q, want %q", got.Decision, want.Decision)
+	}
+	if got.Reason != want.Reason {
+		t.Errorf("Reason = %q, want %q", got.Reason, want.Reason)
+	}
+	if !got.CreatedAt.Equal(want.CreatedAt) {
+		t.Errorf("CreatedAt = %s, want %s", got.CreatedAt, want.CreatedAt)
+	}
+	if !got.ExpiresAt.Equal(want.ExpiresAt) {
+		t.Errorf("ExpiresAt = %s, want %s — an approval that lost its expiry stands forever",
+			got.ExpiresAt, want.ExpiresAt)
+	}
 }

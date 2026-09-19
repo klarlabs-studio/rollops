@@ -15,6 +15,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -36,6 +37,9 @@ func (s *Store) Plans() port.PlanRepository { return planRepo{s} }
 
 // Deployments returns the deployment repository over this store.
 func (s *Store) Deployments() port.DeploymentRepository { return deploymentRepo{s} }
+
+// Approvals returns the approval repository over this store.
+func (s *Store) Approvals() port.ApprovalRepository { return approvalRepo{s} }
 
 // Uniqueness and existence are checked with a query rather than by reading the
 // driver's constraint errors. The constraints stay in the schema as the
@@ -1033,4 +1037,86 @@ func wrap(what string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("sqlite: %s: %w", what, err)
+}
+
+type approvalRepo struct{ s *Store }
+
+func (r approvalRepo) Create(ctx context.Context, a policy.Approval) error {
+	// Validated before the write rather than trusted from the caller: this is
+	// the last place an approval that cannot say what it approved could still
+	// be refused, and once stored it is a record nothing may edit.
+	if err := a.Validate(); err != nil {
+		return err
+	}
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		if err := mustNotExist(ctx, q,
+			`SELECT 1 FROM approvals WHERE id = ?`, string(a.ID),
+			fmt.Sprintf("approval %s", a.ID),
+		); err != nil {
+			return err
+		}
+		principal, err := encodePrincipal(a.Principal)
+		if err != nil {
+			return err
+		}
+		var expires any
+		if !a.ExpiresAt.IsZero() {
+			expires = encodeTime(a.ExpiresAt)
+		}
+		_, err = q.ExecContext(ctx,
+			`INSERT INTO approvals
+			   (id, subject_kind, subject_id, subject_revision,
+			    principal, decision, reason, created_at, expires_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			string(a.ID), a.Subject.Kind, a.Subject.ID, a.Subject.Revision,
+			principal, string(a.Decision), a.Reason, encodeTime(a.CreatedAt), expires,
+		)
+		return wrap("insert approval", err)
+	})
+}
+
+func (r approvalRepo) ListForSubject(ctx context.Context, kind, id string) ([]policy.Approval, error) {
+	rows, err := r.s.conn(ctx).QueryContext(ctx,
+		approvalColumns+` WHERE subject_kind = ? AND subject_id = ? ORDER BY seq`, kind, id)
+	if err != nil {
+		return nil, wrap("list approvals", err)
+	}
+	return collect(rows, scanApproval)
+}
+
+const approvalColumns = `SELECT id, subject_kind, subject_id, subject_revision,
+	principal, decision, reason, created_at, expires_at FROM approvals`
+
+func scanApproval(row scanner) (policy.Approval, error) {
+	var (
+		a       policy.Approval
+		id      string
+		who     string
+		d       string
+		created string
+		expires sql.NullString
+	)
+	if err := row.Scan(
+		&id, &a.Subject.Kind, &a.Subject.ID, &a.Subject.Revision,
+		&who, &d, &a.Reason, &created, &expires,
+	); err != nil {
+		return policy.Approval{}, err
+	}
+	a.ID = identity.ApprovalID(id)
+	a.Decision = policy.ApprovalDecision(d)
+	principal, err := decodePrincipal(who)
+	if err != nil {
+		return policy.Approval{}, err
+	}
+	a.Principal = principal
+	if a.CreatedAt, err = decodeTime(created); err != nil {
+		return policy.Approval{}, err
+	}
+	if expires.Valid {
+		if a.ExpiresAt, err = decodeTime(expires.String); err != nil {
+			return policy.Approval{}, err
+		}
+	}
+	return a, nil
 }
