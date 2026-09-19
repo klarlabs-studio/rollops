@@ -115,15 +115,21 @@ else. Anything that does is an aggregate wearing a projection's name.
 A `schema_migrations` table records applied versions, and each migration runs
 once, in order, in its own transaction.
 
-Existing databases are **baselined, not re-migrated**: if `schema_migrations`
-is absent and the legacy `rollouts` table is present, versions 1–11 are
-recorded as applied without executing them, because they already are.
-An absent table and an empty database means a fresh install, and everything
-applies from 1.
+Existing databases are **baselined, not re-migrated** — but the baseline is
+established by running the legacy path first, not by inferring it.
 
-Per §36 each new migration carries an up migration, a documented rollback
+The tempting shortcut is to look at the database, conclude "this has the
+legacy tables, so it is at schema 11", and record that. It is not safe. A
+database last opened by a build that shipped only nine migrations is at nine,
+and nothing in it says so; baselining it to eleven would skip two migrations
+and leave columns missing. The legacy path is idempotent by construction and
+brings any such database up to eleven, so running it first turns schema 11
+from an inference into a fact. Only then are versions 1–11 recorded.
+
+New migrations start at 12, run once each, in order, in their own
+transaction. Per §36 each carries an up migration, a documented rollback
 strategy, and a test that upgrades from the previous released schema. The
-ad-hoc `applyAddColumns` path is kept only to serve the legacy baseline and
+ad-hoc `applyAddColumns` path is retained solely to serve that baseline and
 takes no new migrations.
 
 ## Consequences
@@ -140,10 +146,10 @@ takes no new migrations.
   is free. On PostgreSQL with concurrent writers it becomes a contention
   point, and a gapless sequence there needs care — that is a cost of §17.4,
   to be paid when §17.4 is.
-- Baselining trusts a heuristic: the presence of `rollouts` means "this is a
-  pre-version-table database at schema 11". It is a one-time inference and it
-  is wrong only for a database that someone hand-built to look like a
-  half-migrated one. The migration test asserts both branches.
+- The legacy path keeps running on every open for as long as the baseline
+  matters. It is eleven cheap idempotent statements, and retiring it requires
+  a released version floor below which upgrades are not supported — which is
+  a decision for whenever 1.0 is.
 - Synchronous projections mean a write transaction grows with the number of
   projections it touches. This is the thing to watch; when a write gets slow,
   that is the signal to revisit, and `projection_offsets` is the shape of the

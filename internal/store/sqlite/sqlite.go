@@ -109,6 +109,21 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: migrate 0011: %w", err)
 	}
+
+	// Everything above is the legacy path: idempotent, re-run on every open,
+	// and the only thing that can bring a database last opened by an older
+	// build up to schema 11. Once it has run that version is a fact, so it is
+	// recorded — and migrations from 12 on then run exactly once each
+	// (ADR-0003).
+	ctx := context.Background()
+	if err := baselineLegacySchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := applyVersioned(ctx, db, domainMigrations); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
