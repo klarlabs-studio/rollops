@@ -1308,19 +1308,37 @@ This does not require full event sourcing on day one.
 ```go
 type Event struct {
     ID            EventID
-    Type          string
+    Type          Type
     Version       int
-    AggregateType string
+    AggregateType AggregateType
     AggregateID   string
     Sequence      uint64
     Time          time.Time
     Principal     Principal
-    CorrelationID string
-    CausationID   string
+    CorrelationID EventID
+    CausationID   EventID
     Payload       json.RawMessage
     Metadata      map[string]string
 }
 ```
+
+`Type` and `AggregateType` are named string types, not enums: §16.4 requires
+consumers to tolerate an unknown type, so one has to be representable. Writing
+is the strict direction — the constructor refuses a type this binary does not
+know, and refuses an `AggregateID` whose prefix disagrees with
+`AggregateType`, because an event filed against the wrong kind is invisible on
+the timeline that should show it.
+
+`CorrelationID` and `CausationID` are `EventID` rather than free-form strings.
+Both point into this log, so anything else is a reference the timeline cannot
+resolve. An event that names no correlation starts its own chain — its
+correlation is its own ID — which is how §16.4's "MUST" survives contact with
+a field that would otherwise be left empty. An empty `CausationID` means a
+root.
+
+`Sequence` is assigned by the appender and by nothing else (ADR-0003): a
+constructor that accepted one would let a caller claim a position in a log it
+has not been written to.
 
 ### 16.3 Initial event vocabulary
 
