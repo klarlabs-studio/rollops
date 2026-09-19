@@ -1925,6 +1925,14 @@ func (e *Engine) RollbackLast(ctx context.Context, targetRef string, force bool)
 	if !ok {
 		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
 	}
+	// The "previous" state rollops would restore is only a rollback if it was
+	// live when the current rollout started. When it was not, a human asking
+	// for "the previous version" would get an older one; say so, and require
+	// force to apply it anyway.
+	if current.RollbackBlocked != "" && !force {
+		return rollout.Rollout{}, fmt.Errorf("engine: rollback: the manifest rollops would restore was not live when %s started (%s); "+
+			"force the rollback to apply it anyway", current.ID, current.RollbackBlocked)
+	}
 	return e.Rollback(ctx, current.ID, prior, force)
 }
 

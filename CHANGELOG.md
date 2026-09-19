@@ -22,6 +22,20 @@ older image, and a spec missing environment variables that had been added since.
   (Kubernetes' 600s default when unset) plus 30s. `rollout status` returns as
   soon as Kubernetes marks a Deployment `ProgressDeadlineExceeded`, so a
   genuinely stuck rollout fails just as fast as before.
+- **The manual paths honour the same check.** `rollops abort` of a canary
+  whose baseline wasn't live now halts it and re-applies nothing, with the
+  reason in its note. `rollops rollback` refuses unless `--force`, because
+  "the previous version" would otherwise be an older one.
+- **A canary no longer wedges in `deploying`.** A step entered from its timer
+  with a failing health gate recorded the failure, but the abort didn't fire,
+  and the step's timer then never fired either. Whenever each tick arrived
+  after the step's pause had elapsed, an unhealthy canary stayed `deploying`
+  forever. It now fails like any other health-gate failure.
+- **`rollops apply --wait [--wait-timeout 30m]`.** Without the daemon, a canary
+  with timed pauses stopped at `deploying` and nothing advanced it. `--wait`
+  runs the same engine steps `rollopsd` does (tick, then the post-deploy gate)
+  until the rollout is promoted or rolled back. It never applies anything
+  new. In daemon mode it watches instead.
 - **The Kubernetes diff compares what apply sends.** Apply labels every
   resource with `rollops.klarlabs.de/target`, and the diff didn't. Every
   in-sync target therefore showed the label's removal as drift, in `plan`, in

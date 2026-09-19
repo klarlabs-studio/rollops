@@ -207,7 +207,12 @@ func (e *Engine) driveStepper(ctx context.Context, lc *rollout.Lifecycle, r *rol
 		} else {
 			clk.Advance(pause)
 		}
-		if s.Aborted() {
+		// A step entered with a failing health gate records Failed, and its
+		// eventless "failed -> aborted" transition does not fire when the step
+		// was entered from a restored timer. Its "ok"-guarded timer then never
+		// fires either, so the canary sat in deploying forever. Failed on the
+		// current step is the abort it was meant to be.
+		if s.Aborted() || s.Context().Failed {
 			err := *healthErr
 			if err == nil {
 				err = fmt.Errorf("progressive: %s step %d/%d health gate failed", plan.Strategy, idx+1, len(plan.Steps))
@@ -364,6 +369,28 @@ func (e *Engine) Abort(ctx context.Context, rolloutID string, by rollout.Identit
 		}
 	}
 	r.StepperSnap = nil
+	// When the recorded prior was not live as this rollout started, re-applying
+	// it is not an abort but a deploy of something that was not running. Halt
+	// the canary and leave the target as it is; the note says why.
+	if r.RollbackBlocked != "" {
+		lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+		if err != nil {
+			return r, err
+		}
+		if _, err := lc.Send(rollout.EventRollback); err != nil {
+			return r, err
+		}
+		e.resetDelivery(ctx, &r)
+		r.Phase = lc.Phase()
+		r.Note = "aborted by operator; nothing re-applied because " + r.RollbackBlocked
+		r.UpdatedAt = e.now()
+		if err := e.store.SaveRollout(ctx, r); err != nil {
+			return r, err
+		}
+		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: r.TargetRef, Phase: string(r.Phase), Actor: by, Detail: r.Note})
+		e.notifyDeployment(ctx, notify.RolledBack, r, r.Note)
+		return r, nil
+	}
 	if prior, ok := e.priorManifest(ctx, r.TargetRef, r.Desired.Checksum); ok {
 		prior.Root = r.Desired.Root
 		rb, rbErr := e.applyRollback(ctx, &r, prior, "aborted by operator", nil, true)
