@@ -21,7 +21,7 @@ starting the relevant workstream writes the ADR first.
 | #   | Decision                                                              | Blocks             | Record   |
 | --- | --------------------------------------------------------------------- | ------------------ | -------- |
 | 1   | UUIDv7 vs ULID for typed domain IDs                                    | R1, Phase A        | ADR-0001 |
-| 2   | Event persistence in SQLite vs a dedicated Bolt continuation           | R5, Phase B        | —        |
+| 2   | Event persistence in SQLite vs a dedicated Bolt continuation           | R5, Phase B        | ADR-0005 |
 | 3   | Aggregate/projection transaction model                                 | R5, Phase B        | ADR-0003 |
 | 4   | Target plugin RPC protocol (v2)                                        | R6, Phase D        | —        |
 | 5   | Config API version naming and domain (`rollops.dev/v1alpha1`)          | R14, Phase E       | —        |
@@ -33,9 +33,9 @@ starting the relevant workstream writes the ADR first.
 
 Numbering note: the records are numbered in the order they were written, not
 by the §41 list. Decision #3 is ADR-0003 by coincidence; decision #7 is
-ADR-0004.
+ADR-0004 and decision #2 is ADR-0005.
 
-Decision 2 is the next one R5 needs.
+R5 is unblocked. Decision 4 is the next one needed, for R6.
 
 ## Decisions the spec did not anticipate
 

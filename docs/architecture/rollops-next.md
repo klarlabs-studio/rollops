@@ -755,8 +755,7 @@ internal/
     postgres/              # later
 
   eventstore/
-    sqlite/                # preferred convergence target
-    bolt/                  # compatibility during migration
+    sqlite/                # the only one; ADR-0005, §17.3
 
   projection/
     deployment/
@@ -1425,16 +1424,20 @@ Requirements:
 required;
 • database corruption/error paths return typed errors.
 
-### 17.3 Bolt migration
+### 17.3 Bolt migration — withdrawn
 
-Existing Bolt audit data **MUST NOT** be silently discarded.
+This section assumed an embedded key-value store holding audit history, to be
+dual-read during a compatibility period. There is no such store, and there
+never was: `go.klarlabs.de/bolt` is a structured *logging* library, not
+`go.etcd.io/bbolt`, and `internal/audit` writes JSON lines to an `io.Writer`
+that defaults to `io.Discard`. It has no reader and no file format.
 
-Preferred migration:
+There is therefore nothing to migrate. Domain events are written to SQLite
+from empty (ADR-0005), and `eventstore/bolt/` in §17.1 is not created.
 
-1. keep reading old Bolt audit during compatibility period;
-2. write new domain events to new event storage;
-3. optionally import old audit records as legacy timeline entries;
-4. remove dual-read only at documented boundary.
+The requirement the section was protecting still holds and is restated here:
+**durable history MUST NOT be silently discarded.** It binds the event log
+from the moment it exists.
 
 ### 17.4 PostgreSQL
 
