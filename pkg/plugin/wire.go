@@ -4,6 +4,12 @@ package plugin
 // (plugin side) and the host adapters. Keeping them in one public file makes
 // the wire contract a single source of truth for plugin authors.
 
+// Contract kinds. A contract is a typed gRPC service; a capability is a group
+// of JSON tools on the generic one. They are named separately because a plugin
+// may serve the typed contract for a kind without exposing any tool of the
+// same name, and the host reaches the two through different wires.
+const ContractTarget = "target"
+
 // Capability names.
 const (
 	CapabilityTarget         = "target"

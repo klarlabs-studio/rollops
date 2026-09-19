@@ -86,6 +86,10 @@ type Process struct {
 	conn   *grpc.ClientConn
 }
 
+// Conn is the connection to the plugin, for the typed contract services that
+// share its socket with the generic one. It stays valid until Close.
+func (p *Process) Conn() grpc.ClientConnInterface { return p.conn }
+
 // Close releases the plugin: connection, stdin (its shutdown signal), and the
 // process group (so forked children leave no orphans).
 func (p *Process) Close() error {

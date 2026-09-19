@@ -27,6 +27,9 @@ func (c *Client) Manifest(ctx context.Context) (pub.Manifest, error) {
 		}
 		m.Capabilities = append(m.Capabilities, cap)
 	}
+	for _, c := range resp.GetContracts() {
+		m.Contracts = append(m.Contracts, pub.DeclaredContract{Kind: c.GetKind(), Version: int(c.GetVersion())})
+	}
 	if s := resp.GetSafety(); s != nil {
 		m.Safety = pub.Safety{
 			NetworkHosts:      s.GetNetworkHosts(),

@@ -30,6 +30,7 @@ func Serve(srv *Server) error {
 	}
 	g := grpc.NewServer()
 	rollopspluginv1.RegisterPluginServer(g, srv)
+	srv.RegisterContracts(g)
 
 	fmt.Println(Handshake{ProtocolVersion: ProtocolVersion, Cookie: Cookie, Addr: sock}.Line())
 

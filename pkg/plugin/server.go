@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc"
+
 	"go.klarlabs.de/rollops/pkg/plugin/rollopspluginv1"
 )
 
@@ -11,11 +13,13 @@ import (
 type ToolFunc func(ctx context.Context, input []byte) ([]byte, error)
 
 // Server implements the generic Plugin gRPC service from a manifest plus a set
-// of registered tool handlers, keyed by "capability/tool".
+// of registered tool handlers, keyed by "capability/tool". It may also carry
+// typed contract services, which share the plugin's socket.
 type Server struct {
 	rollopspluginv1.UnimplementedPluginServer
-	manifest Manifest
-	tools    map[string]ToolFunc
+	manifest  Manifest
+	tools     map[string]ToolFunc
+	contracts []func(grpc.ServiceRegistrar)
 }
 
 // NewServer builds a Server for the given manifest. Register handlers with
@@ -29,6 +33,25 @@ func NewServer(m Manifest) *Server {
 func (s *Server) HandleTool(capability, tool string, fn ToolFunc) *Server {
 	s.tools[capability+"/"+tool] = fn
 	return s
+}
+
+// ServeContract attaches a typed service and declares it in the same move, so
+// the two cannot drift. A host looks for a typed service only where the
+// manifest says one is, so a service registered without a declaration is one
+// nobody calls, and a declaration without a service is a promise the plugin
+// breaks on the first request.
+func (s *Server) ServeContract(kind string, version int, register func(grpc.ServiceRegistrar)) *Server {
+	s.manifest.Contracts = append(s.manifest.Contracts, DeclaredContract{Kind: kind, Version: version})
+	s.contracts = append(s.contracts, register)
+	return s
+}
+
+// RegisterContracts attaches every declared contract service to r. Serve calls
+// it; a plugin that builds its own gRPC server calls it instead.
+func (s *Server) RegisterContracts(r grpc.ServiceRegistrar) {
+	for _, register := range s.contracts {
+		register(r)
+	}
 }
 
 // GetManifest returns the plugin manifest as proto.
@@ -59,11 +82,16 @@ func manifestToProto(m Manifest) *rollopspluginv1.GetManifestResponse {
 		}
 		caps = append(caps, &rollopspluginv1.Capability{Name: c.Name, Description: c.Description, Tools: tools})
 	}
+	contracts := make([]*rollopspluginv1.DeclaredContract, 0, len(m.Contracts))
+	for _, c := range m.Contracts {
+		contracts = append(contracts, &rollopspluginv1.DeclaredContract{Kind: c.Kind, Version: int32(c.Version)}) //nolint:gosec // a contract version is a small integer
+	}
 	return &rollopspluginv1.GetManifestResponse{
 		Name:         m.Name,
 		Version:      m.Version,
 		ApiVersion:   APIVersion,
 		Capabilities: caps,
+		Contracts:    contracts,
 		Safety: &rollopspluginv1.SafetyRequirements{
 			NetworkHosts:      m.Safety.NetworkHosts,
 			FilePaths:         m.Safety.FilePaths,

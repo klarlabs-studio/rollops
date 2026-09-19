@@ -41,12 +41,35 @@ type Safety struct {
 	NeedsConfirmation bool
 }
 
+// DeclaredContract names a typed gRPC service a plugin serves beside the
+// generic one — kind "target", version 2 for rollops.target.v2.Target.
+//
+// It exists so that the handshake's protocol version stops doing double duty
+// (ADR-0006). That number is about whether the host and the plugin can talk at
+// all; bumping it to advertise a new contract would refuse every plugin that
+// does not serve it, which is the opposite of what adding one is for.
+type DeclaredContract struct {
+	Kind    string
+	Version int
+}
+
 // Manifest is what a plugin advertises at handshake.
 type Manifest struct {
 	Name         string
 	Version      string
 	Capabilities []Capability
+	Contracts    []DeclaredContract
 	Safety       Safety
+}
+
+// Contract reports the version of the named contract this manifest declares.
+func (m Manifest) Contract(kind string) (int, bool) {
+	for _, c := range m.Contracts {
+		if c.Kind == kind {
+			return c.Version, true
+		}
+	}
+	return 0, false
 }
 
 // ManifestBuilder assembles a Manifest fluently:

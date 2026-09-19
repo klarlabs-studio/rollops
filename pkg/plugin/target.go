@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
+	"google.golang.org/grpc"
+
 	pt "go.klarlabs.de/rollops/pkg/target"
+	"go.klarlabs.de/rollops/pkg/target/rollopstargetv2"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
+	"go.klarlabs.de/rollops/pkg/target/v2grpc"
 )
 
 // ServeTarget runs a pkg/target.Target as a Rollops target plugin. It builds the
@@ -49,6 +54,35 @@ func ServeTarget(name, version string, t pt.Target, safety Safety) error {
 			return json.Marshal(HealthOutput{State: int(hs.State), Reason: hs.Reason})
 		})
 	return Serve(srv)
+}
+
+// ServeTargetV2 runs a pkg/target/v2.Target as a Rollops target plugin over the
+// typed contract, so a v2 target plugin's main is one line:
+//
+//	func main() { panic(plugin.ServeTargetV2("acme/exotic", "1.0.0", newTarget(), plugin.Safety{RiskClass: plugin.RiskActive})) }
+func ServeTargetV2(name, version string, t targetv2.Target, safety Safety) error {
+	return Serve(NewTargetV2Server(name, version, t, safety))
+}
+
+// NewTargetV2Server builds what ServeTargetV2 runs. It is separate so a plugin
+// that serves more than one contract, or that owns its own gRPC server, can
+// still assemble the target half the same way.
+//
+// The "target" capability is declared with no tools. The capability is what the
+// host's safety policy ranks and admits, so it still has to be there; the tools
+// are not, because listing apply would invite a host to invoke it through the
+// generic service, where for a v2 plugin nothing is listening. Which wire the
+// verbs arrive on is what the declared contract says.
+func NewTargetV2Server(name, version string, t targetv2.Target, safety Safety) *Server {
+	m := NewManifest(name, version).
+		Capability(CapabilityTarget, "Deployment target (contract v2)").
+		Done().
+		Safety(safety).
+		Build()
+
+	return NewServer(m).ServeContract(ContractTarget, 2, func(r grpc.ServiceRegistrar) {
+		rollopstargetv2.RegisterTargetServer(r, v2grpc.NewServer(t))
+	})
 }
 
 // FlagProvider applies a feature-flag change. A flag plugin implements it and
