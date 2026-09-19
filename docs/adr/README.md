@@ -22,16 +22,20 @@ starting the relevant workstream writes the ADR first.
 | --- | --------------------------------------------------------------------- | ------------------ | -------- |
 | 1   | UUIDv7 vs ULID for typed domain IDs                                    | R1, Phase A        | ADR-0001 |
 | 2   | Event persistence in SQLite vs a dedicated Bolt continuation           | R5, Phase B        | —        |
-| 3   | Aggregate/projection transaction model                                 | R5, Phase B        | —        |
+| 3   | Aggregate/projection transaction model                                 | R5, Phase B        | ADR-0003 |
 | 4   | Target plugin RPC protocol (v2)                                        | R6, Phase D        | —        |
 | 5   | Config API version naming and domain (`rollops.dev/v1alpha1`)          | R14, Phase E       | —        |
 | 6   | Remote executor transport                                              | Phase J            | —        |
-| 7   | Artifact store abstraction boundaries                                  | R2, Phase A        | —        |
+| 7   | Artifact store abstraction boundaries                                  | R2, Phase A        | ADR-0004 |
 | 8   | OpenTelemetry semantic conventions                                     | observability §28  | —        |
 | 9   | PostgreSQL support threshold                                           | scale §3.3         | —        |
 | 10  | Whether pipeline definitions live in the Project resource or separately | Phase H           | —        |
 
-Decisions 3 and 7 gate the remainder of R2.
+Numbering note: the records are numbered in the order they were written, not
+by the §41 list. Decision #3 is ADR-0003 by coincidence; decision #7 is
+ADR-0004.
+
+Decision 2 is the next one R5 needs.
 
 ## Decisions the spec did not anticipate
 
