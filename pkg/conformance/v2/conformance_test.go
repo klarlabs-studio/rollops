@@ -37,6 +37,8 @@ type mem struct {
 	untypedErrors  bool   // fails with a bare error carrying no kind
 	cannotReplay   bool   // refuses a repeated key with a typed conflict (§9.4)
 	bareOnBadSpec  bool   // types the empty-key refusal but bares the malformed one
+	planWanders    bool   // renders different bytes each time it is asked
+	rollbackActs   bool   // does not declare rollback, refuses it, and acts anyway
 	sickHealth     bool   // claims health observation, answers Unknown
 }
 
@@ -119,7 +121,16 @@ func (m *mem) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.Plan
 	if m.leak != "" {
 		diff += "\ntoken: " + m.leak
 	}
-	return targetv2.PlanResult{Changes: m.live != req.Desired.Checksum, Diff: diff}, nil
+	rendered := req.Desired.Spec
+	if m.planWanders {
+		m.planned++
+		rendered = append(append([]byte{}, req.Desired.Spec...), byte('a'+m.planned%7))
+	}
+	return targetv2.PlanResult{
+		Changes:  m.live != req.Desired.Checksum,
+		Diff:     diff,
+		Rendered: rendered,
+	}, nil
 }
 
 func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.ApplyResult, error) {
@@ -166,6 +177,9 @@ func (m *mem) Observe(ctx context.Context, _ targetv2.ObserveRequest) (targetv2.
 
 func (m *mem) Rollback(ctx context.Context, _ targetv2.RollbackRequest) (targetv2.RollbackResult, error) {
 	if !m.caps.NativeRollback {
+		if m.rollbackActs {
+			m.live = ""
+		}
 		return targetv2.RollbackResult{}, targetv2.Unsupported("Rollback", targetv2.CapabilityNativeRollback)
 	}
 	if err := m.doneIn(ctx, "Rollback"); err != nil {
@@ -638,5 +652,35 @@ func TestEveryVerbHonoursTheContext(t *testing.T) {
 				t.Errorf("a target that ignores a cancelled context in %s passed every axis", op)
 			}
 		})
+	}
+}
+
+// TestAPlanThatWandersIsCaught is the half of side-effect freedom that is not
+// about the substrate. Two plans of the same desired state must agree: the
+// operator approves what a plan said, and the apply that follows is only
+// bound to it if asking again would have said the same thing.
+func TestAPlanThatWandersIsCaught(t *testing.T) {
+	errs := suiteFor(t, func() *mem {
+		m := newMem(healthy())
+		m.planWanders = true
+		return m
+	})
+	if len(errs) == 0 {
+		t.Fatalf("a target whose plan renders different bytes each time passed every axis")
+	}
+}
+
+// TestARefusedRollbackThatActedAnywayIsCaught closes the gap between saying no
+// and doing nothing. A target that answers unsupported and rolls back regardless
+// has told the engine to fall back to applying the previous desired state — on
+// top of a substrate it already moved.
+func TestARefusedRollbackThatActedAnywayIsCaught(t *testing.T) {
+	errs := suiteFor(t, func() *mem {
+		m := newMem(healthy())
+		m.rollbackActs = true
+		return m
+	})
+	if len(errs) == 0 {
+		t.Fatalf("a target that refused rollback and rolled back anyway passed every axis")
 	}
 }

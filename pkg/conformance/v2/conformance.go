@@ -18,9 +18,11 @@
 package conformancev2
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -291,7 +293,8 @@ func CheckPlanHasNoSideEffects(ctx context.Context, tgt targetv2.Target, desired
 	if err != nil {
 		return fmt.Errorf("conformance: inspect before plan: %w", err)
 	}
-	if _, err := tgt.Plan(ctx, targetv2.PlanRequest{Desired: desired}); err != nil {
+	first, err := tgt.Plan(ctx, targetv2.PlanRequest{Desired: desired})
+	if err != nil {
 		return fmt.Errorf("conformance: plan: %w", err)
 	}
 	after, err := tgt.Inspect(ctx, targetv2.InspectRequest{})
@@ -305,6 +308,31 @@ func CheckPlanHasNoSideEffects(ctx context.Context, tgt targetv2.Target, desired
 	if len(before.Resources) != len(after.Resources) {
 		return fmt.Errorf("conformance: Plan had a side effect: the inventory went from %d to %d resources",
 			len(before.Resources), len(after.Resources))
+	}
+
+	// Asking twice is the other half of the same requirement. The operator
+	// approves what a plan said, and the apply that follows is only bound to
+	// that approval if asking again would have said the same thing.
+	second, err := tgt.Plan(ctx, targetv2.PlanRequest{Desired: desired})
+	if err != nil {
+		return fmt.Errorf("conformance: second plan of the same desired state: %w", err)
+	}
+	// Diff is left out: it is prose for a person, and a target is free to
+	// render the same change in different words. Everything below it is what
+	// the engine and the approval gate read.
+	switch {
+	case first.Changes != second.Changes:
+		return fmt.Errorf("conformance: two plans of the same desired state disagreed on whether anything would change: %t then %t",
+			first.Changes, second.Changes)
+	case !slices.Equal(first.Blockers, second.Blockers):
+		return fmt.Errorf("conformance: two plans of the same desired state disagreed on the blockers: %q then %q",
+			first.Blockers, second.Blockers)
+	case !bytes.Equal(first.Rendered, second.Rendered):
+		return fmt.Errorf("conformance: two plans of the same desired state rendered different bytes (%d then %d)",
+			len(first.Rendered), len(second.Rendered))
+	case first.RenderedChecksum != second.RenderedChecksum:
+		return fmt.Errorf("conformance: two plans of the same desired state reported different rendered checksums: %q then %q",
+			first.RenderedChecksum, second.RenderedChecksum)
 	}
 	return nil
 }
@@ -606,8 +634,30 @@ func CheckRollbackWhenDeclared(ctx context.Context, tgt targetv2.Target, desired
 		return fmt.Errorf("conformance: capabilities: %w", err)
 	}
 	if !caps.NativeRollback {
+		// Refusing is only half of it. A target that answers unsupported and
+		// rolls back regardless has told the engine to fall back to applying
+		// the previous desired state — on top of a substrate it already moved.
+		// Converge first, so there is something for a wrong answer to undo.
+		if _, err := tgt.Apply(ctx, targetv2.ApplyRequest{
+			Desired:        desired,
+			IdempotencyKey: targetv2.IdempotencyKeyFor("conformance", "rollback-refusal"),
+		}); err != nil {
+			return fmt.Errorf("conformance: apply before the refused rollback: %w", err)
+		}
+		before, err := tgt.Inspect(ctx, targetv2.InspectRequest{})
+		if err != nil {
+			return fmt.Errorf("conformance: inspect before the refused rollback: %w", err)
+		}
 		if _, err := tgt.Rollback(ctx, targetv2.RollbackRequest{}); !targetv2.IsUnsupported(err) {
 			return fmt.Errorf("conformance: rollback is not declared but was not refused: %v", err)
+		}
+		after, err := tgt.Inspect(ctx, targetv2.InspectRequest{})
+		if err != nil {
+			return fmt.Errorf("conformance: inspect after the refused rollback: %w", err)
+		}
+		if before.Fingerprint != after.Fingerprint {
+			return fmt.Errorf("conformance: rollback was refused but acted anyway: the fingerprint moved from %q to %q",
+				before.Fingerprint, after.Fingerprint)
 		}
 		return nil
 	}
