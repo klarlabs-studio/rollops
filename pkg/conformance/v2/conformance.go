@@ -95,11 +95,11 @@ func axes() []axis {
 		{"ApplyIsIdempotent", func(ctx context.Context, t targetv2.Target, s Suite) error {
 			return CheckApplyIsIdempotent(ctx, t, s.Desired)
 		}},
-		{"CancellationIsHonoured", func(ctx context.Context, t targetv2.Target, _ Suite) error {
-			return CheckCancellationIsHonoured(ctx, t)
+		{"CancellationIsHonoured", func(ctx context.Context, t targetv2.Target, s Suite) error {
+			return CheckCancellationIsHonoured(ctx, t, s.Desired)
 		}},
-		{"TimeoutIsHonoured", func(ctx context.Context, t targetv2.Target, _ Suite) error {
-			return CheckTimeoutIsHonoured(ctx, t)
+		{"TimeoutIsHonoured", func(ctx context.Context, t targetv2.Target, s Suite) error {
+			return CheckTimeoutIsHonoured(ctx, t, s.Desired)
 		}},
 		{"SecretsStayOut", func(ctx context.Context, t targetv2.Target, s Suite) error {
 			return CheckSecretsStayOut(ctx, t, s.Desired, s.Secrets)
@@ -355,28 +355,106 @@ func CheckApplyIsIdempotent(ctx context.Context, tgt targetv2.Target, desired ta
 	return nil
 }
 
+// contextVerbs lists the calls that must come back when the context is
+// already done, given what this target declared. Probing only Inspect finds
+// the harmless version of the bug: Inspect is the cheap read, and Apply is the
+// call still changing the operator's infrastructure after they pressed cancel.
+//
+// Prune is left out. It is the one destructive verb in the contract, and the
+// whole premise of these axes is that a broken target acts anyway — so
+// including it would mean deleting the operator's resources to find out.
+// A target that ignores a dead context in Prune is caught by the same bug
+// showing up in Apply, which is where it will show up first.
+func contextVerbs(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) ([]struct {
+	op   string
+	call func(context.Context) error
+}, error,
+) {
+	type verb = struct {
+		op   string
+		call func(context.Context) error
+	}
+
+	vs := []verb{
+		{"Inspect", func(c context.Context) error {
+			_, err := tgt.Inspect(c, targetv2.InspectRequest{})
+			return err
+		}},
+		{"Plan", func(c context.Context) error {
+			_, err := tgt.Plan(c, targetv2.PlanRequest{Desired: desired})
+			return err
+		}},
+		{"Apply", func(c context.Context) error {
+			_, err := tgt.Apply(c, targetv2.ApplyRequest{
+				Desired:        desired,
+				IdempotencyKey: targetv2.IdempotencyKeyFor("conformance", "abandoned"),
+			})
+			return err
+		}},
+		{"Observe", func(c context.Context) error {
+			_, err := tgt.Observe(c, targetv2.ObserveRequest{})
+			return err
+		}},
+	}
+
+	// The optional verbs answer Unsupported when they are not declared, which
+	// is not the kind these axes are looking for. They are probed only where
+	// the target said the call goes through to the substrate.
+	caps, err := tgt.Capabilities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("conformance: capabilities: %w", err)
+	}
+	if caps.NativeRollback {
+		vs = append(vs, verb{"Rollback", func(c context.Context) error {
+			_, err := tgt.Rollback(c, targetv2.RollbackRequest{})
+			return err
+		}})
+	}
+	if d, ok := tgt.(targetv2.Drifter); ok && caps.DriftDetection {
+		vs = append(vs, verb{"DetectDrift", func(c context.Context) error {
+			_, err := d.DetectDrift(c, targetv2.DriftRequest{Desired: desired})
+			return err
+		}})
+	}
+	if p, ok := tgt.(targetv2.Promoter); ok && caps.ProgressiveDelivery {
+		vs = append(vs, verb{"Promote", func(c context.Context) error {
+			_, err := p.Promote(c, targetv2.PromoteRequest{})
+			return err
+		}})
+	}
+	return vs, nil
+}
+
 // CheckCancellationIsHonoured verifies a cancelled call comes back, and comes
 // back as cancelled. A target that runs on has taken the operator's abort as a
 // suggestion.
-func CheckCancellationIsHonoured(ctx context.Context, tgt targetv2.Target) error {
+func CheckCancellationIsHonoured(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) error {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	return checkAbandoned(ctx, "cancel", targetv2.KindCanceled, func() error {
-		_, err := tgt.Inspect(cancelled, targetv2.InspectRequest{})
-		return err
-	})
+	return eachAbandoned(ctx, tgt, desired, cancelled, "cancel", targetv2.KindCanceled)
 }
 
 // CheckTimeoutIsHonoured verifies the same for a deadline that has already
 // passed. It is a separate axis because the two arrive as different kinds, and
 // a host retries one where it must not retry the other.
-func CheckTimeoutIsHonoured(ctx context.Context, tgt targetv2.Target) error {
+func CheckTimeoutIsHonoured(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) error {
 	expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
 	defer cancel()
-	return checkAbandoned(ctx, "timeout", targetv2.KindTimeout, func() error {
-		_, err := tgt.Inspect(expired, targetv2.InspectRequest{})
+	return eachAbandoned(ctx, tgt, desired, expired, "timeout", targetv2.KindTimeout)
+}
+
+func eachAbandoned(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState, dead context.Context, what string, want targetv2.Kind) error {
+	vs, err := contextVerbs(ctx, tgt, desired)
+	if err != nil {
 		return err
-	})
+	}
+	var found []error
+	for _, v := range vs {
+		if err := checkAbandoned(ctx, what, want, func() error { return v.call(dead) }); err != nil {
+			found = append(found, fmt.Errorf("%w (in %s)", err, v.op))
+		}
+	}
+	return errors.Join(found...)
 }
 
 func checkAbandoned(ctx context.Context, what string, want targetv2.Kind, call func() error) error {

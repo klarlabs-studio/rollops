@@ -30,6 +30,7 @@ type mem struct {
 	planApplies    bool   // Plan converges, which the batch was meant to prevent
 	unstable       bool   // Inspect invents a new fingerprint each call
 	ignoreCancel   bool   // runs on regardless of the context
+	deafIn         string // honours the context everywhere but this one verb
 	leak           string // echoed into the plan diff
 	acceptEmptyKey bool   // applies without an idempotency key
 	forgetKeys     bool   // never replays, so a retry applies twice
@@ -75,15 +76,19 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
-func (m *mem) done(ctx context.Context) error {
-	if m.ignoreCancel {
+// doneIn is how mem answers a context, per verb. deafIn names the one verb it
+// ignores it in, which is the dangerous shape of this bug: a target that
+// checks the context in Inspect and not in Apply passes an axis that only
+// probes the cheap read.
+func (m *mem) doneIn(ctx context.Context, op string) error {
+	if m.ignoreCancel || m.deafIn == op {
 		return nil
 	}
 	return ctx.Err()
 }
 
 func (m *mem) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targetv2.ObservedState, error) {
-	if err := m.done(ctx); err != nil {
+	if err := m.doneIn(ctx, "Inspect"); err != nil {
 		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindOf(err), "Inspect", err, "%v", err)
 	}
 	fp := m.live
@@ -98,7 +103,7 @@ func (m *mem) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targetv2.
 }
 
 func (m *mem) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.PlanResult, error) {
-	if err := m.done(ctx); err != nil {
+	if err := m.doneIn(ctx, "Plan"); err != nil {
 		return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindOf(err), "Plan", err, "%v", err)
 	}
 	if err := m.parse("Plan", req.Desired); err != nil {
@@ -118,7 +123,7 @@ func (m *mem) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.Plan
 }
 
 func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.ApplyResult, error) {
-	if err := m.done(ctx); err != nil {
+	if err := m.doneIn(ctx, "Apply"); err != nil {
 		return targetv2.ApplyResult{}, targetv2.Failf(targetv2.KindOf(err), "Apply", err, "%v", err)
 	}
 	if req.IdempotencyKey == "" && !m.acceptEmptyKey {
@@ -146,7 +151,7 @@ func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.Ap
 }
 
 func (m *mem) Observe(ctx context.Context, _ targetv2.ObserveRequest) (targetv2.Observation, error) {
-	if err := m.done(ctx); err != nil {
+	if err := m.doneIn(ctx, "Observe"); err != nil {
 		return targetv2.Observation{}, targetv2.Failf(targetv2.KindOf(err), "Observe", err, "%v", err)
 	}
 	state := targetv2.HealthHealthy
@@ -163,22 +168,28 @@ func (m *mem) Rollback(ctx context.Context, _ targetv2.RollbackRequest) (targetv
 	if !m.caps.NativeRollback {
 		return targetv2.RollbackResult{}, targetv2.Unsupported("Rollback", targetv2.CapabilityNativeRollback)
 	}
-	if err := m.done(ctx); err != nil {
+	if err := m.doneIn(ctx, "Rollback"); err != nil {
 		return targetv2.RollbackResult{}, targetv2.Failf(targetv2.KindOf(err), "Rollback", err, "%v", err)
 	}
 	return targetv2.RollbackResult{Changed: true, Detail: "rolled back"}, nil
 }
 
-func (m *mem) Promote(context.Context, targetv2.PromoteRequest) (targetv2.PromoteResult, error) {
+func (m *mem) Promote(ctx context.Context, _ targetv2.PromoteRequest) (targetv2.PromoteResult, error) {
 	if !m.caps.ProgressiveDelivery {
 		return targetv2.PromoteResult{}, targetv2.Unsupported("Promote", targetv2.CapabilityProgressiveDelivery)
+	}
+	if err := m.doneIn(ctx, "Promote"); err != nil {
+		return targetv2.PromoteResult{}, targetv2.Failf(targetv2.KindOf(err), "Promote", err, "%v", err)
 	}
 	return targetv2.PromoteResult{Detail: "promoted"}, nil
 }
 
-func (m *mem) DetectDrift(_ context.Context, req targetv2.DriftRequest) (targetv2.DriftResult, error) {
+func (m *mem) DetectDrift(ctx context.Context, req targetv2.DriftRequest) (targetv2.DriftResult, error) {
 	if m.lieAboutDrift || (!m.caps.DriftDetection && !m.hideDrift) {
 		return targetv2.DriftResult{}, targetv2.Unsupported("DetectDrift", targetv2.CapabilityDriftDetection)
+	}
+	if err := m.doneIn(ctx, "DetectDrift"); err != nil {
+		return targetv2.DriftResult{}, targetv2.Failf(targetv2.KindOf(err), "DetectDrift", err, "%v", err)
 	}
 	return targetv2.DriftResult{Drifted: m.live != req.Desired.Checksum}, nil
 }
@@ -605,5 +616,27 @@ func TestASoundTargetPassesTheMalformedProbe(t *testing.T) {
 	}.Check(context.Background())
 	if len(errs) != 0 {
 		t.Fatalf("a target that types its refusal of a malformed spec failed: %v", errs)
+	}
+}
+
+// TestEveryVerbHonoursTheContext is the axis widened to where it matters. A
+// target that checks the context in Inspect and not in Apply is the dangerous
+// version of this bug, not the harmless one: Inspect is the cheap read, and
+// Apply is the call still changing the operator's infrastructure after they
+// pressed cancel.
+func TestEveryVerbHonoursTheContext(t *testing.T) {
+	for _, op := range []string{"Inspect", "Plan", "Apply", "Observe", "Rollback", "DetectDrift"} {
+		t.Run("deaf in "+op, func(t *testing.T) {
+			build := func() *mem {
+				m := newMem(targetv2.Capabilities{
+					HealthObservation: true, NativeRollback: true, DriftDetection: true,
+				})
+				m.deafIn = op
+				return m
+			}
+			if errs := suiteFor(t, build); len(errs) == 0 {
+				t.Errorf("a target that ignores a cancelled context in %s passed every axis", op)
+			}
+		})
 	}
 }
