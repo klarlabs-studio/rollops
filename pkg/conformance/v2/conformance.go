@@ -57,6 +57,17 @@ type Suite struct {
 	// disposable: the suite applies it, and applies it again.
 	Desired targetv2.DesiredState
 
+	// Invalid is a desired state the target must reject as malformed. It is
+	// what makes the typed-error axis reach the target: every target refuses
+	// an apply with no idempotency key, and most refuse it in code they share,
+	// so an axis that probes only that has measured the guard clause rather
+	// than the mapping underneath it.
+	//
+	// Leave it zero when the target has no malformed state to be given — a
+	// fake that accepts any bytes cannot be shown to reject any. The probe is
+	// then not run, and the axis reports on the guard clause alone.
+	Invalid targetv2.DesiredState
+
 	// Secrets are strings that must not appear in anything the target says —
 	// diffs, inventories, health reasons, error messages (INV-012). Leave it
 	// empty when the sample carries no secret; the axis is then skipped rather
@@ -94,7 +105,7 @@ func axes() []axis {
 			return CheckSecretsStayOut(ctx, t, s.Desired, s.Secrets)
 		}},
 		{"ErrorsAreTyped", func(ctx context.Context, t targetv2.Target, s Suite) error {
-			return CheckErrorsAreTyped(ctx, t, s.Desired)
+			return CheckErrorsAreTyped(ctx, t, s.Desired, s.Invalid)
 		}},
 		{"RollbackWhenDeclared", func(ctx context.Context, t targetv2.Target, s Suite) error {
 			return CheckRollbackWhenDeclared(ctx, t, s.Desired)
@@ -447,20 +458,62 @@ func CheckSecretsStayOut(ctx context.Context, tgt targetv2.Target, desired targe
 // only that something went wrong, which leaves a caller to choose between
 // retrying what it must not and refusing what it should retry.
 //
-// The probe is the one failure every target must produce: §9.4 makes the
-// idempotency key mandatory, so an apply without one has to be refused.
-func CheckErrorsAreTyped(ctx context.Context, tgt targetv2.Target, desired targetv2.DesiredState) error {
+// It probes twice. The first is the failure every target must produce: §9.4
+// makes the idempotency key mandatory, so an apply without one has to be
+// refused. That one is cheap and universal, and it is also answered by a guard
+// clause targets tend to share — so on its own it measures the guard rather
+// than the target's own mapping, which is how a whole adapter can flatten
+// every underlying cause and still pass.
+//
+// The second sends Invalid, a desired state the target itself must reject, and
+// is the one that reaches the target. It is skipped when the subject offers no
+// Invalid, because a target that cannot be given anything malformed cannot be
+// shown to reject anything.
+func CheckErrorsAreTyped(ctx context.Context, tgt targetv2.Target, desired, invalid targetv2.DesiredState) error {
 	_, err := tgt.Apply(ctx, targetv2.ApplyRequest{Desired: desired})
 	if err == nil {
 		return fmt.Errorf("conformance: the target applied without an idempotency key; §9.4 makes it mandatory")
 	}
+	if err := typedInvalid(err, "a missing idempotency key"); err != nil {
+		return err
+	}
+
+	if invalid.Kind == "" && len(invalid.Spec) == 0 {
+		return nil
+	}
+	// Plan may or may not notice. A target whose plan-time inspection is
+	// optional — every minimal v1 target, since v1's Diff, Render and
+	// Preflight are all optional interfaces — has nothing to check the bytes
+	// with until it applies them. What it must not do is fail in some other
+	// vocabulary, so the kind is checked when there is one and nothing is
+	// concluded from Plan succeeding.
+	if _, err := tgt.Plan(ctx, targetv2.PlanRequest{Desired: invalid}); err != nil {
+		if err := typedInvalid(err, "Plan of a malformed desired state"); err != nil {
+			return err
+		}
+	}
+
+	// Apply must notice. It is where the target acts, and one that accepts a
+	// desired state the subject says it rejects has applied something nobody
+	// checked.
+	const what = "Apply of a malformed desired state"
+	_, err = tgt.Apply(ctx, targetv2.ApplyRequest{
+		Desired:        invalid,
+		IdempotencyKey: targetv2.IdempotencyKeyFor("conformance", "invalid"),
+	})
+	if err == nil {
+		return fmt.Errorf("conformance: the target applied a desired state the subject says it rejects")
+	}
+	return typedInvalid(err, what)
+}
+
+func typedInvalid(err error, what string) error {
 	var te *targetv2.Error
 	if !errors.As(err, &te) {
-		return fmt.Errorf("conformance: the refusal does not carry a kind the host can act on: %v", err)
+		return fmt.Errorf("conformance: the refusal of %s does not carry a kind the host can act on: %v", what, err)
 	}
 	if te.Kind != targetv2.KindInvalid {
-		return fmt.Errorf("conformance: a missing idempotency key was reported as kind %q, want %q",
-			te.Kind, targetv2.KindInvalid)
+		return fmt.Errorf("conformance: %s was reported as kind %q, want %q", what, te.Kind, targetv2.KindInvalid)
 	}
 	return nil
 }

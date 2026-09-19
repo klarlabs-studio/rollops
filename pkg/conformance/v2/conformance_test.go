@@ -1,6 +1,7 @@
 package conformancev2_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type mem struct {
 	forgetKeys     bool   // never replays, so a retry applies twice
 	untypedErrors  bool   // fails with a bare error carrying no kind
 	cannotReplay   bool   // refuses a repeated key with a typed conflict (§9.4)
+	bareOnBadSpec  bool   // types the empty-key refusal but bares the malformed one
 	sickHealth     bool   // claims health observation, answers Unknown
 }
 
@@ -54,6 +56,19 @@ func (m *mem) fail(op string) error {
 		return errString("something went wrong")
 	}
 	return targetv2.Failf(targetv2.KindInvalid, op, nil, "refused")
+}
+
+// parse is the one failure every target can produce on demand: a desired
+// state that does not parse. It is what the typed-error axis provokes, because
+// there is no portable way to arrange a denial or an outage.
+func (m *mem) parse(op string, d targetv2.DesiredState) error {
+	if !bytes.HasPrefix(d.Spec, []byte("!!")) {
+		return nil
+	}
+	if m.bareOnBadSpec {
+		return errString("cannot parse")
+	}
+	return targetv2.Failf(targetv2.KindInvalid, op, nil, "the spec does not parse")
 }
 
 type errString string
@@ -86,6 +101,9 @@ func (m *mem) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.Plan
 	if err := m.done(ctx); err != nil {
 		return targetv2.PlanResult{}, targetv2.Failf(targetv2.KindOf(err), "Plan", err, "%v", err)
 	}
+	if err := m.parse("Plan", req.Desired); err != nil {
+		return targetv2.PlanResult{}, err
+	}
 	if m.planApplies {
 		m.live = req.Desired.Checksum
 	}
@@ -105,6 +123,9 @@ func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.Ap
 	}
 	if req.IdempotencyKey == "" && !m.acceptEmptyKey {
 		return targetv2.ApplyResult{}, m.fail("Apply")
+	}
+	if err := m.parse("Apply", req.Desired); err != nil {
+		return targetv2.ApplyResult{}, err
 	}
 	if !m.forgetKeys {
 		if prior, seen := m.applied[req.IdempotencyKey]; seen {
@@ -360,7 +381,21 @@ func joinErrs(errs []error) string {
 // through the adapter rather than needing a suite of its own.
 type v1mem struct{ live string }
 
+// reject is the v1 target speaking v2's vocabulary, which is what §9.6 asks
+// of a v1 target that wants to keep working: the adapter cannot classify an
+// error it was handed no vocabulary for, so a kind the host branches on has to
+// come from here.
+func (v *v1mem) reject(op string, m v1.Manifest) error {
+	if !bytes.HasPrefix(m.Spec, []byte("!!")) {
+		return nil
+	}
+	return targetv2.Failf(targetv2.KindInvalid, op, nil, "the spec does not parse")
+}
+
 func (v *v1mem) Apply(_ context.Context, m v1.Manifest) (v1.Result, error) {
+	if err := v.reject("Apply", m); err != nil {
+		return v1.Result{}, err
+	}
 	changed := v.live != m.Checksum
 	v.live = m.Checksum
 	return v1.Result{Changed: changed, Detail: "applied"}, nil
@@ -374,12 +409,19 @@ func (v *v1mem) Health(context.Context) (v1.HealthStatus, error) {
 	return v1.HealthStatus{State: v1.HealthHealthy, Reason: "ready"}, nil
 }
 
+// TestAV1TargetConformsThroughTheAdapter measures the pair, not the v1 target
+// alone — which is the honest thing to measure, because the pair is what the
+// engine calls. Invalid is set so the typed-error axis reaches the v1 target
+// through the adapter: without it the axis stops at the adapter's own guard
+// clause, which is how the adapter flattened every underlying kind to internal
+// and passed this suite for as long as it did.
 func TestAV1TargetConformsThroughTheAdapter(t *testing.T) {
 	s := conformancev2.SuiteForV1(
 		func() (v1.Target, error) { return &v1mem{}, nil },
 		targetv2.Metadata{Kind: "mem", Name: "x/test/v1", Version: "1"},
 		desired(),
 	)
+	s.Invalid = malformed()
 
 	if errs := s.Check(context.Background()); len(errs) != 0 {
 		t.Fatalf("a v1 target failed the v2 suite: %v", errs)
@@ -510,5 +552,58 @@ func TestAnUntypedRefusalOfARepeatedKeyIsStillAFailure(t *testing.T) {
 	err := conformancev2.CheckApplyIsIdempotent(context.Background(), tgt, desired())
 	if err == nil {
 		t.Fatalf("a bare error on a repeated key passed the idempotency axis")
+	}
+}
+
+// malformed is a desired state every mem rejects. It is what makes the
+// typed-error axis reach the target at all: the empty-key probe is answered by
+// a guard clause every target shares, so an axis that stops there has measured
+// the guard and not the mapping underneath it.
+func malformed() targetv2.DesiredState {
+	return targetv2.DesiredState{Kind: "mem", Spec: []byte("!! not a spec"), Checksum: "bad"}
+}
+
+// TestTheTypedErrorAxisReachesTheTarget is the axis doing the job the v1
+// adapter's flattened kinds got past. Every target refuses an apply with no
+// idempotency key, and most refuse it in shared code, so a suite that probes
+// only that learns nothing about how the target maps its own failures.
+func TestTheTypedErrorAxisReachesTheTarget(t *testing.T) {
+	tgt := newMem(healthy())
+	tgt.bareOnBadSpec = true
+
+	// The guard clause is still correct, so the old probe passes.
+	if _, err := tgt.Apply(context.Background(), targetv2.ApplyRequest{Desired: desired()}); !errors.As(err, new(*targetv2.Error)) {
+		t.Fatalf("the empty-key refusal is untyped, so this target cannot isolate the malformed probe")
+	}
+
+	err := conformancev2.CheckErrorsAreTyped(context.Background(), tgt, desired(), malformed())
+	if err == nil {
+		t.Fatalf("a target that refuses a malformed spec with a bare error passed the typed-error axis")
+	}
+}
+
+// TestTheTypedErrorAxisSkipsWhatItCannotProvoke keeps the probe honest for a
+// subject that has no malformed state to offer — a target whose fake accepts
+// anything cannot be shown to reject anything, and reporting that as a pass
+// is the quiet lie the suite exists to catch.
+func TestTheTypedErrorAxisSkipsWhatItCannotProvoke(t *testing.T) {
+	tgt := newMem(healthy())
+	tgt.bareOnBadSpec = true
+
+	if err := conformancev2.CheckErrorsAreTyped(context.Background(), tgt, desired(), targetv2.DesiredState{}); err != nil {
+		t.Fatalf("an axis with no malformed state to send reported %v, want the guard-clause probe alone", err)
+	}
+}
+
+// TestASoundTargetPassesTheMalformedProbe is the other half: a target that
+// types its own refusal must pass.
+func TestASoundTargetPassesTheMalformedProbe(t *testing.T) {
+	errs := conformancev2.Suite{
+		New:     func() (targetv2.Target, error) { return newMem(healthy()), nil },
+		Desired: desired(),
+		Invalid: malformed(),
+	}.Check(context.Background())
+	if len(errs) != 0 {
+		t.Fatalf("a target that types its refusal of a malformed spec failed: %v", errs)
 	}
 }
