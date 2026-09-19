@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/pkg/conformance"
+	conformancev2 "go.klarlabs.de/rollops/pkg/conformance/v2"
 	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 type fakeConn struct {
@@ -41,6 +43,16 @@ func TestConformance(t *testing.T) {
 	conformance.Run(t, func() (pt.Target, error) {
 		return newWith(newFakeConn(), spec{"deployPath": "site/index.html"}), nil
 	}, sample)
+}
+
+// TestConformanceV2 measures this target against the v2 axes through the
+// adapter — the pair, which is what the engine will call once it speaks v2.
+func TestConformanceV2(t *testing.T) {
+	conformancev2.SuiteForV1(
+		func() (pt.Target, error) { return newWith(newFakeConn(), spec{"deployPath": "site/index.html"}), nil },
+		targetv2.Metadata{Kind: "ftp", Name: "ftp/test", Version: "v1"},
+		targetv2.DesiredState{Kind: sample.Kind, Spec: sample.Spec, Checksum: sample.Checksum},
+	).Run(t)
 }
 
 func TestApply_Idempotent(t *testing.T) {

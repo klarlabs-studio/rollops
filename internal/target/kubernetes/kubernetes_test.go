@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/pkg/conformance"
+	conformancev2 "go.klarlabs.de/rollops/pkg/conformance/v2"
 	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 // fakeCluster is an in-memory cluster: it records the deployed checksum live.
@@ -66,6 +68,17 @@ func TestConformance(t *testing.T) {
 	conformance.Run(t, func() (pt.Target, error) {
 		return newWith(&fakeCluster{}), nil
 	}, sample)
+}
+
+// TestConformanceV2 measures this target against the v2 axes through the
+// adapter — the pair, which is what the engine will call once it speaks v2.
+// Kubernetes is the target R7 ports, so this is the before reading.
+func TestConformanceV2(t *testing.T) {
+	conformancev2.SuiteForV1(
+		func() (pt.Target, error) { return newWith(&fakeCluster{}), nil },
+		targetv2.Metadata{Kind: "kubernetes", Name: "kubernetes/test", Version: "v1"},
+		targetv2.DesiredState{Kind: sample.Kind, Spec: sample.Spec, Checksum: sample.Checksum},
+	).Run(t)
 }
 
 func TestApply_RichObserveIdempotent(t *testing.T) {
