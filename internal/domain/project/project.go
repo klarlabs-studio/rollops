@@ -19,6 +19,11 @@ import (
 var ErrInvalidName = name.ErrInvalid
 
 // Project is the durable namespace for one deliverable.
+//
+// Revision is the revision the project was read at, and carrying it is what
+// makes an edit safe: a repository tests it before writing and refuses a change
+// built on a stale read (ADR-0003). A release has no such field because there
+// is no update to lose a race.
 type Project struct {
 	ID          identity.ProjectID
 	Name        string
@@ -26,6 +31,7 @@ type Project struct {
 	Labels      map[string]string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Revision    identity.Revision
 }
 
 // New stamps identity and time onto p, then validates it.

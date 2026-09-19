@@ -144,6 +144,10 @@ type Environment struct {
 	Variables map[string]value.Ref
 	Labels    map[string]string
 	Lifecycle Lifecycle
+
+	// Revision is the revision the environment was read at. See project.Project
+	// for why a mutable aggregate carries one and an immutable one does not.
+	Revision identity.Revision
 }
 
 // New stamps identity onto e, then validates it.
