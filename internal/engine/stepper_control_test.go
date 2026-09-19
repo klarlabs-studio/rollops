@@ -8,6 +8,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func TestPause_HoldsCanaryAcrossElapsedBake(t *testing.T) {
@@ -153,7 +154,10 @@ func TestAbort_WithPriorReappliesPrior(t *testing.T) {
 }
 
 func TestPauseResumeAbort_IllegalPhase(t *testing.T) {
-	fake := &fakeTarget{}
+	// Healthy, because this test is about phase transitions: an unmeasured
+	// target now blocks the promote it needs in order to reach a promoted
+	// rollout at all.
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	e, _ := newEngine(t, fake, WithClock(func() time.Time { return now }), WithIDGen(incIDs()))
 	ctx := context.Background()

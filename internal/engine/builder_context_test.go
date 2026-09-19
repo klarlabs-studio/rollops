@@ -6,6 +6,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/analysis"
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
 )
 
@@ -66,7 +67,7 @@ func TestTheMetricsBuilderReceivesTheCallersContext(t *testing.T) {
 		}))
 
 	ctx := context.WithValue(context.Background(), marker, "yes")
-	_, _ = e.runAnalysis(ctx, &config.Analysis{Plugin: "/nonexistent/metrics-plugin"})
+	_ = e.gateAnalysis(ctx, rollout.Rollout{}, &config.Analysis{Plugin: "/nonexistent/metrics-plugin"})
 
 	if got == nil {
 		t.Fatal("the metrics builder was never called")

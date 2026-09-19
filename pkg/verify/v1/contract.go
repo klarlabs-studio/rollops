@@ -46,7 +46,6 @@ type VerificationRequest struct {
 type Measurement struct {
 	Name  string
 	Value float64
-	At    time.Time
 }
 
 // EvidenceRef points at something outside this result that supports it: a

@@ -127,7 +127,8 @@ message RolloutActionResponse {
 message GateResult {
   // gate is "health", "smoke" or "analysis".
   string gate = 1;
-  // status is "pass", "fail", "skipped" (not configured) or "not-run"
+  // status is "pass", "fail", "inconclusive" (ran, measured nothing —
+  // blocks like a failure), "skipped" (not configured) or "not-run"
   // (short-circuited by an earlier failure).
   string status = 2;
   string detail = 3;

@@ -695,7 +695,8 @@ type GateResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// gate is "health", "smoke" or "analysis".
 	Gate string `protobuf:"bytes,1,opt,name=gate,proto3" json:"gate,omitempty"`
-	// status is "pass", "fail", "skipped" (not configured) or "not-run"
+	// status is "pass", "fail", "inconclusive" (ran, measured nothing —
+	// blocks like a failure), "skipped" (not configured) or "not-run"
 	// (short-circuited by an earlier failure).
 	Status        string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	Detail        string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`

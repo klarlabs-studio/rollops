@@ -46,16 +46,28 @@ the daemon host.
 
 ## Gate statuses
 
-| Status    | Meaning                                                     |
-| --------- | ----------------------------------------------------------- |
-| `pass`    | The gate ran and passed.                                     |
-| `fail`    | The gate ran and failed. The first one sets the verdict.     |
-| `skipped` | Not configured (or metric analysis is not enabled).          |
-| `not-run` | Short-circuited by an earlier failure — it never executed.   |
+| Status         | Meaning                                                                         |
+| -------------- | ------------------------------------------------------------------------------- |
+| `pass`         | The gate ran and passed.                                                          |
+| `fail`         | The gate ran and said no. The first blocker sets the verdict.                     |
+| `inconclusive` | The gate ran and reached no verdict — nothing was measured. **It blocks.**        |
+| `skipped`      | Not configured (or metric analysis is not enabled).                               |
+| `not-run`      | Short-circuited by an earlier blocking gate — it never executed.                  |
+
+`inconclusive` is the status that matters most. A metrics backend that refused
+the query, a target that reported no health state, a smoke command that never
+launched: none of those is evidence that the deploy is good, and none of them is
+evidence that it is bad either. They used to be spelled `pass` by omission,
+which promoted deployments on measurements nobody took. An inconclusive gate now
+blocks promotion, and the detail says which verdict it actually was so an
+operator can tell a breaching canary from an unreachable backend.
+
+Blocking is not the same as failing, and the distinction is one-way: an
+inconclusive check may be treated as a failure, never as a pass.
 
 Gates run in a fixed order — **health → smoke → analysis** — and stop at the
-first failure, exactly as the automatic path does. That is deliberate: a dry run
-that kept going past a failure would not predict the real verification. Gates
+first blocker, exactly as the automatic path does. That is deliberate: a dry run
+that kept going past a blocker would not predict the real verification. Gates
 that never ran are reported as `not-run` rather than omitted, so the report can
 never imply a gate passed when it did not execute.
 

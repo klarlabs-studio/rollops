@@ -365,6 +365,32 @@ func TestVerify_HealthGate(t *testing.T) {
 // TestVerify_RunsMetricAnalysisFails proves a manual Verify runs the same
 // metric-analysis gate as the auto path: a healthy target still fails Verify
 // when the injected metrics provider breaches the analysis condition.
+// TestVerify_AnUnknownHealthStateIsNotAPass is the health gate's half of
+// §11.3's MUST. The gate used to pass anything that was not explicitly
+// unhealthy, so a target that answered without saying anything about its health
+// promoted on the strength of a zero value — a success declared from evidence
+// nobody gathered (P8, INV-010). Unknown is now inconclusive, and inconclusive
+// blocks.
+func TestVerify_AnUnknownHealthStateIsNotAPass(t *testing.T) {
+	// No State set: the target answered, and said nothing about health.
+	e, _ := newEngine(t, &fakeTarget{})
+	ctx := context.Background()
+	r, err := e.Apply(ctx, ApplyRequest{Config: loadConfig(t)})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	rep, err := e.Verify(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("an unmeasured gate must not be an operational error: %v", err)
+	}
+	if rep.OK {
+		t.Fatal("verify passed with a target that reported no health state")
+	}
+	if g := gateByName(t, rep, GateHealth); g.Status != GateInconclusive {
+		t.Errorf("health gate = %q, want %q (detail %q)", g.Status, GateInconclusive, g.Detail)
+	}
+}
+
 func TestVerify_RunsMetricAnalysisFails(t *testing.T) {
 	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
 	// fixedMetrics(0.2) breaches "errorRate < 0.05".

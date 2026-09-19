@@ -39,6 +39,7 @@ import (
 	"go.klarlabs.de/rollops/internal/store"
 	itarget "go.klarlabs.de/rollops/internal/target"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
+	"go.klarlabs.de/rollops/internal/verify"
 	pt "go.klarlabs.de/rollops/pkg/target"
 	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
@@ -1029,10 +1030,15 @@ const (
 
 // Post-deploy gate outcomes.
 const (
-	GatePass    = "pass"
-	GateFail    = "fail"
-	GateSkipped = "skipped" // not configured (or analysis not enabled)
-	GateNotRun  = "not-run" // short-circuited by an earlier failure
+	GatePass = "pass"
+	GateFail = "fail"
+	// GateInconclusive is the gate model's word for "nobody looked": the check
+	// ran and reached no verdict about the deploy. It blocks. Without it the
+	// vocabulary had two outcomes for three situations, and the missing one was
+	// spelled "pass" by omission (§11.3, P8, INV-010).
+	GateInconclusive = "inconclusive"
+	GateSkipped      = "skipped" // not configured (or analysis not enabled)
+	GateNotRun       = "not-run" // short-circuited by an earlier failure
 )
 
 // GateResult is one post-deploy gate's outcome.
@@ -1098,27 +1104,35 @@ func (e *Engine) gatesFromRollout(r rollout.Rollout) (gateSet, error) {
 // verification would do — marking the gates it never reached as not-run.
 func (e *Engine) runGates(ctx context.Context, r rollout.Rollout, gs gateSet) []GateResult {
 	out := make([]GateResult, 0, 3)
-	failed := false
+	blocked := false
 	run := func(enabled bool, skipDetail string, gate func() GateResult) {
 		switch {
-		case failed:
+		case blocked:
 			out = append(out, GateResult{Gate: gateNameOf(len(out)), Status: GateNotRun})
 		case !enabled:
 			out = append(out, GateResult{Gate: gateNameOf(len(out)), Status: GateSkipped, Detail: skipDetail})
 		default:
 			res := gate()
 			out = append(out, res)
-			failed = res.Status == GateFail
+			blocked = blocks(res.Status)
 		}
 	}
 	run(gs.health, "no health check configured", func() GateResult { return e.gateHealth(ctx, r) })
 	run(gs.smoke != nil && len(gs.smoke.Command) > 0, "no smoke test configured", func() GateResult {
-		return e.gateSmoke(ctx, gs.smoke)
+		return e.gateSmoke(ctx, r, gs.smoke)
 	})
 	run(gs.analysis != nil, "no metric analysis configured", func() GateResult {
-		return e.gateAnalysis(ctx, gs.analysis)
+		return e.gateAnalysis(ctx, r, gs.analysis)
 	})
 	return out
+}
+
+// blocks reports whether a gate outcome stops the promotion. An inconclusive
+// gate blocks alongside a failing one: it is not evidence the deploy is good,
+// and the stopping behaviour has to match the decision or the report would
+// keep running gates whose answers can no longer change anything.
+func blocks(status string) bool {
+	return status == GateFail || status == GateInconclusive
 }
 
 // gateNameOf maps a gate's position in the fixed run order to its name.
@@ -1133,73 +1147,109 @@ func gateNameOf(i int) string {
 	}
 }
 
+// gateStatusOf maps a verification verdict onto the gate vocabulary. A pass and
+// a fail carry across unchanged; every other verdict — a check that broke, one
+// nobody could answer, one the caller abandoned — is inconclusive. Collapsing
+// those three into "fail" would be safe but dishonest: an operator reading the
+// report has to be able to tell a breaching canary from a metrics backend that
+// was never reachable, because only the first says anything about the deploy.
+func gateStatusOf(v verifyv1.Verdict) string {
+	switch v {
+	case verifyv1.VerdictPass:
+		return GatePass
+	case verifyv1.VerdictFail:
+		return GateFail
+	default:
+		return GateInconclusive
+	}
+}
+
+// verifyRequest names the deploy under verification, so a check's answer is
+// attributed to the revision it measured rather than to whatever is live now.
+func verifyRequest(r rollout.Rollout) verifyv1.VerificationRequest {
+	return verifyv1.VerificationRequest{Target: r.TargetRef, Revision: r.Desired.Checksum}
+}
+
+// runVerifier runs one check and renders its answer as a gate. An error from
+// the call is not a verdict about the deploy at all — the check did not say no,
+// it said nothing — so it reports inconclusive rather than fail.
+func runVerifier(ctx context.Context, name string, v verifyv1.Verifier, r rollout.Rollout) GateResult {
+	res, err := v.Verify(ctx, verifyRequest(r))
+	if err != nil {
+		return GateResult{Gate: name, Status: GateInconclusive, Detail: name + " gate error: " + err.Error()}
+	}
+	g := GateResult{Gate: name, Status: gateStatusOf(res.Verdict), Detail: res.Reason}
+	if blocks(g.Status) && g.Detail == "" {
+		// firstBlocker reports a blocking gate by its detail, so a blocker with
+		// nothing to say would read downstream as no blocker at all.
+		g.Detail = name + " " + string(res.Verdict)
+	}
+	return g
+}
+
 func (e *Engine) gateHealth(ctx context.Context, r rollout.Rollout) GateResult {
 	tgt, err := e.buildTarget(r.TargetRef, r.Desired)
 	if err != nil {
-		// Fail CLOSED: a health gate we cannot even build is not a pass. Letting
-		// a build error fall through would promote an unverified deploy, the
-		// same failure mode the step gate already guards against.
-		return GateResult{Gate: GateHealth, Status: GateFail, Detail: "health gate unavailable: " + err.Error()}
+		// Fail CLOSED: a health gate we cannot even build measured nothing.
+		// Inconclusive rather than fail keeps "the target said no" apart from
+		// "we never got to ask"; both block, which is what the fall-through to
+		// promote used not to do.
+		return GateResult{Gate: GateHealth, Status: GateInconclusive, Detail: "health gate unavailable: " + err.Error()}
 	}
 	defer closeTarget(tgt)
-	obs, herr := tgt.Observe(ctx, targetv2.ObserveRequest{})
-	hs := obs.Health
-	if herr != nil || hs.State == targetv2.HealthUnhealthy {
-		detail := "health check failed"
-		if hs.Reason != "" {
-			detail = "health check failed: " + hs.Reason
-		}
-		return GateResult{Gate: GateHealth, Status: GateFail, Detail: detail}
-	}
-	// A degraded target still passes (only Unhealthy fails), so report which.
-	return GateResult{Gate: GateHealth, Status: GatePass, Detail: healthStateName(hs.State)}
+	return runVerifier(ctx, GateHealth, verify.Health{Target: tgt}, r)
 }
 
-// healthStateName renders a health verdict for report output. Kept local rather
-// than a String() on the contract type, which would change how the state
-// formats everywhere it is already logged.
-func healthStateName(s targetv2.HealthState) string {
-	switch s {
-	case targetv2.HealthHealthy:
-		return "healthy"
-	case targetv2.HealthDegraded:
-		return "degraded"
-	case targetv2.HealthUnhealthy:
-		return "unhealthy"
-	default:
-		return "unknown"
-	}
+func (e *Engine) gateSmoke(ctx context.Context, r rollout.Rollout, st *config.SmokeTest) GateResult {
+	return runVerifier(ctx, GateSmoke, verify.Command{
+		Cmd:        st.Command,
+		ExpectExit: st.ExpectExit,
+		Run:        e.smoke.Run,
+	}, r)
 }
 
-func (e *Engine) gateSmoke(ctx context.Context, st *config.SmokeTest) GateResult {
-	code, err := e.smoke.Run(ctx, st.Command)
+// gateAnalysis runs the metric analysis behind the verifier contract. The
+// detail wording predates the five-verdict vocabulary and is matched by
+// surfaces downstream of the gate, so it is composed here rather than taken
+// from the verifier's own reason.
+func (e *Engine) gateAnalysis(ctx context.Context, r rollout.Rollout, a *config.Analysis) GateResult {
+	an, release, err := e.analyzer(ctx, a)
+	defer release()
 	if err != nil {
-		return GateResult{Gate: GateSmoke, Status: GateFail, Detail: "smoke test error: " + err.Error()}
+		return GateResult{Gate: GateAnalysis, Status: GateInconclusive, Detail: "analysis: " + err.Error()}
 	}
-	if code != st.ExpectExit {
-		return GateResult{Gate: GateSmoke, Status: GateFail, Detail: fmt.Sprintf("smoke test exit %d (expected %d)", code, st.ExpectExit)}
+	res, verr := verify.Metrics{Analyzer: an}.Verify(ctx, verifyRequest(r))
+	if verr != nil {
+		return GateResult{Gate: GateAnalysis, Status: GateInconclusive, Detail: "analysis: " + verr.Error()}
 	}
-	return GateResult{Gate: GateSmoke, Status: GatePass}
+	if res.Verdict == verifyv1.VerdictPass {
+		return GateResult{
+			Gate:   GateAnalysis,
+			Status: GatePass,
+			Detail: fmt.Sprintf("analysis passed: %d measurement(s)", len(res.Measurements)),
+		}
+	}
+	// "failed" rather than "fail" for the one verdict that already had a note:
+	// the phrasing is read by operators and matched by surfaces that predate the
+	// other four.
+	word := string(res.Verdict)
+	if res.Verdict == verifyv1.VerdictFail {
+		word = "failed"
+	}
+	return GateResult{
+		Gate:   GateAnalysis,
+		Status: gateStatusOf(res.Verdict),
+		Detail: fmt.Sprintf("analysis %s: %s", word, res.Reason),
+	}
 }
 
-// gateAnalysis runs the metric analysis and reports it as a gate. The gate
-// model has two outcomes and the analysis has five, so everything short of a
-// pass blocks: that is the direction §11.3's MUST allows — an inconclusive run
-// may become a fail, never a pass — and the detail carries which verdict it
-// actually was so the operator can tell a breaching canary from a metrics
-// backend that was never reachable.
-func (e *Engine) gateAnalysis(ctx context.Context, a *config.Analysis) GateResult {
-	verdict, note := e.runAnalysis(ctx, a)
-	if verdict != verifyv1.VerdictPass {
-		return GateResult{Gate: GateAnalysis, Status: GateFail, Detail: note}
-	}
-	return GateResult{Gate: GateAnalysis, Status: GatePass, Detail: note}
-}
-
-// firstFailure returns the detail of the first failed gate, or "" if all passed.
-func firstFailure(gates []GateResult) string {
+// firstBlocker returns the detail of the first gate that stops the promotion,
+// or "" if every gate that ran passed. Inconclusive blocks: this is the last
+// place §11.3's MUST could be undone, because a gate reported honestly and then
+// read as "not a failure" promotes on evidence nobody gathered.
+func firstBlocker(gates []GateResult) string {
 	for _, g := range gates {
-		if g.Status == GateFail {
+		if blocks(g.Status) {
 			return g.Detail
 		}
 	}
@@ -1211,7 +1261,7 @@ func firstFailure(gates []GateResult) string {
 // of the shared gate runner.
 func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *config.Config) (bool, string, string) {
 	gates := e.runGates(ctx, r, e.gatesFromConfig(c))
-	if reason := firstFailure(gates); reason != "" {
+	if reason := firstBlocker(gates); reason != "" {
 		return true, reason, ""
 	}
 	// A passing analysis may carry a note worth persisting on the promotion.
@@ -1223,9 +1273,12 @@ func (e *Engine) runPostDeployChecks(ctx context.Context, r rollout.Rollout, c *
 	return false, "", ""
 }
 
-// runAnalysis builds an analyzer from config (using the injected metrics
-// provider, or a Prometheus provider from the config address) and runs it.
-func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (verifyv1.Verdict, string) {
+// analyzer compiles the analysis from config, using the injected metrics
+// provider or one named by the config. The returned release closes a
+// plugin-backed provider and is never nil, so a caller can defer it before
+// checking the error.
+func (e *Engine) analyzer(ctx context.Context, a *config.Analysis) (*analysis.Analyzer, func(), error) {
+	release := func() {}
 	provider := e.metrics
 	if provider == nil {
 		switch {
@@ -1234,16 +1287,16 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (verifyv1.
 			// a custom metrics service). Launched per analysis run, then closed.
 			p, err := e.metricsBuild(ctx, a)
 			if err != nil {
-				return verifyv1.VerdictError, "analysis: " + err.Error()
+				return nil, release, err
 			}
 			if c, ok := p.(interface{ Close() error }); ok {
-				defer func() { _ = c.Close() }()
+				release = func() { _ = c.Close() }
 			}
 			provider = p
 		case a.Provider == "prometheus":
 			provider = analysis.Prometheus{Addr: a.Address}
 		default:
-			return verifyv1.VerdictError, fmt.Sprintf("analysis: no metrics provider for %q", a.Provider)
+			return nil, release, fmt.Errorf("no metrics provider for %q", a.Provider)
 		}
 	}
 	metrics := make([]analysis.Metric, 0, len(a.Metrics))
@@ -1259,20 +1312,9 @@ func (e *Engine) runAnalysis(ctx context.Context, a *config.Analysis) (verifyv1.
 		FailureLimit: a.FailureLimit,
 	})
 	if err != nil {
-		return verifyv1.VerdictError, "analysis: " + err.Error()
+		return nil, release, err
 	}
-	res := an.Run(ctx)
-	if res.Verdict != verifyv1.VerdictPass {
-		// "failed" rather than "fail" for the one verdict that already had a
-		// note: the phrasing is read by operators and matched by surfaces that
-		// predate the other four.
-		word := string(res.Verdict)
-		if res.Verdict == verifyv1.VerdictFail {
-			word = "failed"
-		}
-		return res.Verdict, fmt.Sprintf("analysis %s: %s", word, res.Reason)
-	}
-	return verifyv1.VerdictPass, fmt.Sprintf("analysis passed: %d measurement(s)", len(res.Measurements))
+	return an, release, nil
 }
 
 // Approve resolves an awaiting-approval rollout: it deploys to the target and
@@ -1449,7 +1491,7 @@ func (e *Engine) Verify(ctx context.Context, rolloutID string) (VerifyReport, er
 		return VerifyReport{}, fmt.Errorf("engine: verify: %w", err)
 	}
 	gates := e.runGates(ctx, r, gs)
-	reason := firstFailure(gates)
+	reason := firstBlocker(gates)
 	return VerifyReport{
 		RolloutID: r.ID,
 		TargetRef: r.TargetRef,
@@ -1489,7 +1531,7 @@ func (e *Engine) Promote(ctx context.Context, rolloutID string, by rollout.Ident
 		if gErr != nil {
 			return r, fmt.Errorf("engine: promote: %w", gErr)
 		}
-		if reason := firstFailure(e.runGates(ctx, r, gs)); reason != "" {
+		if reason := firstBlocker(e.runGates(ctx, r, gs)); reason != "" {
 			return r, fmt.Errorf("engine: promote: %s; force the promote to override", reason)
 		}
 	}
