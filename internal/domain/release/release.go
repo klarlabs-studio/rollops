@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
+	"go.klarlabs.de/rollops/internal/domain/canonical"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
@@ -132,14 +132,17 @@ func (r Release) ArtifactFor(role string) (identity.ArtifactID, bool) {
 // same inputs share a fingerprint however they were labelled, when they were
 // created, or by whom.
 func (r Release) Fingerprint() digest.Digest {
-	var b strings.Builder
-	writeField(&b, string(r.ProjectID))
-	writeField(&b, r.Version)
-	writeField(&b, r.Source.Provider)
-	writeField(&b, r.Source.Repository)
-	writeField(&b, r.Source.Revision)
+	var w canonical.Writer
+	w.String(string(r.ProjectID))
+	w.String(r.Version)
+	w.String(r.Source.Provider)
+	w.String(r.Source.Repository)
+	w.String(r.Source.Revision)
 
-	// Listing order is presentation, not identity.
+	// Listing order is presentation, not identity. The artifacts are written
+	// with plain fields rather than through canonical.Each because the count
+	// and the per-item bounding that Each adds would change every fingerprint
+	// already on disk.
 	sorted := slices.Clone(r.Artifacts)
 	slices.SortFunc(sorted, func(x, y Artifact) int {
 		if c := strings.Compare(x.Role, y.Role); c != 0 {
@@ -148,19 +151,10 @@ func (r Release) Fingerprint() digest.Digest {
 		return strings.Compare(string(x.ArtifactID), string(y.ArtifactID))
 	})
 	for _, a := range sorted {
-		writeField(&b, a.Role)
-		writeField(&b, string(a.ArtifactID))
+		w.String(a.Role)
+		w.String(string(a.ArtifactID))
 	}
-	return digest.Of([]byte(b.String()))
-}
-
-// writeField length-prefixes a value so no separator exists for a field to
-// contain. Without this, a role could be crafted to span the next field and two
-// unrelated releases would share a fingerprint.
-func writeField(b *strings.Builder, s string) {
-	b.WriteString(strconv.Itoa(len(s)))
-	b.WriteByte(':')
-	b.WriteString(s)
+	return w.Sum()
 }
 
 // WithLabel returns a copy carrying an additional label. Labels are outside the
