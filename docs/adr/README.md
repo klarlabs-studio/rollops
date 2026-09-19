@@ -39,9 +39,10 @@ R5 and R6 are unblocked. Decision 5 is the next one needed, for R14.
 
 ## Decisions the spec did not anticipate
 
-The spec also uses types it never defines. Those need a record too, and it is
-listed here rather than above because §41 does not name it.
+The spec also uses types it never defines. Those need a record too, and they are
+listed here rather than above because §41 does not name them.
 
-| Decision                                            | Blocks | Record   |
-| --------------------------------------------------- | ------ | -------- |
-| Shape of `TargetBinding`, `PolicyBinding`, lifecycle | R2     | ADR-0002 |
+| Decision                                             | Blocks  | Record   |
+| ---------------------------------------------------- | ------- | -------- |
+| Shape of `TargetBinding`, `PolicyBinding`, lifecycle  | R2      | ADR-0002 |
+| What a `DesiredState` holds for a release             | R7, R11 | ADR-0007 |
