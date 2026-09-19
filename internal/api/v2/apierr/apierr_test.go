@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
+	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/plan"
@@ -71,6 +72,7 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{policy.ErrDecisionRefuses, apierr.PolicyDenied},
 		{deploy.ErrPolicyRefused, apierr.PolicyDenied},
 
+		{page.ErrBadCursor, apierr.InvalidArgument},
 		{deploy.ErrCrossProject, apierr.InvalidArgument},
 		{deploy.ErrUnboundApproval, apierr.InvalidArgument},
 		{deploy.ErrNoTarget, apierr.Conflict},

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"net/http"
 
+	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/plan"
@@ -226,7 +227,8 @@ func Of(err error) Code {
 		errors.Is(err, planner.ErrBlocked):
 		return Conflict
 
-	case errors.Is(err, deploy.ErrCrossProject),
+	case errors.Is(err, page.ErrBadCursor),
+		errors.Is(err, deploy.ErrCrossProject),
 		errors.Is(err, deploy.ErrUnboundApproval),
 		errors.Is(err, desired.ErrNothingToDeploy),
 		errors.Is(err, desired.ErrForeignArtifact):
