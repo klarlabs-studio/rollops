@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"go.klarlabs.de/rollops/internal/domain/canonical"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/policy"
@@ -128,6 +129,12 @@ type DeploymentPlan struct {
 	// Apply compares it with the live revision rather than silently re-planning.
 	BaseRevision identity.Revision
 
+	// Strategy is how the operations are to be rolled out. It is part of the
+	// plan, and therefore of the hash, because a change reviewed as a canary
+	// and applied by replacing everything at once is not the change that was
+	// reviewed — the operations are identical and the blast radius is not.
+	Strategy deployment.Strategy
+
 	Operations []PlannedOperation
 
 	// Policy is the single authorization record. Risk lives inside it rather
@@ -191,6 +198,9 @@ func (p DeploymentPlan) Validate() error {
 		if strings.TrimSpace(f.value) == "" {
 			return fmt.Errorf("plan: no %s", f.name)
 		}
+	}
+	if !p.Strategy.Valid() {
+		return fmt.Errorf("plan: unknown strategy %q", p.Strategy)
 	}
 	if len(p.Operations) == 0 {
 		return errors.New("plan: no operations; there would be nothing to apply")
@@ -369,6 +379,7 @@ func (p DeploymentPlan) computeHash() digest.Digest {
 	w.String(string(p.EnvironmentID))
 	w.String(string(p.ReleaseID))
 	w.Uint(uint64(p.BaseRevision))
+	w.String(string(p.Strategy))
 	encodeOperations(&w, p.Operations)
 	w.Nested(p.Policy.Encode)
 	w.Nested(func(w *canonical.Writer) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/policy"
 )
@@ -21,10 +22,14 @@ func TestTheHashCoversThePlan(t *testing.T) {
 // changed without disturbing the hash, it can be changed after approval.
 func TestEveryMeaningfulFieldIsHashed(t *testing.T) {
 	edits := map[string]func(*plan.DeploymentPlan){
-		"release":          func(p *plan.DeploymentPlan) { p.ReleaseID = "rel_other" },
-		"environment":      func(p *plan.DeploymentPlan) { p.EnvironmentID = "env_other" },
-		"project":          func(p *plan.DeploymentPlan) { p.ProjectID = "prj_other" },
-		"base revision":    func(p *plan.DeploymentPlan) { p.BaseRevision = 43 },
+		"release":       func(p *plan.DeploymentPlan) { p.ReleaseID = "rel_other" },
+		"environment":   func(p *plan.DeploymentPlan) { p.EnvironmentID = "env_other" },
+		"project":       func(p *plan.DeploymentPlan) { p.ProjectID = "prj_other" },
+		"base revision": func(p *plan.DeploymentPlan) { p.BaseRevision = 43 },
+		// A plan reviewed as a canary must not be applied by replacing
+		// everything at once. The rollout is as much of what was approved as
+		// the change it carries.
+		"strategy":         func(p *plan.DeploymentPlan) { p.Strategy = deployment.StrategyRecreate },
 		"operation target": func(p *plan.DeploymentPlan) { p.Operations[0].Target = "k8s-staging" },
 		"operation kind":   func(p *plan.DeploymentPlan) { p.Operations[0].Kind = plan.OperationRollback },
 		"operation diff":   func(p *plan.DeploymentPlan) { p.Operations[0].Diff.Changes[0].To = "app@sha256:evil" },

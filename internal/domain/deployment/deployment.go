@@ -33,7 +33,10 @@ const (
 	StrategyRecreate  Strategy = "recreate"
 )
 
-func (s Strategy) valid() bool {
+// Valid reports whether s is a rollout strategy the system knows. It is
+// exported because a plan records the strategy it was reviewed under and has
+// to check it without restating the list.
+func (s Strategy) Valid() bool {
 	switch s {
 	case StrategyRolling, StrategyCanary, StrategyBlueGreen, StrategyRecreate:
 		return true
@@ -144,7 +147,7 @@ func (d Deployment) Validate() error {
 			return fmt.Errorf("deployment: no %s", f.name)
 		}
 	}
-	if !d.Strategy.valid() {
+	if !d.Strategy.Valid() {
 		return fmt.Errorf("deployment: unknown strategy %q", d.Strategy)
 	}
 	if !d.Trigger.Type.valid() {

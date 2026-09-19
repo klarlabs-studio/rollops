@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
@@ -33,6 +34,7 @@ func draft() plan.DeploymentPlan {
 		EnvironmentID: "env_1",
 		ReleaseID:     "rel_1",
 		BaseRevision:  42,
+		Strategy:      deployment.StrategyCanary,
 		Operations: []plan.PlannedOperation{
 			{
 				ID:         "op_1",
@@ -227,6 +229,18 @@ func TestARollbackMustLeadSomewhereElse(t *testing.T) {
 	_, err := plan.New(newGen(), newClock(), author(), time.Hour, d)
 	if err == nil {
 		t.Error("a rollback onto the same release was accepted")
+	}
+}
+
+// A plan with no strategy would be applied under whatever the caller passed,
+// which is the drift the hash exists to prevent.
+func TestAPlanMustSayHowItRollsOut(t *testing.T) {
+	for _, s := range []deployment.Strategy{"", "yolo"} {
+		p := newPlan(t)
+		p.Strategy = s
+		if err := p.Validate(); err == nil {
+			t.Errorf("a plan with strategy %q was accepted", s)
+		}
 	}
 }
 
