@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +40,14 @@ spec:
 type fakeTarget struct {
 	applied   int
 	manifests []pt.Manifest
+	// health is what Health reports; the zero value reads as healthy so tests
+	// that never set it keep their behaviour.
+	mu     sync.Mutex
+	health pt.HealthStatus
+	// failAfter > 0 makes every Health call after the first failAfter report
+	// unhealthy — a deterministic "breaks mid-canary".
+	failAfter   int
+	healthCalls int
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -50,7 +59,16 @@ func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) {
 	return pt.Fingerprint{}, nil
 }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
-	return pt.HealthStatus{State: pt.HealthHealthy}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.healthCalls++
+	if f.failAfter > 0 && f.healthCalls > f.failAfter {
+		return pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "CrashLoopBackOff"}, nil
+	}
+	if f.health.State == pt.HealthUnknown {
+		return pt.HealthStatus{State: pt.HealthHealthy}, nil
+	}
+	return f.health, nil
 }
 
 func newApp(t *testing.T) (*App, *bytes.Buffer, string) {
@@ -60,6 +78,18 @@ func newApp(t *testing.T) (*App, *bytes.Buffer, string) {
 
 func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App, *bytes.Buffer, string) {
 	t.Helper()
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	tick := 0
+	return newAppWithClock(t, fake, idgen, func() time.Time {
+		tick++
+		return clock.Add(time.Duration(tick) * time.Second)
+	})
+}
+
+// newAppWithClock is newAppWithTarget with the engine clock under the test's
+// control.
+func newAppWithClock(t *testing.T, fake *fakeTarget, idgen func() string, now func() time.Time) (*App, *bytes.Buffer, string) {
+	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "c.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,12 +97,7 @@ func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
-	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	tick := 0
-	eng := engine.New(db, reg, engine.WithClock(func() time.Time {
-		tick++
-		return clock.Add(time.Duration(tick) * time.Second)
-	}), engine.WithIDGen(idgen))
+	eng := engine.New(db, reg, engine.WithClock(now), engine.WithIDGen(idgen))
 
 	var buf bytes.Buffer
 	actor := rollout.Identity{Kind: "human", Name: "felix"}

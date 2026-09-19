@@ -8,6 +8,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/rollout"
+	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
 func TestPause_HoldsCanaryAcrossElapsedBake(t *testing.T) {
@@ -184,5 +185,87 @@ func TestPauseResumeAbort_IllegalPhase(t *testing.T) {
 	}
 	if _, err := e.Abort(ctx, promoted.ID, by); err == nil {
 		t.Fatal("Abort of a promoted rollout must fail")
+	}
+}
+
+// canaryAutoYAML is canaryPauseYAML with auto-rollback on, so the rollout
+// records whether its rollback baseline was live.
+func canaryAutoConfig(t *testing.T, x string) *config.Config {
+	t.Helper()
+	yaml := strings.Replace(canaryPauseYAML, "x: 1", "x: "+x, 1) + "  rollback:\n    auto: true\n"
+	c, err := config.Load([]byte(yaml))
+	if err != nil {
+		t.Fatalf("load canary: %v", err)
+	}
+	return c
+}
+
+// Aborting a canary re-applies the prior manifest. When that manifest was not
+// live as the canary started, re-applying it would deploy something that was
+// not running; abort halts the canary and re-applies nothing.
+func TestAbort_WithAStaleBaselineReappliesNothing(t *testing.T) {
+	fake := &fakeTarget{liveAwareDiff: true}
+	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	e, _ := newEngine(t, fake, WithClock(func() time.Time { return now }), WithIDGen(incIDs()))
+	ctx := context.Background()
+	by := rollout.Identity{Kind: "human", Name: "felix"}
+
+	rolling, err := config.Load([]byte(fakeYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, ApplyRequest{Config: rolling, Initiator: by}); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	fake.applied = append(fake.applied, pt.Manifest{Checksum: "deployed-with-kubectl"})
+
+	canary, err := e.Apply(ctx, ApplyRequest{Config: canaryAutoConfig(t, "2"), Initiator: by})
+	if err != nil || canary.Phase != rollout.PhaseDeploying {
+		t.Fatalf("canary Apply: %v %v", canary, err)
+	}
+	applied := len(fake.applied)
+
+	got, err := e.Abort(ctx, canary.ID, by)
+	if err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if len(fake.applied) != applied {
+		t.Fatalf("abort re-applied %d manifest(s) over a stale baseline", len(fake.applied)-applied)
+	}
+	if got.Phase != rollout.PhaseRolledBack || !strings.Contains(got.Note, "nothing re-applied") {
+		t.Errorf("aborted rollout: phase %s, note %q", got.Phase, got.Note)
+	}
+}
+
+// "Roll back to the previous version" must not quietly mean an older one.
+func TestRollbackLast_RefusesAStaleBaselineUnlessForced(t *testing.T) {
+	fake := &fakeTarget{liveAwareDiff: true, health: pt.HealthStatus{State: pt.HealthHealthy}}
+	// An advancing clock: RollbackLast picks the newest rollout, and two
+	// rollouts stamped the same instant are not ordered.
+	base, tick := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC), 0
+	e, _ := newEngine(t, fake, WithIDGen(incIDs()), WithClock(func() time.Time {
+		tick++
+		return base.Add(time.Duration(tick) * time.Second)
+	}))
+	ctx := context.Background()
+	by := rollout.Identity{Kind: "human", Name: "felix"}
+
+	first, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 1}`), Initiator: by})
+	if err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	fake.applied = append(fake.applied, pt.Manifest{Checksum: "deployed-with-kubectl"})
+	if _, err := e.Apply(ctx, ApplyRequest{Config: loadCrashConfig(t, `{v: 2}`), Initiator: by}); err != nil {
+		t.Fatalf("second Apply: %v", err)
+	}
+
+	if _, err := e.RollbackLast(ctx, "demo/prod/app", false); err == nil || !strings.Contains(err.Error(), "was not live") {
+		t.Fatalf("unforced rollback over a stale baseline: %v", err)
+	}
+	if _, err := e.RollbackLast(ctx, "demo/prod/app", true); err != nil {
+		t.Fatalf("forced rollback: %v", err)
+	}
+	if last := fake.applied[len(fake.applied)-1]; last.Checksum != first.Desired.Checksum {
+		t.Errorf("forced rollback applied %s, want the recorded prior", short(last.Checksum))
 	}
 }

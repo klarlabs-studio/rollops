@@ -193,3 +193,32 @@ func TestTick_BeforePauseElapsesIsNoop(t *testing.T) {
 		t.Fatalf("early Tick advanced the canary: phase=%s weight=%d", r2.Phase, r2.StepWeight)
 	}
 }
+
+// A canary whose health fails at a step it entered from an elapsed pause sat
+// in deploying forever: the entry gate recorded Failed, the eventless abort
+// did not fire for a step entered from a restored timer, and the step's
+// "ok"-guarded timer never fired either. Every tick that arrived after the
+// pause had elapsed hit the same wall.
+func TestTick_UnhealthyAtAStepEnteredFromTheTimerFails(t *testing.T) {
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	e, _ := newEngine(t, fake, WithClock(func() time.Time { return now }), WithIDGen(incIDs()))
+	ctx := context.Background()
+	c := loadCanaryPause(t)
+	r, err := e.Apply(ctx, ApplyRequest{Config: c, Initiator: rollout.Identity{Kind: "human", Name: "felix"}})
+	if err != nil || r.Phase != rollout.PhaseDeploying {
+		t.Fatalf("apply: %v %v", r, err)
+	}
+	fake.health = pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "CrashLoopBackOff"}
+	var last *rollout.Rollout
+	for i := 0; i < 5; i++ {
+		now = now.Add(3 * time.Second) // every tick lands after the step's pause
+		last, _ = e.Tick(ctx, r.ID, c)
+		if last.Phase != rollout.PhaseDeploying {
+			break
+		}
+	}
+	if last.Phase != rollout.PhaseRolledBack {
+		t.Fatalf("an unhealthy canary is still %s after 5 ticks (step %d)", last.Phase, last.StepIndex)
+	}
+}

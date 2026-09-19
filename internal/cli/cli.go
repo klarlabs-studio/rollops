@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
@@ -47,6 +48,34 @@ type Operations interface {
 type EngineOps struct {
 	*engine.Engine
 	Actor rollout.Identity
+}
+
+// Drive advances one rollout one step, the way rollopsd does each tick: an
+// in-flight canary is ticked, and a rollout that reached verifying runs the
+// post-deploy gate (promote, or roll back). It never applies anything new —
+// --wait finishes the rollout it started, and a drift-triggered re-apply here
+// would start another.
+func (o EngineOps) Drive(ctx context.Context, c *config.Config, id string) (rollout.Rollout, error) {
+	r, err := o.Status(ctx, id)
+	if err != nil {
+		return r, err
+	}
+	switch r.Phase {
+	case rollout.PhaseDeploying:
+		rl, err := o.Tick(ctx, id, c)
+		if rl != nil {
+			return *rl, err
+		}
+		return r, err
+	case rollout.PhaseVerifying:
+		prior := r.Desired
+		if p, ok := o.PriorManifest(ctx, r.TargetRef, r.Desired.Checksum); ok {
+			prior = p
+		}
+		out, err := o.VerifyOrRollback(ctx, id, prior, c)
+		return out.Rollout, err
+	}
+	return r, nil
 }
 
 // Promote promotes a rollout, attributed to the local actor. force overrides
@@ -238,6 +267,34 @@ func (a *App) plan(ctx context.Context, args []string) error {
 }
 
 func (a *App) apply(ctx context.Context, args []string) error {
+	// --wait keeps this command running until the rollout settles, so a
+	// canary with timed pauses can be finished without the daemon. Without
+	// it, a positive pause returns "deploying" and only rollopsd advances it.
+	wait := false
+	waitTimeout := 30 * time.Minute
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		switch arg := args[i]; {
+		case arg == "--wait":
+			wait = true
+		case arg == "--wait-timeout" && i+1 < len(args):
+			d, err := time.ParseDuration(args[i+1])
+			if err != nil {
+				return fmt.Errorf("apply: --wait-timeout: %w", err)
+			}
+			wait, waitTimeout = true, d
+			i++
+		case strings.HasPrefix(arg, "--wait-timeout="):
+			d, err := time.ParseDuration(strings.TrimPrefix(arg, "--wait-timeout="))
+			if err != nil {
+				return fmt.Errorf("apply: --wait-timeout: %w", err)
+			}
+			wait, waitTimeout = true, d
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	args = rest
 	data, root, err := readConfigFileArg(args)
 	if err != nil {
 		return err
@@ -259,7 +316,72 @@ func (a *App) apply(ctx context.Context, args []string) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
-	return nil
+	if !wait {
+		return nil
+	}
+	return a.waitForRollout(ctx, c, *r, waitTimeout)
+}
+
+// waitPoll is how often --wait advances or re-reads a rollout.
+var waitPoll = 10 * time.Second
+
+// rolloutDriver advances an in-flight rollout one reconcile step. The
+// in-process engine implements it with the same engine steps rollopsd runs
+// (tick, then the post-deploy gate), so a --wait apply and the daemon behave
+// the same; a remote backend does not, and --wait then only watches the daemon.
+type rolloutDriver interface {
+	Drive(ctx context.Context, c *config.Config, id string) (rollout.Rollout, error)
+}
+
+// waitForRollout drives (or watches) a rollout until it settles, reporting
+// each step, and fails if it rolled back or the timeout passes.
+func (a *App) waitForRollout(ctx context.Context, c *config.Config, r rollout.Rollout, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	lastNote := ""
+	for {
+		switch r.Phase {
+		case rollout.PhasePromoted:
+			_, _ = fmt.Fprintf(a.Out, "rollout %s: promoted\n", r.ID)
+			return nil
+		case rollout.PhaseRolledBack:
+			return fmt.Errorf("rollout %s: rolled back: %s", r.ID, r.Note)
+		case rollout.PhaseAwaitingApproval, rollout.PhasePaused:
+			_, _ = fmt.Fprintf(a.Out, "rollout %s: %s — waiting on an operator, not on time\n", r.ID, r.Phase)
+			return nil
+		}
+		if note := fmt.Sprintf("%s %d/%d", r.Phase, r.StepIndex, r.StepTotal); note != lastNote {
+			_, _ = fmt.Fprintf(a.Out, "rollout %s: %s", r.ID, r.Phase)
+			if r.StepTotal > 0 {
+				_, _ = fmt.Fprintf(a.Out, " (step %d/%d, %d%%)", r.StepIndex, r.StepTotal, r.StepWeight)
+			}
+			_, _ = fmt.Fprintln(a.Out)
+			lastNote = note
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("rollout %s: still %s after %s", r.ID, r.Phase, timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitPoll):
+		}
+		var next rollout.Rollout
+		var err error
+		if d, ok := a.Ops.(rolloutDriver); ok {
+			next, err = d.Drive(ctx, c, r.ID)
+		} else {
+			next, err = a.Ops.Status(ctx, r.ID)
+		}
+		// A failed step rolls the rollout back and reports why as an error;
+		// that is the rollback outcome, reported as such, not a CLI failure.
+		if err != nil && next.Phase != rollout.PhaseRolledBack {
+			return err
+		}
+		if err != nil && next.Note == "" {
+			next.Note = err.Error()
+		}
+		r = next
+	}
 }
 
 func (a *App) status(ctx context.Context, args []string) error {
@@ -596,7 +718,7 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  fleet <name|prefix>     aggregate latest phases for a RolloutSet-style prefix\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state (--wait: until it settles)\n  status <rollout-id>      show a rollout's state\n  fleet <name|prefix>     aggregate latest phases for a RolloutSet-style prefix\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state (--force)\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 
