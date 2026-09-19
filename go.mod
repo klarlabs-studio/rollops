@@ -7,6 +7,7 @@ toolchain go1.26.7
 require (
 	github.com/felixgeelhaar/decisionkit v0.1.0
 	github.com/google/cel-go v0.31.0
+	github.com/google/uuid v1.6.0
 	github.com/jlaffaye/ftp v0.2.2
 	github.com/klarlabs-studio/auth-go v0.7.0
 	github.com/prometheus/client_golang v1.24.1
@@ -33,7 +34,6 @@ require (
 	github.com/felixgeelhaar/chronos v0.8.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
