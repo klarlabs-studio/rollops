@@ -26,6 +26,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/engine/desired"
@@ -228,6 +229,10 @@ func Of(err error) Code {
 		return Conflict
 
 	case errors.Is(err, page.ErrBadCursor),
+		// An id of the wrong kind is well-formed enough to look up. Treating it
+		// as missing would send the caller hunting for a resource that was never
+		// addressable at that name.
+		errors.Is(err, identity.ErrWrongKind),
 		errors.Is(err, deploy.ErrCrossProject),
 		errors.Is(err, deploy.ErrUnboundApproval),
 		errors.Is(err, desired.ErrNothingToDeploy),
