@@ -122,10 +122,10 @@ daemon failing every reconcile satisfies that perfectly. So does a daemon whose 
 corrupt — which is exactly what happened this morning, with the pod reporting `1/1 Running`
 throughout.
 
-### 2. The lesson was already learned, coded, and never wired up
+### 2. The lesson was learned, coded, committed — and never rolled out
 
-`/livez` exists and does real work — it fails when the cgroup is out of PID slots. Its
-comment names precisely this class of failure:
+`/livez` exists in `main` and does real work: it fails when the cgroup is out of PID slots.
+Its comment names precisely this class of failure:
 
 ```go
 // /livez fails when the cgroup is nearly out of process slots — the gap
@@ -133,10 +133,40 @@ comment names precisely this class of failure:
 // reconcile failed with "cannot fork". See internal/procgroup.
 ```
 
-That was written after a prior incident with the same shape. The endpoint shipped
-(`38c9f7a`, "feat(rollopsd): /livez fails on cgroup PID pressure"). **The deployment was
-never changed to probe it.** The remediation for the last occurrence of this exact failure
-mode was sitting in the binary, unused, while this occurrence ran its course.
+The repository's own deployment manifest, `deploy/kubernetes/rollopsd.yaml`, probes it
+correctly, and carries the same reasoning:
+
+```yaml
+# /readyz is "process is up"; /livez is "still able to fork". The
+# v0.34.3 zombie leak left readiness green while every reconcile
+# failed with cannot-fork — liveness must catch that.
+livenessProbe:
+  httpGet: { path: /livez, port: https, scheme: HTTPS }
+```
+
+So the remediation was written, committed, and declared in the manifest. The live cluster
+has none of it:
+
+```
+live:   readiness=/readyz   liveness=/readyz
+image:  rollopsd:v0.34.3
+```
+
+`/livez` shipped in **v0.34.5** (`38c9f7a`, first tag containing it). `git show
+v0.34.3:cmd/rollopsd/main.go | grep -c /livez` → **0**. The endpoint does not exist in the
+running binary, so the repo's manifest could not have been applied as-is without
+CrashLooping the pod on a 404. The live Deployment is pinned to the older probe config, and
+carries `kubectl.kubernetes.io/last-applied-configuration` — applied by hand, out of band.
+
+The actual gap is therefore not a forgotten probe. **The cluster is two releases behind,
+and the fix for the previous incident is in a release that was never rolled out.** The
+resource-limit change from 2026-08-10 *did* reach the cluster (live matches the repo at
+250m/128Mi, 1500m/384Mi), which shows the manifest is applied selectively and by hand
+rather than as a unit.
+
+Worth stating plainly: RollOps is a GitOps reconciler that is itself deployed out of band,
+has drifted from its own declared manifest, and runs in detect-only mode — so it would not
+self-correct even if it watched itself.
 
 This is the single most actionable finding in the document.
 
@@ -319,18 +349,19 @@ Ordered by the gap they close, not by effort.
 
 | # | Action | Why | Owner |
 |---|---|---|---|
-| 1 | **Point the liveness probe at `/livez`** in the rollopsd Deployment | The check already exists and is unused; this is the second incident it would have caught | open |
-| 2 | **Give `/readyz` real checks** — at minimum a store read — or stop probing it | It currently cannot fail, including when the database is unreadable | open |
-| 3 | **Expose and scrape `/metrics`**: add the container port, a Service port, and a ServiceMonitor | Instrumentation is complete and entirely unobserved | open |
-| 4 | **Alert on `rate(reconcileTotal{result="error"}[5m]) > 0`** and on a rollout held in a non-terminal phase beyond a threshold | Zero of 38 PrometheusRules mention rollops; this alert would have fired on day one | open |
-| 5 | **Release and deploy `20d1f3e`** | The deployed v0.34.3 will recreate the wedge on the next badly-timed restart | open |
-| 6 | **Resolve the two paused vorhut targets** (`dep-redis`, `vorhut-executor`) via `resume` | Different bug, still outstanding, and it logs nothing | open |
-| 7 | **Identify `rollops-dbfix`** and what it did to the volume | Ran two minutes before the corruption began; blocks the storage hypothesis | open |
-| 8 | **Move `rollopsd-data` off `longhorn-r1`**; raise replicas, set `reclaimPolicy: Retain` | Single replica, revision counter disabled, `Delete` reclaim, for the daemon's only durable state | open |
-| 9 | **Remove one of the two default StorageClasses** | `local-path` and `longhorn-r1` are both marked default | open |
-| 10 | **Attempt `sqlite3 .recover`** on `corrupt-20260919T094151Z-rollops.db` | It is the only remaining copy of all rollout history | open |
-| 11 | **Raise event retention / `revisionHistoryLimit`** | Forensics currently has a ~47-minute horizon; three of four wedge causes are unknowable | open |
-| 12 | **Audit for other unreachable-state assertions** that return an error from a reconcile path while holding occupancy | The bug class, not the bug | open |
+| 1 | **Upgrade rollopsd from v0.34.3 and apply `deploy/kubernetes/rollopsd.yaml` as a unit** | Brings `/livez` (v0.34.5) and the manifest's correct liveness probe together; neither works without the other | open |
+| 2 | **Stop applying the rollopsd manifest by hand.** Reconcile it from Git like everything else, or record explicitly why it is exempt | The live Deployment has drifted from the repo's own manifest; selective hand-application is what stranded the probe fix | open |
+| 3 | **Give `/readyz` real checks** — at minimum a store read — or stop probing it | It currently cannot fail, including when the database is unreadable | open |
+| 4 | **Expose and scrape `/metrics`**: add the container port, a Service port, and a ServiceMonitor | Instrumentation is complete and entirely unobserved | open |
+| 5 | **Alert on `rate(reconcileTotal{result="error"}[5m]) > 0`** and on a rollout held in a non-terminal phase beyond a threshold | Zero of 38 PrometheusRules mention rollops; this alert would have fired on day one | open |
+| 6 | **Release `20d1f3e`** and include it in the upgrade above | The deployed v0.34.3 will recreate the wedge on the next badly-timed restart | open |
+| 7 | **Resolve the two paused vorhut targets** (`dep-redis`, `vorhut-executor`) via `resume` | Different bug, still outstanding, and it logs nothing | open |
+| 8 | **Identify `rollops-dbfix`** and what it did to the volume | Ran two minutes before the corruption began; blocks the storage hypothesis | open |
+| 9 | **Move `rollopsd-data` off `longhorn-r1`**; raise replicas, set `reclaimPolicy: Retain` | Single replica, revision counter disabled, `Delete` reclaim, for the daemon's only durable state | open |
+| 10 | **Remove one of the two default StorageClasses** | `local-path` and `longhorn-r1` are both marked default | open |
+| 11 | **Attempt `sqlite3 .recover`** on `corrupt-20260919T094151Z-rollops.db` | It is the only remaining copy of all rollout history | open |
+| 12 | **Raise event retention / `revisionHistoryLimit`** | Forensics currently has a ~47-minute horizon; three of four wedge causes are unknowable | open |
+| 13 | **Audit for other unreachable-state assertions** that return an error from a reconcile path while holding occupancy | The bug class, not the bug | open |
 
 ---
 
@@ -343,11 +374,18 @@ layer above it:
 - an error that could only be reported, never acted on
 - a lock whose lifetime was a phase rather than a lease
 - a health endpoint that returns 200 unconditionally, used as the liveness probe
-- a real health endpoint, written in response to this same failure shape, never wired up
+- a real health endpoint, written in response to this same failure shape, sitting in a
+  release that was never rolled out
+- a deployment manifest that declares the correct probe, against a cluster running a binary
+  two releases older — applied by hand, field by field
 - complete metrics that nothing scrapes
 - 38 alerting rules, none of which mention this system
 - an alert count dropping to zero because reads stopped working entirely
 
 Every one of those is a detection failure, and detection failure is what converted a
-recoverable bug into 31 days. The fix in `20d1f3e` prevents this specific state. Items 1–4
+recoverable bug into 31 days. The fix in `20d1f3e` prevents this specific state. Items 1–5
 are what prevent the *next* unknown bug from lasting a month.
+
+The uncomfortable version: the previous incident produced a correct diagnosis, a correct
+code fix, and a correct manifest change — and none of it reached production. Writing the
+remediation is evidently not the hard part.
