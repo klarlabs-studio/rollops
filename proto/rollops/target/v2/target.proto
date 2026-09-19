@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+package rollops.target.v2;
+
+option go_package = "go.klarlabs.de/rollops/pkg/target/rollopstargetv2;rollopstargetv2";
+
+// Target is the deployment contract a v2 target plugin serves alongside the
+// generic rollops.plugin.v1.Plugin service (ADR-0006). It is typed rather than
+// JSON-in-bytes because the wire is what a third party implements: a field the
+// wire does not name is a field the host and the plugin can disagree about.
+//
+// Every method here is mandatory, including the three the host treats as
+// optional capabilities. A method that is simply absent cannot be observed
+// across a process boundary, so a target that cannot do one of them answers
+// with the UNSUPPORTED error kind naming the capability. What a target may do
+// is what Capabilities reports, narrowed by what the manifest declared — never
+// what a type assertion says.
+service Target {
+  // GetCapabilities reports what this target can do here and now (§9.3). It is
+  // a call rather than a static field because the honest answer may need the
+  // substrate: a Kubernetes target cannot know it lacks progressive delivery
+  // until it has looked for the CRD.
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+
+  // Inspect reports the live inventory this target manages. It changes
+  // nothing.
+  rpc Inspect(InspectRequest) returns (InspectResponse);
+
+  // Plan reports what Apply would do, without doing it. It MUST be free of
+  // side effects (§9.5): a plan that half-applies has already broken the batch
+  // it was meant to guard.
+  rpc Plan(PlanRequest) returns (PlanResponse);
+
+  // Apply converges the target on the desired state. It MUST honour the
+  // idempotency key (§9.4): the same key replayed returns the same semantic
+  // result, or the CONFLICT kind when the target cannot promise that.
+  rpc Apply(ApplyRequest) returns (ApplyResponse);
+
+  // Observe reports how one apply is going — progress and health, as opposed
+  // to Inspect's inventory.
+  rpc Observe(ObserveRequest) returns (ObserveResponse);
+
+  // Rollback undoes an apply using the substrate's own mechanism. A target
+  // without the rollback capability answers UNSUPPORTED and the host rolls
+  // back by applying the previous desired state instead.
+  rpc Rollback(RollbackRequest) returns (RollbackResponse);
+
+  // Promote advances a partially rolled-out apply to completion
+  // (progressive-delivery).
+  rpc Promote(PromoteRequest) returns (PromoteResponse);
+
+  // DetectDrift compares live state against desired natively, rather than by
+  // fingerprint comparison (drift).
+  rpc DetectDrift(DetectDriftRequest) returns (DetectDriftResponse);
+
+  // Prune removes the resources this target owns. It is the only destructive
+  // method here and MUST be scoped to resources the target marked as its own
+  // (prune).
+  rpc Prune(PruneRequest) returns (PruneResponse);
+}
+
+// DesiredState is what the target should converge on. Spec is opaque to
+// everything but the target that declared kind, which is what keeps the host
+// ignorant of any particular substrate (INV-007).
+message DesiredState {
+  string kind = 1;
+  bytes spec = 2;
+  string checksum = 3;
+  map<string, string> labels = 4;
+}
+
+// Resource is one live object. parent is the owning resource's name, empty for
+// a top-level object, so a UI can render the ownership tree.
+message Resource {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string status = 4;
+  string parent = 5;
+}
+
+// HealthState is the coarse readiness verdict that feeds verification and
+// auto-rollback. A target without the health-observation capability reports
+// UNKNOWN rather than guessing.
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTH_STATE_HEALTHY = 1;
+  HEALTH_STATE_DEGRADED = 2;
+  HEALTH_STATE_UNHEALTHY = 3;
+}
+
+message HealthStatus {
+  HealthState state = 1;
+  string reason = 2;
+}
+
+message GetCapabilitiesRequest {}
+
+// GetCapabilitiesResponse names what the target can do. Names the host does not
+// know are ignored rather than refused, so a plugin may grow a capability in a
+// patch release without breaking every host older than it.
+message GetCapabilitiesResponse {
+  repeated string capabilities = 1;
+}
+
+message InspectRequest {}
+
+// InspectResponse is the live inventory. meta is diagnostic detail and never
+// carries secrets (INV-012).
+message InspectResponse {
+  string fingerprint = 1;
+  repeated Resource resources = 2;
+  map<string, string> meta = 3;
+}
+
+message PlanRequest {
+  DesiredState desired = 1;
+}
+
+// PlanResponse is what Apply would do. A non-empty blockers means the caller
+// MUST NOT apply. Empty means nothing is known to block it — which is also what
+// a target that could not check says, because it does not claim success.
+message PlanResponse {
+  bool changes = 1;
+  string diff = 2;
+  bytes rendered = 3;
+  repeated string blockers = 4;
+}
+
+// ApplyRequest converges on desired. idempotency_key is mandatory and is minted
+// by the host from durable state, so that the retry after a lost response
+// carries the key the lost call used.
+message ApplyRequest {
+  DesiredState desired = 1;
+  string idempotency_key = 2;
+}
+
+// ApplyResponse reports what happened. handle is opaque and target-defined: it
+// names this apply to a later Observe, Promote or Rollback, and is empty for a
+// target with nothing to name.
+message ApplyResponse {
+  bool changed = 1;
+  string detail = 2;
+  string handle = 3;
+}
+
+// ObserveRequest watches one apply. An empty handle asks about the target's
+// current state, which is what a target that mints no handles always answers.
+message ObserveRequest {
+  string handle = 1;
+}
+
+message ObserveResponse {
+  string fingerprint = 1;
+  HealthStatus health = 2;
+  map<string, string> meta = 3;
+}
+
+// RollbackRequest undoes the apply named by handle. There is deliberately no
+// "previous state" field: a target that must be told what to return to does not
+// have native rollback, and the host applies the previous desired state itself.
+message RollbackRequest {
+  string handle = 1;
+}
+
+message RollbackResponse {
+  bool changed = 1;
+  string detail = 2;
+}
+
+message PromoteRequest {
+  string handle = 1;
+}
+
+message PromoteResponse {
+  string detail = 1;
+}
+
+message DetectDriftRequest {
+  DesiredState desired = 1;
+}
+
+message DetectDriftResponse {
+  bool drifted = 1;
+  string detail = 2;
+}
+
+message PruneRequest {}
+
+// PruneResponse reports how many owned resources were removed. Pruning an
+// already-pruned target removes nothing and is not an error, so a caller may
+// retry after a partial failure.
+message PruneResponse {
+  int32 removed = 1;
+}

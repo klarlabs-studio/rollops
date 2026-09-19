@@ -142,3 +142,4 @@ exclude:
   # presence in a domain only moves the number around.
   - internal/grpcapi/rollopsv1/*
   - pkg/plugin/rollopspluginv1/*
+  - pkg/target/rollopstargetv2/*

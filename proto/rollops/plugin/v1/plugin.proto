@@ -29,6 +29,18 @@ message GetManifestResponse {
   string api_version = 3;
   repeated Capability capabilities = 4;
   SafetyRequirements safety = 5;
+  repeated DeclaredContract contracts = 6;
+}
+
+// DeclaredContract names a typed service this plugin serves in addition to the
+// generic Plugin service — e.g. kind "target", version 2 for
+// rollops.target.v2.Target. It exists so that the handshake's protocol version
+// stops doing double duty (ADR-0006): that number is about how the host and the
+// plugin talk at all, and bumping it to advertise a new contract would refuse
+// every plugin that does not serve it.
+message DeclaredContract {
+  string kind = 1;
+  int32 version = 2;
 }
 
 // Capability groups related tools under a named feature (e.g. "target",
