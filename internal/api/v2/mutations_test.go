@@ -14,6 +14,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 )
 
 // planning is the request every mutation test starts from, so that a test
@@ -487,6 +488,457 @@ func TestAConfiguredKeyLifetimeIsTheOneRecorded(t *testing.T) {
 	}
 	if want := at.Add(time.Hour); !rec.ExpiresAt.Equal(want) {
 		t.Errorf("expires at = %s, want %s", rec.ExpiresAt, want)
+	}
+}
+
+// applying is the request every apply test starts from.
+func (s scene) applying(planID, key string) apiv2.ApplyPlanRequest {
+	return apiv2.ApplyPlanRequest{
+		PlanID:         planID,
+		Detail:         "CHG-4471",
+		Actor:          planner,
+		IdempotencyKey: key,
+	}
+}
+
+// planned creates a plan through the service and returns its id, so that an
+// apply test starts from a plan the API itself would hand a caller.
+func (s scene) planned(t *testing.T) string {
+	t.Helper()
+	p, err := s.svc.CreatePlan(context.Background(), s.planning(""))
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	return p.ID
+}
+
+// drain cancels the deployment so the environment is free again. Tests about
+// the idempotency key use it so that a second apply is refused by the key
+// rather than by an environment that is merely busy — two different refusals
+// that both arrive as CONFLICT.
+func (s scene) drain(t *testing.T, id string) {
+	t.Helper()
+	parsed, err := identity.ParseDeploymentID(id)
+	if err != nil {
+		t.Fatalf("ParseDeploymentID: %v", err)
+	}
+	d, err := s.store.Deployments().Get(context.Background(), parsed)
+	if err != nil {
+		t.Fatalf("Deployments.Get: %v", err)
+	}
+	moved, err := d.TransitionTo(deployment.StatusCancelled, s.clock.now)
+	if err != nil {
+		t.Fatalf("TransitionTo(cancelled): %v", err)
+	}
+	if _, err := s.store.Deployments().Update(context.Background(), moved); err != nil {
+		t.Fatalf("Deployments.Update: %v", err)
+	}
+}
+
+func (s scene) deployments(t *testing.T) []apiv2.Deployment {
+	t.Helper()
+	got, err := s.svc.ListDeployments(context.Background(), apiv2.ListDeploymentsRequest{
+		EnvironmentID: string(s.environment.ID),
+	})
+	if err != nil {
+		t.Fatalf("ListDeployments: %v", err)
+	}
+	return got.Deployments
+}
+
+func TestApplyingAPlanAdmitsADeploymentForIt(t *testing.T) {
+	s := setup(t).scene(t)
+	planID := s.planned(t)
+
+	got, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, ""))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if got.ID == "" {
+		t.Fatal("no deployment id; the caller cannot follow what they just started")
+	}
+	if got.PlanID != planID {
+		t.Errorf("plan id = %q, want %q", got.PlanID, planID)
+	}
+	if got.ReleaseID != string(s.release.ID) || got.EnvironmentID != string(s.environment.ID) {
+		t.Errorf("deployment = release %q into %q", got.ReleaseID, got.EnvironmentID)
+	}
+	if got.Status != string(deployment.StatusQueued) {
+		t.Errorf("status = %q, want %q", got.Status, deployment.StatusQueued)
+	}
+	// The strategy comes from the plan rather than from the request, so what
+	// runs is what was reviewed.
+	if got.Strategy != string(deployment.StrategyRolling) {
+		t.Errorf("strategy = %q", got.Strategy)
+	}
+}
+
+// The trigger type is not the caller's to choose. Everything arriving here came
+// through the API, and a request that could claim "git" or "schedule" would
+// write a cause into the record that nothing else corroborates.
+func TestADeploymentAdmittedThroughTheAPISaysSoAndCarriesTheCallersNote(t *testing.T) {
+	s := setup(t).scene(t)
+
+	got, err := s.svc.ApplyPlan(context.Background(), s.applying(s.planned(t), ""))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if got.Trigger.Type != string(deployment.TriggerAPI) {
+		t.Errorf("trigger type = %q, want %q", got.Trigger.Type, deployment.TriggerAPI)
+	}
+	if got.Trigger.Detail != "CHG-4471" {
+		t.Errorf("trigger detail = %q, want the caller's change reference", got.Trigger.Detail)
+	}
+}
+
+func TestAMalformedApplyRequestIsTheCallersMistake(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		planID string
+	}{
+		{"not an id at all", "nonsense"},
+		{"an id of the wrong kind", "dep_0199a0dd-0000-7000-8000-000000000000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := setup(t).scene(t)
+
+			_, err := s.svc.ApplyPlan(context.Background(), s.applying(tc.planID, ""))
+
+			if got := codeOf(t, err); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
+	}
+}
+
+func TestApplyingAPlanNobodyComputedIsNotFound(t *testing.T) {
+	absent := setup(t).scene(t).plan(t, oneApply(), allowed())
+	s := setup(t).scene(t)
+
+	_, err := s.svc.ApplyPlan(context.Background(), s.applying(string(absent.ID), ""))
+
+	if got := codeOf(t, err); got != apierr.NotFound {
+		t.Errorf("code = %s, want %s", got, apierr.NotFound)
+	}
+}
+
+// One environment runs one deployment at a time. The second caller is told the
+// world disagrees with them rather than being queued behind the first, because
+// what they would be queued for is a plan built against a world the first
+// deployment is in the middle of changing.
+func TestAnEnvironmentAlreadyDeployingWillNotTakeAnother(t *testing.T) {
+	s := setup(t).scene(t)
+	planID := s.planned(t)
+	if _, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, "")); err != nil {
+		t.Fatalf("first ApplyPlan: %v", err)
+	}
+
+	_, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, ""))
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+// A refusal is not a gate. POLICY_DENIED tells the caller to stop, where
+// APPROVAL_REQUIRED would send them looking for someone to sign it off.
+func TestAPlanPolicyRefusedCannotBeApplied(t *testing.T) {
+	s := setup(t).scene(t)
+	refused := s.plan(t, oneApply(), policy.Decision{
+		Allowed: false,
+		Reasons: []policy.Reason{{Code: "change_freeze", Message: "a change freeze is in force"}},
+		Risk: policy.RiskAssessment{
+			Level:   policy.RiskHigh,
+			Score:   0.9,
+			Factors: []policy.RiskFactor{{Code: "change_freeze", Message: "a change freeze is in force"}},
+		},
+	})
+
+	_, err := s.svc.ApplyPlan(context.Background(), s.applying(string(refused.ID), ""))
+
+	if got := codeOf(t, err); got != apierr.PolicyDenied {
+		t.Errorf("code = %s, want %s", got, apierr.PolicyDenied)
+	}
+}
+
+// Planning separately from applying is only safe because the plan goes stale.
+// PLAN_STALE rather than CONFLICT because the remedy is a specific one: plan
+// again, and read what it says this time.
+func TestAPlanPastItsWindowCannotBeApplied(t *testing.T) {
+	s := setup(t).scene(t)
+	planID := s.planned(t)
+	s.clock.now = at.Add(time.Hour + time.Second)
+
+	_, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, ""))
+
+	if got := codeOf(t, err); got != apierr.PlanStale {
+		t.Errorf("code = %s, want %s", got, apierr.PlanStale)
+	}
+}
+
+// The environment is drained first so that the retry could have succeeded. A
+// busy environment would refuse the second call with a CONFLICT of its own, and
+// the test would pass without the key doing anything.
+func TestTwoApplyCallsWithOneKeyAdmitOneDeployment(t *testing.T) {
+	s := setup(t).scene(t)
+	planID := s.planned(t)
+	first, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, "k-1"))
+	if err != nil {
+		t.Fatalf("first ApplyPlan: %v", err)
+	}
+	s.drain(t, first.ID)
+
+	second, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, "k-1"))
+	if err != nil {
+		t.Fatalf("second ApplyPlan: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Errorf("deployment = %q on the retry and %q on the first call", second.ID, first.ID)
+	}
+	if got := s.deployments(t); len(got) != 1 {
+		t.Errorf("got %d deployments, want the 1 the retry should have replayed", len(got))
+	}
+}
+
+// The note the caller wrote is part of the request the key stands for. Replaying
+// the first answer would record one change reference against a deployment
+// somebody started for another.
+func TestAnApplyKeyReusedForADifferentNoteIsRefused(t *testing.T) {
+	s := setup(t).scene(t)
+	planID := s.planned(t)
+	first, err := s.svc.ApplyPlan(context.Background(), s.applying(planID, "k-1"))
+	if err != nil {
+		t.Fatalf("first ApplyPlan: %v", err)
+	}
+	s.drain(t, first.ID)
+	changed := s.applying(planID, "k-1")
+	changed.Detail = "CHG-9999"
+
+	_, err = s.svc.ApplyPlan(context.Background(), changed)
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+	if got := s.deployments(t); len(got) != 1 {
+		t.Errorf("got %d deployments; the second request ran under the first one's key", len(got))
+	}
+}
+
+// gated applies a plan whose policy leaves a requirement outstanding, so an
+// approval test starts from a deployment actually waiting at the gate.
+func (s scene) gated(t *testing.T) (plan.DeploymentPlan, apiv2.Deployment) {
+	t.Helper()
+	p := s.plan(t, oneApply(), needsApproval())
+	d, err := s.svc.ApplyPlan(context.Background(), s.applying(string(p.ID), ""))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if d.Status != string(deployment.StatusAwaitingApproval) {
+		t.Fatalf("status = %q, want %q", d.Status, deployment.StatusAwaitingApproval)
+	}
+	return p, d
+}
+
+func (s scene) approving(d apiv2.Deployment, hash, key string) apiv2.ApproveDeploymentRequest {
+	return apiv2.ApproveDeploymentRequest{
+		DeploymentID:   d.ID,
+		PlanHash:       hash,
+		Granted:        true,
+		Reason:         "read the diff, the replica bump is expected",
+		Actor:          approver,
+		IdempotencyKey: key,
+	}
+}
+
+// A gate is something to pass, not an error. Applying a plan with an unmet
+// requirement records the deployment and returns it waiting, which is how an
+// approver finds out there is anything to answer.
+func TestAPlanWithAnUnmetRequirementIsAdmittedToTheGateRatherThanRefused(t *testing.T) {
+	s := setup(t).scene(t)
+
+	_, d := s.gated(t)
+
+	if d.ID == "" {
+		t.Error("no deployment id; nobody could be sent a link to approve")
+	}
+}
+
+func TestGrantingTheLastApprovalQueuesTheDeployment(t *testing.T) {
+	s := setup(t).scene(t)
+	p, d := s.gated(t)
+
+	got, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), ""))
+	if err != nil {
+		t.Fatalf("ApproveDeployment: %v", err)
+	}
+	if got.ID != d.ID {
+		t.Errorf("deployment = %q, want the %q that was approved", got.ID, d.ID)
+	}
+	if got.Status != string(deployment.StatusQueued) {
+		t.Errorf("status = %q, want %q", got.Status, deployment.StatusQueued)
+	}
+}
+
+// A refusal is an answer, not a pause. Leaving the deployment at the gate would
+// wait for somebody to overrule the person who said no.
+func TestDenyingCancelsTheDeploymentRatherThanLeavingItWaiting(t *testing.T) {
+	s := setup(t).scene(t)
+	p, d := s.gated(t)
+	req := s.approving(d, p.Hash.String(), "")
+	req.Granted = false
+	req.Reason = "the migration has not been rehearsed"
+
+	got, err := s.svc.ApproveDeployment(context.Background(), req)
+	if err != nil {
+		t.Fatalf("ApproveDeployment: %v", err)
+	}
+	if got.Status != string(deployment.StatusCancelled) {
+		t.Errorf("status = %q, want %q", got.Status, deployment.StatusCancelled)
+	}
+}
+
+// §13 binds consent to a revision. An approval of a hash that is not the stored
+// plan's is consent for something else, and honouring it would carry a review
+// of one rollout over to another.
+func TestApprovingAgainstAHashThatIsNotThePlansIsStale(t *testing.T) {
+	s := setup(t).scene(t)
+	_, d := s.gated(t)
+	other := s.plan(t, oneApply(plan.Change{Path: "spec.replicas", From: "2", To: "9"}), needsApproval())
+
+	_, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, other.Hash.String(), ""))
+
+	if got := codeOf(t, err); got != apierr.PlanStale {
+		t.Errorf("code = %s, want %s", got, apierr.PlanStale)
+	}
+}
+
+func TestAMalformedApprovalIsTheCallersMistake(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		spoil func(*apiv2.ApproveDeploymentRequest)
+	}{
+		{"deployment id of the wrong kind", func(r *apiv2.ApproveDeploymentRequest) {
+			r.DeploymentID = "pln_0199a0dd-0000-7000-8000-000000000000"
+		}},
+		{"a hash that is not a digest", func(r *apiv2.ApproveDeploymentRequest) { r.PlanHash = "deadbeef" }},
+		// Required, not defaulted: an approval that stated no revision would be
+		// bound to whatever happens to be stored when it is spent.
+		{"no hash at all", func(r *apiv2.ApproveDeploymentRequest) { r.PlanHash = "" }},
+		// The denial half of the same rule: whoever is stopped by a refusal has
+		// to be told what stopped them.
+		{"a denial with no reason", func(r *apiv2.ApproveDeploymentRequest) {
+			r.Granted = false
+			r.Reason = ""
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := setup(t).scene(t)
+			p, d := s.gated(t)
+			req := s.approving(d, p.Hash.String(), "")
+			tc.spoil(&req)
+
+			_, err := s.svc.ApproveDeployment(context.Background(), req)
+
+			if got := codeOf(t, err); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
+	}
+}
+
+// Past the gate the work has begun, and recording consent for it after the fact
+// would describe a review that never happened.
+func TestApprovingADeploymentThatIsNotAtTheGateIsRefused(t *testing.T) {
+	s := setup(t).scene(t)
+	p := s.plan(t, oneApply(), allowed())
+	d, err := s.svc.ApplyPlan(context.Background(), s.applying(string(p.ID), ""))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+
+	_, err = s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), ""))
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+func TestApprovingADeploymentNobodyStartedIsNotFound(t *testing.T) {
+	absent := setup(t).scene(t)
+	p, d := absent.gated(t)
+	s := setup(t).scene(t)
+
+	_, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), ""))
+
+	if got := codeOf(t, err); got != apierr.NotFound {
+		t.Errorf("code = %s, want %s", got, apierr.NotFound)
+	}
+}
+
+// The retry matters more here than anywhere else: the first call has already
+// moved the deployment off the gate, so without the key the retry would be told
+// the deployment is not awaiting approval and an approver would think their
+// answer was lost.
+func TestTwoApprovalsWithOneKeyRecordOneAnswer(t *testing.T) {
+	s := setup(t).scene(t)
+	p, d := s.gated(t)
+
+	first, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), "k-1"))
+	if err != nil {
+		t.Fatalf("first ApproveDeployment: %v", err)
+	}
+	second, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), "k-1"))
+	if err != nil {
+		t.Fatalf("second ApproveDeployment: %v", err)
+	}
+	if second.ID != first.ID || second.Status != first.Status {
+		t.Errorf("retry = %q/%q, want the first call's %q/%q",
+			second.ID, second.Status, first.ID, first.Status)
+	}
+}
+
+// A key reused to say the opposite is not a retry. Replaying the grant would
+// tell somebody their refusal was recorded while the deployment went ahead.
+func TestAnApprovalKeyReusedForTheOppositeAnswerIsRefused(t *testing.T) {
+	s := setup(t).scene(t)
+	p, d := s.gated(t)
+	if _, err := s.svc.ApproveDeployment(context.Background(), s.approving(d, p.Hash.String(), "k-1")); err != nil {
+		t.Fatalf("first ApproveDeployment: %v", err)
+	}
+	reversed := s.approving(d, p.Hash.String(), "k-1")
+	reversed.Granted = false
+	reversed.Reason = "on second thoughts"
+
+	_, err := s.svc.ApproveDeployment(context.Background(), reversed)
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+	got, err := s.svc.GetDeployment(context.Background(), apiv2.GetDeploymentRequest{ID: d.ID})
+	if err != nil {
+		t.Fatalf("GetDeployment: %v", err)
+	}
+	if got.Status != string(deployment.StatusQueued) {
+		t.Errorf("status = %q; the reversal ran under the grant's key", got.Status)
+	}
+}
+
+// Each mutation has its own key space. §18.3 has a CLI generate one key per
+// invocation, and a caller whose generator repeats must not have an approval
+// answered with a plan.
+func TestOneKeyMeansDifferentThingsToDifferentOperations(t *testing.T) {
+	s := setup(t).scene(t)
+	created, err := s.svc.CreatePlan(context.Background(), s.planning("k-1"))
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	got, err := s.svc.ApplyPlan(context.Background(), s.applying(created.ID, "k-1"))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if got.ID == "" {
+		t.Error("the apply was answered from the plan's record")
 	}
 }
 

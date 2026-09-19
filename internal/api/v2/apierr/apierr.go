@@ -235,6 +235,10 @@ func Of(err error) Code {
 		errors.Is(err, identity.ErrWrongKind),
 		errors.Is(err, deploy.ErrCrossProject),
 		errors.Is(err, deploy.ErrUnboundApproval),
+		// A refusal that says nothing about why is a request that will fail the
+		// same way however often it is sent, and leaves whoever it stops with
+		// nothing to act on. INTERNAL would invite the retry instead.
+		errors.Is(err, policy.ErrUnexplainedDecision),
 		errors.Is(err, desired.ErrNothingToDeploy),
 		errors.Is(err, desired.ErrForeignArtifact):
 		return InvalidArgument

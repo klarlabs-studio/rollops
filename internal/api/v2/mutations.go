@@ -17,8 +17,10 @@ import (
 
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
+	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 )
 
 // Deployer is the write side this service projects.
@@ -29,6 +31,8 @@ import (
 // has any business naming.
 type Deployer interface {
 	Plan(ctx context.Context, cmd deploy.PlanCommand) (plan.DeploymentPlan, error)
+	Apply(ctx context.Context, cmd deploy.ApplyCommand) (deployment.Deployment, error)
+	Approve(ctx context.Context, cmd deploy.ApproveCommand) (deployment.Deployment, error)
 }
 
 // CreatePlanRequest asks what deploying a release to an environment would
@@ -89,6 +93,124 @@ func (s *Service) CreatePlan(ctx context.Context, req CreatePlanRequest) (Plan, 
 		},
 		func(ctx context.Context, id string) (Plan, error) {
 			return s.GetPlan(ctx, GetPlanRequest{ID: id})
+		},
+	)
+}
+
+// ApplyPlanRequest asks for a stored plan to be carried out.
+//
+// The strategy and the operations are not here. They come from the plan, so
+// what runs is what was reviewed — a request that could restate them would let
+// an applier diverge from the thing an approver read.
+type ApplyPlanRequest struct {
+	PlanID string
+
+	// Detail is free text for whoever reads the timeline later: a ticket, a
+	// change request, the reason somebody pressed the button. The trigger type
+	// is not the caller's to choose — this endpoint is the API, and a request
+	// that could claim "git" or "schedule" would write a cause into the record
+	// that nothing else corroborates.
+	Detail string
+
+	Actor          identity.Principal
+	IdempotencyKey string
+}
+
+// ApplyPlan admits a deployment for the plan.
+//
+// It returns as soon as the deployment is recorded, which is what §23.3 asks
+// of a mutation whose execution is asynchronous: the identity comes back now
+// and the caller follows the timeline for the rest. A deployment whose plan
+// carries unmet requirements comes back awaiting_approval rather than as an
+// error — the gate is something to pass, and returning it is how an approver
+// finds out there is one.
+func (s *Service) ApplyPlan(ctx context.Context, req ApplyPlanRequest) (Deployment, error) {
+	planID, err := identity.ParsePlanID(req.PlanID)
+	if err != nil {
+		return Deployment{}, badArgument("apiv2: plan id: %w", err)
+	}
+
+	fp := fingerprint(string(planID), req.Detail, req.Actor.ID)
+	return once(ctx, s, opApplyPlan, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Deployment, error) {
+			d, err := s.deployer.Apply(ctx, deploy.ApplyCommand{
+				PlanID:  planID,
+				Trigger: deployment.Trigger{Type: deployment.TriggerAPI, Detail: req.Detail},
+				Actor:   req.Actor,
+			})
+			if err != nil {
+				return "", Deployment{}, failure("apiv2: apply plan %s: %w", planID, err)
+			}
+			return string(d.ID), viewDeployment(d), nil
+		},
+		func(ctx context.Context, id string) (Deployment, error) {
+			return s.GetDeployment(ctx, GetDeploymentRequest{ID: id})
+		},
+	)
+}
+
+// ApproveDeploymentRequest records one principal's answer about a gated
+// deployment.
+type ApproveDeploymentRequest struct {
+	DeploymentID string
+
+	// PlanHash is the hash of the plan the approver read, and it is required.
+	// §13 binds an approval to a revision: without one, consent given for what
+	// somebody reviewed would carry over to whatever happens to be stored when
+	// it is spent.
+	PlanHash string
+
+	// Granted says whether the answer is yes. It is a bool here and a
+	// tri-state below because a request either states an answer or is
+	// malformed, where a stored approval that was never filled in must not
+	// read as a yes.
+	Granted bool
+
+	// Reason is why. It is what an auditor reads, and a denial without one
+	// tells whoever has to act on it nothing.
+	Reason string
+
+	Actor          identity.Principal
+	IdempotencyKey string
+}
+
+// ApproveDeployment records the answer and returns the deployment, moved if
+// the answer settled the matter.
+//
+// The deployment comes back rather than a bare acknowledgement because one
+// approval against a two-approval requirement records the answer and leaves
+// the gate shut: the caller has to be able to see whether it moved.
+func (s *Service) ApproveDeployment(ctx context.Context, req ApproveDeploymentRequest) (Deployment, error) {
+	deploymentID, err := identity.ParseDeploymentID(req.DeploymentID)
+	if err != nil {
+		return Deployment{}, badArgument("apiv2: deployment id: %w", err)
+	}
+	hash, err := digest.Parse(req.PlanHash)
+	if err != nil {
+		return Deployment{}, badArgument("apiv2: plan hash: %w", err)
+	}
+	decision := policy.ApprovalDenied
+	if req.Granted {
+		decision = policy.ApprovalGranted
+	}
+
+	fp := fingerprint(string(deploymentID), hash.String(), string(decision), req.Reason, req.Actor.ID)
+	return once(ctx, s, opApproveDeployment, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Deployment, error) {
+			d, err := s.deployer.Approve(ctx, deploy.ApproveCommand{
+				DeploymentID: deploymentID,
+				Revision:     hash,
+				Decision:     decision,
+				Reason:       req.Reason,
+				Actor:        req.Actor,
+			})
+			if err != nil {
+				return "", Deployment{}, failure("apiv2: approve deployment %s: %w", deploymentID, err)
+			}
+			return string(d.ID), viewDeployment(d), nil
+		},
+		func(ctx context.Context, id string) (Deployment, error) {
+			return s.GetDeployment(ctx, GetDeploymentRequest{ID: id})
 		},
 	)
 }

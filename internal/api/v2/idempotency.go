@@ -20,7 +20,11 @@ const DefaultKeyLifetime = 24 * time.Hour
 // Operation names scope the key space. Keys are the caller's to invent and
 // §18.3 has a CLI generate one per invocation, so two unrelated mutations
 // handed the same string must not replay for each other.
-const opCreatePlan = "CreatePlan"
+const (
+	opCreatePlan        = "CreatePlan"
+	opApplyPlan         = "ApplyPlan"
+	opApproveDeployment = "ApproveDeployment"
+)
 
 // fingerprint summarises the request a key was first used for, so that a key
 // reused for something else is refused rather than answered.

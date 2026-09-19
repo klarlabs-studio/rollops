@@ -23,6 +23,16 @@ var planner = identity.Principal{
 	Claims:      map[string]string{"token": "s3cret"},
 }
 
+// approver holds the role needsApproval asks for. The claim is what the
+// requirement is counted against, so a principal without it answers without
+// clearing the gate.
+var approver = identity.Principal{
+	ID:          "rm@example.com",
+	Type:        identity.PrincipalHuman,
+	DisplayName: "Release Manager",
+	Claims:      map[string]string{"role": "release-manager"},
+}
+
 // scene is a project with one environment and one release in it — everything a
 // plan needs to exist. The environment binds a target because an environment
 // with none cannot be deployed to at all, and a fixture that could not be
@@ -94,6 +104,28 @@ func allowed() policy.Decision {
 		Allowed: true,
 		Reasons: []policy.Reason{{Code: "no_gate", Message: "no policy is bound to this environment"}},
 		Risk:    policy.RiskAssessment{Level: policy.RiskLow, Score: 0.1},
+	}
+}
+
+// needsApproval allows the plan and leaves a requirement outstanding, which is
+// what puts an applied deployment at the gate rather than in the queue. It is
+// not the same as a refusal: a refusal is the end of the matter, and this is a
+// question somebody can answer.
+func needsApproval() policy.Decision {
+	return policy.Decision{
+		Allowed: true,
+		Requirements: []policy.Requirement{{
+			Type:   policy.RequireApproval,
+			Role:   "release-manager",
+			Count:  1,
+			Detail: "production requires an approval",
+		}},
+		Reasons: []policy.Reason{{Code: "approval_required", Message: "production requires an approval"}},
+		Risk: policy.RiskAssessment{
+			Level:   policy.RiskHigh,
+			Score:   0.8,
+			Factors: []policy.RiskFactor{{Code: "production", Message: "the environment is production"}},
+		},
 	}
 }
 

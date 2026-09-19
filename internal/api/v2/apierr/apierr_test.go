@@ -72,6 +72,9 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{policy.ErrApprovalDenied, apierr.PolicyDenied},
 		{policy.ErrDecisionRefuses, apierr.PolicyDenied},
 		{deploy.ErrPolicyRefused, apierr.PolicyDenied},
+		// Not PolicyDenied, though it comes from the same package: the refusal
+		// was never recorded, and what is wrong is the request that offered it.
+		{policy.ErrUnexplainedDecision, apierr.InvalidArgument},
 
 		{page.ErrBadCursor, apierr.InvalidArgument},
 		{identity.ErrWrongKind, apierr.InvalidArgument},

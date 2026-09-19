@@ -62,8 +62,18 @@ func (p *stubPolicy) Evaluate(context.Context, deploy.PolicyRequest) (policy.Dec
 type stubDeployer struct{}
 
 func (stubDeployer) Plan(context.Context, deploy.PlanCommand) (plan.DeploymentPlan, error) {
-	return plan.DeploymentPlan{}, errors.New("the deployer was not meant to be called")
+	return plan.DeploymentPlan{}, errNotWired
 }
+
+func (stubDeployer) Apply(context.Context, deploy.ApplyCommand) (deployment.Deployment, error) {
+	return deployment.Deployment{}, errNotWired
+}
+
+func (stubDeployer) Approve(context.Context, deploy.ApproveCommand) (deployment.Deployment, error) {
+	return deployment.Deployment{}, errNotWired
+}
+
+var errNotWired = errors.New("the deployer was not meant to be called")
 
 type world struct {
 	svc       *apiv2.Service
@@ -161,7 +171,14 @@ func (w *world) environment(t *testing.T, p identity.ProjectID, e environment.En
 	if err := w.store.Environments().Create(context.Background(), env); err != nil {
 		t.Fatalf("Environments.Create: %v", err)
 	}
-	return env
+	// Read back rather than return what was written: storage assigns the
+	// revision, and a plan built against the in-memory copy's zero would be
+	// refused as stale the moment anybody tried to apply it.
+	stored, err := w.store.Environments().Get(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("Environments.Get: %v", err)
+	}
+	return stored
 }
 
 func codeOf(t *testing.T, err error) apierr.Code {
