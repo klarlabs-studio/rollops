@@ -371,9 +371,9 @@ func selectorFromMatchLabels(j string) string {
 	return strings.Join(parts, ",")
 }
 
-// ReapTarget removes the resources carrying this target's marker. It implements
-// the optional pt.Reaper capability, invoked only when a RolloutConfig has been
-// deleted (#154) and the target opted in via reapOnDelete.
+// ReapTarget removes the resources carrying this target's marker. It backs
+// CapabilityPrune, invoked only when a RolloutConfig has been deleted (#154)
+// and the target opted in via reapOnDelete.
 //
 // Refuses unless opted in. The engine should not call this on a target that did
 // not ask for it, but a capability that deletes production state should not rely
