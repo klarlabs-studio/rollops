@@ -4,15 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"go.klarlabs.de/rollops/pkg/conformance"
 	conformancev2 "go.klarlabs.de/rollops/pkg/conformance/v2"
-	pt "go.klarlabs.de/rollops/pkg/target"
 	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 // fakeCluster is an in-memory cluster: it records the deployed checksum live.
 type fakeCluster struct {
 	checksum   string
+	key        string
 	applied    [][]byte
 	unready    bool
 	drift      bool   // when true, Diff reports a non-empty diff (live ≠ desired)
@@ -27,9 +26,10 @@ type fakeCluster struct {
 	preflightN   int
 }
 
-func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum string) error {
+func (c *fakeCluster) Apply(_ context.Context, manifest []byte, checksum, key string) error {
 	c.applied = append(c.applied, manifest)
 	c.checksum = checksum
+	c.key = key
 	return nil
 }
 func (c *fakeCluster) Preflight(_ context.Context, _ []byte) error {
@@ -37,6 +37,7 @@ func (c *fakeCluster) Preflight(_ context.Context, _ []byte) error {
 	return c.preflightErr
 }
 func (c *fakeCluster) LiveChecksum(context.Context) (string, error) { return c.checksum, nil }
+func (c *fakeCluster) LiveKey(context.Context) (string, error)      { return c.key, nil }
 func (c *fakeCluster) LiveYAML(context.Context) ([]byte, error)     { return c.liveYAML, nil }
 func (c *fakeCluster) Healthy(context.Context) (bool, string, error) {
 	if c.unready {
@@ -50,8 +51,8 @@ func (c *fakeCluster) Diff(_ context.Context, manifest []byte) (string, error) {
 	}
 	return "", nil // in sync
 }
-func (c *fakeCluster) Resources(context.Context) ([]pt.Resource, error) {
-	return []pt.Resource{
+func (c *fakeCluster) Resources(context.Context) ([]targetv2.Resource, error) {
+	return []targetv2.Resource{
 		{Kind: "Deployment", Name: "web", Namespace: "ns", Status: "ready 2/2"},
 		{Kind: "Pod", Name: "web-abc", Namespace: "ns", Status: "Running · ready", Parent: "web"},
 		{Kind: "Pod", Name: "web-def", Namespace: "ns", Status: "Running · ready", Parent: "web"},
@@ -62,23 +63,33 @@ func (c *fakeCluster) ReapTarget(context.Context) (int, error) {
 	return c.reapN, c.reapErr
 }
 
-var sample = pt.Manifest{Kind: "kubernetes", Spec: []byte("apiVersion: apps/v1\nkind: Deployment\n"), Checksum: "sum-k8s-v5"}
-
-func TestConformance(t *testing.T) {
-	conformance.Run(t, func() (pt.Target, error) {
-		return newWith(&fakeCluster{}), nil
-	}, sample)
+var sample = targetv2.DesiredState{
+	Kind:     "kubernetes",
+	Spec:     []byte("apiVersion: apps/v1\nkind: Deployment\n"),
+	Checksum: "sum-k8s-v5",
 }
 
-// TestConformanceV2 measures this target against the v2 axes through the
-// adapter — the pair, which is what the engine will call once it speaks v2.
-// Kubernetes is the target R7 ports, so this is the before reading.
-func TestConformanceV2(t *testing.T) {
-	conformancev2.SuiteForV1(
-		func() (pt.Target, error) { return newWith(&fakeCluster{}), nil },
-		targetv2.Metadata{Kind: "kubernetes", Name: "kubernetes/test", Version: "v1"},
-		targetv2.DesiredState{Kind: sample.Kind, Spec: sample.Spec, Checksum: sample.Checksum},
-	).Run(t)
+func key(s string) string { return targetv2.IdempotencyKeyFor("kubernetes-test", s) }
+
+// TestConformance measures this target against §9.5's ten axes directly —
+// no adapter in between, which is the point of the port.
+//
+// Invalid is a spec that parses as JSON and names none of the sources this
+// target knows how to render, which is the one malformed input it can be
+// given without a cluster. Supplying it is what makes the typed-error axis
+// reach past the shared idempotency-key guard and into this target's own
+// refusals.
+func TestConformance(t *testing.T) {
+	s := conformancev2.Suite{
+		New:     func() (targetv2.Target, error) { return newWith(&fakeCluster{}), nil },
+		Desired: sample,
+		Invalid: targetv2.DesiredState{
+			Kind:     "kubernetes",
+			Spec:     []byte(`{"notASource":"anything"}`),
+			Checksum: "sum-k8s-invalid",
+		},
+	}
+	s.Run(t)
 }
 
 func TestApply_RichObserveIdempotent(t *testing.T) {
@@ -86,15 +97,17 @@ func TestApply_RichObserveIdempotent(t *testing.T) {
 	tgt := newWith(cl)
 	ctx := context.Background()
 
-	r1, _ := tgt.Apply(ctx, sample)
+	r1, _ := tgt.Apply(ctx, targetv2.ApplyRequest{Desired: sample, IdempotencyKey: key("one")})
 	if !r1.Changed || len(cl.applied) != 1 {
 		t.Fatalf("first apply: changed=%v applied=%d", r1.Changed, len(cl.applied))
 	}
-	fp, _ := tgt.Observe(ctx)
-	if fp.Value != sample.Checksum {
-		t.Errorf("observed %q (from live cluster), want %q", fp.Value, sample.Checksum)
+	obs, _ := tgt.Observe(ctx, targetv2.ObserveRequest{})
+	if obs.Fingerprint != sample.Checksum {
+		t.Errorf("observed %q (from live cluster), want %q", obs.Fingerprint, sample.Checksum)
 	}
-	r2, _ := tgt.Apply(ctx, sample)
+	// A different key over the same desired state is a new operation, not a
+	// replay, so this measures convergence rather than the idempotency memo.
+	r2, _ := tgt.Apply(ctx, targetv2.ApplyRequest{Desired: sample, IdempotencyKey: key("two")})
 	if r2.Changed || len(cl.applied) != 1 {
 		t.Errorf("re-apply should be no-op: changed=%v applied=%d", r2.Changed, len(cl.applied))
 	}
@@ -109,15 +122,14 @@ func TestApply_ReferencedSource_UsesRenderedBytesWithoutRoot(t *testing.T) {
 	cl := &fakeCluster{}
 	tgt := newWith(cl)
 	rendered := []byte("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api\n")
-	m := pt.Manifest{
+	d := targetv2.DesiredState{
 		Kind:     "kubernetes",
 		Spec:     []byte(`{"manifestFrom":{"path":"does/not/exist.yaml"}}`),
-		Root:     "", // no checkout — as on a manual CLI/UI/API rollback
 		Rendered: rendered,
 		Checksum: "sum-rendered",
 	}
 
-	res, err := tgt.Apply(context.Background(), m)
+	res, err := tgt.Apply(context.Background(), targetv2.ApplyRequest{Desired: d, IdempotencyKey: key("rendered")})
 	if err != nil {
 		t.Fatalf("apply must reuse captured Rendered, not re-render: %v", err)
 	}
@@ -135,13 +147,18 @@ func TestApply_ReferencedSource_UsesRenderedBytesWithoutRoot(t *testing.T) {
 // root-independent, not a lenient renderer silently applying nothing.
 func TestApply_ReferencedSource_NoRendered_NoRoot_Errors(t *testing.T) {
 	tgt := newWith(&fakeCluster{})
-	m := pt.Manifest{
+	d := targetv2.DesiredState{
 		Kind: "kubernetes",
 		Spec: []byte(`{"manifestFrom":{"path":"does/not/exist.yaml"}}`),
-		Root: "",
 	}
-	if _, err := tgt.Apply(context.Background(), m); err == nil {
+	_, err := tgt.Apply(context.Background(), targetv2.ApplyRequest{Desired: d, IdempotencyKey: key("unresolvable")})
+	if err == nil {
 		t.Fatal("expected an error rendering an unresolvable referenced source with no captured Rendered")
+	}
+	// A source that will not resolve is malformed input, not an internal
+	// failure: the host retries what is unavailable and does not retry this.
+	if got := targetv2.KindOf(err); got != targetv2.KindInvalid {
+		t.Errorf("an unrenderable source was reported as kind %q, want %q", got, targetv2.KindInvalid)
 	}
 }
 
@@ -150,7 +167,7 @@ func TestApply_ReappliesOnDriftDespiteMatchingStamp(t *testing.T) {
 	// cluster has drifted — Apply must re-apply to correct it.
 	cl := &fakeCluster{checksum: sample.Checksum, drift: true}
 	tgt := newWith(cl)
-	r, err := tgt.Apply(context.Background(), sample)
+	r, err := tgt.Apply(context.Background(), targetv2.ApplyRequest{Desired: sample, IdempotencyKey: key("drift")})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -159,30 +176,22 @@ func TestApply_ReappliesOnDriftDespiteMatchingStamp(t *testing.T) {
 	}
 }
 
-func TestTarget_DifferAndInspector(t *testing.T) {
+func TestTarget_DriftAndInspect(t *testing.T) {
 	tgt := newWith(&fakeCluster{drift: true})
 	ctx := context.Background()
 
-	d, ok := pt.Target(tgt).(pt.Differ)
-	if !ok {
-		t.Fatal("k8s target should implement Differ")
-	}
-	out, err := d.Diff(ctx, sample)
-	if err != nil || out == "" {
-		t.Fatalf("Diff: %q %v", out, err)
+	dr, err := tgt.DetectDrift(ctx, targetv2.DriftRequest{Desired: sample})
+	if err != nil || !dr.Drifted || dr.Detail == "" {
+		t.Fatalf("DetectDrift: %+v %v", dr, err)
 	}
 
-	insp, ok := pt.Target(tgt).(pt.Inspector)
-	if !ok {
-		t.Fatal("k8s target should implement Inspector")
-	}
-	res, err := insp.Resources(ctx)
-	if err != nil || len(res) < 1 || res[0].Kind != "Deployment" {
-		t.Fatalf("Resources: %+v %v", res, err)
+	state, err := tgt.Inspect(ctx, targetv2.InspectRequest{})
+	if err != nil || len(state.Resources) < 1 || state.Resources[0].Kind != "Deployment" {
+		t.Fatalf("Inspect: %+v %v", state, err)
 	}
 	// Tree: child pods carry Parent.
 	var children int
-	for _, r := range res {
+	for _, r := range state.Resources {
 		if r.Parent != "" {
 			children++
 		}
@@ -195,30 +204,78 @@ func TestTarget_DifferAndInspector(t *testing.T) {
 func TestHealth_RolloutReadiness(t *testing.T) {
 	cl := &fakeCluster{}
 	tgt := newWith(cl)
-	if hs, _ := tgt.Health(context.Background()); hs.State != pt.HealthHealthy {
+	ctx := context.Background()
+	if obs, _ := tgt.Observe(ctx, targetv2.ObserveRequest{}); obs.Health.State != targetv2.HealthHealthy {
 		t.Error("ready rollout should be healthy")
 	}
 	cl.unready = true
-	if hs, _ := tgt.Health(context.Background()); hs.State != pt.HealthUnhealthy {
+	if obs, _ := tgt.Observe(ctx, targetv2.ObserveRequest{}); obs.Health.State != targetv2.HealthUnhealthy {
 		t.Error("progressing rollout should be unhealthy")
 	}
 }
 
-// #154: BuildTarget returns *Target; the orphan reaper type-asserts pt.Reaper.
-// ReapTarget must be on Target (not only kubectlCluster), or reclamation logs
+// #154: orphan reclamation asks the binding whether the target can prune, so
+// Prune must be on Target — not only on kubectlCluster — or reclamation logs
 // "target kind kubernetes cannot reap" and leaves the orphan running.
-func TestTarget_ImplementsReaper(t *testing.T) {
+func TestTarget_Prunes(t *testing.T) {
 	cl := &fakeCluster{reapN: 3}
 	tgt := newWith(cl)
-	r, ok := pt.Target(tgt).(pt.Reaper)
-	if !ok {
-		t.Fatal("kubernetes.Target must implement pt.Reaper so orphan reclamation works")
+	if !capabilities().Prune {
+		t.Fatal("kubernetes must declare prune so orphan reclamation reaches it")
 	}
-	n, err := r.ReapTarget(context.Background())
+	res, err := tgt.Prune(context.Background(), targetv2.PruneRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 || !cl.reapCalled {
-		t.Fatalf("ReapTarget forwarded incorrectly: n=%d called=%v", n, cl.reapCalled)
+	if res.Removed != 3 || !cl.reapCalled {
+		t.Fatalf("Prune forwarded incorrectly: removed=%d called=%v", res.Removed, cl.reapCalled)
+	}
+}
+
+// TestASpentKeyReplaysRatherThanReapplying is §9.4 from the side that matters:
+// the retry comes from a process that crashed between the call and its
+// response, so the answer has to be on the cluster rather than in memory.
+func TestASpentKeyReplaysRatherThanReapplying(t *testing.T) {
+	cl := &fakeCluster{}
+	ctx := context.Background()
+	k := key("crash")
+
+	first, err := newWith(cl).Apply(ctx, targetv2.ApplyRequest{Desired: sample, IdempotencyKey: k})
+	if err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+
+	// A fresh Target is the retry: the process that made the first call is gone.
+	replay, err := newWith(cl).Apply(ctx, targetv2.ApplyRequest{Desired: sample, IdempotencyKey: k})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if replay.Changed != first.Changed {
+		t.Errorf("the replay reported changed=%v, want the first answer %v", replay.Changed, first.Changed)
+	}
+	if len(cl.applied) != 1 {
+		t.Errorf("the cluster was applied to %d times, want 1", len(cl.applied))
+	}
+}
+
+// TestTheSameKeyOverADifferentStateIsAConflict is the other branch: guessing
+// which of two requests the caller meant is worse than refusing.
+func TestTheSameKeyOverADifferentStateIsAConflict(t *testing.T) {
+	cl := &fakeCluster{}
+	ctx := context.Background()
+	k := key("reused")
+
+	if _, err := newWith(cl).Apply(ctx, targetv2.ApplyRequest{Desired: sample, IdempotencyKey: k}); err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+
+	other := sample
+	other.Checksum = "sum-k8s-v6"
+	_, err := newWith(cl).Apply(ctx, targetv2.ApplyRequest{Desired: other, IdempotencyKey: k})
+	if got := targetv2.KindOf(err); got != targetv2.KindConflict {
+		t.Errorf("a reused key over a different desired state was reported as kind %q, want %q", got, targetv2.KindConflict)
+	}
+	if len(cl.applied) != 1 {
+		t.Errorf("the conflicting apply reached the cluster: applied %d times, want 1", len(cl.applied))
 	}
 }

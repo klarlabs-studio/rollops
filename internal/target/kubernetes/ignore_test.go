@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 func TestEquivalentIgnoring_Replicas(t *testing.T) {
@@ -71,9 +71,9 @@ func TestDiff_IgnoreDifferences(t *testing.T) {
 
 	cl := &fakeCluster{liveYAML: liveOnlyReplicas, drift: true}
 	tgt := &Target{cl: cl, run: execRunner, ignore: []string{"/spec/replicas"}}
-	m := pt.Manifest{Kind: "kubernetes", Spec: []byte(`{"manifest":"x"}`), Rendered: desiredYAML, Checksum: "sum"}
+	d := targetv2.DesiredState{Kind: "kubernetes", Spec: []byte(`{"manifest":"x"}`), Rendered: desiredYAML, Checksum: "sum"}
 
-	diff, err := tgt.Diff(context.Background(), m)
+	diff, err := tgt.diff(context.Background(), d.Rendered)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestDiff_IgnoreDifferences(t *testing.T) {
 	}
 
 	cl.liveYAML = liveImageToo
-	diff, err = tgt.Diff(context.Background(), m)
+	diff, err = tgt.diff(context.Background(), d.Rendered)
 	if err != nil {
 		t.Fatal(err)
 	}

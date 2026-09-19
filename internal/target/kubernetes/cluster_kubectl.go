@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/security"
-	pt "go.klarlabs.de/rollops/pkg/target"
+	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
 
 // kubectlCluster drives a cluster through the external kubectl binary. No
@@ -130,7 +130,7 @@ func (k *kubectlCluster) Preflight(ctx context.Context, manifest []byte) error {
 	return nil
 }
 
-func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum string) error {
+func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum, key string) error {
 	args := []string{"apply", "-f", "-"}
 	// Label ALWAYS, prune only when asked. These were one decision and are two
 	// (#158): the label is an identity marker — "rollops manages this, for this
@@ -156,13 +156,25 @@ func (k *kubectlCluster) Apply(ctx context.Context, manifest []byte, checksum st
 	if _, err := k.run(ctx, manifest, args...); err != nil {
 		return err
 	}
+	// One annotate call, so the checksum and the key that produced it land
+	// together or not at all. A key stamped without its checksum would replay a
+	// result for a state the cluster is not in.
 	_, err = k.run(ctx, nil, "annotate", "--overwrite", k.resource,
-		fmt.Sprintf("%s=%s", ChecksumAnnotation, checksum))
+		fmt.Sprintf("%s=%s", ChecksumAnnotation, checksum),
+		fmt.Sprintf("%s=%s", KeyAnnotation, key))
 	return err
 }
 
 func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
-	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(ChecksumAnnotation, ".", `\.`))
+	return k.annotation(ctx, ChecksumAnnotation)
+}
+
+func (k *kubectlCluster) LiveKey(ctx context.Context) (string, error) {
+	return k.annotation(ctx, KeyAnnotation)
+}
+
+func (k *kubectlCluster) annotation(ctx context.Context, name string) (string, error) {
+	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(name, ".", `\.`))
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", jsonpath)
 	if err != nil {
 		// Absent resource is not an error for drift purposes — report empty.
@@ -294,7 +306,7 @@ func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, err
 
 // Resources lists the managed workload and its child pods as an ownership tree
 // (Deployment → Pods), each with a ready summary.
-func (k *kubectlCluster) Resources(ctx context.Context) ([]pt.Resource, error) {
+func (k *kubectlCluster) Resources(ctx context.Context) ([]targetv2.Resource, error) {
 	out, err := k.run(ctx, nil, "get", k.resource,
 		"-o", "jsonpath={.kind}|{.metadata.name}|{.metadata.namespace}|{.status.readyReplicas}/{.status.replicas}|{.spec.selector.matchLabels}")
 	if err != nil {
@@ -308,8 +320,8 @@ func (k *kubectlCluster) Resources(ctx context.Context) ([]pt.Resource, error) {
 	if ns == "" {
 		ns = k.namespace
 	}
-	root := pt.Resource{Kind: parts[0], Name: parts[1], Namespace: ns, Status: "ready " + parts[3]}
-	tree := []pt.Resource{root}
+	root := targetv2.Resource{Kind: parts[0], Name: parts[1], Namespace: ns, Status: "ready " + parts[3]}
+	tree := []targetv2.Resource{root}
 
 	// Child pods, selected by the workload's matchLabels.
 	if len(parts) == 5 {
@@ -320,13 +332,13 @@ func (k *kubectlCluster) Resources(ctx context.Context) ([]pt.Resource, error) {
 	return tree, nil
 }
 
-func (k *kubectlCluster) pods(ctx context.Context, ns, selector, parent string) []pt.Resource {
+func (k *kubectlCluster) pods(ctx context.Context, ns, selector, parent string) []targetv2.Resource {
 	out, err := k.run(ctx, nil, "get", "pods", "-n", ns, "-l", selector,
 		"-o", `jsonpath={range .items[*]}{.metadata.name}|{.status.phase}|{.status.containerStatuses[0].ready}{"\n"}{end}`)
 	if err != nil {
 		return nil
 	}
-	var pods []pt.Resource
+	var pods []targetv2.Resource
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		f := strings.Split(line, "|")
 		if len(f) < 2 || f[0] == "" {
@@ -336,7 +348,7 @@ func (k *kubectlCluster) pods(ctx context.Context, ns, selector, parent string) 
 		if len(f) > 2 && f[2] == "true" {
 			status += " · ready"
 		}
-		pods = append(pods, pt.Resource{Kind: "Pod", Name: f[0], Namespace: ns, Status: status, Parent: parent})
+		pods = append(pods, targetv2.Resource{Kind: "Pod", Name: f[0], Namespace: ns, Status: status, Parent: parent})
 	}
 	return pods
 }
