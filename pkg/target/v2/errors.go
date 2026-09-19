@@ -136,6 +136,19 @@ func KindOf(err error) Kind {
 	return KindInternal
 }
 
+// Abandoned reports the typed refusal owed to a caller who has already gone
+// away, or nil while it is still waiting. Every verb checks this before it does
+// any work: a target that only notices cancellation when its substrate does
+// will finish an aborted call whenever the answer came from cache, and §9.5
+// counts that as ignoring the abort.
+func Abandoned(ctx context.Context, op string) error {
+	err := ctx.Err()
+	if err == nil {
+		return nil
+	}
+	return Failf(KindOf(err), op, err, "%s abandoned: %v", op, err)
+}
+
 // IsUnsupported reports whether err means the capability is absent rather than
 // broken. Callers use it to decide whether to fall back; nothing else may.
 func IsUnsupported(err error) bool { return KindOf(err) == KindUnsupported }

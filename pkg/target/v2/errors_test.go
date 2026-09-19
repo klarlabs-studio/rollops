@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 )
@@ -99,5 +100,44 @@ func TestACauseStaysReachable(t *testing.T) {
 	}
 	if got := targetv2.KindOf(err); got != targetv2.KindNotFound {
 		t.Errorf("kind is %q, want %q", got, targetv2.KindNotFound)
+	}
+}
+
+// TestAnAbandonedContextBecomesATypedRefusal covers the guard every verb needs
+// before it does any work. A target whose substrate only notices cancellation
+// at the next syscall will happily finish a call the operator aborted — worse,
+// a call served from cache never reaches a syscall at all.
+func TestAnAbandonedContextBecomesATypedRefusal(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, stop := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer stop()
+
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want targetv2.Kind
+	}{
+		{"cancelled", cancelled, targetv2.KindCanceled},
+		{"expired", expired, targetv2.KindTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := targetv2.Abandoned(tc.ctx, "Apply")
+			if got := targetv2.KindOf(err); got != tc.want {
+				t.Fatalf("kind is %q, want %q", got, tc.want)
+			}
+			var te *targetv2.Error
+			if !errors.As(err, &te) || te.Op != "Apply" {
+				t.Errorf("the refusal does not name the verb it refused: %v", err)
+			}
+		})
+	}
+}
+
+// TestALiveContextIsNotRefused is the other half: the guard is on the hot path
+// of every verb, so it has to be silent when the caller is still waiting.
+func TestALiveContextIsNotRefused(t *testing.T) {
+	if err := targetv2.Abandoned(context.Background(), "Apply"); err != nil {
+		t.Fatalf("a live context was refused: %v", err)
 	}
 }
