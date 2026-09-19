@@ -40,6 +40,7 @@ type mem struct {
 	planWanders    bool   // renders different bytes each time it is asked
 	rollbackActs   bool   // does not declare rollback, refuses it, and acts anyway
 	sickHealth     bool   // claims health observation, answers Unknown
+	sayItReplayed  bool   // replays the same outcome under different prose
 }
 
 func newMem(caps targetv2.Capabilities) *mem {
@@ -150,6 +151,9 @@ func (m *mem) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.Ap
 					return targetv2.ApplyResult{}, errString("key already used")
 				}
 				return targetv2.ApplyResult{}, targetv2.IdempotencyConflict("Apply", req.IdempotencyKey)
+			}
+			if m.sayItReplayed {
+				prior.Detail = "replayed: this key already converged the target"
 			}
 			return prior, nil
 		}
@@ -577,6 +581,35 @@ func TestAnUntypedRefusalOfARepeatedKeyIsStillAFailure(t *testing.T) {
 	err := conformancev2.CheckApplyIsIdempotent(context.Background(), tgt, desired())
 	if err == nil {
 		t.Fatalf("a bare error on a repeated key passed the idempotency axis")
+	}
+}
+
+// TestAReplayMaySayThatItIsOne draws the line §9.4 actually draws. "The same
+// semantic result" is what the engine acts on — whether anything changed, and
+// the handle it can look the operation up by. Detail is prose for a person,
+// and the most useful thing it can say on a retry is that this was a retry.
+// A suite that demands byte-identical prose forbids exactly that, and buys
+// nothing: no caller branches on it.
+func TestAReplayMaySayThatItIsOne(t *testing.T) {
+	errs := suiteFor(t, func() *mem {
+		m := newMem(healthy())
+		m.sayItReplayed = true
+		return m
+	})
+	if len(errs) != 0 {
+		t.Fatalf("a target whose replay said so in its detail failed: %v", errs)
+	}
+}
+
+// TestAReplayThatChangedTheAnswerIsStillAFailure keeps the allowance above
+// from swallowing the thing the axis exists for: prose may differ, the outcome
+// may not.
+func TestAReplayThatChangedTheAnswerIsStillAFailure(t *testing.T) {
+	tgt := newMem(healthy())
+	tgt.forgetKeys = true
+
+	if err := conformancev2.CheckApplyIsIdempotent(context.Background(), tgt, desired()); err == nil {
+		t.Fatal("a target that applied twice under one key passed the idempotency axis")
 	}
 }
 

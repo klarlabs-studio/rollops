@@ -363,9 +363,13 @@ func CheckApplyIsIdempotent(ctx context.Context, tgt targetv2.Target, desired ta
 	case err != nil:
 		return fmt.Errorf("conformance: a repeated idempotency key was refused as kind %q, want a replayed result or %q: %w",
 			targetv2.KindOf(err), targetv2.KindConflict, err)
-	case replay != first:
-		return fmt.Errorf("conformance: the same key did not replay: got %+v, want the first result %+v",
-			replay, first)
+	case replay.Changed != first.Changed || replay.Handle != first.Handle:
+		// Detail is left out. "The same semantic result" is what the engine
+		// acts on — whether anything changed, and the handle the operation can
+		// be looked up by. Detail is prose for a person, and the most useful
+		// thing it can say on a retry is that this was a retry.
+		return fmt.Errorf("conformance: the same key did not replay: got changed=%t handle=%q, want the first result changed=%t handle=%q",
+			replay.Changed, replay.Handle, first.Changed, first.Handle)
 	}
 
 	// A different key for the same desired state is a second intent, not a
