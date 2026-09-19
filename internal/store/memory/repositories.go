@@ -622,3 +622,31 @@ func (r approvals) ListForSubject(ctx context.Context, kind, id string) ([]polic
 	})
 	return out, err
 }
+
+type idempotency struct{ s *Store }
+
+// Create claims the key. The claim is what makes two concurrent retries settle:
+// one writes, the other is told the key is taken and reads what was written.
+func (r idempotency) Create(ctx context.Context, rec port.IdempotencyRecord) error {
+	return r.s.write(ctx, func(st *state) error {
+		k := idempotencyKey{rec.Operation, rec.Key}
+		if _, taken := st.idempotency[k]; taken {
+			return fmt.Errorf("idempotency key %s/%s: %w", rec.Operation, rec.Key, port.ErrAlreadyExists)
+		}
+		st.idempotency[k] = rec
+		return nil
+	})
+}
+
+func (r idempotency) Get(ctx context.Context, operation, key string) (port.IdempotencyRecord, error) {
+	var out port.IdempotencyRecord
+	err := r.s.read(ctx, func(st *state) error {
+		rec, ok := st.idempotency[idempotencyKey{operation, key}]
+		if !ok {
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrNotFound)
+		}
+		out = rec
+		return nil
+	})
+	return out, err
+}

@@ -12,9 +12,11 @@ package port
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
+	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
@@ -254,6 +256,56 @@ type EventReader interface {
 	// It is the read §16.4 exists for: what a single plan/apply/verify did, as
 	// one story, across the several aggregates it touched.
 	ForCorrelation(ctx context.Context, c identity.EventID, p Page) ([]event.Event, error)
+}
+
+// IdempotencyRecord is the answer a mutation already gave, kept so a retry of
+// the same request returns it rather than doing the work a second time (spec
+// §18.3).
+//
+// It does not hold the response. §23.3 has a mutation return identity and let
+// the caller read the rest, so the identity is the whole of what a replay owes
+// them — and a stored response body would go stale the moment the resource it
+// described moved on.
+type IdempotencyRecord struct {
+	// Operation scopes the key. Keys are the caller's to invent, and a CLI
+	// that generates one per invocation would otherwise collide across two
+	// unrelated mutations that happened to be given the same one.
+	Operation string
+	Key       string
+
+	// Fingerprint is a digest of the request the key was first used for. A key
+	// reused for a different request is not a retry, and replaying the first
+	// answer would tell the caller their second request succeeded.
+	Fingerprint digest.Digest
+
+	// Result is the identity the first call returned.
+	Result string
+
+	CreatedAt time.Time
+
+	// ExpiresAt bounds how long a retry can still be recognised. It is stored
+	// rather than derived so that a record keeps the window it was written
+	// under — changing the default must not retroactively revive keys that had
+	// already lapsed.
+	ExpiresAt time.Time
+}
+
+// IdempotencyRepository remembers what a mutation already answered.
+//
+// There is no update: a record states what one call returned, and editing it
+// would make a replay answer for a request that never happened. Expiry is the
+// caller's to judge against its own clock — the repository stores the window
+// and does not enforce it, so a clock skew shows up as a stale replay rather
+// than as rows that silently stop matching.
+type IdempotencyRepository interface {
+	// Create stores the record. It returns ErrAlreadyExists if the key is
+	// taken within its operation, which is how two concurrent retries settle:
+	// the loser reads the winner's record rather than doing the work again.
+	Create(ctx context.Context, r IdempotencyRecord) error
+
+	// Get returns the record for a key within an operation, or ErrNotFound if
+	// the key has not been used.
+	Get(ctx context.Context, operation, key string) (IdempotencyRecord, error)
 }
 
 // EventLog is both halves, which is what a store implements and what the

@@ -32,6 +32,9 @@ var migration0014 string
 //go:embed migrations/0015_approvals.sql
 var migration0015 string
 
+//go:embed migrations/0016_idempotency_keys.sql
+var migration0016 string
+
 // domainMigrations holds the schema for the domain model, starting above the
 // legacy baseline.
 var domainMigrations = []migration{
@@ -39,6 +42,7 @@ var domainMigrations = []migration{
 	{version: 13, name: "deployment_model", sql: migration0013},
 	{version: 14, name: "event_log", sql: migration0014},
 	{version: 15, name: "approvals", sql: migration0015},
+	{version: 16, name: "idempotency_keys", sql: migration0016},
 }
 
 // applyVersioned brings db up to the last migration in ms. Each migration runs

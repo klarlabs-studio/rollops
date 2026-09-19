@@ -41,6 +41,9 @@ func (s *Store) Deployments() port.DeploymentRepository { return deploymentRepo{
 // Approvals returns the approval repository over this store.
 func (s *Store) Approvals() port.ApprovalRepository { return approvalRepo{s} }
 
+// Idempotency returns the repository of answers already given.
+func (s *Store) Idempotency() port.IdempotencyRepository { return idempotencyRepo{s} }
+
 // Uniqueness and existence are checked with a query rather than by reading the
 // driver's constraint errors. The constraints stay in the schema as the
 // integrity backstop, but they cannot say which rule was broken in a form the
@@ -1119,4 +1122,74 @@ func scanApproval(row scanner) (policy.Approval, error) {
 		}
 	}
 	return a, nil
+}
+
+type idempotencyRepo struct{ s *Store }
+
+// Create claims the key. The claim is what makes two concurrent retries
+// settle: one writes, the other is told the key is taken and reads what was
+// written. It runs in a transaction so the check and the insert cannot be
+// interleaved — the UNIQUE constraint would catch that anyway, but it would
+// surface as a driver error rather than as ErrAlreadyExists, and the caller
+// distinguishes "already answered" from "the database is broken".
+func (r idempotencyRepo) Create(ctx context.Context, rec port.IdempotencyRecord) error {
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		if err := mustNotExist(ctx, q,
+			`SELECT 1 FROM idempotency_keys WHERE operation = ? AND key = ?`,
+			[]any{rec.Operation, rec.Key},
+			fmt.Sprintf("idempotency key %s/%s", rec.Operation, rec.Key),
+		); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx,
+			`INSERT INTO idempotency_keys
+			   (operation, key, fingerprint, result, created_at, expires_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			rec.Operation, rec.Key, rec.Fingerprint.String(), rec.Result,
+			encodeTime(rec.CreatedAt), encodeTime(rec.ExpiresAt),
+		)
+		return wrap("insert idempotency key", err)
+	})
+}
+
+// Get returns the record whatever its expiry. The window is the caller's to
+// judge against its own clock: hiding a lapsed record would turn a stale retry
+// into a second mutation, where returning it lets the caller refuse.
+func (r idempotencyRepo) Get(ctx context.Context, operation, key string) (port.IdempotencyRecord, error) {
+	rec, err := scanIdempotency(r.s.conn(ctx).QueryRowContext(ctx,
+		idempotencyColumns+` WHERE operation = ? AND key = ?`, operation, key))
+	if err != nil {
+		return port.IdempotencyRecord{}, notFoundAs(err,
+			fmt.Sprintf("idempotency key %s/%s", operation, key))
+	}
+	return rec, nil
+}
+
+const idempotencyColumns = `SELECT operation, key, fingerprint, result,
+	created_at, expires_at FROM idempotency_keys`
+
+func scanIdempotency(row scanner) (port.IdempotencyRecord, error) {
+	var (
+		rec         port.IdempotencyRecord
+		fingerprint string
+		created     string
+		expires     string
+	)
+	if err := row.Scan(
+		&rec.Operation, &rec.Key, &fingerprint, &rec.Result, &created, &expires,
+	); err != nil {
+		return port.IdempotencyRecord{}, err
+	}
+	var err error
+	if rec.Fingerprint, err = digest.Parse(fingerprint); err != nil {
+		return port.IdempotencyRecord{}, err
+	}
+	if rec.CreatedAt, err = decodeTime(created); err != nil {
+		return port.IdempotencyRecord{}, err
+	}
+	if rec.ExpiresAt, err = decodeTime(expires); err != nil {
+		return port.IdempotencyRecord{}, err
+	}
+	return rec, nil
 }

@@ -49,6 +49,10 @@ type state struct {
 	// order they were given: who answered first is part of the record.
 	approvals []policy.Approval
 
+	// idempotency is keyed by operation and key together, which is the whole
+	// of a record's identity: the same key in two operations is two records.
+	idempotency map[idempotencyKey]port.IdempotencyRecord
+
 	// events is a slice rather than a map because the log is ordered and
 	// append-only. A position in it is the sequence, so the two cannot drift,
 	// and a rolled-back transaction discards its working copy — which is what
@@ -64,8 +68,13 @@ func newState() *state {
 		releases:     map[identity.ReleaseID]release.Release{},
 		plans:        map[identity.PlanID]plan.DeploymentPlan{},
 		deployments:  map[identity.DeploymentID]deployment.Deployment{},
+		idempotency:  map[idempotencyKey]port.IdempotencyRecord{},
 	}
 }
+
+// idempotencyKey is a record's identity: keys are the caller's to invent, so
+// one operation's key says nothing about another's.
+type idempotencyKey struct{ operation, key string }
 
 // clone copies the index but not the aggregates, which are already stored as
 // deep copies and are never mutated in place.
@@ -78,6 +87,7 @@ func (s *state) clone() *state {
 		plans:        maps.Clone(s.plans),
 		deployments:  maps.Clone(s.deployments),
 		approvals:    slices.Clone(s.approvals),
+		idempotency:  maps.Clone(s.idempotency),
 		events:       slices.Clone(s.events),
 	}
 }
@@ -159,6 +169,9 @@ func (s *Store) Deployments() port.DeploymentRepository { return deployments{s} 
 func (s *Store) Approvals() port.ApprovalRepository { return approvals{s} }
 
 func (s *Store) Events() port.EventLog { return events{s} }
+
+// Idempotency returns the repository of answers already given.
+func (s *Store) Idempotency() port.IdempotencyRepository { return idempotency{s} }
 
 // sortedByID returns the values of m ordered by key. Identifiers are UUIDv7, so
 // this is creation order — and it is stable, which map iteration is not.

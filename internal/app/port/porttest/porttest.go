@@ -38,6 +38,7 @@ type Repositories struct {
 	Plans        port.PlanRepository
 	Deployments  port.DeploymentRepository
 	Approvals    port.ApprovalRepository
+	Idempotency  port.IdempotencyRepository
 	Events       port.EventLog
 	Tx           port.Transactor
 }
@@ -56,6 +57,7 @@ func Run(t *testing.T, newRepos Factory) {
 		"plans":        runPlans,
 		"deployments":  runDeployments,
 		"approvals":    runApprovals,
+		"idempotency":  runIdempotency,
 		"events":       runEvents,
 		"transactions": runTransactions,
 	}
