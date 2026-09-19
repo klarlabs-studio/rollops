@@ -1153,6 +1153,39 @@ func (r idempotencyRepo) Create(ctx context.Context, rec port.IdempotencyRecord)
 	})
 }
 
+// Complete fills in what the claimed call returned. The UPDATE names the empty
+// result in its WHERE clause, so a second completion changes no rows rather
+// than overwriting the first — two completions under one claim mean the work
+// ran twice, and hiding that would leave nothing to notice it by.
+func (r idempotencyRepo) Complete(ctx context.Context, operation, key, result string) error {
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		if err := mustExist(ctx, q,
+			`SELECT 1 FROM idempotency_keys WHERE operation = ? AND key = ?`,
+			[]any{operation, key},
+			fmt.Sprintf("idempotency key %s/%s", operation, key),
+		); err != nil {
+			return err
+		}
+		res, err := q.ExecContext(ctx,
+			`UPDATE idempotency_keys SET result = ?
+			 WHERE operation = ? AND key = ? AND result = ''`,
+			result, operation, key,
+		)
+		if err != nil {
+			return wrap("complete idempotency key", err)
+		}
+		changed, err := res.RowsAffected()
+		if err != nil {
+			return wrap("complete idempotency key", err)
+		}
+		if changed == 0 {
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrAlreadyExists)
+		}
+		return nil
+	})
+}
+
 // Get returns the record whatever its expiry. The window is the caller's to
 // judge against its own clock: hiding a lapsed record would turn a stale retry
 // into a second mutation, where returning it lets the caller refuse.

@@ -638,6 +638,25 @@ func (r idempotency) Create(ctx context.Context, rec port.IdempotencyRecord) err
 	})
 }
 
+// Complete fills in what the claimed call returned. It refuses a record that
+// already has one: two completions under one claim mean the work ran twice,
+// and overwriting would hide that.
+func (r idempotency) Complete(ctx context.Context, operation, key, result string) error {
+	return r.s.write(ctx, func(st *state) error {
+		k := idempotencyKey{operation, key}
+		rec, claimed := st.idempotency[k]
+		switch {
+		case !claimed:
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrNotFound)
+		case rec.Result != "":
+			return fmt.Errorf("idempotency key %s/%s: %w", operation, key, port.ErrAlreadyExists)
+		}
+		rec.Result = result
+		st.idempotency[k] = rec
+		return nil
+	})
+}
+
 func (r idempotency) Get(ctx context.Context, operation, key string) (port.IdempotencyRecord, error) {
 	var out port.IdempotencyRecord
 	err := r.s.read(ctx, func(st *state) error {

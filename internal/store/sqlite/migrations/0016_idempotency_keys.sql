@@ -29,15 +29,19 @@
 -- closes is a table that only grows, and unlike an approval there is no case
 -- for an open-ended one.
 --
--- There is no UPDATE path in the repository over this table. A record states
--- what one call returned; editing it would make a replay answer for a request
--- that never happened.
+-- A row is written in two steps. Create claims the key with result = '', and
+-- Complete fills it in; the claim is what a concurrent retry sees while the
+-- first call is still running, which is the case a key exists for. The only
+-- UPDATE is that one transition, and it names result = '' in its WHERE clause
+-- so a completed row can never be rewritten: a record states what one call
+-- returned, and editing it would make a replay answer for a request that never
+-- happened.
 CREATE TABLE idempotency_keys (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
     operation   TEXT NOT NULL,
     key         TEXT NOT NULL,
     fingerprint TEXT NOT NULL,             -- algorithm:hex
-    result      TEXT NOT NULL,
+    result      TEXT NOT NULL,           -- '' until the claimed call returns
     created_at  TEXT NOT NULL,             -- RFC3339Nano, UTC
     expires_at  TEXT NOT NULL,             -- RFC3339Nano, UTC
     UNIQUE (operation, key)

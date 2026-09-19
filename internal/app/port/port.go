@@ -278,7 +278,12 @@ type IdempotencyRecord struct {
 	// answer would tell the caller their second request succeeded.
 	Fingerprint digest.Digest
 
-	// Result is the identity the first call returned.
+	// Result is the identity the first call returned, and is empty while that
+	// call is still running. The claim is written before the work rather than
+	// after it: a record written afterwards leaves a window in which two
+	// retries both find nothing and both do the work, and that window is
+	// exactly the case a key exists for — a client whose first request timed
+	// out retrying while the first is still in flight.
 	Result string
 
 	CreatedAt time.Time
@@ -292,16 +297,28 @@ type IdempotencyRecord struct {
 
 // IdempotencyRepository remembers what a mutation already answered.
 //
-// There is no update: a record states what one call returned, and editing it
-// would make a replay answer for a request that never happened. Expiry is the
-// caller's to judge against its own clock — the repository stores the window
-// and does not enforce it, so a clock skew shows up as a stale replay rather
-// than as rows that silently stop matching.
+// A record is written in two steps — claimed, then completed — and those are
+// the only two writes there are. Nothing edits a completed record: it states
+// what one call returned, and editing it would make a replay answer for a
+// request that never happened.
+//
+// Expiry is the caller's to judge against its own clock. The repository stores
+// the window and does not enforce it, so a clock skew shows up as a stale
+// record the caller can refuse rather than as rows that silently stop
+// matching.
 type IdempotencyRepository interface {
-	// Create stores the record. It returns ErrAlreadyExists if the key is
-	// taken within its operation, which is how two concurrent retries settle:
-	// the loser reads the winner's record rather than doing the work again.
+	// Create claims the key, with r.Result empty. It returns ErrAlreadyExists
+	// if the key is taken within its operation, which is how two concurrent
+	// retries settle: the loser reads the winner's record rather than doing
+	// the work again.
 	Create(ctx context.Context, r IdempotencyRecord) error
+
+	// Complete records what the claimed call returned. It returns ErrNotFound
+	// if the key was never claimed, and ErrAlreadyExists if it was already
+	// completed — a second completion means two calls ran under one claim,
+	// which is the thing the claim exists to prevent, so it is reported rather
+	// than absorbed.
+	Complete(ctx context.Context, operation, key, result string) error
 
 	// Get returns the record for a key within an operation, or ErrNotFound if
 	// the key has not been used.
