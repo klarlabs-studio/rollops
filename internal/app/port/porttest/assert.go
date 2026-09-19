@@ -1,11 +1,15 @@
 package porttest
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
+	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/release"
@@ -31,6 +35,17 @@ func sameMap[V comparable](a, b map[string]V) bool {
 // through storage has lost its monotonic reading and may carry a different
 // location for the same moment.
 func sameTime(a, b time.Time) bool { return a.Equal(b) }
+
+// sameTimePtr distinguishes absent from present before comparing instants. An
+// absent time means the thing has not happened yet, and a comparison that
+// treated it as the zero instant would report a deployment that never started
+// as agreeing with one that started in 1970.
+func sameTimePtr(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
 
 func assertProject(t *testing.T, got, want project.Project) {
 	t.Helper()
@@ -215,5 +230,206 @@ func assertRelease(t *testing.T, got, want release.Release) {
 	}
 	if err := got.Validate(); err != nil {
 		t.Errorf("the stored release is no longer valid: %v", err)
+	}
+}
+
+func assertPlan(t *testing.T, got, want plan.DeploymentPlan) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
+	}
+	if got.ProjectID != want.ProjectID {
+		t.Errorf("ProjectID = %q, want %q", got.ProjectID, want.ProjectID)
+	}
+	if got.EnvironmentID != want.EnvironmentID {
+		t.Errorf("EnvironmentID = %q, want %q", got.EnvironmentID, want.EnvironmentID)
+	}
+	if got.ReleaseID != want.ReleaseID {
+		t.Errorf("ReleaseID = %q, want %q", got.ReleaseID, want.ReleaseID)
+	}
+	// The base revision is what apply compares against the live world. A store
+	// that dropped it would turn every stale plan into an applicable one.
+	if got.BaseRevision != want.BaseRevision {
+		t.Errorf("BaseRevision = %d, want %d", got.BaseRevision, want.BaseRevision)
+	}
+	if got.Strategy != want.Strategy {
+		t.Errorf("Strategy = %q, want %q", got.Strategy, want.Strategy)
+	}
+	assertOperations(t, "operations", got.Operations, want.Operations)
+	assertDecision(t, got.Policy, want.Policy)
+
+	if got.Rollback.FromRelease != want.Rollback.FromRelease ||
+		got.Rollback.ToRelease != want.Rollback.ToRelease ||
+		got.Rollback.Automatic != want.Rollback.Automatic {
+		t.Errorf("Rollback = %+v, want %+v", got.Rollback, want.Rollback)
+	}
+	assertOperations(t, "rollback operations", got.Rollback.Operations, want.Rollback.Operations)
+
+	if got.CreatedBy.ID != want.CreatedBy.ID || got.CreatedBy.Type != want.CreatedBy.Type {
+		t.Errorf("CreatedBy = %+v, want %+v", got.CreatedBy, want.CreatedBy)
+	}
+	if !sameTime(got.CreatedAt, want.CreatedAt) {
+		t.Errorf("CreatedAt = %s, want %s", got.CreatedAt, want.CreatedAt)
+	}
+	// Expiry is half of what makes a plan safe to apply later. A store that
+	// lost it would leave the plan applicable forever.
+	if !sameTime(got.ExpiresAt, want.ExpiresAt) {
+		t.Errorf("ExpiresAt = %s, want %s", got.ExpiresAt, want.ExpiresAt)
+	}
+	if got.Hash != want.Hash {
+		t.Errorf("Hash = %s, want %s", got.Hash, want.Hash)
+	}
+	// Recomputed from what came back, not read from a column. The hash is the
+	// whole argument that the plan applied is the plan approved, and a stored
+	// one that disagreed with its contents is the failure it exists to catch.
+	if err := got.VerifyHash(); err != nil {
+		t.Errorf("the stored plan does not verify: %v", err)
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("the stored plan is no longer valid: %v", err)
+	}
+}
+
+// assertOperations compares step by step rather than by count. Dependencies and
+// diffs are what a structural encoder silently flattens, and a list of the
+// right length whose operations all depend on nothing is the shape that failure
+// takes.
+func assertOperations(t *testing.T, field string, got, want []plan.PlannedOperation) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("got %d %s, want %d", len(got), field, len(want))
+		return
+	}
+	for i := range want {
+		if got[i].ID != want[i].ID || got[i].Target != want[i].Target ||
+			got[i].Kind != want[i].Kind || got[i].Summary != want[i].Summary ||
+			got[i].Reversible != want[i].Reversible {
+			t.Errorf("%s[%d] = %+v, want %+v", field, i, got[i], want[i])
+		}
+		if len(got[i].Dependencies) != len(want[i].Dependencies) {
+			t.Errorf("%s[%d] dependencies = %v, want %v", field, i, got[i].Dependencies, want[i].Dependencies)
+			continue
+		}
+		for j := range want[i].Dependencies {
+			if got[i].Dependencies[j] != want[i].Dependencies[j] {
+				t.Errorf("%s[%d] dependency %d = %q, want %q",
+					field, i, j, got[i].Dependencies[j], want[i].Dependencies[j])
+			}
+		}
+		assertChanges(t, fmt.Sprintf("%s[%d]", field, i), got[i].Diff.Changes, want[i].Diff.Changes)
+	}
+}
+
+// assertChanges expects a sensitive value to have been dropped on the way in.
+// The comparison is written against the redacted form deliberately: storing the
+// value is the defect (INV-011), so a store that round-tripped it faithfully
+// would be the one failing.
+func assertChanges(t *testing.T, field string, got, want []plan.Change) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("got %d changes in %s, want %d", len(got), field, len(want))
+		return
+	}
+	for i := range want {
+		expected := want[i]
+		if expected.Sensitive {
+			expected.From, expected.To = "", ""
+		}
+		if got[i] != expected {
+			t.Errorf("%s change %d = %+v, want %+v", field, i, got[i], expected)
+		}
+	}
+}
+
+func assertDecision(t *testing.T, got, want policy.Decision) {
+	t.Helper()
+	if got.Allowed != want.Allowed {
+		t.Errorf("Policy.Allowed = %v, want %v", got.Allowed, want.Allowed)
+	}
+	if got.Risk.Level != want.Risk.Level || got.Risk.Score != want.Risk.Score {
+		t.Errorf("Policy.Risk = %+v, want %+v", got.Risk, want.Risk)
+	}
+	// Requirements are what stands between a plan and an apply. Losing one
+	// turns a gated plan into an ungated one that still reads as reviewed.
+	if len(got.Requirements) != len(want.Requirements) {
+		t.Errorf("got %d requirements, want %d", len(got.Requirements), len(want.Requirements))
+	} else {
+		for i := range want.Requirements {
+			if got.Requirements[i] != want.Requirements[i] {
+				t.Errorf("requirement %d = %+v, want %+v", i, got.Requirements[i], want.Requirements[i])
+			}
+		}
+	}
+	if len(got.Reasons) != len(want.Reasons) {
+		t.Errorf("got %d reasons, want %d", len(got.Reasons), len(want.Reasons))
+	} else {
+		for i := range want.Reasons {
+			if got.Reasons[i] != want.Reasons[i] {
+				t.Errorf("reason %d = %+v, want %+v", i, got.Reasons[i], want.Reasons[i])
+			}
+		}
+	}
+	if len(got.Risk.Factors) != len(want.Risk.Factors) {
+		t.Errorf("got %d risk factors, want %d", len(got.Risk.Factors), len(want.Risk.Factors))
+		return
+	}
+	for i := range want.Risk.Factors {
+		if got.Risk.Factors[i] != want.Risk.Factors[i] {
+			t.Errorf("risk factor %d = %+v, want %+v", i, got.Risk.Factors[i], want.Risk.Factors[i])
+		}
+	}
+}
+
+func assertDeployment(t *testing.T, got, want deployment.Deployment) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
+	}
+	if got.ProjectID != want.ProjectID {
+		t.Errorf("ProjectID = %q, want %q", got.ProjectID, want.ProjectID)
+	}
+	if got.EnvironmentID != want.EnvironmentID {
+		t.Errorf("EnvironmentID = %q, want %q", got.EnvironmentID, want.EnvironmentID)
+	}
+	if got.ReleaseID != want.ReleaseID {
+		t.Errorf("ReleaseID = %q, want %q", got.ReleaseID, want.ReleaseID)
+	}
+	// A deployment without its plan was never reviewed: apply would have
+	// nothing to verify the hash of and nothing to compare the world against.
+	if got.PlanID != want.PlanID {
+		t.Errorf("PlanID = %q, want %q", got.PlanID, want.PlanID)
+	}
+	if got.Strategy != want.Strategy {
+		t.Errorf("Strategy = %q, want %q", got.Strategy, want.Strategy)
+	}
+	if got.Status != want.Status {
+		t.Errorf("Status = %q, want %q", got.Status, want.Status)
+	}
+	// Who and why are different questions, and a store that kept one without
+	// the other leaves a timeline that cannot be explained.
+	if got.Trigger != want.Trigger {
+		t.Errorf("Trigger = %+v, want %+v", got.Trigger, want.Trigger)
+	}
+	if got.Actor.ID != want.Actor.ID || got.Actor.Type != want.Actor.Type {
+		t.Errorf("Actor = %+v, want %+v", got.Actor, want.Actor)
+	}
+	if !sameTime(got.CreatedAt, want.CreatedAt) {
+		t.Errorf("CreatedAt = %s, want %s", got.CreatedAt, want.CreatedAt)
+	}
+	if !sameTimePtr(got.StartedAt, want.StartedAt) {
+		t.Errorf("StartedAt = %v, want %v", got.StartedAt, want.StartedAt)
+	}
+	if !sameTimePtr(got.FinishedAt, want.FinishedAt) {
+		t.Errorf("FinishedAt = %v, want %v", got.FinishedAt, want.FinishedAt)
+	}
+	if (got.Previous == nil) != (want.Previous == nil) ||
+		(got.Previous != nil && *got.Previous != *want.Previous) {
+		t.Errorf("Previous = %v, want %v", got.Previous, want.Previous)
+	}
+	if got.Revision != want.Revision {
+		t.Errorf("Revision = %d, want %d", got.Revision, want.Revision)
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("the stored deployment is no longer valid: %v", err)
 	}
 }

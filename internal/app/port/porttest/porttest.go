@@ -16,9 +16,12 @@ import (
 
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
+	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/release"
@@ -32,6 +35,8 @@ type Repositories struct {
 	Environments port.EnvironmentRepository
 	Artifacts    port.ArtifactRepository
 	Releases     port.ReleaseRepository
+	Plans        port.PlanRepository
+	Deployments  port.DeploymentRepository
 	Tx           port.Transactor
 }
 
@@ -46,6 +51,8 @@ func Run(t *testing.T, newRepos Factory) {
 		"environments": runEnvironments,
 		"artifacts":    runArtifacts,
 		"releases":     runReleases,
+		"plans":        runPlans,
+		"deployments":  runDeployments,
 		"transactions": runTransactions,
 	}
 	for name, run := range suites {
@@ -168,6 +175,99 @@ func (f *fixture) release(t *testing.T, p identity.ProjectID, version string, as
 		t.Fatalf("build release: %v", err)
 	}
 	return r
+}
+
+// plan builds a plan that deploys next into e and would roll back to prev.
+//
+// It deliberately carries the three things a store is most likely to lose: a
+// sensitive change, whose value must come back blank while its path survives; a
+// dependency between operations, which a structural encoder drops without
+// changing the shape of the record; and a rollback, which is optional and so is
+// the field easiest to leave unread.
+func (f *fixture) plan(t *testing.T, e environment.Environment, prev, next release.Release) plan.DeploymentPlan {
+	t.Helper()
+	return f.planWith(t, e, prev, next, deployment.StrategyCanary)
+}
+
+// planWith is plan with the rollout named, for the cases that have to vary it.
+func (f *fixture) planWith(
+	t *testing.T,
+	e environment.Environment,
+	prev, next release.Release,
+	strategy deployment.Strategy,
+) plan.DeploymentPlan {
+	t.Helper()
+	p, err := plan.New(f.gen, f.clock, identity.Principal{
+		ID: "u1", Type: identity.PrincipalHuman, DisplayName: "Ada",
+	}, time.Hour, plan.DeploymentPlan{
+		ProjectID:     e.ProjectID,
+		EnvironmentID: e.ID,
+		ReleaseID:     next.ID,
+		BaseRevision:  e.Revision,
+		Strategy:      strategy,
+		Operations: []plan.PlannedOperation{
+			{
+				ID: "op_1", Target: "primary", Kind: plan.OperationApply,
+				Summary: "roll out the api",
+				Diff: plan.Diff{Changes: []plan.Change{
+					{Path: "spec.containers[0].image", From: "app:1", To: "app:2"},
+					{Path: "spec.env.DATABASE_URL", From: "old", To: "new", Sensitive: true},
+				}},
+				Reversible: true,
+			},
+			{
+				ID: "op_2", Target: "secondary", Kind: plan.OperationApply,
+				Summary:      "roll out the worker",
+				Dependencies: []plan.OperationID{"op_1"},
+			},
+		},
+		Policy: policy.Decision{
+			Allowed:      true,
+			Requirements: []policy.Requirement{{Type: policy.RequireApproval, Role: "release-manager", Count: 2}},
+			Reasons:      []policy.Reason{{Code: "production_gate", Message: "Production requires approval"}},
+			Risk: policy.RiskAssessment{
+				Level: policy.RiskMedium, Score: 0.48,
+				Factors: []policy.RiskFactor{{Code: "production_environment", Message: "Targets production"}},
+			},
+		},
+		Rollback: plan.RollbackPlan{
+			FromRelease: next.ID,
+			ToRelease:   prev.ID,
+			Operations: []plan.PlannedOperation{
+				{
+					ID: "op_1", Target: "primary", Kind: plan.OperationRollback,
+					Summary:    "restore the api",
+					Reversible: true,
+				},
+			},
+			Automatic: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	return p
+}
+
+func (f *fixture) deployment(t *testing.T, p plan.DeploymentPlan) deployment.Deployment {
+	t.Helper()
+	d, err := deployment.New(f.gen, f.clock, identity.Principal{
+		ID: "u1", Type: identity.PrincipalHuman, DisplayName: "Ada",
+	}, deployment.Deployment{
+		ProjectID:     p.ProjectID,
+		EnvironmentID: p.EnvironmentID,
+		ReleaseID:     p.ReleaseID,
+		PlanID:        p.ID,
+		// The strategy comes from the plan rather than from the caller: the
+		// rollout is part of what was reviewed, and a deployment that chose its
+		// own would be running something other than the approved change.
+		Strategy: p.Strategy,
+		Trigger:  deployment.Trigger{Type: deployment.TriggerManual, Detail: "ticket OPS-14"},
+	})
+	if err != nil {
+		t.Fatalf("build deployment: %v", err)
+	}
+	return d
 }
 
 func runProjects(t *testing.T, newRepos Factory) {
@@ -825,6 +925,525 @@ func runReleases(t *testing.T, newRepos Factory) {
 		}
 		if len(none) != 0 {
 			t.Errorf("FindByFingerprint = %v, want none", none)
+		}
+	})
+}
+
+// world is everything a plan or a deployment needs to exist against: the
+// project, the environment it acts on, and the release it moves away from as
+// well as the one it moves to.
+type world struct {
+	f    *fixture
+	r    Repositories
+	proj project.Project
+	env  environment.Environment
+	arts []artifact.Artifact
+	prev release.Release
+	next release.Release
+}
+
+func seedWorld(t *testing.T, newRepos Factory) world {
+	t.Helper()
+	ctx := context.Background()
+	f, r := newFixture(), newRepos(t)
+
+	p := f.project(t, "checkout")
+	if err := r.Projects.Create(ctx, p); err != nil {
+		t.Fatalf("Create project: %v", err)
+	}
+	e := f.environment(t, p.ID, "production")
+	if err := r.Environments.Create(ctx, e); err != nil {
+		t.Fatalf("Create environment: %v", err)
+	}
+	// Create returns nothing, so the stored revision is read back: a plan's
+	// base revision has to be the one the store actually holds, or every
+	// applicability check in the suite would be testing the fixture's guess.
+	e, err := r.Environments.Get(ctx, e.ID)
+	if err != nil {
+		t.Fatalf("Get environment: %v", err)
+	}
+
+	as := []artifact.Artifact{f.artifact(t, p.ID, "app-v1"), f.artifact(t, p.ID, "migration-v1")}
+	for _, a := range as {
+		if err := r.Artifacts.Create(ctx, a); err != nil {
+			t.Fatalf("Create artifact: %v", err)
+		}
+	}
+	prev, next := f.release(t, p.ID, "1.0.0", as), f.release(t, p.ID, "2.0.0", as)
+	for _, rel := range []release.Release{prev, next} {
+		if err := r.Releases.Create(ctx, rel); err != nil {
+			t.Fatalf("Create release %s: %v", rel.Version, err)
+		}
+	}
+	return world{f: f, r: r, proj: p, env: e, arts: as, prev: prev, next: next}
+}
+
+// storedPlan seeds a world and persists one plan in it, which is the starting
+// point of nearly every deployment case.
+func storedPlan(t *testing.T, newRepos Factory) (world, plan.DeploymentPlan) {
+	t.Helper()
+	w := seedWorld(t, newRepos)
+	p := w.f.plan(t, w.env, w.prev, w.next)
+	if err := w.r.Plans.Create(context.Background(), p); err != nil {
+		t.Fatalf("Create plan: %v", err)
+	}
+	return w, p
+}
+
+func runPlans(t *testing.T, newRepos Factory) {
+	ctx := context.Background()
+
+	t.Run("a stored plan reads back whole", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		got, err := w.r.Plans.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		assertPlan(t, got, p)
+	})
+
+	t.Run("the value of a sensitive change is never stored", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		got, err := w.r.Plans.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+
+		// The path has to survive: knowing that a database URL changed is the
+		// point of a diff, and only the value is the secret (INV-011).
+		var found bool
+		for _, o := range got.Operations {
+			for _, c := range o.Diff.Changes {
+				if !c.Sensitive {
+					continue
+				}
+				found = true
+				if c.Path == "" {
+					t.Error("a sensitive change came back with no path")
+				}
+				if c.From != "" || c.To != "" {
+					t.Errorf("a sensitive value reached storage: from %q to %q", c.From, c.To)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("the stored plan has no sensitive change; the case proves nothing")
+		}
+
+		// Redaction and the hash have to agree. A plan whose stored form no
+		// longer verified would be indistinguishable from a tampered one at
+		// exactly the moment an operator needed to tell them apart.
+		if err := got.VerifyHash(); err != nil {
+			t.Errorf("the redacted plan no longer verifies: %v", err)
+		}
+	})
+
+	t.Run("the rollout strategy survives the round trip", func(t *testing.T) {
+		w := seedWorld(t, newRepos)
+		// A plan reviewed as a canary must not read back as a recreate: the
+		// operations would be identical and the blast radius would not. Every
+		// strategy is stored rather than one, because a store that returned a
+		// constant would agree with a fixture that only ever used that one.
+		for _, s := range []deployment.Strategy{
+			deployment.StrategyRolling, deployment.StrategyCanary,
+			deployment.StrategyBlueGreen, deployment.StrategyRecreate,
+		} {
+			p := w.f.planWith(t, w.env, w.prev, w.next, s)
+			if err := w.r.Plans.Create(ctx, p); err != nil {
+				t.Fatalf("Create %s: %v", s, err)
+			}
+			got, err := w.r.Plans.Get(ctx, p.ID)
+			if err != nil {
+				t.Fatalf("Get %s: %v", s, err)
+			}
+			if got.Strategy != s {
+				t.Errorf("Strategy = %q, want %q", got.Strategy, s)
+			}
+			if err := got.VerifyHash(); err != nil {
+				t.Errorf("the stored %s plan does not verify: %v", s, err)
+			}
+		}
+	})
+
+	t.Run("a stored plan still applies against the world it was planned for", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		got, err := w.r.Plans.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if err := got.CheckApplicable(p.CreatedAt, w.env.Revision); err != nil {
+			t.Errorf("CheckApplicable: %v", err)
+		}
+	})
+
+	t.Run("what a read returns is a copy, not the stored plan", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		got, err := w.r.Plans.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+
+		// Snapshotted by value first. An implementation that shares its slices
+		// would otherwise have the expectation tampered with alongside the
+		// record, and the comparison would pass by aliasing both sides of it.
+		wantPath := got.Operations[0].Diff.Changes[0].Path
+		wantCount := got.Policy.Requirements[0].Count
+		wantFactor := got.Policy.Risk.Factors[0].Code
+
+		// Editing a value that was merely read must not reach storage. A store
+		// handing out its own slices would let a caller rewrite an approved plan
+		// by accident — and since the hash covers all of this, the next read
+		// would report tampering that nobody knowingly did.
+		got.Operations[0].Diff.Changes[0].Path = "tampered"
+		got.Rollback.Operations[0].Summary = "tampered"
+		got.Policy.Requirements[0].Count = 99
+		got.Policy.Reasons[0].Code = "tampered"
+		got.Policy.Risk.Factors[0].Code = "tampered"
+
+		again, err := w.r.Plans.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if again.Operations[0].Diff.Changes[0].Path != wantPath {
+			t.Errorf("operation path = %q, want %q",
+				again.Operations[0].Diff.Changes[0].Path, wantPath)
+		}
+		if again.Policy.Requirements[0].Count != wantCount {
+			t.Errorf("approval count = %d, want %d",
+				again.Policy.Requirements[0].Count, wantCount)
+		}
+		if again.Policy.Risk.Factors[0].Code != wantFactor {
+			t.Errorf("risk factor = %q, want %q",
+				again.Policy.Risk.Factors[0].Code, wantFactor)
+		}
+		// The hash covers every field edited above, so it is the one check that
+		// cannot be satisfied by a store that shared any of them.
+		if err := again.VerifyHash(); err != nil {
+			t.Errorf("the stored plan no longer verifies: %v", err)
+		}
+	})
+
+	t.Run("the same plan cannot be created twice", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		if err := w.r.Plans.Create(ctx, p); !errors.Is(err, port.ErrAlreadyExists) {
+			t.Errorf("Create = %v, want ErrAlreadyExists", err)
+		}
+	})
+
+	t.Run("a plan needs the things it names to exist", func(t *testing.T) {
+		w := seedWorld(t, newRepos)
+		absentEnv := w.f.environment(t, w.proj.ID, "gone")
+		absentRel := w.f.release(t, w.proj.ID, "9.9.9", w.arts)
+
+		strayEnv := w.f.plan(t, absentEnv, w.prev, w.next)
+		if err := w.r.Plans.Create(ctx, strayEnv); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Create with an unknown environment = %v, want ErrNotFound", err)
+		}
+		strayRel := w.f.plan(t, w.env, w.prev, absentRel)
+		if err := w.r.Plans.Create(ctx, strayRel); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Create with an unknown release = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("missing plans are reported as missing", func(t *testing.T) {
+		w := seedWorld(t, newRepos)
+		absent := w.f.plan(t, w.env, w.prev, w.next)
+		if _, err := w.r.Plans.Get(ctx, absent.ID); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Get = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func runDeployments(t *testing.T, newRepos Factory) {
+	ctx := context.Background()
+	at := time.Date(2026, 9, 19, 13, 0, 0, 0, time.UTC)
+
+	// stored seeds a world, a plan and one deployment created from it.
+	stored := func(t *testing.T) (world, deployment.Deployment) {
+		t.Helper()
+		w, p := storedPlan(t, newRepos)
+		d := w.f.deployment(t, p)
+		rev, err := w.r.Deployments.Create(ctx, d)
+		if err != nil {
+			t.Fatalf("Create deployment: %v", err)
+		}
+		// The caller's copy is the one that goes on to be transitioned, so it
+		// takes the revision the store committed at rather than assuming one.
+		d.Revision = rev
+		return w, d
+	}
+
+	t.Run("a stored deployment reads back whole", func(t *testing.T) {
+		w, d := stored(t)
+		got, err := w.r.Deployments.Get(ctx, d.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		assertDeployment(t, got, d)
+
+		// A stored deployment has been written once, so it is at revision one —
+		// not at zero, which means "never written" and refuses every update.
+		if got.Revision != 1 {
+			t.Errorf("Revision = %d, want 1", got.Revision)
+		}
+	})
+
+	t.Run("a deployment that has not started has no start time", func(t *testing.T) {
+		w, d := stored(t)
+		got, err := w.r.Deployments.Get(ctx, d.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		// Absent, not zero. An operator reading a timeline has to be able to
+		// tell "has not started" from "started at the epoch".
+		if got.StartedAt != nil {
+			t.Errorf("StartedAt = %s, want absent", got.StartedAt)
+		}
+		if got.FinishedAt != nil {
+			t.Errorf("FinishedAt = %s, want absent", got.FinishedAt)
+		}
+	})
+
+	t.Run("the start and finish times survive the round trip", func(t *testing.T) {
+		w, d := stored(t)
+		for _, next := range []deployment.Status{
+			deployment.StatusQueued, deployment.StatusApplying,
+			deployment.StatusVerifying, deployment.StatusSucceeded,
+		} {
+			moved, err := d.TransitionTo(next, at)
+			if err != nil {
+				t.Fatalf("TransitionTo %s: %v", next, err)
+			}
+			rev, err := w.r.Deployments.Update(ctx, moved)
+			if err != nil {
+				t.Fatalf("Update to %s: %v", next, err)
+			}
+			moved.Revision = rev
+			d = moved
+		}
+		got, err := w.r.Deployments.Get(ctx, d.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		assertDeployment(t, got, d)
+	})
+
+	t.Run("what a read returns is a copy, not the stored deployment", func(t *testing.T) {
+		w, d := stored(t)
+		for _, next := range []deployment.Status{
+			deployment.StatusQueued, deployment.StatusApplying,
+			deployment.StatusVerifying, deployment.StatusSucceeded,
+		} {
+			moved, err := d.TransitionTo(next, at)
+			if err != nil {
+				t.Fatalf("TransitionTo %s: %v", next, err)
+			}
+			rev, err := w.r.Deployments.Update(ctx, moved)
+			if err != nil {
+				t.Fatalf("Update to %s: %v", next, err)
+			}
+			moved.Revision = rev
+			d = moved
+		}
+
+		got, err := w.r.Deployments.Get(ctx, d.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.StartedAt == nil || got.FinishedAt == nil {
+			t.Fatalf("a finished deployment came back with started %v, finished %v",
+				got.StartedAt, got.FinishedAt)
+		}
+		// Snapshotted by value, because a store that shared the pointer would
+		// otherwise have the expectation moved along with the record.
+		wantStart, wantFinish := *got.StartedAt, *got.FinishedAt
+
+		// Writing through a pointer that was merely read must not reach storage.
+		// One implementation sharing its pointers and the other copying is the
+		// divergence this suite exists to catch: it never shows up in
+		// production, only in whichever tests run against the fake.
+		*got.StartedAt = at.Add(time.Hour)
+		*got.FinishedAt = at.Add(2 * time.Hour)
+
+		again, err := w.r.Deployments.Get(ctx, d.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if again.StartedAt == nil || !again.StartedAt.Equal(wantStart) {
+			t.Errorf("StartedAt = %v after a read copy was edited, want %s", again.StartedAt, wantStart)
+		}
+		if again.FinishedAt == nil || !again.FinishedAt.Equal(wantFinish) {
+			t.Errorf("FinishedAt = %v after a read copy was edited, want %s", again.FinishedAt, wantFinish)
+		}
+	})
+
+	t.Run("an update built on a stale read is refused", func(t *testing.T) {
+		w, d := stored(t)
+		moved, err := d.TransitionTo(deployment.StatusQueued, at)
+		if err != nil {
+			t.Fatalf("TransitionTo: %v", err)
+		}
+		rev, err := w.r.Deployments.Update(ctx, moved)
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if rev != 2 {
+			t.Errorf("Update committed at revision %d, want 2", rev)
+		}
+		// moved still carries revision one, which is the read the second writer
+		// would be working from.
+		if _, err := w.r.Deployments.Update(ctx, moved); !errors.Is(err, port.ErrRevisionConflict) {
+			t.Errorf("Update = %v, want ErrRevisionConflict", err)
+		}
+	})
+
+	t.Run("listing an environment gives the most recent first", func(t *testing.T) {
+		w, first := stored(t)
+
+		// The fixture clock does not move, so second shares first's instant and
+		// only the identifier separates them. Two deployments started within one
+		// clock tick still have to have an order, or "what is deployed now"
+		// would be answered differently on each read.
+		p, err := w.r.Plans.Get(ctx, first.PlanID)
+		if err != nil {
+			t.Fatalf("Get plan: %v", err)
+		}
+		second := w.f.deployment(t, p)
+		third := w.f.deployment(t, p)
+		third.CreatedAt = third.CreatedAt.Add(time.Minute)
+
+		for _, d := range []deployment.Deployment{second, third} {
+			if _, err := w.r.Deployments.Create(ctx, d); err != nil {
+				t.Fatalf("Create deployment: %v", err)
+			}
+		}
+
+		got, err := w.r.Deployments.ListForEnvironment(ctx, w.env.ID)
+		if err != nil {
+			t.Fatalf("ListForEnvironment: %v", err)
+		}
+		want := []identity.DeploymentID{third.ID, second.ID, first.ID}
+		if len(got) != len(want) {
+			t.Fatalf("got %d deployments, want %d", len(got), len(want))
+		}
+		for i := range want {
+			if got[i].ID != want[i] {
+				t.Errorf("position %d = %s, want %s", i, got[i].ID, want[i])
+			}
+		}
+	})
+
+	t.Run("listing is scoped to the environment", func(t *testing.T) {
+		w, _ := stored(t)
+		other := w.f.environment(t, w.proj.ID, "staging")
+		if err := w.r.Environments.Create(ctx, other); err != nil {
+			t.Fatalf("Create environment: %v", err)
+		}
+		got, err := w.r.Deployments.ListForEnvironment(ctx, other.ID)
+		if err != nil {
+			t.Fatalf("ListForEnvironment: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("got %d deployments in an untouched environment, want none", len(got))
+		}
+	})
+
+	t.Run("the active deployment is the one that has not finished", func(t *testing.T) {
+		w, d := stored(t)
+		got, err := w.r.Deployments.FindActive(ctx, w.env.ID)
+		if err != nil {
+			t.Fatalf("FindActive: %v", err)
+		}
+		if got.ID != d.ID {
+			t.Errorf("FindActive returned %s, want %s", got.ID, d.ID)
+		}
+
+		done, err := d.TransitionTo(deployment.StatusCancelled, at)
+		if err != nil {
+			t.Fatalf("TransitionTo: %v", err)
+		}
+		if _, err := w.r.Deployments.Update(ctx, done); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		// An idle environment is an answer, not a failure: the caller branches
+		// on it to decide whether a new deployment may start.
+		if _, err := w.r.Deployments.FindActive(ctx, w.env.ID); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("FindActive = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("a deployment may name the one it replaces", func(t *testing.T) {
+		w, first := stored(t)
+		p := w.f.plan(t, w.env, w.next, w.prev)
+		if err := w.r.Plans.Create(ctx, p); err != nil {
+			t.Fatalf("Create plan: %v", err)
+		}
+		second := w.f.deployment(t, p)
+		// A copy, not the address of first.ID: a store that shared the pointer
+		// would otherwise edit the expectation along with the record.
+		prev := first.ID
+		second.Previous = &prev
+		if _, err := w.r.Deployments.Create(ctx, second); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		got, err := w.r.Deployments.Get(ctx, second.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.Previous == nil || *got.Previous != first.ID {
+			t.Fatalf("Previous = %v, want %s", got.Previous, first.ID)
+		}
+
+		// The predecessor is what makes a rollback target derivable, so writing
+		// through a copy of it must not reach the stored record either.
+		*got.Previous = "tampered"
+		again, err := w.r.Deployments.Get(ctx, second.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if again.Previous == nil || *again.Previous != first.ID {
+			t.Errorf("Previous = %v after a read copy was edited, want %s", again.Previous, first.ID)
+		}
+	})
+
+	t.Run("a deployment needs the things it names to exist", func(t *testing.T) {
+		w, d := stored(t)
+
+		unplanned := w.f.deployment(t, w.f.plan(t, w.env, w.prev, w.next))
+		if _, err := w.r.Deployments.Create(ctx, unplanned); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Create with an unknown plan = %v, want ErrNotFound", err)
+		}
+
+		// A dangling previous would make the rollback target unresolvable at
+		// exactly the moment it is needed.
+		p := w.f.plan(t, w.env, w.next, w.prev)
+		if err := w.r.Plans.Create(ctx, p); err != nil {
+			t.Fatalf("Create plan: %v", err)
+		}
+		ghost := w.f.deployment(t, p)
+		gone := d.ID + "-gone"
+		ghost.Previous = &gone
+		if _, err := w.r.Deployments.Create(ctx, ghost); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Create with an unknown predecessor = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("the same deployment cannot be created twice", func(t *testing.T) {
+		w, d := stored(t)
+		if _, err := w.r.Deployments.Create(ctx, d); !errors.Is(err, port.ErrAlreadyExists) {
+			t.Errorf("Create = %v, want ErrAlreadyExists", err)
+		}
+	})
+
+	t.Run("missing deployments are reported as missing", func(t *testing.T) {
+		w, p := storedPlan(t, newRepos)
+		absent := w.f.deployment(t, p)
+		if _, err := w.r.Deployments.Get(ctx, absent.ID); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Get = %v, want ErrNotFound", err)
+		}
+		absent.Revision = 1
+		if _, err := w.r.Deployments.Update(ctx, absent); !errors.Is(err, port.ErrNotFound) {
+			t.Errorf("Update = %v, want ErrNotFound", err)
 		}
 	})
 }

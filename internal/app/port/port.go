@@ -14,8 +14,10 @@ import (
 	"errors"
 
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
@@ -108,4 +110,46 @@ type ReleaseRepository interface {
 	// is recomputed from the stored release rather than trusted, so a row whose
 	// recorded fingerprint disagrees with its content is not returned.
 	FindByFingerprint(ctx context.Context, p identity.ProjectID, f string) ([]release.Release, error)
+}
+
+// PlanRepository persists deployment plans.
+//
+// There is no Update. A plan is what was reviewed and approved, and the whole
+// point of hashing it is that the stored copy cannot change; a method that
+// wrote over one would be the tamper path the hash exists to detect.
+type PlanRepository interface {
+	Create(ctx context.Context, p plan.DeploymentPlan) error
+
+	// Get returns the stored plan. It does not verify the hash — that is the
+	// caller's decision, because a plan is also fetched to be explained, and
+	// refusing to show a tampered plan would hide the evidence.
+	Get(ctx context.Context, id identity.PlanID) (plan.DeploymentPlan, error)
+}
+
+// DeploymentRepository persists deployments. Unlike a release a deployment
+// changes as it runs, so it has both an Update and a revision to lose a race on.
+type DeploymentRepository interface {
+	// Create stores a new deployment and returns the revision it committed at.
+	// It returns the revision for the same reason Update does: the caller's copy
+	// is the one that goes on to be transitioned, and a copy carrying a revision
+	// the store never agreed to would lose the very next compare-and-set.
+	Create(ctx context.Context, d deployment.Deployment) (identity.Revision, error)
+
+	// Update stores a change and returns the revision it committed at. It
+	// returns ErrRevisionConflict if d.Revision is not the stored one, which is
+	// what keeps two workers from advancing one deployment past each other.
+	Update(ctx context.Context, d deployment.Deployment) (identity.Revision, error)
+
+	Get(ctx context.Context, id identity.DeploymentID) (deployment.Deployment, error)
+
+	// ListForEnvironment returns an environment's deployments, most recent
+	// first. Ordering is part of the contract because the first result is how a
+	// caller asks what is currently deployed.
+	ListForEnvironment(ctx context.Context, e identity.EnvironmentID) ([]deployment.Deployment, error)
+
+	// FindActive returns the environment's deployment that has not reached a
+	// terminal status, if there is one. It returns ErrNotFound when the
+	// environment is idle — an answer, not a failure, and the caller branches
+	// on it to decide whether a new deployment may start.
+	FindActive(ctx context.Context, e identity.EnvironmentID) (deployment.Deployment, error)
 }
