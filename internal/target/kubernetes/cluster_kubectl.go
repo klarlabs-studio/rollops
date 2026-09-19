@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/security"
@@ -231,13 +232,37 @@ func resourceKind(resource string) string {
 // Available/Succeeded condition. An explicit healthCondition pins the type.
 func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
 	if k.healthCond == "" && rolloutKinds[resourceKind(k.resource)] {
-		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout=30s")
+		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout="+k.rolloutWait(ctx))
 		if err != nil {
 			return false, strings.TrimSpace(out), nil
 		}
 		return true, "", nil
 	}
 	return k.conditionHealthy(ctx)
+}
+
+// defaultProgressDeadline is Kubernetes' own default for a Deployment's
+// spec.progressDeadlineSeconds, used for kinds that have no such field.
+const defaultProgressDeadline = 600
+
+// rolloutWait bounds `kubectl rollout status` by the resource's own progress
+// deadline rather than a fixed 30 seconds.
+//
+// A rollout that is still progressing is not failing: old pods draining
+// through their termination grace period routinely take longer than 30s, and
+// treating that as unhealthy aborted healthy canaries and triggered
+// auto-rollback. Kubernetes already defines failure for a Deployment — it
+// marks Progressing=False with ProgressDeadlineExceeded — and `rollout status`
+// returns as soon as that happens, so waiting up to the deadline costs nothing
+// when a rollout genuinely fails and only waits when one is still healthy.
+func (k *kubectlCluster) rolloutWait(ctx context.Context) string {
+	deadline := defaultProgressDeadline
+	if out, err := k.run(ctx, nil, "get", k.resource, "-o", "jsonpath={.spec.progressDeadlineSeconds}"); err == nil {
+		if n, perr := strconv.Atoi(strings.TrimSpace(out)); perr == nil && n > 0 {
+			deadline = n
+		}
+	}
+	return strconv.Itoa(deadline+30) + "s"
 }
 
 type statusCondition struct {
@@ -314,6 +339,13 @@ func conditionReason(c statusCondition) string {
 // non-zero (1) when differences exist, with the diff on stdout — that is not an
 // error here, it is the result.
 func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, error) {
+	// Diff what Apply would send. Apply labels every resource with PruneLabel,
+	// and that label lands in last-applied-configuration; diffing the unlabelled
+	// manifest therefore shows the label's removal on every in-sync target,
+	// which reads as drift where there is none.
+	if labeled, err := labelManifest(manifest, k.pruneVal); err == nil {
+		manifest = labeled
+	}
 	out, _ := k.run(ctx, manifest, "diff", "-f", "-")
 	// Empty diff = in sync; return "" so the caller/UI owns the "no changes"
 	// copy rather than treating a human message as diff content.

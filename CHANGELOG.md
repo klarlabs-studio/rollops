@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased - Roll back to what was running, or not at all
+
+A production incident on 2026-09-19. A Deployment was updated outside rollops
+(`kubectl set image`), so the last manifest rollops had recorded was a month
+old. The next `rollops apply` was healthy but slow: old pods were still
+terminating when the health check gave up. Auto-rollback then "restored" the
+recorded manifest, replacing the running service with the month-old one: an
+older image, and a spec missing environment variables that had been added since.
+
+- **Auto-rollback checks its target was live.** Before deploying, the recorded
+  rollback manifest is diffed against the live state. If they differ, or the
+  diff can't be computed, auto-rollback is disabled for that rollout, and the
+  reason is persisted (`rollback_blocked`) and audited. A failure then stops
+  and reports instead of restoring something that was never running. The
+  stamped checksum could not catch this, because an out-of-band edit leaves
+  the stamp intact.
+- **The Kubernetes health wait follows the resource's progress deadline.**
+  `kubectl rollout status` waited a fixed 30s, so a rollout still draining old
+  pods counted as unhealthy. It now waits up to `progressDeadlineSeconds`
+  (Kubernetes' 600s default when unset) plus 30s. `rollout status` returns as
+  soon as Kubernetes marks a Deployment `ProgressDeadlineExceeded`, so a
+  genuinely stuck rollout fails just as fast as before.
+- **The Kubernetes diff compares what apply sends.** Apply labels every
+  resource with `rollops.klarlabs.de/target`, and the diff didn't. Every
+  in-sync target therefore showed the label's removal as drift, in `plan`, in
+  detect-mode verification, and in apply's own no-op check.
+
 ## v0.34.8 - Name the dangling Middleware before Traefik does
 
 An Ingress whose `router.middlewares` annotation names a Middleware that is

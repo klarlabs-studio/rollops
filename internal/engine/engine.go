@@ -980,10 +980,20 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.SmokeTest = b
 		}
 	}
+	// Decide now, while the prior state is still observable, whether a failure
+	// may be auto-rolled back. Once the new manifest is applied, what was live
+	// before can no longer be compared.
+	if cfg.Spec.Rollback.Auto {
+		r.RollbackBlocked = e.rollbackBaseline(ctx, ref, m)
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
 	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator})
+	if r.RollbackBlocked != "" {
+		e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator,
+			Detail: "auto-rollback disabled for this rollout: " + r.RollbackBlocked})
+	}
 	if r.Phase == rollout.PhaseAwaitingApproval {
 		e.notifyEvent(ctx, notify.Event{Kind: notify.ApprovalNeeded, TargetRef: ref, RolloutID: r.ID})
 		return &r, nil // halt: gate requires human approval, target untouched
@@ -1030,6 +1040,9 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	if failed {
 		if !auto {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
+		}
+		if r.RollbackBlocked != "" {
+			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed and auto-rollback was not attempted (%s): %s", r.RollbackBlocked, reason)
 		}
 		// Auto-rollback forces past the backward-compatibility gate: the deploy
 		// already failed, so recovering to the prior state beats leaving it up.
@@ -1837,6 +1850,48 @@ func (e *Engine) priorManifest(ctx context.Context, targetRef, excludeChecksum s
 		}
 	}
 	return pt.Manifest{}, false
+}
+
+// rollbackBaseline reports why auto-rollback must not run for a rollout about
+// to deploy, or "" when it may.
+//
+// Auto-rollback restores the last manifest rollops recorded for the target.
+// That is only a rollback if it is what was live: a target changed outside
+// rollops (a `kubectl set image`, an apply from a laptop) leaves the record
+// behind, and restoring it replaces the running service with an older one —
+// the stamped checksum cannot see this, because an out-of-band edit leaves the
+// stamp intact. So the recorded manifest is diffed against live before
+// deploying, and any difference, or a comparison that cannot be made, disables
+// auto-rollback for this rollout. A target that cannot diff is trusted as
+// before, since there is nothing to compare with.
+func (e *Engine) rollbackBaseline(ctx context.Context, ref string, desired pt.Manifest) string {
+	prior, ok := e.priorManifest(ctx, ref, desired.Checksum)
+	if !ok {
+		return ""
+	}
+	// Differ lives on the raw target, not the fortify wrapper Apply deploys
+	// through: asserting it on the wrapper never matches.
+	raw, err := e.rawTarget(ref, desired)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	defer closeTarget(raw)
+	differ, ok := raw.(pt.Differ)
+	if !ok {
+		return ""
+	}
+	if prior.Root == "" {
+		prior.Root = rootFromContext(ctx)
+	}
+	diff, err := differ.Diff(ctx, prior)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	if strings.TrimSpace(diff) != "" {
+		return "the live state is not the last manifest rollops recorded (it was changed outside rollops), " +
+			"so rolling back would restore something that was not running"
+	}
+	return ""
 }
 
 // PriorManifest exposes the last-known-good manifest for a target (the most
