@@ -6,8 +6,17 @@ import (
 	"testing"
 
 	"go.klarlabs.de/rollops/internal/config"
+	"go.klarlabs.de/rollops/internal/risk"
 	"go.klarlabs.de/rollops/internal/rollout"
+	policyv1 "go.klarlabs.de/rollops/pkg/policy/v1"
 )
+
+// gated reports what the risk gate's decision means for a rollout: a condition
+// the operation carries that nobody has satisfied yet. Reading d.Allowed alone
+// would say the opposite, which is why call sites go through Permits.
+func gated(d policyv1.PolicyDecision) bool {
+	return policyv1.Permits(d, nil) != nil
+}
 
 func mustIdentity(kind, name string) rollout.Identity {
 	return rollout.Identity{Kind: kind, Name: name}
@@ -43,19 +52,19 @@ func loadRisky(t *testing.T) *config.Config {
 
 func TestEvaluateRisk_HighRiskNeedsApproval(t *testing.T) {
 	e, _ := newEngine(t, &fakeTarget{})
-	d, err := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "code", Environment: "prod", BlastRadius: 8})
+	d, _, err := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "code", Environment: "prod", BlastRadius: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !d.NeedsApproval {
-		t.Errorf("critical/prod/blue-green should need approval; score=%v", d.Score)
+	if !gated(d) {
+		t.Errorf("critical/prod/blue-green should need approval; score=%v", d.Risk.Score)
 	}
 }
 
 func TestEvaluateRisk_SensitiveSchema(t *testing.T) {
 	e, _ := newEngine(t, &fakeTarget{})
-	d, _ := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "schema", Environment: "dev", BlastRadius: 0})
-	if !d.Sensitive || !d.NeedsApproval {
+	d, _, _ := e.EvaluateRisk(context.Background(), loadRisky(t), RiskInputs{ChangeType: "schema", Environment: "dev", BlastRadius: 0})
+	if !risk.Sensitive(d) || !gated(d) {
 		t.Errorf("schema change is sensitive; d=%+v", d)
 	}
 }
@@ -71,11 +80,14 @@ func TestEvaluateRisk_HistoricalRollbackRaisesScore(t *testing.T) {
 	c.Spec.Risk.Sensitive = ""
 	c.Spec.Risk.History = config.RiskHistory{Lookback: 5, Weight: 0.2, MaxFailures: 1}
 
-	before, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
+	before, beforeFailures, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.NeedsApproval {
+	if beforeFailures != 0 {
+		t.Fatalf("recent failures = %d before any rollback was seeded", beforeFailures)
+	}
+	if gated(before) {
 		t.Fatalf("no history should auto-proceed: %+v", before)
 	}
 
@@ -87,11 +99,14 @@ func TestEvaluateRisk_HistoricalRollbackRaisesScore(t *testing.T) {
 		t.Fatalf("seed history: %v", err)
 	}
 
-	after, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
+	after, afterFailures, err := e.EvaluateRisk(ctx, c, RiskInputs{ChangeType: "config", Environment: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !after.NeedsApproval || after.Score <= before.Score {
+	if afterFailures != 1 {
+		t.Errorf("recent failures = %d, want the seeded rollback counted", afterFailures)
+	}
+	if !gated(after) || after.Risk.Score <= before.Risk.Score {
 		t.Fatalf("rollback history should raise risk above threshold: before=%+v after=%+v", before, after)
 	}
 }
@@ -101,9 +116,9 @@ func TestEvaluateRisk_FeedsApply(t *testing.T) {
 	fake := &fakeTarget{}
 	e, db := newEngine(t, fake)
 	c := loadRisky(t)
-	d, _ := e.EvaluateRisk(context.Background(), c, RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9})
+	d, _, _ := e.EvaluateRisk(context.Background(), c, RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9})
 
-	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, NeedsApproval: d.NeedsApproval, Risk: RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9}})
+	r, err := e.Apply(context.Background(), ApplyRequest{Config: c, NeedsApproval: gated(d), Risk: RiskInputs{ChangeType: "schema", Environment: "prod", BlastRadius: 9}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,6 +40,7 @@ import (
 	itarget "go.klarlabs.de/rollops/internal/target"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
 	"go.klarlabs.de/rollops/internal/verify"
+	policyv1 "go.klarlabs.de/rollops/pkg/policy/v1"
 	pt "go.klarlabs.de/rollops/pkg/target"
 	targetv2 "go.klarlabs.de/rollops/pkg/target/v2"
 	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
@@ -463,15 +464,15 @@ func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
 	// Attach the risk decision when configured so agents can escalate from
 	// plan — not only discover a gate on apply.
 	if c.Spec.Risk.Threshold > 0 || c.Spec.Risk.Sensitive != "" {
-		d, err := e.EvaluateRisk(ctx, c, RiskFromConfig(c))
+		d, recentFailures, err := e.EvaluateRisk(ctx, c, RiskFromConfig(c))
 		if err != nil {
 			return nil, err
 		}
-		p.RiskScore = d.Score
-		p.NeedsApproval = d.NeedsApproval
-		p.Sensitive = d.Sensitive
-		p.RecentFailures = d.RecentFailures
-		p.RiskReason = d.Reason
+		p.RiskScore = d.Risk.Score
+		p.NeedsApproval = policyv1.Permits(d, nil) != nil
+		p.Sensitive = risk.Sensitive(d)
+		p.RecentFailures = recentFailures
+		p.RiskReason = risk.Explain(d)
 	}
 	return p, nil
 }
@@ -679,19 +680,25 @@ func RiskFromConfig(c *config.Config, deps ...rollout.Dependency) RiskInputs {
 	return in
 }
 
-// EvaluateRisk runs the blast-radius gate for a config + rollout-time inputs.
-// Callers set ApplyRequest.NeedsApproval from the returned Decision.
-func (e *Engine) EvaluateRisk(ctx context.Context, c *config.Config, in RiskInputs) (risk.Decision, error) {
+// EvaluateRisk runs the blast-radius gate for a config + rollout-time inputs
+// and returns what policy made of it, alongside the recent-failure count the
+// weights were derived from — surfaces render that count next to the score, and
+// it is not recoverable from the decision.
+//
+// Callers must read the decision through policyv1.Permits rather than field by
+// field: a score is not an authorization, and an unmet approval requirement is
+// what sends a rollout to awaiting-approval.
+func (e *Engine) EvaluateRisk(ctx context.Context, c *config.Config, in RiskInputs) (policyv1.PolicyDecision, int, error) {
 	weights, recentFailures, err := e.riskWeights(ctx, c)
 	if err != nil {
-		return risk.Decision{}, err
+		return policyv1.PolicyDecision{}, 0, err
 	}
 	g := risk.Gate{
 		Threshold:     c.Spec.Risk.Threshold,
 		Weights:       weights,
 		SensitiveExpr: c.Spec.Risk.Sensitive,
 	}
-	return g.Evaluate(risk.Signals{
+	d, err := g.Evaluate(risk.Signals{
 		Criticality:    c.Spec.Target.Criticality,
 		Environment:    in.Environment,
 		ChangeType:     in.ChangeType,
@@ -699,6 +706,7 @@ func (e *Engine) EvaluateRisk(ctx context.Context, c *config.Config, in RiskInpu
 		Strategy:       c.Spec.Strategy.Type,
 		RecentFailures: recentFailures,
 	})
+	return d, recentFailures, err
 }
 
 func (e *Engine) riskWeights(ctx context.Context, c *config.Config) (risk.Weights, int, error) {
@@ -789,12 +797,12 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 	// 2. Risk gate (only when configured — threshold>0 or a sensitive expr).
 	var riskScore float64
 	if cfg.Spec.Risk.Threshold > 0 || cfg.Spec.Risk.Sensitive != "" {
-		d, err := e.EvaluateRisk(ctx, cfg, req.Risk)
+		d, _, err := e.EvaluateRisk(ctx, cfg, req.Risk)
 		if err != nil {
 			return nil, err
 		}
-		riskScore = d.Score
-		needApproval = needApproval || d.NeedsApproval
+		riskScore = d.Risk.Score
+		needApproval = needApproval || policyv1.Permits(d, nil) != nil
 	}
 
 	// 3. External governance, when a provider is configured. Unlike the gates above,
