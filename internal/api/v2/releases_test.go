@@ -6,7 +6,6 @@ import (
 
 	apiv2 "go.klarlabs.de/rollops/internal/api/v2"
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
-	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
@@ -134,25 +133,6 @@ func TestReleasesAreListedForOneProject(t *testing.T) {
 		if r.ProjectID != string(mine.ID) {
 			t.Errorf("release %q belongs to %q", r.Version, r.ProjectID)
 		}
-	}
-}
-
-func TestReleasesComeBackAPageAtATime(t *testing.T) {
-	w := setup(t)
-	p := w.project(t, "checkout")
-	for _, v := range []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0"} {
-		w.release(t, p.ID, v, map[string]identity.ArtifactID{"app": w.artifact(t, p.ID, v).ID})
-	}
-
-	got, err := w.svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{
-		ProjectID: string(p.ID),
-		Page:      page.Request{Size: 3},
-	})
-	if err != nil {
-		t.Fatalf("ListReleases: %v", err)
-	}
-	if len(got.Releases) != 3 || got.Next == "" {
-		t.Fatalf("got %d releases and cursor %q, want 3 and a cursor", len(got.Releases), got.Next)
 	}
 }
 

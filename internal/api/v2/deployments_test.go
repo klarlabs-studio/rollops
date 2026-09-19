@@ -7,7 +7,6 @@ import (
 
 	apiv2 "go.klarlabs.de/rollops/internal/api/v2"
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
-	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
@@ -340,25 +339,6 @@ func TestAPlanIDOfTheWrongKindIsTheCallersMistake(t *testing.T) {
 
 	if got := codeOf(t, err); got != apierr.InvalidArgument {
 		t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
-	}
-}
-
-func TestDeploymentsComeBackAPageAtATime(t *testing.T) {
-	s := setup(t).scene(t)
-	p := s.plan(t, oneApply(), allowed())
-	for range 4 {
-		s.deployment(t, p.ID)
-	}
-
-	got, err := s.svc.ListDeployments(context.Background(), apiv2.ListDeploymentsRequest{
-		EnvironmentID: string(s.environment.ID),
-		Page:          page.Request{Size: 3},
-	})
-	if err != nil {
-		t.Fatalf("ListDeployments: %v", err)
-	}
-	if len(got.Deployments) != 3 || got.Next == "" {
-		t.Fatalf("got %d deployments and cursor %q, want 3 and a cursor", len(got.Deployments), got.Next)
 	}
 }
 

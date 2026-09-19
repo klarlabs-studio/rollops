@@ -46,6 +46,10 @@ type Config struct {
 	Artifacts    port.ArtifactRepository
 	Deployments  port.DeploymentRepository
 	Plans        port.PlanRepository
+
+	// Events is the reader half. The API has no business appending, and taking
+	// only the half it needs means there is no call site that could.
+	Events port.EventReader
 }
 
 // Service answers the v2 API.
@@ -56,6 +60,7 @@ type Service struct {
 	artifacts    port.ArtifactRepository
 	deployments  port.DeploymentRepository
 	plans        port.PlanRepository
+	events       port.EventReader
 }
 
 // New returns a service, naming the first dependency it was not given.
@@ -73,6 +78,8 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no deployment repository")
 	case cfg.Plans == nil:
 		return nil, errors.New("apiv2: no plan repository")
+	case cfg.Events == nil:
+		return nil, errors.New("apiv2: no event reader")
 	}
 	return &Service{
 		projects:     cfg.Projects,
@@ -81,6 +88,7 @@ func New(cfg Config) (*Service, error) {
 		artifacts:    cfg.Artifacts,
 		deployments:  cfg.Deployments,
 		plans:        cfg.Plans,
+		events:       cfg.Events,
 	}, nil
 }
 
