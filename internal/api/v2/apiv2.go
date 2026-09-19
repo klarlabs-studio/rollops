@@ -42,12 +42,16 @@ import (
 type Config struct {
 	Projects     port.ProjectRepository
 	Environments port.EnvironmentRepository
+	Releases     port.ReleaseRepository
+	Artifacts    port.ArtifactRepository
 }
 
 // Service answers the v2 API.
 type Service struct {
 	projects     port.ProjectRepository
 	environments port.EnvironmentRepository
+	releases     port.ReleaseRepository
+	artifacts    port.ArtifactRepository
 }
 
 // New returns a service, naming the first dependency it was not given.
@@ -57,10 +61,16 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no project repository")
 	case cfg.Environments == nil:
 		return nil, errors.New("apiv2: no environment repository")
+	case cfg.Releases == nil:
+		return nil, errors.New("apiv2: no release repository")
+	case cfg.Artifacts == nil:
+		return nil, errors.New("apiv2: no artifact repository")
 	}
 	return &Service{
 		projects:     cfg.Projects,
 		environments: cfg.Environments,
+		releases:     cfg.Releases,
+		artifacts:    cfg.Artifacts,
 	}, nil
 }
 
@@ -134,7 +144,7 @@ func (s *Service) GetProject(ctx context.Context, req GetProjectRequest) (Projec
 	}
 	p, err := s.projects.Get(ctx, id)
 	if err != nil {
-		return Project{}, apierr.From(fmt.Errorf("apiv2: project %s: %w", id, err))
+		return Project{}, failure("apiv2: project %s: %w", id, err)
 	}
 	return viewProject(p), nil
 }
@@ -152,11 +162,11 @@ type ListProjectsResponse struct {
 func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) (ListProjectsResponse, error) {
 	stored, err := s.projects.List(ctx)
 	if err != nil {
-		return ListProjectsResponse{}, apierr.From(fmt.Errorf("apiv2: projects: %w", err))
+		return ListProjectsResponse{}, failure("apiv2: projects: %w", err)
 	}
 	p, err := page.Of(stored, req.Page, func(p project.Project) string { return string(p.ID) })
 	if err != nil {
-		return ListProjectsResponse{}, apierr.From(fmt.Errorf("apiv2: projects: %w", err))
+		return ListProjectsResponse{}, failure("apiv2: projects: %w", err)
 	}
 	return ListProjectsResponse{Projects: mapped(p.Items, viewProject), Next: p.Next}, nil
 }
@@ -172,7 +182,7 @@ func (s *Service) GetEnvironment(ctx context.Context, req GetEnvironmentRequest)
 	}
 	e, err := s.environments.Get(ctx, id)
 	if err != nil {
-		return Environment{}, apierr.From(fmt.Errorf("apiv2: environment %s: %w", id, err))
+		return Environment{}, failure("apiv2: environment %s: %w", id, err)
 	}
 	return viewEnvironment(e), nil
 }
@@ -201,13 +211,21 @@ func (s *Service) ListEnvironments(ctx context.Context, req ListEnvironmentsRequ
 	}
 	stored, err := s.environments.List(ctx, projectID)
 	if err != nil {
-		return ListEnvironmentsResponse{}, apierr.From(fmt.Errorf("apiv2: project %s: environments: %w", projectID, err))
+		return ListEnvironmentsResponse{}, failure("apiv2: project %s: environments: %w", projectID, err)
 	}
 	p, err := page.Of(stored, req.Page, func(e environment.Environment) string { return string(e.ID) })
 	if err != nil {
-		return ListEnvironmentsResponse{}, apierr.From(fmt.Errorf("apiv2: project %s: environments: %w", projectID, err))
+		return ListEnvironmentsResponse{}, failure("apiv2: project %s: environments: %w", projectID, err)
 	}
 	return ListEnvironmentsResponse{Environments: mapped(p.Items, viewEnvironment), Next: p.Next}, nil
+}
+
+// failure classifies a repository error while keeping the context that says
+// which read produced it. The context is for the log: apierr.From withholds an
+// unclassified message from the caller, because a driver error routinely names
+// a host, a query or a path (INV-012).
+func failure(format string, args ...any) error {
+	return apierr.From(fmt.Errorf(format, args...))
 }
 
 // badArgument marks a malformed identifier as the caller's mistake, rather

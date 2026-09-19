@@ -10,9 +10,11 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/port"
+	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/project"
+	"go.klarlabs.de/rollops/internal/domain/release"
 	"go.klarlabs.de/rollops/internal/domain/value"
 	"go.klarlabs.de/rollops/internal/store/memory"
 )
@@ -32,6 +34,8 @@ func setup(t *testing.T) *world {
 	svc, err := apiv2.New(apiv2.Config{
 		Projects:     store.Projects(),
 		Environments: store.Environments(),
+		Releases:     store.Releases(),
+		Artifacts:    store.Artifacts(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -195,19 +199,6 @@ func TestTheProjectListResumesWhereItStopped(t *testing.T) {
 	}
 }
 
-func TestACursorThisAPIDidNotIssueIsRefused(t *testing.T) {
-	w := setup(t)
-	w.project(t, "checkout")
-
-	_, err := w.svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{
-		Page: page.Request{Cursor: "not-a-cursor"},
-	})
-
-	if got := codeOf(t, err); got != apierr.InvalidArgument {
-		t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
-	}
-}
-
 func TestAnEnvironmentIsReturnedByItsID(t *testing.T) {
 	w := setup(t)
 	p := w.project(t, "checkout")
@@ -340,37 +331,6 @@ func TestAnEnvironmentNobodyCreatedIsNotFound(t *testing.T) {
 	}
 }
 
-func TestAServiceSaysWhichDependencyItWasNotGiven(t *testing.T) {
-	_, err := apiv2.New(apiv2.Config{Projects: memory.New().Projects()})
-
-	if err == nil {
-		t.Fatal("a service missing a repository was constructed; the failure would surface as a nil dereference on the first call")
-	}
-	if !containsWord(err.Error(), "environment") {
-		t.Errorf("error %q does not name the missing dependency", err)
-	}
-}
-
-func containsWord(s, w string) bool {
-	for i := 0; i+len(w) <= len(s); i++ {
-		if s[i:i+len(w)] == w {
-			return true
-		}
-	}
-	return false
-}
-
-func TestAServiceWithNoRepositoriesAtAllNamesTheFirstOneMissing(t *testing.T) {
-	_, err := apiv2.New(apiv2.Config{})
-
-	if err == nil {
-		t.Fatal("an empty config was accepted")
-	}
-	if !containsWord(err.Error(), "project") {
-		t.Errorf("error %q does not name the missing dependency", err)
-	}
-}
-
 func TestAnEnvironmentReportsThePoliciesInForceForIt(t *testing.T) {
 	w := setup(t)
 	p := w.project(t, "checkout")
@@ -409,21 +369,6 @@ func TestAnIDThatIsNotAnEnvironmentIDIsTheCallersMistake(t *testing.T) {
 	}
 }
 
-func TestACursorThisAPIDidNotIssueIsRefusedWhenListingEnvironments(t *testing.T) {
-	w := setup(t)
-	p := w.project(t, "checkout")
-	w.environment(t, p.ID, environment.Environment{Name: "production"})
-
-	_, err := w.svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{
-		ProjectID: string(p.ID),
-		Page:      page.Request{Cursor: "not-a-cursor"},
-	})
-
-	if got := codeOf(t, err); got != apierr.InvalidArgument {
-		t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
-	}
-}
-
 // brokenProjects and brokenEnvironments fail their list read with something
 // nothing has classified — the shape a driver error arrives in.
 type brokenProjects struct {
@@ -442,50 +387,181 @@ func (b brokenEnvironments) List(context.Context, identity.ProjectID) ([]environ
 	return nil, b.err
 }
 
-func TestAStorageFailureDoesNotTellTheCallerAboutTheStorage(t *testing.T) {
-	leak := errors.New("dial tcp 10.0.0.7:5432: connect: connection refused")
-	store := memory.New()
-	svc, err := apiv2.New(apiv2.Config{
-		Projects:     brokenProjects{ProjectRepository: store.Projects(), err: leak},
-		Environments: store.Environments(),
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+// errLeak is the shape a driver error arrives in: unclassified, and naming
+// infrastructure the caller has no business knowing about.
+var errLeak = errors.New("dial tcp 10.0.0.7:5432: connect: connection refused")
 
-	_, err = svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{})
+type brokenReleases struct {
+	port.ReleaseRepository
+	err error
+}
 
-	var e *apierr.Error
-	if !errors.As(err, &e) {
-		t.Fatalf("error %v is not an *apierr.Error", err)
-	}
-	if e.Code != apierr.Internal {
-		t.Errorf("code = %s, want %s", e.Code, apierr.Internal)
-	}
-	if containsWord(e.Message, "10.0.0.7") {
-		t.Errorf("message %q hands the caller the estate's network layout", e.Message)
-	}
-	if !errors.Is(err, leak) {
-		t.Error("the cause did not survive for the log; an operator has nothing to debug with")
+func (b brokenReleases) List(context.Context, identity.ProjectID) ([]release.Release, error) {
+	return nil, b.err
+}
+
+type brokenArtifacts struct {
+	port.ArtifactRepository
+	err error
+}
+
+func (b brokenArtifacts) List(context.Context, identity.ProjectID) ([]artifact.Artifact, error) {
+	return nil, b.err
+}
+
+// TestNoListHandsTheCallerAnUnclassifiedMessage states the rule once for every
+// list read rather than per endpoint: whatever storage says on the way out, the
+// caller gets INTERNAL and nothing about the estate.
+func TestNoListHandsTheCallerAnUnclassifiedMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		breaks func(*memory.Store, *apiv2.Config)
+		lists  func(*apiv2.Service, string) error
+	}{
+		{
+			name:   "projects",
+			breaks: func(st *memory.Store, c *apiv2.Config) { c.Projects = brokenProjects{st.Projects(), errLeak} },
+			lists: func(svc *apiv2.Service, p string) error {
+				_, err := svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{})
+				return err
+			},
+		},
+		{
+			name: "environments",
+			breaks: func(st *memory.Store, c *apiv2.Config) {
+				c.Environments = brokenEnvironments{st.Environments(), errLeak}
+			},
+			lists: func(svc *apiv2.Service, p string) error {
+				_, err := svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{ProjectID: p})
+				return err
+			},
+		},
+		{
+			name:   "releases",
+			breaks: func(st *memory.Store, c *apiv2.Config) { c.Releases = brokenReleases{st.Releases(), errLeak} },
+			lists: func(svc *apiv2.Service, p string) error {
+				_, err := svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{ProjectID: p})
+				return err
+			},
+		},
+		{
+			name:   "artifacts",
+			breaks: func(st *memory.Store, c *apiv2.Config) { c.Artifacts = brokenArtifacts{st.Artifacts(), errLeak} },
+			lists: func(svc *apiv2.Service, p string) error {
+				_, err := svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{ProjectID: p})
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := setup(t)
+			p := w.project(t, "checkout")
+			cfg := apiv2.Config{
+				Projects:     w.store.Projects(),
+				Environments: w.store.Environments(),
+				Releases:     w.store.Releases(),
+				Artifacts:    w.store.Artifacts(),
+			}
+			tc.breaks(w.store, &cfg)
+			svc, err := apiv2.New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			err = tc.lists(svc, string(p.ID))
+
+			var e *apierr.Error
+			if !errors.As(err, &e) {
+				t.Fatalf("error %v is not an *apierr.Error", err)
+			}
+			if e.Code != apierr.Internal {
+				t.Errorf("code = %s, want %s", e.Code, apierr.Internal)
+			}
+			if containsWord(e.Message, "10.0.0.7") {
+				t.Errorf("message %q hands the caller the estate's network layout", e.Message)
+			}
+			if !errors.Is(err, errLeak) {
+				t.Error("the cause did not survive for the log; an operator has nothing to debug with")
+			}
+		})
 	}
 }
 
-func TestAStorageFailureListingEnvironmentsIsAlsoInternal(t *testing.T) {
-	leak := errors.New("dial tcp 10.0.0.7:5432: connect: connection refused")
-	store := memory.New()
-	svc, err := apiv2.New(apiv2.Config{
-		Projects:     store.Projects(),
-		Environments: brokenEnvironments{EnvironmentRepository: store.Environments(), err: leak},
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	w := &world{svc: svc, store: store, ids: identity.NewGenerator(), clock: identity.ClockFunc(func() time.Time { return at })}
-	p := w.project(t, "checkout")
+// TestACursorThisAPIDidNotIssueIsRefusedByEveryList keeps the four lists from
+// drifting apart on what a forged cursor means.
+func TestACursorThisAPIDidNotIssueIsRefusedByEveryList(t *testing.T) {
+	forged := page.Request{Cursor: "not-a-cursor"}
+	for _, tc := range []struct {
+		name string
+		list func(*world, string) error
+	}{
+		{"projects", func(w *world, p string) error {
+			_, err := w.svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{Page: forged})
+			return err
+		}},
+		{"environments", func(w *world, p string) error {
+			_, err := w.svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{ProjectID: p, Page: forged})
+			return err
+		}},
+		{"releases", func(w *world, p string) error {
+			_, err := w.svc.ListReleases(context.Background(), apiv2.ListReleasesRequest{ProjectID: p, Page: forged})
+			return err
+		}},
+		{"artifacts", func(w *world, p string) error {
+			_, err := w.svc.ListArtifacts(context.Background(), apiv2.ListArtifactsRequest{ProjectID: p, Page: forged})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := setup(t)
+			p := w.project(t, "checkout")
 
-	_, err = svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{ProjectID: string(p.ID)})
-
-	if got := codeOf(t, err); got != apierr.Internal {
-		t.Errorf("code = %s, want %s", got, apierr.Internal)
+			if got := codeOf(t, tc.list(w, string(p.ID))); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
 	}
+}
+
+// TestAServiceNamesEveryDependencyItWasNotGiven holds New to naming the gap
+// rather than failing later as a nil dereference in a handler.
+func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
+	for _, tc := range []struct {
+		missing string
+		drop    func(*apiv2.Config)
+	}{
+		{"project", func(c *apiv2.Config) { c.Projects = nil }},
+		{"environment", func(c *apiv2.Config) { c.Environments = nil }},
+		{"release", func(c *apiv2.Config) { c.Releases = nil }},
+		{"artifact", func(c *apiv2.Config) { c.Artifacts = nil }},
+	} {
+		t.Run(tc.missing, func(t *testing.T) {
+			st := memory.New()
+			cfg := apiv2.Config{
+				Projects:     st.Projects(),
+				Environments: st.Environments(),
+				Releases:     st.Releases(),
+				Artifacts:    st.Artifacts(),
+			}
+			tc.drop(&cfg)
+
+			_, err := apiv2.New(cfg)
+
+			if err == nil {
+				t.Fatalf("a service with no %s repository was constructed", tc.missing)
+			}
+			if !containsWord(err.Error(), tc.missing) {
+				t.Errorf("error %q does not name the missing dependency", err)
+			}
+		})
+	}
+}
+
+func containsWord(s, w string) bool {
+	for i := 0; i+len(w) <= len(s); i++ {
+		if s[i:i+len(w)] == w {
+			return true
+		}
+	}
+	return false
 }
