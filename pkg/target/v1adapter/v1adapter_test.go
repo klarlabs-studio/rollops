@@ -304,6 +304,63 @@ func TestPruneReachesTheV1Reaper(t *testing.T) {
 	}
 }
 
+// TestADeadContextStopsAtTheAdapter covers the v1 targets that never learned
+// to check one. bare ignores its context entirely — which is legal in v1 and
+// not in v2 — so if the refusal did not happen here it would not happen.
+func TestADeadContextStopsAtTheAdapter(t *testing.T) {
+	cancelled := func() context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx
+	}
+
+	tgt := &rich{}
+	a := v1adapter.New(tgt, meta())
+
+	calls := map[string]func(context.Context) error{
+		"Inspect": func(ctx context.Context) error {
+			_, err := a.Inspect(ctx, targetv2.InspectRequest{})
+			return err
+		},
+		"Plan": func(ctx context.Context) error {
+			_, err := a.Plan(ctx, targetv2.PlanRequest{Desired: desired("abc")})
+			return err
+		},
+		"Apply": func(ctx context.Context) error {
+			_, err := a.Apply(ctx, targetv2.ApplyRequest{Desired: desired("abc"), IdempotencyKey: "k"})
+			return err
+		},
+		"Observe": func(ctx context.Context) error {
+			_, err := a.Observe(ctx, targetv2.ObserveRequest{})
+			return err
+		},
+		"DetectDrift": func(ctx context.Context) error {
+			_, err := a.DetectDrift(ctx, targetv2.DriftRequest{Desired: desired("abc")})
+			return err
+		},
+		"Prune": func(ctx context.Context) error {
+			_, err := a.Prune(ctx, targetv2.PruneRequest{})
+			return err
+		},
+	}
+
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			err := call(cancelled())
+			if err == nil {
+				t.Fatalf("%s ran on a cancelled context", name)
+			}
+			if got := targetv2.KindOf(err); got != targetv2.KindCanceled {
+				t.Errorf("%s failed with kind %q, want %q", name, got, targetv2.KindCanceled)
+			}
+		})
+	}
+
+	if tgt.applies != 0 || tgt.reaped != 0 {
+		t.Errorf("the v1 target was reached anyway: %d applies, %d reaps", tgt.applies, tgt.reaped)
+	}
+}
+
 func TestTheAdapterSatisfiesTheV2Contract(t *testing.T) {
 	var _ targetv2.Target = v1adapter.New(&bare{}, meta())
 	var _ targetv2.Drifter = v1adapter.New(&bare{}, meta())

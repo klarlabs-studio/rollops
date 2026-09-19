@@ -43,6 +43,18 @@ func New(t v1.Target, meta targetv2.Metadata) *Adapter {
 // Metadata identifies the target.
 func (a *Adapter) Metadata() targetv2.Metadata { return a.meta }
 
+// alive refuses a call whose context is already done. v2 requires a target to
+// honour cancellation and v1 never promised it, so the adapter answers for the
+// targets that never learned to — a caller that has stopped waiting gains
+// nothing from the work starting. It cannot make a v1 target interruptible
+// once it is running; a target that blocks past its deadline still blocks.
+func (a *Adapter) alive(ctx context.Context, op string) error {
+	if err := ctx.Err(); err != nil {
+		return targetv2.Failf(targetv2.KindOf(err), op, err, "%v", err)
+	}
+	return nil
+}
+
 // Capabilities reports what this v1 target can do. HealthObservation is always
 // true because Health is mandatory in v1. NativeRollback is always false
 // because v1 has no rollback at all — the engine rolls back by applying the
@@ -62,6 +74,9 @@ func (a *Adapter) Capabilities(context.Context) (targetv2.Capabilities, error) {
 // has a fingerprint; an empty inventory is the truthful answer rather than a
 // failure, because Inspect is mandatory in v2 and v1 targets cannot all list.
 func (a *Adapter) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targetv2.ObservedState, error) {
+	if err := a.alive(ctx, "Inspect"); err != nil {
+		return targetv2.ObservedState{}, err
+	}
 	fp, err := a.inner.Observe(ctx)
 	if err != nil {
 		return targetv2.ObservedState{}, targetv2.Failf(targetv2.KindInternal, "Inspect", err, "observe: %v", err)
@@ -91,6 +106,9 @@ func (a *Adapter) Inspect(ctx context.Context, _ targetv2.InspectRequest) (targe
 // answered part of it: Differ says what would change, Renderer says what would
 // actually be sent, and Preflighter says whether it would be refused.
 func (a *Adapter) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.PlanResult, error) {
+	if err := a.alive(ctx, "Plan"); err != nil {
+		return targetv2.PlanResult{}, err
+	}
 	m := manifest(req.Desired)
 
 	// A target that cannot diff has no way to know whether anything would
@@ -129,6 +147,9 @@ func (a *Adapter) Plan(ctx context.Context, req targetv2.PlanRequest) (targetv2.
 // request is a conflict, because guessing which of two requests the caller
 // meant is worse than refusing.
 func (a *Adapter) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv2.ApplyResult, error) {
+	if err := a.alive(ctx, "Apply"); err != nil {
+		return targetv2.ApplyResult{}, err
+	}
 	if req.IdempotencyKey == "" {
 		return targetv2.ApplyResult{}, targetv2.Failf(targetv2.KindInvalid, "Apply", nil,
 			"an idempotency key is required")
@@ -159,6 +180,9 @@ func (a *Adapter) Apply(ctx context.Context, req targetv2.ApplyRequest) (targetv
 // Observe answers in one call what v1 answers in two. That is why v2 has no
 // Health method: a caller wanted both every time.
 func (a *Adapter) Observe(ctx context.Context, _ targetv2.ObserveRequest) (targetv2.Observation, error) {
+	if err := a.alive(ctx, "Observe"); err != nil {
+		return targetv2.Observation{}, err
+	}
 	fp, err := a.inner.Observe(ctx)
 	if err != nil {
 		return targetv2.Observation{}, targetv2.Failf(targetv2.KindInternal, "Observe", err, "observe: %v", err)
@@ -192,6 +216,9 @@ func (a *Adapter) DetectDrift(ctx context.Context, req targetv2.DriftRequest) (t
 	if !ok {
 		return targetv2.DriftResult{}, targetv2.Unsupported("DetectDrift", targetv2.CapabilityDriftDetection)
 	}
+	if err := a.alive(ctx, "DetectDrift"); err != nil {
+		return targetv2.DriftResult{}, err
+	}
 	diff, err := d.Diff(ctx, manifest(req.Desired))
 	if err != nil {
 		return targetv2.DriftResult{}, targetv2.Failf(targetv2.KindInternal, "DetectDrift", err, "diff: %v", err)
@@ -204,6 +231,9 @@ func (a *Adapter) Prune(ctx context.Context, _ targetv2.PruneRequest) (targetv2.
 	r, ok := a.inner.(v1.Reaper)
 	if !ok {
 		return targetv2.PruneResult{}, targetv2.Unsupported("Prune", targetv2.CapabilityPrune)
+	}
+	if err := a.alive(ctx, "Prune"); err != nil {
+		return targetv2.PruneResult{}, err
 	}
 	removed, err := r.ReapTarget(ctx)
 	if err != nil {
