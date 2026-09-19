@@ -157,10 +157,14 @@ second half is the one that would have caught today's bug — a `DriftResult`
 with no drift and a target that cannot detect drift are the same value, and
 only the error tells them apart.
 
-`pkg/conformance` grows from three checks to §9.5's ten axes and takes a v2
-factory. §9.6 step 3 requires it to support both contracts; it does so by
-wrapping a v1 factory through the adapter and running the same suite, so "v1
-target" and "v2 target that declares fewer capabilities" are the same case.
+§9.5's ten axes live in a new `pkg/conformance/v2` taking a v2 factory, beside
+the three v1 checks rather than replacing them: `pkg/conformance` is written
+against the v1 `Target` and a target that has not migrated should keep being
+measured while it waits. §9.6 step 3 requires both contracts to be supported;
+`SuiteForV1` does it by wrapping a v1 factory through the adapter and running
+the same ten axes, so "v1 target" and "v2 target that declares fewer
+capabilities" are the same case. `pkg/conformance` is deleted with v1, at the
+major boundary and not before.
 
 ### 6. The idempotency key is minted by RollOps from durable state.
 
