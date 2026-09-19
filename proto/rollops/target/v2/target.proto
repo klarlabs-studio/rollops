@@ -69,6 +69,21 @@ message DesiredState {
   map<string, string> labels = 4;
 }
 
+// TargetError rides along with a failed RPC as a status detail, so that what
+// the host needs in order to act on the failure survives the wire. A gRPC code
+// alone cannot say which capability was unsupported or which operation was
+// double-sent, and a host that recovers those by parsing the message string is
+// a host that breaks when the wording changes.
+//
+// A plugin that attaches none of this is not a plugin whose errors are
+// kindless: the code alone still places the failure.
+message TargetError {
+  string kind = 1;            // unsupported | invalid | not_found | …
+  string op = 2;              // the contract method that failed
+  string capability = 3;      // set when kind is unsupported
+  string idempotency_key = 4; // set when kind is conflict
+}
+
 // Resource is one live object. parent is the owning resource's name, empty for
 // a top-level object, so a UI can render the ownership tree.
 message Resource {

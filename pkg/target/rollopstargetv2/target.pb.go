@@ -147,6 +147,82 @@ func (x *DesiredState) GetLabels() map[string]string {
 	return nil
 }
 
+// TargetError rides along with a failed RPC as a status detail, so that what
+// the host needs in order to act on the failure survives the wire. A gRPC code
+// alone cannot say which capability was unsupported or which operation was
+// double-sent, and a host that recovers those by parsing the message string is
+// a host that breaks when the wording changes.
+//
+// A plugin that attaches none of this is not a plugin whose errors are
+// kindless: the code alone still places the failure.
+type TargetError struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Kind           string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`                                           // unsupported | invalid | not_found | …
+	Op             string                 `protobuf:"bytes,2,opt,name=op,proto3" json:"op,omitempty"`                                               // the contract method that failed
+	Capability     string                 `protobuf:"bytes,3,opt,name=capability,proto3" json:"capability,omitempty"`                               // set when kind is unsupported
+	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"` // set when kind is conflict
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *TargetError) Reset() {
+	*x = TargetError{}
+	mi := &file_rollops_target_v2_target_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TargetError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TargetError) ProtoMessage() {}
+
+func (x *TargetError) ProtoReflect() protoreflect.Message {
+	mi := &file_rollops_target_v2_target_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TargetError.ProtoReflect.Descriptor instead.
+func (*TargetError) Descriptor() ([]byte, []int) {
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TargetError) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *TargetError) GetOp() string {
+	if x != nil {
+		return x.Op
+	}
+	return ""
+}
+
+func (x *TargetError) GetCapability() string {
+	if x != nil {
+		return x.Capability
+	}
+	return ""
+}
+
+func (x *TargetError) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
 // Resource is one live object. parent is the owning resource's name, empty for
 // a top-level object, so a UI can render the ownership tree.
 type Resource struct {
@@ -162,7 +238,7 @@ type Resource struct {
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[1]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -174,7 +250,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[1]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -187,7 +263,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{1}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Resource) GetKind() string {
@@ -235,7 +311,7 @@ type HealthStatus struct {
 
 func (x *HealthStatus) Reset() {
 	*x = HealthStatus{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[2]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -247,7 +323,7 @@ func (x *HealthStatus) String() string {
 func (*HealthStatus) ProtoMessage() {}
 
 func (x *HealthStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[2]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -260,7 +336,7 @@ func (x *HealthStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthStatus.ProtoReflect.Descriptor instead.
 func (*HealthStatus) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{2}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HealthStatus) GetState() HealthState {
@@ -285,7 +361,7 @@ type GetCapabilitiesRequest struct {
 
 func (x *GetCapabilitiesRequest) Reset() {
 	*x = GetCapabilitiesRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[3]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -297,7 +373,7 @@ func (x *GetCapabilitiesRequest) String() string {
 func (*GetCapabilitiesRequest) ProtoMessage() {}
 
 func (x *GetCapabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[3]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -310,7 +386,7 @@ func (x *GetCapabilitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesRequest.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{3}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{4}
 }
 
 // GetCapabilitiesResponse names what the target can do. Names the host does not
@@ -325,7 +401,7 @@ type GetCapabilitiesResponse struct {
 
 func (x *GetCapabilitiesResponse) Reset() {
 	*x = GetCapabilitiesResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[4]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +413,7 @@ func (x *GetCapabilitiesResponse) String() string {
 func (*GetCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[4]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +426,7 @@ func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{4}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetCapabilitiesResponse) GetCapabilities() []string {
@@ -368,7 +444,7 @@ type InspectRequest struct {
 
 func (x *InspectRequest) Reset() {
 	*x = InspectRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[5]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -380,7 +456,7 @@ func (x *InspectRequest) String() string {
 func (*InspectRequest) ProtoMessage() {}
 
 func (x *InspectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[5]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,7 +469,7 @@ func (x *InspectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRequest.ProtoReflect.Descriptor instead.
 func (*InspectRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{5}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{6}
 }
 
 // InspectResponse is the live inventory. meta is diagnostic detail and never
@@ -409,7 +485,7 @@ type InspectResponse struct {
 
 func (x *InspectResponse) Reset() {
 	*x = InspectResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[6]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -421,7 +497,7 @@ func (x *InspectResponse) String() string {
 func (*InspectResponse) ProtoMessage() {}
 
 func (x *InspectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[6]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -434,7 +510,7 @@ func (x *InspectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectResponse.ProtoReflect.Descriptor instead.
 func (*InspectResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{6}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *InspectResponse) GetFingerprint() string {
@@ -467,7 +543,7 @@ type PlanRequest struct {
 
 func (x *PlanRequest) Reset() {
 	*x = PlanRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[7]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +555,7 @@ func (x *PlanRequest) String() string {
 func (*PlanRequest) ProtoMessage() {}
 
 func (x *PlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[7]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +568,7 @@ func (x *PlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
 func (*PlanRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{7}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PlanRequest) GetDesired() *DesiredState {
@@ -517,7 +593,7 @@ type PlanResponse struct {
 
 func (x *PlanResponse) Reset() {
 	*x = PlanResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[8]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +605,7 @@ func (x *PlanResponse) String() string {
 func (*PlanResponse) ProtoMessage() {}
 
 func (x *PlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[8]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +618,7 @@ func (x *PlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
 func (*PlanResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{8}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PlanResponse) GetChanges() bool {
@@ -586,7 +662,7 @@ type ApplyRequest struct {
 
 func (x *ApplyRequest) Reset() {
 	*x = ApplyRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[9]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +674,7 @@ func (x *ApplyRequest) String() string {
 func (*ApplyRequest) ProtoMessage() {}
 
 func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[9]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +687,7 @@ func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyRequest.ProtoReflect.Descriptor instead.
 func (*ApplyRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{9}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ApplyRequest) GetDesired() *DesiredState {
@@ -642,7 +718,7 @@ type ApplyResponse struct {
 
 func (x *ApplyResponse) Reset() {
 	*x = ApplyResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[10]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -654,7 +730,7 @@ func (x *ApplyResponse) String() string {
 func (*ApplyResponse) ProtoMessage() {}
 
 func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[10]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -667,7 +743,7 @@ func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyResponse.ProtoReflect.Descriptor instead.
 func (*ApplyResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{10}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ApplyResponse) GetChanged() bool {
@@ -702,7 +778,7 @@ type ObserveRequest struct {
 
 func (x *ObserveRequest) Reset() {
 	*x = ObserveRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[11]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -714,7 +790,7 @@ func (x *ObserveRequest) String() string {
 func (*ObserveRequest) ProtoMessage() {}
 
 func (x *ObserveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[11]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -727,7 +803,7 @@ func (x *ObserveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObserveRequest.ProtoReflect.Descriptor instead.
 func (*ObserveRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{11}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ObserveRequest) GetHandle() string {
@@ -748,7 +824,7 @@ type ObserveResponse struct {
 
 func (x *ObserveResponse) Reset() {
 	*x = ObserveResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[12]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -760,7 +836,7 @@ func (x *ObserveResponse) String() string {
 func (*ObserveResponse) ProtoMessage() {}
 
 func (x *ObserveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[12]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -773,7 +849,7 @@ func (x *ObserveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObserveResponse.ProtoReflect.Descriptor instead.
 func (*ObserveResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{12}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ObserveResponse) GetFingerprint() string {
@@ -809,7 +885,7 @@ type RollbackRequest struct {
 
 func (x *RollbackRequest) Reset() {
 	*x = RollbackRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[13]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -821,7 +897,7 @@ func (x *RollbackRequest) String() string {
 func (*RollbackRequest) ProtoMessage() {}
 
 func (x *RollbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[13]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -834,7 +910,7 @@ func (x *RollbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackRequest.ProtoReflect.Descriptor instead.
 func (*RollbackRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{13}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RollbackRequest) GetHandle() string {
@@ -854,7 +930,7 @@ type RollbackResponse struct {
 
 func (x *RollbackResponse) Reset() {
 	*x = RollbackResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[14]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +942,7 @@ func (x *RollbackResponse) String() string {
 func (*RollbackResponse) ProtoMessage() {}
 
 func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[14]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +955,7 @@ func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackResponse.ProtoReflect.Descriptor instead.
 func (*RollbackResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{14}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RollbackResponse) GetChanged() bool {
@@ -905,7 +981,7 @@ type PromoteRequest struct {
 
 func (x *PromoteRequest) Reset() {
 	*x = PromoteRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[15]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -917,7 +993,7 @@ func (x *PromoteRequest) String() string {
 func (*PromoteRequest) ProtoMessage() {}
 
 func (x *PromoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[15]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -930,7 +1006,7 @@ func (x *PromoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteRequest.ProtoReflect.Descriptor instead.
 func (*PromoteRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{15}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PromoteRequest) GetHandle() string {
@@ -949,7 +1025,7 @@ type PromoteResponse struct {
 
 func (x *PromoteResponse) Reset() {
 	*x = PromoteResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[16]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +1037,7 @@ func (x *PromoteResponse) String() string {
 func (*PromoteResponse) ProtoMessage() {}
 
 func (x *PromoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[16]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +1050,7 @@ func (x *PromoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteResponse.ProtoReflect.Descriptor instead.
 func (*PromoteResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{16}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PromoteResponse) GetDetail() string {
@@ -993,7 +1069,7 @@ type DetectDriftRequest struct {
 
 func (x *DetectDriftRequest) Reset() {
 	*x = DetectDriftRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[17]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +1081,7 @@ func (x *DetectDriftRequest) String() string {
 func (*DetectDriftRequest) ProtoMessage() {}
 
 func (x *DetectDriftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[17]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +1094,7 @@ func (x *DetectDriftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectDriftRequest.ProtoReflect.Descriptor instead.
 func (*DetectDriftRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{17}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DetectDriftRequest) GetDesired() *DesiredState {
@@ -1038,7 +1114,7 @@ type DetectDriftResponse struct {
 
 func (x *DetectDriftResponse) Reset() {
 	*x = DetectDriftResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[18]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1050,7 +1126,7 @@ func (x *DetectDriftResponse) String() string {
 func (*DetectDriftResponse) ProtoMessage() {}
 
 func (x *DetectDriftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[18]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1063,7 +1139,7 @@ func (x *DetectDriftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectDriftResponse.ProtoReflect.Descriptor instead.
 func (*DetectDriftResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{18}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DetectDriftResponse) GetDrifted() bool {
@@ -1088,7 +1164,7 @@ type PruneRequest struct {
 
 func (x *PruneRequest) Reset() {
 	*x = PruneRequest{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[19]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1100,7 +1176,7 @@ func (x *PruneRequest) String() string {
 func (*PruneRequest) ProtoMessage() {}
 
 func (x *PruneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[19]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1113,7 +1189,7 @@ func (x *PruneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneRequest.ProtoReflect.Descriptor instead.
 func (*PruneRequest) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{19}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{20}
 }
 
 // PruneResponse reports how many owned resources were removed. Pruning an
@@ -1128,7 +1204,7 @@ type PruneResponse struct {
 
 func (x *PruneResponse) Reset() {
 	*x = PruneResponse{}
-	mi := &file_rollops_target_v2_target_proto_msgTypes[20]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1140,7 +1216,7 @@ func (x *PruneResponse) String() string {
 func (*PruneResponse) ProtoMessage() {}
 
 func (x *PruneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rollops_target_v2_target_proto_msgTypes[20]
+	mi := &file_rollops_target_v2_target_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1153,7 +1229,7 @@ func (x *PruneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneResponse.ProtoReflect.Descriptor instead.
 func (*PruneResponse) Descriptor() ([]byte, []int) {
-	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{20}
+	return file_rollops_target_v2_target_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PruneResponse) GetRemoved() int32 {
@@ -1175,7 +1251,14 @@ const file_rollops_target_v2_target_proto_rawDesc = "" +
 	"\x06labels\x18\x04 \x03(\v2+.rollops.target.v2.DesiredState.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x80\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"z\n" +
+	"\vTargetError\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
+	"\x02op\x18\x02 \x01(\tR\x02op\x12\x1e\n" +
+	"\n" +
+	"capability\x18\x03 \x01(\tR\n" +
+	"capability\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"\x80\x01\n" +
 	"\bResource\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -1265,62 +1348,63 @@ func file_rollops_target_v2_target_proto_rawDescGZIP() []byte {
 }
 
 var file_rollops_target_v2_target_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_rollops_target_v2_target_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_rollops_target_v2_target_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_rollops_target_v2_target_proto_goTypes = []any{
 	(HealthState)(0),                // 0: rollops.target.v2.HealthState
 	(*DesiredState)(nil),            // 1: rollops.target.v2.DesiredState
-	(*Resource)(nil),                // 2: rollops.target.v2.Resource
-	(*HealthStatus)(nil),            // 3: rollops.target.v2.HealthStatus
-	(*GetCapabilitiesRequest)(nil),  // 4: rollops.target.v2.GetCapabilitiesRequest
-	(*GetCapabilitiesResponse)(nil), // 5: rollops.target.v2.GetCapabilitiesResponse
-	(*InspectRequest)(nil),          // 6: rollops.target.v2.InspectRequest
-	(*InspectResponse)(nil),         // 7: rollops.target.v2.InspectResponse
-	(*PlanRequest)(nil),             // 8: rollops.target.v2.PlanRequest
-	(*PlanResponse)(nil),            // 9: rollops.target.v2.PlanResponse
-	(*ApplyRequest)(nil),            // 10: rollops.target.v2.ApplyRequest
-	(*ApplyResponse)(nil),           // 11: rollops.target.v2.ApplyResponse
-	(*ObserveRequest)(nil),          // 12: rollops.target.v2.ObserveRequest
-	(*ObserveResponse)(nil),         // 13: rollops.target.v2.ObserveResponse
-	(*RollbackRequest)(nil),         // 14: rollops.target.v2.RollbackRequest
-	(*RollbackResponse)(nil),        // 15: rollops.target.v2.RollbackResponse
-	(*PromoteRequest)(nil),          // 16: rollops.target.v2.PromoteRequest
-	(*PromoteResponse)(nil),         // 17: rollops.target.v2.PromoteResponse
-	(*DetectDriftRequest)(nil),      // 18: rollops.target.v2.DetectDriftRequest
-	(*DetectDriftResponse)(nil),     // 19: rollops.target.v2.DetectDriftResponse
-	(*PruneRequest)(nil),            // 20: rollops.target.v2.PruneRequest
-	(*PruneResponse)(nil),           // 21: rollops.target.v2.PruneResponse
-	nil,                             // 22: rollops.target.v2.DesiredState.LabelsEntry
-	nil,                             // 23: rollops.target.v2.InspectResponse.MetaEntry
-	nil,                             // 24: rollops.target.v2.ObserveResponse.MetaEntry
+	(*TargetError)(nil),             // 2: rollops.target.v2.TargetError
+	(*Resource)(nil),                // 3: rollops.target.v2.Resource
+	(*HealthStatus)(nil),            // 4: rollops.target.v2.HealthStatus
+	(*GetCapabilitiesRequest)(nil),  // 5: rollops.target.v2.GetCapabilitiesRequest
+	(*GetCapabilitiesResponse)(nil), // 6: rollops.target.v2.GetCapabilitiesResponse
+	(*InspectRequest)(nil),          // 7: rollops.target.v2.InspectRequest
+	(*InspectResponse)(nil),         // 8: rollops.target.v2.InspectResponse
+	(*PlanRequest)(nil),             // 9: rollops.target.v2.PlanRequest
+	(*PlanResponse)(nil),            // 10: rollops.target.v2.PlanResponse
+	(*ApplyRequest)(nil),            // 11: rollops.target.v2.ApplyRequest
+	(*ApplyResponse)(nil),           // 12: rollops.target.v2.ApplyResponse
+	(*ObserveRequest)(nil),          // 13: rollops.target.v2.ObserveRequest
+	(*ObserveResponse)(nil),         // 14: rollops.target.v2.ObserveResponse
+	(*RollbackRequest)(nil),         // 15: rollops.target.v2.RollbackRequest
+	(*RollbackResponse)(nil),        // 16: rollops.target.v2.RollbackResponse
+	(*PromoteRequest)(nil),          // 17: rollops.target.v2.PromoteRequest
+	(*PromoteResponse)(nil),         // 18: rollops.target.v2.PromoteResponse
+	(*DetectDriftRequest)(nil),      // 19: rollops.target.v2.DetectDriftRequest
+	(*DetectDriftResponse)(nil),     // 20: rollops.target.v2.DetectDriftResponse
+	(*PruneRequest)(nil),            // 21: rollops.target.v2.PruneRequest
+	(*PruneResponse)(nil),           // 22: rollops.target.v2.PruneResponse
+	nil,                             // 23: rollops.target.v2.DesiredState.LabelsEntry
+	nil,                             // 24: rollops.target.v2.InspectResponse.MetaEntry
+	nil,                             // 25: rollops.target.v2.ObserveResponse.MetaEntry
 }
 var file_rollops_target_v2_target_proto_depIdxs = []int32{
-	22, // 0: rollops.target.v2.DesiredState.labels:type_name -> rollops.target.v2.DesiredState.LabelsEntry
+	23, // 0: rollops.target.v2.DesiredState.labels:type_name -> rollops.target.v2.DesiredState.LabelsEntry
 	0,  // 1: rollops.target.v2.HealthStatus.state:type_name -> rollops.target.v2.HealthState
-	2,  // 2: rollops.target.v2.InspectResponse.resources:type_name -> rollops.target.v2.Resource
-	23, // 3: rollops.target.v2.InspectResponse.meta:type_name -> rollops.target.v2.InspectResponse.MetaEntry
+	3,  // 2: rollops.target.v2.InspectResponse.resources:type_name -> rollops.target.v2.Resource
+	24, // 3: rollops.target.v2.InspectResponse.meta:type_name -> rollops.target.v2.InspectResponse.MetaEntry
 	1,  // 4: rollops.target.v2.PlanRequest.desired:type_name -> rollops.target.v2.DesiredState
 	1,  // 5: rollops.target.v2.ApplyRequest.desired:type_name -> rollops.target.v2.DesiredState
-	3,  // 6: rollops.target.v2.ObserveResponse.health:type_name -> rollops.target.v2.HealthStatus
-	24, // 7: rollops.target.v2.ObserveResponse.meta:type_name -> rollops.target.v2.ObserveResponse.MetaEntry
+	4,  // 6: rollops.target.v2.ObserveResponse.health:type_name -> rollops.target.v2.HealthStatus
+	25, // 7: rollops.target.v2.ObserveResponse.meta:type_name -> rollops.target.v2.ObserveResponse.MetaEntry
 	1,  // 8: rollops.target.v2.DetectDriftRequest.desired:type_name -> rollops.target.v2.DesiredState
-	4,  // 9: rollops.target.v2.Target.GetCapabilities:input_type -> rollops.target.v2.GetCapabilitiesRequest
-	6,  // 10: rollops.target.v2.Target.Inspect:input_type -> rollops.target.v2.InspectRequest
-	8,  // 11: rollops.target.v2.Target.Plan:input_type -> rollops.target.v2.PlanRequest
-	10, // 12: rollops.target.v2.Target.Apply:input_type -> rollops.target.v2.ApplyRequest
-	12, // 13: rollops.target.v2.Target.Observe:input_type -> rollops.target.v2.ObserveRequest
-	14, // 14: rollops.target.v2.Target.Rollback:input_type -> rollops.target.v2.RollbackRequest
-	16, // 15: rollops.target.v2.Target.Promote:input_type -> rollops.target.v2.PromoteRequest
-	18, // 16: rollops.target.v2.Target.DetectDrift:input_type -> rollops.target.v2.DetectDriftRequest
-	20, // 17: rollops.target.v2.Target.Prune:input_type -> rollops.target.v2.PruneRequest
-	5,  // 18: rollops.target.v2.Target.GetCapabilities:output_type -> rollops.target.v2.GetCapabilitiesResponse
-	7,  // 19: rollops.target.v2.Target.Inspect:output_type -> rollops.target.v2.InspectResponse
-	9,  // 20: rollops.target.v2.Target.Plan:output_type -> rollops.target.v2.PlanResponse
-	11, // 21: rollops.target.v2.Target.Apply:output_type -> rollops.target.v2.ApplyResponse
-	13, // 22: rollops.target.v2.Target.Observe:output_type -> rollops.target.v2.ObserveResponse
-	15, // 23: rollops.target.v2.Target.Rollback:output_type -> rollops.target.v2.RollbackResponse
-	17, // 24: rollops.target.v2.Target.Promote:output_type -> rollops.target.v2.PromoteResponse
-	19, // 25: rollops.target.v2.Target.DetectDrift:output_type -> rollops.target.v2.DetectDriftResponse
-	21, // 26: rollops.target.v2.Target.Prune:output_type -> rollops.target.v2.PruneResponse
+	5,  // 9: rollops.target.v2.Target.GetCapabilities:input_type -> rollops.target.v2.GetCapabilitiesRequest
+	7,  // 10: rollops.target.v2.Target.Inspect:input_type -> rollops.target.v2.InspectRequest
+	9,  // 11: rollops.target.v2.Target.Plan:input_type -> rollops.target.v2.PlanRequest
+	11, // 12: rollops.target.v2.Target.Apply:input_type -> rollops.target.v2.ApplyRequest
+	13, // 13: rollops.target.v2.Target.Observe:input_type -> rollops.target.v2.ObserveRequest
+	15, // 14: rollops.target.v2.Target.Rollback:input_type -> rollops.target.v2.RollbackRequest
+	17, // 15: rollops.target.v2.Target.Promote:input_type -> rollops.target.v2.PromoteRequest
+	19, // 16: rollops.target.v2.Target.DetectDrift:input_type -> rollops.target.v2.DetectDriftRequest
+	21, // 17: rollops.target.v2.Target.Prune:input_type -> rollops.target.v2.PruneRequest
+	6,  // 18: rollops.target.v2.Target.GetCapabilities:output_type -> rollops.target.v2.GetCapabilitiesResponse
+	8,  // 19: rollops.target.v2.Target.Inspect:output_type -> rollops.target.v2.InspectResponse
+	10, // 20: rollops.target.v2.Target.Plan:output_type -> rollops.target.v2.PlanResponse
+	12, // 21: rollops.target.v2.Target.Apply:output_type -> rollops.target.v2.ApplyResponse
+	14, // 22: rollops.target.v2.Target.Observe:output_type -> rollops.target.v2.ObserveResponse
+	16, // 23: rollops.target.v2.Target.Rollback:output_type -> rollops.target.v2.RollbackResponse
+	18, // 24: rollops.target.v2.Target.Promote:output_type -> rollops.target.v2.PromoteResponse
+	20, // 25: rollops.target.v2.Target.DetectDrift:output_type -> rollops.target.v2.DetectDriftResponse
+	22, // 26: rollops.target.v2.Target.Prune:output_type -> rollops.target.v2.PruneResponse
 	18, // [18:27] is the sub-list for method output_type
 	9,  // [9:18] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
@@ -1339,7 +1423,7 @@ func file_rollops_target_v2_target_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rollops_target_v2_target_proto_rawDesc), len(file_rollops_target_v2_target_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
