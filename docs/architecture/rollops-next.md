@@ -1124,6 +1124,45 @@ verification:
   onInconclusive: pause
 ```
 
+### 11.5 Where the verdict becomes a status
+
+`pkg/verify/v1.Verifier` is **one check**. The application layer's port is the
+whole set: it takes the deployment under observation and returns every check's
+answer beside the verifier that gave it, rather than one combined verdict. The
+combination is `Combine` over those answers, called in the application layer —
+so §11.3's "`inconclusive` **MUST NOT** silently become `pass`" is enforced
+where the verdict turns into a status somebody acts on rather than inside
+whichever adapter happened to run the checks. A verification that ran no checks
+observed nothing, which is not the same as observing that everything is well,
+and so is not a pass either.
+
+Verifying is the one deployment verb that dispatches to an outside system
+synchronously, and deliberately: a verifier observes and changes nothing, which
+is why planning may call a planner from the same place. Promoting and rolling
+back record an intent and stop — the application layer never mutates a
+substrate.
+
+A pass leaves the deployment `verifying`. What finishes a verified deployment
+is promoting it, and that is a separate decision and a separate verb. Anything
+else pauses it: §11.4 makes `onFailure` configurable — rollback, pause, promote
+anyway — so rolling back from here would implement one branch of a policy as
+though it were the only one. Pausing discards nothing and leaves every edge
+open, and applying `onFailure`/`onInconclusive` is a layer above this one.
+
+Starting and settling are two transactions. Holding one open across a check
+that may query Prometheus for ten minutes would block every other write to the
+deployment; a crash in between leaves the deployment `verifying`, which is the
+status that says verification is outstanding. A verifier that returns an error
+did not return a verdict, and a deployment is never paused on the strength of a
+check that never ran.
+
+The completion event carries the verdicts and the measurements and neither the
+reason nor the evidence. The reason is prose written for a person and the
+evidence is a URI somebody constructed — the one field in a result a credential
+could plausibly arrive in, which is why `EvidenceRef` is a reference rather than
+content in the first place (INV-012). The verdicts and the measurements are what
+a query matches on; the verification run holds the rest.
+
 ────────
 
 ## 12. Policy Engine

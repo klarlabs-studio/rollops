@@ -185,6 +185,33 @@ func (s *Service) intent(
 	return es[0].CorrelationID, es[0].ID, nil
 }
 
+// recordAgainst files one event against a deployment, on the chain its plan
+// started. Every deployment event shares this shape — only the type and the
+// payload differ — and writing the envelope out at each call site is how a
+// correlation eventually gets dropped and an act falls off the timeline it
+// belongs to (§16.4).
+func (s *Service) recordAgainst(
+	ctx context.Context,
+	by identity.Principal,
+	d deployment.Deployment,
+	typ event.Type,
+	payload json.RawMessage,
+) error {
+	correlation, causation, err := s.intent(ctx, d.PlanID)
+	if err != nil {
+		return err
+	}
+	_, err = s.append(ctx, by, event.Event{
+		Type:          typ,
+		AggregateType: event.AggregateDeployment,
+		AggregateID:   string(d.ID),
+		CorrelationID: correlation,
+		CausationID:   causation,
+		Payload:       payload,
+	})
+	return err
+}
+
 // append stamps and writes one event. It exists so that no call site can forget
 // to run an envelope through event.New, which is where attribution and
 // redaction are applied (INV-005, INV-012).

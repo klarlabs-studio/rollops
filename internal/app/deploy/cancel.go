@@ -102,17 +102,5 @@ func (s *Service) recordCancellation(
 	if err != nil {
 		return err
 	}
-	correlation, causation, err := s.intent(ctx, d.PlanID)
-	if err != nil {
-		return err
-	}
-	_, err = s.append(ctx, cmd.Actor, event.Event{
-		Type:          event.DeploymentCancelled,
-		AggregateType: event.AggregateDeployment,
-		AggregateID:   string(d.ID),
-		CorrelationID: correlation,
-		CausationID:   causation,
-		Payload:       payload,
-	})
-	return err
+	return s.recordAgainst(ctx, cmd.Actor, d, event.DeploymentCancelled, payload)
 }

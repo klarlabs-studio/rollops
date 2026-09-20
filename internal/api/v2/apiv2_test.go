@@ -35,10 +35,10 @@ type movableClock struct{ now time.Time }
 
 func (c *movableClock) Now() time.Time { return c.now }
 
-// stubPlanner and stubPolicy stand in for the two adapters a deploy.Service
-// dispatches to. Everything else behind the write side is the real thing:
-// these tests are about what the API does with an answer, and a fake
-// deploy.Service would let the API disagree with it.
+// stubPlanner, stubPolicy and stubVerifier stand in for the adapters a
+// deploy.Service dispatches to. Everything else behind the write side is the
+// real thing: these tests are about what the API does with an answer, and a
+// fake deploy.Service would let the API disagree with it.
 type stubPlanner struct {
 	proposal deploy.Proposal
 	err      error
@@ -57,6 +57,17 @@ type stubPolicy struct {
 
 func (p *stubPolicy) Evaluate(context.Context, deploy.PolicyRequest) (policy.Decision, error) {
 	return p.decision, p.err
+}
+
+type stubVerifier struct {
+	checks []deploy.CheckResult
+	err    error
+}
+
+func (v *stubVerifier) Verify(
+	context.Context, deploy.VerificationRequest,
+) ([]deploy.CheckResult, error) {
+	return v.checks, v.err
 }
 
 // stubDeployer stands where a test never reaches the write side. New refuses a
@@ -155,6 +166,7 @@ func setup(t *testing.T) *world {
 	ids := identity.NewGenerator()
 	proposals := &stubPlanner{proposal: deploy.Proposal{Operations: oneApply()}}
 	decisions := &stubPolicy{decision: allowed()}
+	checks := &stubVerifier{}
 
 	deployer, err := deploy.New(deploy.Config{
 		Transactor:   store,
@@ -165,6 +177,7 @@ func setup(t *testing.T) *world {
 		Environments: store.Environments(),
 		Planner:      proposals,
 		Policy:       decisions,
+		Verifier:     checks,
 		Clock:        clock,
 		IDs:          ids,
 		Events:       store.Events(),

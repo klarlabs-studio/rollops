@@ -108,6 +108,7 @@ type Config struct {
 	Environments port.EnvironmentRepository
 	Planner      Planner
 	Policy       PolicyEngine
+	Verifier     Verifier
 	Clock        identity.Clock
 	IDs          identity.Generator
 
@@ -142,6 +143,7 @@ func New(cfg Config) (*Service, error) {
 		{"environment repository", cfg.Environments != nil},
 		{"planner", cfg.Planner != nil},
 		{"policy engine", cfg.Policy != nil},
+		{"verifier", cfg.Verifier != nil},
 		{"clock", cfg.Clock != nil},
 		{"id generator", cfg.IDs != nil},
 		{"event log", cfg.Events != nil},
