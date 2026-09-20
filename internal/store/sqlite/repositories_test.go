@@ -21,10 +21,13 @@ func TestSQLiteStoreSatisfiesThePorts(t *testing.T) {
 			Releases:     s.Releases(),
 			Plans:        s.Plans(),
 			Deployments:  s.Deployments(),
-			Approvals:    s.Approvals(),
-			Idempotency:  s.Idempotency(),
-			Events:       s.Events(),
-			Tx:           s,
+
+			VerificationRuns: s.VerificationRuns(),
+
+			Approvals:   s.Approvals(),
+			Idempotency: s.Idempotency(),
+			Events:      s.Events(),
+			Tx:          s,
 		}
 	})
 }

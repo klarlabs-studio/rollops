@@ -18,6 +18,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 )
 
 // Projects returns the project repository over this store.
@@ -37,6 +38,11 @@ func (s *Store) Plans() port.PlanRepository { return planRepo{s} }
 
 // Deployments returns the deployment repository over this store.
 func (s *Store) Deployments() port.DeploymentRepository { return deploymentRepo{s} }
+
+// VerificationRuns returns the repository of what the checks said.
+func (s *Store) VerificationRuns() port.VerificationRunRepository {
+	return verificationRunRepo{s}
+}
 
 // Approvals returns the approval repository over this store.
 func (s *Store) Approvals() port.ApprovalRepository { return approvalRepo{s} }
@@ -1257,4 +1263,109 @@ func scanIdempotency(row scanner) (port.IdempotencyRecord, error) {
 		return port.IdempotencyRecord{}, err
 	}
 	return rec, nil
+}
+
+type verificationRunRepo struct{ s *Store }
+
+// Create stores a completed run. Nothing is redacted beyond the actor: unlike a
+// plan, a run deliberately keeps the reason a verifier gave and the evidence it
+// pointed at. The line INV-012 draws for verification is at the event log,
+// which can never be corrected, and not here.
+func (r verificationRunRepo) Create(ctx context.Context, run verification.Run) error {
+	if err := run.Validate(); err != nil {
+		return err
+	}
+	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+		q := r.s.conn(ctx)
+		// A verdict about nothing is not evidence, and a run whose deployment
+		// is missing is a row no read could ever reach.
+		if err := mustExist(ctx, q,
+			`SELECT 1 FROM deployments WHERE id = ?`, string(run.DeploymentID),
+			fmt.Sprintf("deployment %s", run.DeploymentID),
+		); err != nil {
+			return err
+		}
+		if err := mustNotExist(ctx, q,
+			`SELECT 1 FROM verification_runs WHERE id = ?`, string(run.ID),
+			fmt.Sprintf("verification run %s", run.ID),
+		); err != nil {
+			return err
+		}
+		checks, err := encodeChecks(run.Checks)
+		if err != nil {
+			return err
+		}
+		actor, err := encodePrincipal(run.Actor)
+		if err != nil {
+			return err
+		}
+		_, err = q.ExecContext(ctx,
+			`INSERT INTO verification_runs
+			   (id, deployment_id, plan_id, checks, started_at, finished_at, actor)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			string(run.ID), string(run.DeploymentID), string(run.PlanID), checks,
+			encodeTime(run.StartedAt), encodeTime(run.FinishedAt), actor,
+		)
+		return wrap("insert verification run", err)
+	})
+}
+
+func (r verificationRunRepo) Get(
+	ctx context.Context, id identity.VerificationRunID,
+) (verification.Run, error) {
+	row := r.s.conn(ctx).QueryRowContext(ctx,
+		verificationRunColumns+` WHERE id = ?`, string(id))
+	run, err := scanVerificationRun(row)
+	if err != nil {
+		return verification.Run{}, notFoundAs(err, fmt.Sprintf("verification run %s", id))
+	}
+	return run, nil
+}
+
+// ListForDeployment walks seq, which is the order the runs were recorded. A
+// deployment can be verified more than once and which answer came last is the
+// whole question an operator is asking.
+func (r verificationRunRepo) ListForDeployment(
+	ctx context.Context, d identity.DeploymentID,
+) ([]verification.Run, error) {
+	rows, err := r.s.conn(ctx).QueryContext(ctx,
+		verificationRunColumns+` WHERE deployment_id = ? ORDER BY seq`, string(d))
+	if err != nil {
+		return nil, wrap("list verification runs", err)
+	}
+	return collect(rows, scanVerificationRun)
+}
+
+const verificationRunColumns = `SELECT id, deployment_id, plan_id, checks,
+	started_at, finished_at, actor FROM verification_runs`
+
+func scanVerificationRun(row scanner) (verification.Run, error) {
+	var (
+		run                         verification.Run
+		id, deploymentID, planID    string
+		checks, began, ended, actor string
+	)
+	if err := row.Scan(
+		&id, &deploymentID, &planID, &checks, &began, &ended, &actor,
+	); err != nil {
+		return verification.Run{}, err
+	}
+	run.ID = identity.VerificationRunID(id)
+	run.DeploymentID = identity.DeploymentID(deploymentID)
+	run.PlanID = identity.PlanID(planID)
+
+	var err error
+	if run.Checks, err = decodeChecks(checks); err != nil {
+		return verification.Run{}, err
+	}
+	if run.StartedAt, err = decodeTime(began); err != nil {
+		return verification.Run{}, err
+	}
+	if run.FinishedAt, err = decodeTime(ended); err != nil {
+		return verification.Run{}, err
+	}
+	if run.Actor, err = decodePrincipal(actor); err != nil {
+		return verification.Run{}, err
+	}
+	return run, nil
 }

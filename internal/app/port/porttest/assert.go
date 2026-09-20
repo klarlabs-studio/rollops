@@ -2,6 +2,7 @@ package porttest
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 )
 
 // An aggregate with no labels reads back as an aggregate with no labels,
@@ -431,5 +433,71 @@ func assertDeployment(t *testing.T, got, want deployment.Deployment) {
 	}
 	if err := got.Validate(); err != nil {
 		t.Errorf("the stored deployment is no longer valid: %v", err)
+	}
+}
+
+func assertVerificationRun(t *testing.T, got, want verification.Run) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
+	}
+	if got.DeploymentID != want.DeploymentID {
+		t.Errorf("DeploymentID = %q, want %q", got.DeploymentID, want.DeploymentID)
+	}
+	// Without the plan there is nothing saying what the checks were supposed to
+	// be observing, and a verdict nobody can tie to a plan cannot be read back
+	// as evidence for the promotion it allowed.
+	if got.PlanID != want.PlanID {
+		t.Errorf("PlanID = %q, want %q", got.PlanID, want.PlanID)
+	}
+	// Both ends of the window, because a measurement is only interpretable over
+	// one: a query across ten minutes says something a probe that returned
+	// instantly does not.
+	if !sameTime(got.StartedAt, want.StartedAt) {
+		t.Errorf("StartedAt = %s, want %s", got.StartedAt, want.StartedAt)
+	}
+	if !sameTime(got.FinishedAt, want.FinishedAt) {
+		t.Errorf("FinishedAt = %s, want %s", got.FinishedAt, want.FinishedAt)
+	}
+	if got.Actor.ID != want.Actor.ID || got.Actor.Type != want.Actor.Type {
+		t.Errorf("Actor = %+v, want %+v", got.Actor, want.Actor)
+	}
+	if len(got.Checks) != len(want.Checks) {
+		t.Fatalf("read back %d checks, want %d", len(got.Checks), len(want.Checks))
+	}
+	for i := range want.Checks {
+		assertCheck(t, i, got.Checks[i], want.Checks[i])
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("the stored run is no longer a complete record: %v", err)
+	}
+}
+
+func assertCheck(t *testing.T, i int, got, want verification.Check) {
+	t.Helper()
+	// A verdict is only actionable if you know whose it is: an operator reading
+	// a fail has to know which check to go and look at.
+	if got.Verifier != want.Verifier {
+		t.Errorf("check %d Verifier = %+v, want %+v", i, got.Verifier, want.Verifier)
+	}
+	if got.Result.Verdict != want.Result.Verdict {
+		t.Errorf("check %d Verdict = %q, want %q", i, got.Result.Verdict, want.Result.Verdict)
+	}
+	if got.Result.Reason != want.Result.Reason {
+		t.Errorf("check %d Reason = %q, want %q", i, got.Result.Reason, want.Result.Reason)
+	}
+	if !sameTime(got.Result.StartedAt, want.Result.StartedAt) {
+		t.Errorf("check %d StartedAt = %s, want %s", i, got.Result.StartedAt, want.Result.StartedAt)
+	}
+	if !sameTime(got.Result.FinishedAt, want.Result.FinishedAt) {
+		t.Errorf("check %d FinishedAt = %s, want %s",
+			i, got.Result.FinishedAt, want.Result.FinishedAt)
+	}
+	if !slices.Equal(got.Result.Measurements, want.Result.Measurements) {
+		t.Errorf("check %d Measurements = %+v, want %+v",
+			i, got.Result.Measurements, want.Result.Measurements)
+	}
+	if !slices.Equal(got.Result.Evidence, want.Result.Evidence) {
+		t.Errorf("check %d Evidence = %+v, want %+v", i, got.Result.Evidence, want.Result.Evidence)
 	}
 }

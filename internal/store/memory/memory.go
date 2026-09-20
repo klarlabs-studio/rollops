@@ -22,6 +22,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 )
 
 // Store holds every aggregate and hands out the repositories over them. One
@@ -44,6 +45,11 @@ type state struct {
 	releases     map[identity.ReleaseID]release.Release
 	plans        map[identity.PlanID]plan.DeploymentPlan
 	deployments  map[identity.DeploymentID]deployment.Deployment
+
+	// verifications is keyed by id rather than grouped by deployment, because a
+	// run is fetched by identity as often as it is listed: a replayed verify
+	// call reads back the run it already produced.
+	verifications map[identity.VerificationRunID]verification.Run
 
 	// approvals is a slice because approvals are append-only and read in the
 	// order they were given: who answered first is part of the record.
@@ -69,6 +75,8 @@ func newState() *state {
 		plans:        map[identity.PlanID]plan.DeploymentPlan{},
 		deployments:  map[identity.DeploymentID]deployment.Deployment{},
 		idempotency:  map[idempotencyKey]port.IdempotencyRecord{},
+
+		verifications: map[identity.VerificationRunID]verification.Run{},
 	}
 }
 
@@ -86,9 +94,12 @@ func (s *state) clone() *state {
 		releases:     maps.Clone(s.releases),
 		plans:        maps.Clone(s.plans),
 		deployments:  maps.Clone(s.deployments),
-		approvals:    slices.Clone(s.approvals),
-		idempotency:  maps.Clone(s.idempotency),
-		events:       slices.Clone(s.events),
+
+		verifications: maps.Clone(s.verifications),
+
+		approvals:   slices.Clone(s.approvals),
+		idempotency: maps.Clone(s.idempotency),
+		events:      slices.Clone(s.events),
 	}
 }
 
@@ -163,6 +174,9 @@ func (s *Store) Plans() port.PlanRepository { return plans{s} }
 
 // Deployments returns the deployment repository over this store.
 func (s *Store) Deployments() port.DeploymentRepository { return deployments{s} }
+
+// VerificationRuns returns the repository of what the checks said.
+func (s *Store) VerificationRuns() port.VerificationRunRepository { return verifications{s} }
 
 // Events returns the domain event log over this store.
 // Approvals returns the approval repository.

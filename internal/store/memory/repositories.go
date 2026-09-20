@@ -17,6 +17,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 )
 
 // Aggregates are copied on the way in and on the way out. A store that handed
@@ -621,6 +622,74 @@ func (r approvals) ListForSubject(ctx context.Context, kind, id string) ([]polic
 		return nil
 	})
 	return out, err
+}
+
+type verifications struct{ s *Store }
+
+// Create stores a completed run. Nothing is redacted on the way in beyond the
+// actor: unlike a plan, a run deliberately keeps the reason a verifier gave and
+// the evidence it pointed at. The line INV-012 draws for verification is at the
+// event log, which can never be corrected, and not here.
+func (r verifications) Create(ctx context.Context, run verification.Run) error {
+	return r.s.write(ctx, func(st *state) error {
+		if err := run.Validate(); err != nil {
+			return err
+		}
+		if _, ok := st.deployments[run.DeploymentID]; !ok {
+			return fmt.Errorf("deployment %s: %w", run.DeploymentID, port.ErrNotFound)
+		}
+		if _, taken := st.verifications[run.ID]; taken {
+			return fmt.Errorf("verification run %s: %w", run.ID, port.ErrAlreadyExists)
+		}
+		run.Actor = run.Actor.Redacted()
+		st.verifications[run.ID] = copyRun(run)
+		return nil
+	})
+}
+
+func (r verifications) Get(
+	ctx context.Context, id identity.VerificationRunID,
+) (verification.Run, error) {
+	var out verification.Run
+	err := r.s.read(ctx, func(st *state) error {
+		run, ok := st.verifications[id]
+		if !ok {
+			return fmt.Errorf("verification run %s: %w", id, port.ErrNotFound)
+		}
+		out = copyRun(run)
+		return nil
+	})
+	return out, err
+}
+
+// ListForDeployment returns the deployment's runs oldest first. Identifiers are
+// UUIDv7, so ordering by id is ordering by when the run was created.
+func (r verifications) ListForDeployment(
+	ctx context.Context, d identity.DeploymentID,
+) ([]verification.Run, error) {
+	var out []verification.Run
+	err := r.s.read(ctx, func(st *state) error {
+		for _, run := range sortedByID(st.verifications, func(run verification.Run) bool {
+			return run.DeploymentID == d
+		}) {
+			out = append(out, copyRun(run))
+		}
+		return nil
+	})
+	return out, err
+}
+
+// copyRun deep-copies a run down to each check's measurements and evidence. A
+// shallow copy would hand back slices the store still holds, and a caller
+// appending to one would be editing persisted state.
+func copyRun(r verification.Run) verification.Run {
+	r.Actor.Claims = maps.Clone(r.Actor.Claims)
+	r.Checks = slices.Clone(r.Checks)
+	for i := range r.Checks {
+		r.Checks[i].Result.Measurements = slices.Clone(r.Checks[i].Result.Measurements)
+		r.Checks[i].Result.Evidence = slices.Clone(r.Checks[i].Result.Evidence)
+	}
+	return r
 }
 
 type idempotency struct{ s *Store }

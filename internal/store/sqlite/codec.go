@@ -13,6 +13,9 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/value"
+	"go.klarlabs.de/rollops/internal/domain/verification"
+
+	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
 // Stored shapes are declared here rather than by tagging the domain types.
@@ -498,4 +501,134 @@ func decodePolicyBindings(s string) ([]environment.PolicyBinding, error) {
 		}
 	}
 	return ps, nil
+}
+
+// A check is stored as a document rather than a table of its own: it is never
+// queried on its own, and the verdict that matters is derived from the whole
+// set by Combine rather than read off any one row.
+type checkRow struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+
+	Verdict      verifyv1.Verdict `json:"verdict"`
+	Measurements []measurementRow `json:"measurements,omitempty"`
+	StartedAt    string           `json:"started_at"`
+	FinishedAt   string           `json:"finished_at"`
+	Reason       string           `json:"reason,omitempty"`
+	Evidence     []evidenceRow    `json:"evidence,omitempty"`
+}
+
+type measurementRow struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+}
+
+type evidenceRow struct {
+	Kind string `json:"kind"`
+	URI  string `json:"uri"`
+}
+
+// encodeChecks stores the verdict as the verifier spelled it, including a word
+// this version does not recognise. What a verifier said is a fact, and refusing
+// to write an unknown one would destroy the only evidence of why the run came
+// out an error — Combine already reads it as one, which is the safe direction.
+func encodeChecks(cs []verification.Check) (string, error) {
+	if len(cs) == 0 {
+		return "[]", nil
+	}
+	rows := make([]checkRow, len(cs))
+	for i, c := range cs {
+		rows[i] = checkRow{
+			Kind:         c.Verifier.Kind,
+			Name:         c.Verifier.Name,
+			Version:      c.Verifier.Version,
+			Verdict:      c.Result.Verdict,
+			Measurements: measurementRows(c.Result.Measurements),
+			StartedAt:    encodeTime(c.Result.StartedAt),
+			FinishedAt:   encodeTime(c.Result.FinishedAt),
+			Reason:       c.Result.Reason,
+			Evidence:     evidenceRows(c.Result.Evidence),
+		}
+	}
+	return encodeJSON(rows, "[]")
+}
+
+func decodeChecks(s string) ([]verification.Check, error) {
+	var rows []checkRow
+	if err := decodeJSON(s, &rows); err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	cs := make([]verification.Check, len(rows))
+	for i, row := range rows {
+		began, err := decodeTime(row.StartedAt)
+		if err != nil {
+			return nil, err
+		}
+		ended, err := decodeTime(row.FinishedAt)
+		if err != nil {
+			return nil, err
+		}
+		cs[i] = verification.Check{
+			Verifier: verifyv1.VerifierMetadata{
+				Kind: row.Kind, Name: row.Name, Version: row.Version,
+			},
+			Result: verifyv1.VerificationResult{
+				Verdict:      row.Verdict,
+				Measurements: measurementsFrom(row.Measurements),
+				StartedAt:    began,
+				FinishedAt:   ended,
+				Reason:       row.Reason,
+				Evidence:     evidenceFrom(row.Evidence),
+			},
+		}
+	}
+	return cs, nil
+}
+
+func measurementRows(ms []verifyv1.Measurement) []measurementRow {
+	if len(ms) == 0 {
+		return nil
+	}
+	rows := make([]measurementRow, len(ms))
+	for i, m := range ms {
+		rows[i] = measurementRow{Name: m.Name, Value: m.Value}
+	}
+	return rows
+}
+
+func measurementsFrom(rows []measurementRow) []verifyv1.Measurement {
+	if len(rows) == 0 {
+		return nil
+	}
+	ms := make([]verifyv1.Measurement, len(rows))
+	for i, row := range rows {
+		ms[i] = verifyv1.Measurement{Name: row.Name, Value: row.Value}
+	}
+	return ms
+}
+
+func evidenceRows(es []verifyv1.EvidenceRef) []evidenceRow {
+	if len(es) == 0 {
+		return nil
+	}
+	rows := make([]evidenceRow, len(es))
+	for i, e := range es {
+		rows[i] = evidenceRow{Kind: e.Kind, URI: e.URI}
+	}
+	return rows
+}
+
+func evidenceFrom(rows []evidenceRow) []verifyv1.EvidenceRef {
+	if len(rows) == 0 {
+		return nil
+	}
+	es := make([]verifyv1.EvidenceRef, len(rows))
+	for i, row := range rows {
+		es[i] = verifyv1.EvidenceRef{Kind: row.Kind, URI: row.URI}
+	}
+	return es
 }

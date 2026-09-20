@@ -24,6 +24,7 @@ import (
 	"go.klarlabs.de/rollops/internal/domain/policy"
 	"go.klarlabs.de/rollops/internal/domain/project"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 )
 
 var (
@@ -181,6 +182,26 @@ type DeploymentRepository interface {
 	// environment is idle — an answer, not a failure, and the caller branches
 	// on it to decide whether a new deployment may start.
 	FindActive(ctx context.Context, e identity.EnvironmentID) (deployment.Deployment, error)
+}
+
+// VerificationRunRepository persists what the checks said about a deployment.
+//
+// There is no Update. A run states what was observed in a window that has
+// closed, and editing one would rewrite an observation — the same reason an
+// approval has none. A verification asked a second time is a second run.
+type VerificationRunRepository interface {
+	// Create stores a completed run. It returns ErrNotFound if the deployment
+	// it names is not stored: a verdict about nothing is not evidence, and
+	// letting one in would leave a row no read could ever reach.
+	Create(ctx context.Context, r verification.Run) error
+
+	Get(ctx context.Context, id identity.VerificationRunID) (verification.Run, error)
+
+	// ListForDeployment returns a deployment's runs, oldest first. Ordering is
+	// part of the contract because a deployment can be verified more than once
+	// — a paused canary that is probed again — and which answer came last is
+	// the whole question an operator is asking.
+	ListForDeployment(ctx context.Context, d identity.DeploymentID) ([]verification.Run, error)
 }
 
 // Page selects a slice of the event log. Every read takes one because §24 asks

@@ -37,10 +37,13 @@ type Repositories struct {
 	Releases     port.ReleaseRepository
 	Plans        port.PlanRepository
 	Deployments  port.DeploymentRepository
-	Approvals    port.ApprovalRepository
-	Idempotency  port.IdempotencyRepository
-	Events       port.EventLog
-	Tx           port.Transactor
+
+	VerificationRuns port.VerificationRunRepository
+
+	Approvals   port.ApprovalRepository
+	Idempotency port.IdempotencyRepository
+	Events      port.EventLog
+	Tx          port.Transactor
 }
 
 // Factory builds an empty set of repositories for one test.
@@ -56,6 +59,7 @@ func Run(t *testing.T, newRepos Factory) {
 		"releases":     runReleases,
 		"plans":        runPlans,
 		"deployments":  runDeployments,
+		"verification": runVerificationRuns,
 		"approvals":    runApprovals,
 		"idempotency":  runIdempotency,
 		"events":       runEvents,
