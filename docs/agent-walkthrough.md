@@ -40,7 +40,7 @@ boolean. See [risk history](risk-history.md).
 ## 2. Escalate — do not apply
 
 If `needs_approval` is true, **stop**. Do not call `rollouts.apply`. A human
-approves via CLI / UI / HTTP (`rollops approve <id>` after an apply that landed
+approves via CLI / UI / HTTP (`rollops rollout approve <id>` after an apply that landed
 `awaiting_approval`, or refuse the change). Agents cannot approve; freeze and
 policy floor still bind.
 

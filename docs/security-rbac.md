@@ -91,7 +91,7 @@ inside the engine path.
 The kill-switch (blocks every apply) is toggled through any interface, gated by
 `rollouts.freeze`:
 
-- CLI: `rollops freeze [reason]` / `rollops unfreeze`
+- CLI: `rollops rollout freeze [reason]` / `rollops rollout unfreeze`
 - gRPC: `Freeze(active, reason)`; REST: `POST /v1/freeze {"active":true,"reason":"…"}`
 - MCP: `rollouts.freeze` tool; UI: the freeze toggle on the dashboard
 

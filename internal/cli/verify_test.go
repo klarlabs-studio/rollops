@@ -33,7 +33,7 @@ func TestCLI_VerifyPrintsEveryGateAndSucceeds(t *testing.T) {
 			{Gate: engine.GateAnalysis, Status: engine.GateSkipped, Detail: "no metric analysis configured"},
 		},
 	}}}
-	if err := app.Run(context.Background(), []string{"verify", "ro-cli"}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "verify", "ro-cli"}); err != nil {
 		t.Fatalf("a passing verify should exit zero: %v", err)
 	}
 	out := buf.String()
@@ -58,7 +58,7 @@ func TestCLI_VerifyFailingGateExitsNonZero(t *testing.T) {
 			{Gate: engine.GateAnalysis, Status: engine.GateNotRun},
 		},
 	}}}
-	err := app.Run(context.Background(), []string{"verify", "ro-cli"})
+	err := app.Run(context.Background(), []string{"rollout", "verify", "ro-cli"})
 	if err == nil {
 		t.Fatal("a failing gate must exit non-zero so `verify && promote` stops")
 	}
@@ -79,7 +79,7 @@ func TestCLI_VerifyFailingGateExitsNonZero(t *testing.T) {
 func TestCLI_VerifyRequiresRolloutID(t *testing.T) {
 	var buf bytes.Buffer
 	app := &App{Out: &buf, Ops: verifyOps{}}
-	if err := app.Run(context.Background(), []string{"verify"}); err == nil {
+	if err := app.Run(context.Background(), []string{"rollout", "verify"}); err == nil {
 		t.Fatal("verify without a rollout id should fail")
 	}
 }
@@ -87,7 +87,7 @@ func TestCLI_VerifyRequiresRolloutID(t *testing.T) {
 func TestCLI_UsageListsVerify(t *testing.T) {
 	var buf bytes.Buffer
 	app := &App{Out: &buf, Ops: verifyOps{}}
-	_ = app.Run(context.Background(), nil)
+	_ = app.Run(context.Background(), []string{"rollout"})
 	if !strings.Contains(buf.String(), "verify <rollout-id>") {
 		t.Errorf("usage should document verify:\n%s", buf.String())
 	}
@@ -116,9 +116,9 @@ func TestCLI_PromoteForceFlag(t *testing.T) {
 		args []string
 		want bool
 	}{
-		{"default is gated", []string{"promote", "ro-cli"}, false},
-		{"--force overrides", []string{"promote", "ro-cli", "--force"}, true},
-		{"-f overrides", []string{"promote", "-f", "ro-cli"}, true},
+		{"default is gated", []string{"rollout", "promote", "ro-cli"}, false},
+		{"--force overrides", []string{"rollout", "promote", "ro-cli", "--force"}, true},
+		{"-f overrides", []string{"rollout", "promote", "-f", "ro-cli"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ops := &promoteOps{}
@@ -138,7 +138,7 @@ func TestCLI_PromoteForceFlag(t *testing.T) {
 func TestCLI_PromoteBlockedByGateExitsNonZero(t *testing.T) {
 	ops := &promoteOps{err: errors.New("engine: promote: health check failed: 503; force the promote to override")}
 	app := &App{Out: &bytes.Buffer{}, Ops: ops}
-	err := app.Run(context.Background(), []string{"promote", "ro-cli"})
+	err := app.Run(context.Background(), []string{"rollout", "promote", "ro-cli"})
 	if err == nil {
 		t.Fatal("a blocked promote must exit non-zero")
 	}

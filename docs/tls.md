@@ -140,7 +140,7 @@ export ROLLOPS_TLS_CERT=/etc/rollops/tls/tls.crt
 export ROLLOPS_TLS_KEY=/etc/rollops/tls/tls.key
 # mTLS:
 export ROLLOPS_TLS_CLIENT_CA=/etc/rollops/tls/ca.crt
-bin/rollops status <rollout-id>
+bin/rollops rollout status <rollout-id>
 ```
 
 ## Issuing client certificates for CLIs and agents

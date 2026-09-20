@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/config"
@@ -159,11 +160,64 @@ func firstLine(s string) string {
 	return s
 }
 
+// rolloutCommands are the operations that drive a rollout config, in the order
+// usage lists them. They all live under `rollops rollout`; the top level checks
+// this set so a habit spelling gets told where its command went rather than
+// "unknown command".
+var rolloutCommands = []string{
+	"plan", "apply", "status", "fleet", "promote", "verify",
+	"pause", "resume", "abort", "approve", "reject",
+	"rollback", "freeze", "unfreeze",
+}
+
+// releaseCommands are the top-level names the release model takes over. They
+// overlap rolloutCommands, which is the whole reason the two need separate
+// messages: an operator typing `rollops plan` is not making a typo, they are
+// using a name that still exists and now means something else.
+var releaseCommands = []string{"plan", "status", "verify", "promote", "rollback"}
+
 // Run dispatches a command. Returns a non-nil error on failure; the caller maps
 // that to an exit code.
 func (a *App) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return a.usage()
+	}
+	cmd, rest := args[0], args[1:]
+	switch cmd {
+	case "rollout":
+		return a.rollout(ctx, rest)
+	case "doctor":
+		return a.doctor(ctx, rest)
+	case "plugin":
+		return a.plugin(ctx, rest)
+	case "version", "--version":
+		return a.version()
+	case "help", "-h", "--help":
+		return a.usage()
+	}
+	if slices.Contains(rolloutCommands, cmd) {
+		return movedToRollout(cmd, rest)
+	}
+	return fmt.Errorf("unknown command %q (try: rollout, doctor, plugin, version)", cmd)
+}
+
+// movedToRollout names the new spelling instead of acting. Guessing that a bare
+// `rollops plan ./x.yaml` meant the rollout one would be the surprising
+// outcome: the same words will mean a release plan, and a command that
+// sometimes deploys a config and sometimes a release is worse than one that
+// refuses and says which is which.
+func movedToRollout(cmd string, rest []string) error {
+	spelling := strings.TrimSpace("rollops rollout " + cmd + " " + strings.Join(rest, " "))
+	if slices.Contains(releaseCommands, cmd) {
+		return fmt.Errorf("%q at the top level is the release-model command; for a rollout config write: %s", cmd, spelling)
+	}
+	return fmt.Errorf("%q moved under rollout; write: %s", cmd, spelling)
+}
+
+// rollout dispatches the rollout-config commands.
+func (a *App) rollout(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return a.rolloutUsage()
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
@@ -195,16 +249,10 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.freeze(ctx, rest, true)
 	case "unfreeze":
 		return a.freeze(ctx, rest, false)
-	case "doctor":
-		return a.doctor(ctx, rest)
-	case "plugin":
-		return a.plugin(ctx, rest)
-	case "version", "--version":
-		return a.version()
 	case "help", "-h", "--help":
-		return a.usage()
+		return a.rolloutUsage()
 	default:
-		return fmt.Errorf("unknown command %q (try: plan, apply, status, fleet, promote, pause, resume, abort, approve, reject, rollback, freeze, unfreeze, doctor, plugin, version)", cmd)
+		return fmt.Errorf("unknown rollout operation %q (try: %s)", cmd, strings.Join(rolloutCommands, ", "))
 	}
 }
 
@@ -596,7 +644,12 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  fleet <name|prefix>     aggregate latest phases for a RolloutSet-style prefix\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  rollout <operation>      drive a rollout config (see: rollops rollout help)\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	return nil
+}
+
+func (a *App) rolloutUsage() error {
+	_, _ = fmt.Fprintln(a.Out, "rollops rollout <operation> [args]\n\nOperations:\n  plan <config.yaml>       show what an apply would change\n  apply <config.yaml>      deploy desired state\n  status <rollout-id>      show a rollout's state\n  fleet <name|prefix>      aggregate latest phases for a RolloutSet-style prefix\n  promote <rollout-id>     promote a rollout past its post-deploy gate (--force to override)\n  verify <rollout-id>      dry-run the post-deploy gate (changes nothing)\n  pause <rollout-id>       hold an in-flight canary at its current step\n  resume <rollout-id>      continue an operator-paused canary\n  abort <rollout-id>       stop an in-flight canary and roll it back\n  approve <rollout-id>     approve a rollout awaiting approval\n  reject <rollout-id>      reject a rollout awaiting approval\n  rollback <target-ref>    roll target back to its previous desired state\n  freeze [reason]          engage the emergency kill-switch (block all applies)\n  unfreeze                 lift the emergency kill-switch")
 	return nil
 }
 

@@ -38,7 +38,7 @@ Each hook's `command` is required and `timeout` is an optional Go duration.
 
 ## Plan preview
 
-`rollops plan` surfaces a pending migration before anything runs, e.g.:
+`rollops rollout plan` surfaces a pending migration before anything runs, e.g.:
 
 ```
 demo/prod/web [kubernetes]: update — a1b2c3 → d4e5f6
@@ -59,7 +59,7 @@ backwardCompatible and has no database rollback command; force the rollback to o
 
 Override with force:
 
-- CLI: `rollops rollback <target-ref> --force`
+- CLI: `rollops rollout rollback <target-ref> --force`
 - gRPC/REST/UI/MCP: `force: true` on the rollback request
 
 The gate is bypassed automatically on **auto-rollback** (`VerifyOrRollback`): the
@@ -78,7 +78,7 @@ Fields (shared shape for `migrate` and `rollback`):
 - `timeout`: optional Go duration for the command.
 
 The command is **captured on the rollout at deploy time**, so every rollback
-path runs it — automatic (`VerifyOrRollback`), manual (`rollops rollback
+path runs it — automatic (`VerifyOrRollback`), manual (`rollops rollout rollback
 <target-ref>`), or agent-driven. A manual rollback no longer needs the config in
 hand: the engine reads the persisted command from the store and runs it after the
 manifest re-apply. A rollout deployed without a `database` block carries no

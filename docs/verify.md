@@ -8,7 +8,7 @@ and changes nothing. No phase transition, no promotion, no rollback, no history
 entry.
 
 ```sh
-rollops verify ro-7f31c2
+rollops rollout verify ro-7f31c2
 ```
 
 ```
@@ -22,7 +22,7 @@ verify: ok (nothing changed)
 A failing gate prints the whole list and exits non-zero, so it composes:
 
 ```sh
-rollops verify ro-7f31c2 && rollops promote ro-7f31c2
+rollops rollout verify ro-7f31c2 && rollops rollout promote ro-7f31c2
 ```
 
 ```
@@ -89,12 +89,12 @@ error status).
 
 ## Surfaces
 
-| Surface  | Call                                        |
-| -------- | ------------------------------------------- |
-| CLI      | `rollops verify <rollout-id>`               |
-| HTTP API | `POST /v1/verify` `{"id": "<rollout-id>"}`  |
-| gRPC     | `RolloutService.Verify`                     |
-| MCP      | `rollouts.verify`                           |
+| Surface  | Call                                       |
+| -------- | ------------------------------------------ |
+| CLI      | `rollops rollout verify <rollout-id>`      |
+| HTTP API | `POST /v1/verify` `{"id": "<rollout-id>"}` |
+| gRPC     | `RolloutService.Verify`                    |
+| MCP      | `rollouts.verify`                          |
 
 All four run the identical engine code path.
 
@@ -105,7 +105,7 @@ order, from the same captured descriptors — one code path, two entry points. I
 `verify` passes, `promote` passes; if `verify` fails, `promote` refuses.
 
 ```sh
-rollops promote ro-7f31c2
+rollops rollout promote ro-7f31c2
 ```
 
 ```
@@ -120,7 +120,7 @@ When the gate itself is wrong — a flaky probe, a metrics backend that is down,
 a smoke test broken by something unrelated — override it:
 
 ```sh
-rollops promote ro-7f31c2 --force
+rollops rollout promote ro-7f31c2 --force
 ```
 
 The bypass is **never silent**. It is recorded twice:
@@ -129,12 +129,12 @@ The bypass is **never silent**. It is recorded twice:
 - in the audit trail: `promote … promoted (post-deploy gates bypassed: forced)`,
   attributed to the identity that forced it
 
-| Surface  | Override                                       |
-| -------- | ---------------------------------------------- |
-| CLI      | `rollops promote <id> --force` (or `-f`)       |
+| Surface  | Override                                          |
+| -------- | ------------------------------------------------- |
+| CLI      | `rollops rollout promote <id> --force` (or `-f`)  |
 | HTTP API | `POST /v1/promote` `{"id": "...", "force": true}` |
-| gRPC     | `RolloutService.Promote` with `force: true`    |
-| MCP      | `rollouts.promote` with `force: true`          |
+| gRPC     | `RolloutService.Promote` with `force: true`       |
+| MCP      | `rollouts.promote` with `force: true`             |
 
 This mirrors `rollback --force`, which overrides the migration
 backward-compatibility gate the same way.

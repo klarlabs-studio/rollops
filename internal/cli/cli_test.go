@@ -87,7 +87,7 @@ func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App
 
 func TestCLI_Plan(t *testing.T) {
 	app, buf, cfg := newApp(t)
-	if err := app.Run(context.Background(), []string{"plan", cfg}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "plan", cfg}); err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 	if !strings.Contains(buf.String(), "demo/prod/app") {
@@ -120,7 +120,7 @@ spec:
 		t.Fatal(err)
 	}
 	app, buf, _ := newApp(t)
-	if err := app.Run(context.Background(), []string{"plan", path}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "plan", path}); err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 	out := buf.String()
@@ -131,14 +131,14 @@ spec:
 
 func TestCLI_ApplyThenStatus(t *testing.T) {
 	app, buf, cfg := newApp(t)
-	if err := app.Run(context.Background(), []string{"apply", cfg}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "apply", cfg}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if !strings.Contains(buf.String(), "ro-cli") {
 		t.Errorf("apply output = %q", buf.String())
 	}
 	buf.Reset()
-	if err := app.Run(context.Background(), []string{"status", "ro-cli"}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "status", "ro-cli"}); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(buf.String(), "verifying") {
@@ -153,7 +153,7 @@ func TestCLI_StatusShowsLatestHistoryNote(t *testing.T) {
 	var buf bytes.Buffer
 	app := &App{Ops: statusNoteOps{}, Out: &buf}
 	buf.Reset()
-	if err := app.Run(context.Background(), []string{"status", "ro-cli"}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "status", "ro-cli"}); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(buf.String(), "database rollback: succeeded") {
@@ -219,14 +219,14 @@ func (fleetOps) FleetStatus(_ context.Context, filter string) (engine.FleetRepor
 func TestCLI_Fleet(t *testing.T) {
 	var buf strings.Builder
 	app := &App{Ops: fleetOps{}, Out: &buf}
-	if err := app.Run(context.Background(), []string{"fleet", "web"}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "fleet", "web"}); err != nil {
 		t.Fatalf("fleet: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "web: 1/2 promoted") || !strings.Contains(out, "web@east") {
 		t.Fatalf("output = %q", out)
 	}
-	if err := app.Run(context.Background(), []string{"fleet"}); err == nil {
+	if err := app.Run(context.Background(), []string{"rollout", "fleet"}); err == nil {
 		t.Fatal("expected missing filter error")
 	}
 }
@@ -239,7 +239,7 @@ func TestCLI_RollbackLast(t *testing.T) {
 		return "ro-cli-" + string(rune('0'+n))
 	})
 
-	if err := app.Run(context.Background(), []string{"apply", cfg}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "apply", cfg}); err != nil {
 		t.Fatalf("apply first: %v", err)
 	}
 	first := fake.manifests[len(fake.manifests)-1]
@@ -249,12 +249,12 @@ func TestCLI_RollbackLast(t *testing.T) {
 	if err := os.WriteFile(cfg2, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Run(context.Background(), []string{"apply", cfg2}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "apply", cfg2}); err != nil {
 		t.Fatalf("apply second: %v", err)
 	}
 
 	buf.Reset()
-	if err := app.Run(context.Background(), []string{"rollback", "demo/prod/app"}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "rollback", "demo/prod/app"}); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
 	if !strings.Contains(buf.String(), "rolled-back") {
@@ -273,6 +273,70 @@ func TestCLI_UnknownCommand(t *testing.T) {
 	}
 }
 
+// TestCLI_RolloutCommandAtTopLevelNamesItsNewSpelling proves a habit spelling
+// is refused rather than acted on. Five of these names belong to the release
+// model now, so guessing that `rollops plan ./x.yaml` meant the rollout one
+// would deploy from a surface that will soon mean something else.
+func TestCLI_RolloutCommandAtTopLevelNamesItsNewSpelling(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"plan", "./rollout.yaml"}, "rollops rollout plan ./rollout.yaml"},
+		{[]string{"apply", "./rollout.yaml"}, "rollops rollout apply ./rollout.yaml"},
+		{[]string{"status", "ro-cli"}, "rollops rollout status ro-cli"},
+		{[]string{"promote", "ro-cli", "--force"}, "rollops rollout promote ro-cli --force"},
+		{[]string{"freeze"}, "rollops rollout freeze"},
+		{[]string{"unfreeze"}, "rollops rollout unfreeze"},
+	} {
+		t.Run(tc.args[0], func(t *testing.T) {
+			app, buf, _ := newApp(t)
+			err := app.Run(context.Background(), tc.args)
+			if err == nil {
+				t.Fatalf("%v should not run at the top level", tc.args)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to name %q", err, tc.want)
+			}
+			if buf.String() != "" {
+				t.Errorf("refusal wrote output: %q", buf.String())
+			}
+		})
+	}
+}
+
+// TestCLI_UsagePointsAtRollout proves the two usage screens divide the surface:
+// the top level names rollout without listing its operations, and the rollout
+// one lists them.
+func TestCLI_UsagePointsAtRollout(t *testing.T) {
+	app, buf, _ := newApp(t)
+	if err := app.Run(context.Background(), nil); err != nil {
+		t.Fatalf("usage: %v", err)
+	}
+	top := buf.String()
+	if !strings.Contains(top, "rollout <operation>") {
+		t.Errorf("top-level usage should point at rollout:\n%s", top)
+	}
+	if strings.Contains(top, "apply <config.yaml>") {
+		t.Errorf("top-level usage should not list rollout operations:\n%s", top)
+	}
+
+	app, buf, _ = newApp(t)
+	if err := app.Run(context.Background(), []string{"rollout"}); err != nil {
+		t.Fatalf("rollout usage: %v", err)
+	}
+	if sub := buf.String(); !strings.Contains(sub, "apply <config.yaml>") {
+		t.Errorf("rollout usage should list its operations:\n%s", sub)
+	}
+}
+
+func TestCLI_UnknownRolloutOperation(t *testing.T) {
+	app, _, _ := newApp(t)
+	if err := app.Run(context.Background(), []string{"rollout", "frobnicate"}); err == nil {
+		t.Fatal("unknown rollout operation should error")
+	}
+}
+
 func TestCLI_Version(t *testing.T) {
 	app, buf, _ := newApp(t)
 	if err := app.Run(context.Background(), []string{"version"}); err != nil {
@@ -285,14 +349,14 @@ func TestCLI_Version(t *testing.T) {
 
 func TestCLI_StatusRequiresID(t *testing.T) {
 	app, _, _ := newApp(t)
-	if err := app.Run(context.Background(), []string{"status"}); err == nil {
+	if err := app.Run(context.Background(), []string{"rollout", "status"}); err == nil {
 		t.Fatal("status without id should error")
 	}
 }
 
 func TestCLI_RollbackRequiresTargetRef(t *testing.T) {
 	app, _, _ := newApp(t)
-	if err := app.Run(context.Background(), []string{"rollback"}); err == nil {
+	if err := app.Run(context.Background(), []string{"rollout", "rollback"}); err == nil {
 		t.Fatal("rollback without target ref should error")
 	}
 }
@@ -539,14 +603,14 @@ func TestCLI_PlanRolloutSetAndRefuseApply(t *testing.T) {
 	if err := os.WriteFile(path, []byte(rolloutSetYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Run(context.Background(), []string{"plan", path}); err != nil {
+	if err := app.Run(context.Background(), []string{"rollout", "plan", path}); err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "RolloutSet → 2 targets") || !strings.Contains(out, "web@east") || !strings.Contains(out, "web@west") {
 		t.Fatalf("plan output = %q", out)
 	}
-	if err := app.Run(context.Background(), []string{"apply", path}); err == nil || !strings.Contains(err.Error(), "RolloutSet") {
+	if err := app.Run(context.Background(), []string{"rollout", "apply", path}); err == nil || !strings.Contains(err.Error(), "RolloutSet") {
 		t.Fatalf("apply want refuse, got %v", err)
 	}
 	buf.Reset()

@@ -85,12 +85,12 @@ bin/rollops version
 
 # One-shot CLI (engine in-process, no daemon):
 bin/rollops doctor examples/rollout-config.example.yaml
-bin/rollops plan   examples/rollout-config.example.yaml
-bin/rollops apply  examples/rollout-config.example.yaml
-bin/rollops status <rollout-id>
-bin/rollops verify <rollout-id>   # dry-run the post-deploy gate; changes nothing
-bin/rollops promote <rollout-id>  # promote past the gate (--force to override)
-bin/rollops rollback <target-ref>
+bin/rollops rollout plan examples/rollout-config.example.yaml
+bin/rollops rollout apply examples/rollout-config.example.yaml
+bin/rollops rollout status <rollout-id>
+bin/rollops rollout verify <rollout-id>    # dry-run the post-deploy gate; changes nothing
+bin/rollops rollout promote <rollout-id>   # promote past the gate (--force to override)
+bin/rollops rollout rollback <target-ref>
 
 # Daemon (HTTP :8080, gRPC :8090, UI behind basic auth):
 make run-daemon
@@ -101,7 +101,7 @@ make run-daemon
 # CLI in daemon mode (same plan/apply/status/rollback commands, driven over gRPC).
 # Loopback is plaintext; set ROLLOPS_TLS_* to match a TLS daemon (docs/tls.md):
 ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops doctor
-ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops status <id>
+ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops rollout status <id>
 ```
 
 Targets are configured per service in a `rollops.yaml`

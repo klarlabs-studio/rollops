@@ -37,7 +37,7 @@ To let Claude or Cursor drive the same engine, see
 ## Plan A Rollout
 
 ```sh
-bin/rollops plan examples/rollout-config.example.yaml
+bin/rollops rollout plan examples/rollout-config.example.yaml
 ```
 
 The example config is intentionally small and uses the same YAML/CEL/schema path
@@ -61,7 +61,7 @@ Then point the CLI at the daemon:
 
 ```sh
 ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops doctor
-ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops status <rollout-id>
+ROLLOPS_DAEMON=127.0.0.1:8090 ROLLOPS_TOKEN=devtoken bin/rollops rollout status <rollout-id>
 ```
 
 ## Watch A Git Repo

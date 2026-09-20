@@ -60,7 +60,7 @@ kustomize with no alpha/exec plugins, `helm template` with no post-renderer.
 **rendered output**, so an edit to a referenced Kustomize/Helm/path file is
 detected as drift and reconciled even under `shallow` verification. Inline
 `manifest` and the flat keys keep their spec-derived checksum. Preview the
-resolved manifest with `rollops plan <config.yaml>` — it prints the rendered
+resolved manifest with `rollops rollout plan <config.yaml>` — it prints the rendered
 result under `--- rendered manifest ---`.
 
 Run `rollops doctor <config.yaml>` to confirm the render tools a target needs

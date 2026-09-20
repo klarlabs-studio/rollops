@@ -6,8 +6,8 @@ universe. Plan both with the same agent loop ([agent-operator](../../docs/agent-
 ```sh
 bin/rollops doctor examples/hetero/ssh.yaml
 bin/rollops doctor examples/hetero/kubernetes.yaml
-bin/rollops plan examples/hetero/ssh.yaml
-bin/rollops plan examples/hetero/kubernetes.yaml
+bin/rollops rollout plan examples/hetero/ssh.yaml
+bin/rollops rollout plan examples/hetero/kubernetes.yaml
 ```
 
 Placeholders only; point `host` / `context` at your lab.

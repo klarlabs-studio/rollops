@@ -77,7 +77,7 @@ never has to live in a config file that gets committed:
 | `ROLLOPS_GOVERNANCE_TIMEOUT` | Optional Go duration, default `5s`. A mistyped value keeps the default rather than failing startup. |
 
 Both the daemon and the one-shot CLI read these. Wiring only the daemon would leave
-`rollops apply` on a laptop as the way around the gate, and a gate you can walk
+`rollops rollout apply` on a laptop as the way around the gate, and a gate you can walk
 around is not one.
 
 `rollops doctor` reports reachability, because a fail-closed dependency on the deploy

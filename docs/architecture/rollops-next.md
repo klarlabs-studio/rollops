@@ -2106,6 +2106,15 @@ rollops run                  # phase 2
 rollops logs                 # phase 2
 ```
 
+The verbs above are the release model's: they take environments, releases and
+deployment ids. Five of the names — `plan`, `status`, `verify`, `promote`,
+`rollback` — were already spelled the same way by the rollout-config surface,
+which takes a config path or a rollout id and means something else by them.
+That surface keeps working, in full, under `rollops rollout <operation>`; the
+top-level names belong to the release model. A bare v1 spelling is refused with
+the new one rather than guessed at, because a command that sometimes deploys a
+config and sometimes a release is worse than one that says which is which.
+
 ### 26.2 Human output
 
 Default output is concise and decision-oriented.
