@@ -1,0 +1,48 @@
+# Rollops deploys rollops.
+#
+# Every release bumps the image pinned in deploy/kubernetes/rollopsd.yaml, and
+# until this config existed nothing applied that bump: the daemon ran v0.34.3
+# while the repository said v0.34.8, four releases of rollout fixes that were
+# never in force. A client is only as correct as the daemon executing its
+# rollouts, so the daemon follows its own releases like any other workload.
+#
+# Add this repository to ROLLOPS_WATCH with path "deploy" for it to take
+# effect (see deploy/kubernetes/rollopsd-watch.example.yaml).
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: rollopsd
+spec:
+  target:
+    kind: kubernetes
+    ref: rollops/prod/rollopsd
+    criticality: high
+    spec:
+      context: felixgeelhaar
+      namespace: rollops-system
+      resource: deployment/rollopsd
+      # The tracked image. imagePolicy bumps this line, and it overrides the
+      # container image in the rendered manifest.
+      image: ghcr.io/klarlabs-studio/rollopsd:v0.34.9
+      manifestFrom:
+        path: kubernetes/rollopsd.yaml
+
+  # Recreate, single replica, one writer to the sqlite PVC: there is no canary
+  # to run. The daemon applies this, exits with the old pod, and the new one
+  # picks the rollout up from the database and finishes it.
+  strategy:
+    type: rolling
+
+  # Follow releases automatically, one minor line at a time. The release tag
+  # publishes ghcr.io/klarlabs-studio/rollopsd:vX.Y.Z; this notices it, opens a
+  # PR against this file (main is protected), and the merge deploys it.
+  imagePolicy:
+    mode: minor
+    pattern: '^v\d+\.\d+\.\d+$'
+    allowMutableTags: false
+    writeback: pull-request
+
+  rollback:
+    auto: true
+
+  verification: detect

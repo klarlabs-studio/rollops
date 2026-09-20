@@ -23,6 +23,7 @@ import (
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	"go.klarlabs.de/rollops/internal/target"
+	"go.klarlabs.de/rollops/internal/version"
 )
 
 func main() {
@@ -67,7 +68,18 @@ func run(args []string) error {
 		}
 		defer func() { _ = client.Close() }()
 		app.Ops = client
-		return app.Run(context.Background(), args)
+		err = app.Run(context.Background(), args)
+		// The daemon runs the rollouts; the CLI only asks. A daemon on another
+		// version is running different rollout logic from the one this binary
+		// describes, which is how a fixed client sat in front of an unfixed
+		// daemon for six releases. Reported after the command so it never
+		// replaces the command's own output.
+		if got, ok := client.DaemonVersion(); ok && got != version.Version {
+			fmt.Fprintf(os.Stderr, "rollops: this client is %s but the daemon at %s is %s — "+
+				"the daemon runs the rollouts, so update it (deploy/kubernetes/rollopsd.yaml pins the image)\n",
+				version.Version, daemonAddr, got)
+		}
+		return err
 	}
 
 	db, err := sqlite.Open(dbPath)
@@ -84,22 +96,23 @@ func run(args []string) error {
 	return app.Run(context.Background(), args)
 }
 
-func probeDaemon(ctx context.Context, addr, token string) error {
+func probeDaemon(ctx context.Context, addr, token string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	client, err := grpcapi.Dial(addr, token)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = client.Close() }()
 	_, err = client.Status(ctx, "__rollops_doctor_probe__")
+	daemon, _ := client.DaemonVersion()
 	switch status.Code(err) {
 	case codes.NotFound:
-		return nil // authenticated and reached the daemon.
+		return daemon, nil // authenticated and reached the daemon.
 	case codes.Unauthenticated:
-		return fmt.Errorf("unauthorized token")
+		return daemon, fmt.Errorf("unauthorized token")
 	default:
-		return err
+		return daemon, err
 	}
 }
 

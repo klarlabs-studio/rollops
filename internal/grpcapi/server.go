@@ -22,6 +22,7 @@ import (
 	"go.klarlabs.de/rollops/internal/grpcapi/rollopsv1"
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/security"
+	"go.klarlabs.de/rollops/internal/version"
 )
 
 // Server implements the generated RolloutServiceServer.
@@ -46,7 +47,7 @@ func (s *Server) Register(gs grpc.ServiceRegistrar) {
 // NewGRPCServer builds a *grpc.Server with the auth interceptor installed and
 // the service registered.
 func NewGRPCServer(s *Server, opts ...grpc.ServerOption) *grpc.Server {
-	opts = append(opts, grpc.UnaryInterceptor(s.authInterceptor))
+	opts = append(opts, grpc.ChainUnaryInterceptor(s.versionInterceptor, s.authInterceptor))
 	gs := grpc.NewServer(opts...)
 	s.Register(gs)
 	return gs
@@ -55,6 +56,22 @@ func NewGRPCServer(s *Server, opts ...grpc.ServerOption) *grpc.Server {
 type ctxKey int
 
 const idKey ctxKey = 0
+
+// VersionHeader carries the daemon's build version on every response, so a
+// client can tell whether it is talking to a daemon of its own version.
+//
+// Metadata rather than a new RPC: it needs no proto change, it costs no extra
+// round trip, and a daemon that predates it simply sends no header — which the
+// client reads as "unknown" rather than as skew.
+const VersionHeader = "rollops-version"
+
+// versionInterceptor attaches VersionHeader to every response, including the
+// error ones: an Unauthenticated reply is exactly when an operator most wants
+// to know which daemon answered.
+func (s *Server) versionInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	_ = grpc.SetHeader(ctx, metadata.Pairs(VersionHeader, version.Version))
+	return handler(ctx, req)
+}
 
 // authInterceptor resolves the bearer token from metadata to an identity, or
 // rejects with Unauthenticated. No anonymous calls.

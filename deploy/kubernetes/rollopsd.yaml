@@ -171,6 +171,15 @@ rules:
   - apiGroups: [traefik.io]
     resources: [middlewares]
     verbs: [get, list, watch, create, update, patch]
+  # Prometheus Operator custom resources, because a repository that declares a
+  # workload usually declares how it is scraped in the same batch. These rules
+  # were granted on the live cluster and never written here, so this file could
+  # not be applied without silently withdrawing them — which is how a manifest
+  # stops being the desired state. No `delete`: removing a monitor stops the
+  # alerts on a service that keeps running, and silence reads like health.
+  - apiGroups: [monitoring.coreos.com]
+    resources: [podmonitors, servicemonitors]
+    verbs: [get, list, watch, create, update, patch]
   # Read CRDs and their instances for status.conditions health assessment.
   - apiGroups: [apiextensions.k8s.io]
     resources: [customresourcedefinitions]

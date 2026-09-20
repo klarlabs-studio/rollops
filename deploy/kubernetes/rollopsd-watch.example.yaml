@@ -40,6 +40,16 @@ data:
         "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-klarlabs.pem"
       },
       {
+        "_comment": "rollops itself. Without this entry the daemon never applies its own release bump: deploy/kubernetes/rollopsd.yaml moves on every release and nothing deploys it. path is deploy/, where deploy/rollops.yaml lives.",
+        "name": "rollops",
+        "url": "https://github.com/klarlabs-studio/rollops",
+        "branch": "main",
+        "path": "deploy",
+        "githubAppId": "<klarlabs-studio-app-id>",
+        "githubInstallationId": "<klarlabs-studio-installation-id>",
+        "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-klarlabs.pem"
+      },
+      {
         "name": "personal-app",
         "url": "https://github.com/felixgeelhaar/some-app",
         "branch": "main",
