@@ -25,6 +25,7 @@ const (
 	opApplyPlan          = "ApplyPlan"
 	opApproveDeployment  = "ApproveDeployment"
 	opCancelDeployment   = "CancelDeployment"
+	opVerifyDeployment   = "VerifyDeployment"
 	opPromoteDeployment  = "PromoteDeployment"
 	opRollbackDeployment = "RollbackDeployment"
 	opCreateRelease      = "CreateRelease"

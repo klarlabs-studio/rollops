@@ -91,6 +91,12 @@ func (stubDeployer) Cancel(context.Context, deploy.CancelCommand) (deployment.De
 	return deployment.Deployment{}, errNotWired
 }
 
+func (stubDeployer) Verify(
+	context.Context, deploy.VerifyCommand,
+) (deployment.Deployment, deploy.Verification, error) {
+	return deployment.Deployment{}, deploy.Verification{}, errNotWired
+}
+
 func (stubDeployer) Promote(context.Context, deploy.PromoteCommand) (deployment.Deployment, error) {
 	return deployment.Deployment{}, errNotWired
 }
@@ -109,6 +115,7 @@ type world struct {
 	deployer  apiv2.Deployer
 	proposals *stubPlanner
 	decisions *stubPolicy
+	checks    *stubVerifier
 }
 
 // config is every dependency a service needs, so that a test wanting one
@@ -151,19 +158,20 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 		panic("appenv.New: " + err.Error())
 	}
 	return apiv2.Config{
-		Projects:     store.Projects(),
-		Environments: store.Environments(),
-		Releases:     store.Releases(),
-		Artifacts:    store.Artifacts(),
-		Deployments:  store.Deployments(),
-		Plans:        store.Plans(),
-		Events:       store.Events(),
-		Deployer:     deployer,
-		Registrar:    registrar,
-		Founder:      founder,
-		Binder:       binder,
-		Keys:         store.Idempotency(),
-		Clock:        clock,
+		Projects:         store.Projects(),
+		Environments:     store.Environments(),
+		Releases:         store.Releases(),
+		Artifacts:        store.Artifacts(),
+		Deployments:      store.Deployments(),
+		Plans:            store.Plans(),
+		VerificationRuns: store.VerificationRuns(),
+		Events:           store.Events(),
+		Deployer:         deployer,
+		Registrar:        registrar,
+		Founder:          founder,
+		Binder:           binder,
+		Keys:             store.Idempotency(),
+		Clock:            clock,
 	}
 }
 
@@ -177,22 +185,20 @@ func setup(t *testing.T) *world {
 	checks := &stubVerifier{}
 
 	deployer, err := deploy.New(deploy.Config{
-		Transactor:   store,
-		Plans:        store.Plans(),
-		Deployments:  store.Deployments(),
-		Approvals:    store.Approvals(),
-		Releases:     store.Releases(),
-		Environments: store.Environments(),
-		Planner:      proposals,
-		Policy:       decisions,
-		Verifier:     checks,
-		Clock:        clock,
-		IDs:          ids,
-		Events:       store.Events(),
-
+		Transactor:       store,
+		Plans:            store.Plans(),
+		Deployments:      store.Deployments(),
+		Approvals:        store.Approvals(),
+		Releases:         store.Releases(),
+		Environments:     store.Environments(),
+		Planner:          proposals,
+		Policy:           decisions,
+		Verifier:         checks,
+		Clock:            clock,
+		IDs:              ids,
+		Events:           store.Events(),
 		VerificationRuns: store.VerificationRuns(),
-
-		PlanLifetime: time.Hour,
+		PlanLifetime:     time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("deploy.New: %v", err)
@@ -209,6 +215,7 @@ func setup(t *testing.T) *world {
 		deployer:  deployer,
 		proposals: proposals,
 		decisions: decisions,
+		checks:    checks,
 	}
 }
 
@@ -1154,6 +1161,7 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 		{"artifact", func(c *apiv2.Config) { c.Artifacts = nil }},
 		{"deployment", func(c *apiv2.Config) { c.Deployments = nil }},
 		{"plan", func(c *apiv2.Config) { c.Plans = nil }},
+		{"verification run", func(c *apiv2.Config) { c.VerificationRuns = nil }},
 		{"event", func(c *apiv2.Config) { c.Events = nil }},
 		{"deployer", func(c *apiv2.Config) { c.Deployer = nil }},
 		{"founder", func(c *apiv2.Config) { c.Founder = nil }},

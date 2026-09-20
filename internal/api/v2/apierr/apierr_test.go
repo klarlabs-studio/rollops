@@ -94,6 +94,9 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{deploy.ErrNotPromotable, apierr.Conflict},
 		{deploy.ErrNotReversible, apierr.Conflict},
 		{deploy.ErrNoWayBack, apierr.Conflict},
+		// Not VerificationFailed: that code says the checks ran and did not
+		// pass, and here nothing was put in front of them to run against.
+		{deploy.ErrNotVerifiable, apierr.Conflict},
 
 		{planner.ErrNothingToDo, apierr.Conflict},
 		{planner.ErrBlocked, apierr.Conflict},

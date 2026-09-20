@@ -232,6 +232,10 @@ func Of(err error) Code {
 		// request the caller mistyped.
 		errors.Is(err, deploy.ErrNotPromotable),
 		errors.Is(err, deploy.ErrNotReversible),
+		// A deployment that has not applied anything has put nothing in front
+		// of a check. Not VERIFICATION_FAILED: nothing was verified, and that
+		// code says the checks ran and did not pass.
+		errors.Is(err, deploy.ErrNotVerifiable),
 		// A plan that declares no way back is not something the caller can fix
 		// by editing the request: what is wrong is the plan it names.
 		errors.Is(err, deploy.ErrNoWayBack),

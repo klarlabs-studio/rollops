@@ -50,6 +50,11 @@ type Config struct {
 	Deployments  port.DeploymentRepository
 	Plans        port.PlanRepository
 
+	// VerificationRuns is what the checks said. It is a read here even though
+	// verifying is a mutation: the run is written by the deployer, and this
+	// layer reads it back both to answer the call and to replay a retry of it.
+	VerificationRuns port.VerificationRunRepository
+
 	// Events is the reader half. The API has no business appending, and taking
 	// only the half it needs means there is no call site that could.
 	Events port.EventReader
@@ -89,20 +94,21 @@ type Config struct {
 
 // Service answers the v2 API.
 type Service struct {
-	projects     port.ProjectRepository
-	environments port.EnvironmentRepository
-	releases     port.ReleaseRepository
-	artifacts    port.ArtifactRepository
-	deployments  port.DeploymentRepository
-	plans        port.PlanRepository
-	events       port.EventReader
-	deployer     Deployer
-	registrar    Registrar
-	founder      Founder
-	binder       Binder
-	keys         port.IdempotencyRepository
-	clock        identity.Clock
-	keyLifetime  time.Duration
+	projects      port.ProjectRepository
+	environments  port.EnvironmentRepository
+	releases      port.ReleaseRepository
+	artifacts     port.ArtifactRepository
+	deployments   port.DeploymentRepository
+	plans         port.PlanRepository
+	verifications port.VerificationRunRepository
+	events        port.EventReader
+	deployer      Deployer
+	registrar     Registrar
+	founder       Founder
+	binder        Binder
+	keys          port.IdempotencyRepository
+	clock         identity.Clock
+	keyLifetime   time.Duration
 }
 
 // New returns a service, naming the first dependency it was not given.
@@ -120,6 +126,8 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no deployment repository")
 	case cfg.Plans == nil:
 		return nil, errors.New("apiv2: no plan repository")
+	case cfg.VerificationRuns == nil:
+		return nil, errors.New("apiv2: no verification run repository")
 	case cfg.Events == nil:
 		return nil, errors.New("apiv2: no event reader")
 	case cfg.Deployer == nil:
@@ -139,20 +147,21 @@ func New(cfg Config) (*Service, error) {
 		cfg.KeyLifetime = DefaultKeyLifetime
 	}
 	return &Service{
-		projects:     cfg.Projects,
-		environments: cfg.Environments,
-		releases:     cfg.Releases,
-		artifacts:    cfg.Artifacts,
-		deployments:  cfg.Deployments,
-		plans:        cfg.Plans,
-		events:       cfg.Events,
-		deployer:     cfg.Deployer,
-		registrar:    cfg.Registrar,
-		founder:      cfg.Founder,
-		binder:       cfg.Binder,
-		keys:         cfg.Keys,
-		clock:        cfg.Clock,
-		keyLifetime:  cfg.KeyLifetime,
+		projects:      cfg.Projects,
+		environments:  cfg.Environments,
+		releases:      cfg.Releases,
+		artifacts:     cfg.Artifacts,
+		deployments:   cfg.Deployments,
+		plans:         cfg.Plans,
+		verifications: cfg.VerificationRuns,
+		events:        cfg.Events,
+		deployer:      cfg.Deployer,
+		registrar:     cfg.Registrar,
+		founder:       cfg.Founder,
+		binder:        cfg.Binder,
+		keys:          cfg.Keys,
+		clock:         cfg.Clock,
+		keyLifetime:   cfg.KeyLifetime,
 	}, nil
 }
 
