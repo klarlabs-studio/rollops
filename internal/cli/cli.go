@@ -133,8 +133,9 @@ type App struct {
 	HTTPClient    *http.Client                                                           // for registry fetches (tests)
 }
 
-// DaemonProbe checks whether a daemon can be reached and authenticated.
-type DaemonProbe func(ctx context.Context, addr, token string) error
+// DaemonProbe checks whether a daemon can be reached and authenticated, and
+// reports the version it announced ("" when it announced none).
+type DaemonProbe func(ctx context.Context, addr, token string) (string, error)
 
 // Doctor configures the CLI's release-readiness diagnostics.
 type Doctor struct {
@@ -623,11 +624,24 @@ func (a *App) doctor(ctx context.Context, args []string) error {
 		if a.Doctor.Probe == nil {
 			_, _ = fmt.Fprintln(a.Out, "daemon: fail (probe not configured)")
 			failed = append(failed, "daemon")
-		} else if err := a.Doctor.Probe(ctx, a.Doctor.DaemonAddr, a.Doctor.Token); err != nil {
+		} else if daemonVersion, err := a.Doctor.Probe(ctx, a.Doctor.DaemonAddr, a.Doctor.Token); err != nil {
 			_, _ = fmt.Fprintf(a.Out, "daemon: fail (%v)\n", err)
 			failed = append(failed, "daemon")
 		} else {
-			_, _ = fmt.Fprintf(a.Out, "daemon: ok (%s)\n", a.Doctor.DaemonAddr)
+			switch {
+			case daemonVersion == "":
+				// Older than the version handshake, so the skew cannot be
+				// measured — say that rather than claim they match.
+				_, _ = fmt.Fprintf(a.Out, "daemon: ok (%s, version not reported — older than this check)\n", a.Doctor.DaemonAddr)
+			case daemonVersion != version.Version:
+				// The daemon runs the rollouts: a client fix is not in force
+				// until the daemon has it, so this fails the check.
+				_, _ = fmt.Fprintf(a.Out, "daemon: fail (%s runs %s, this client is %s — update the daemon)\n",
+					a.Doctor.DaemonAddr, daemonVersion, version.Version)
+				failed = append(failed, "daemon")
+			default:
+				_, _ = fmt.Fprintf(a.Out, "daemon: ok (%s, %s)\n", a.Doctor.DaemonAddr, daemonVersion)
+			}
 		}
 	} else {
 		dbPath := a.Doctor.DBPath

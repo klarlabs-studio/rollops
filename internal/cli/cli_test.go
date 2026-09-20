@@ -18,6 +18,7 @@ import (
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	itarget "go.klarlabs.de/rollops/internal/target"
+	"go.klarlabs.de/rollops/internal/version"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -523,9 +524,9 @@ func TestCLI_DoctorDaemon(t *testing.T) {
 	app.Doctor = Doctor{
 		DaemonAddr: "127.0.0.1:8090",
 		Token:      "devtoken",
-		Probe: func(_ context.Context, addr, token string) error {
+		Probe: func(_ context.Context, addr, token string) (string, error) {
 			gotAddr, gotToken = addr, token
-			return nil
+			return version.Version, nil
 		},
 	}
 	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
@@ -580,5 +581,37 @@ func TestCLI_PlanRolloutSetAndRefuseApply(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "2 rollout(s)") {
 		t.Fatalf("doctor = %q", buf.String())
+	}
+}
+
+// The daemon runs the rollouts, so a daemon on another version means this
+// client's behaviour is not what is deploying. doctor fails on that, and says
+// plainly when the daemon is too old to report a version at all.
+func TestCLI_DoctorReportsDaemonVersionSkew(t *testing.T) {
+	for name, tc := range map[string]struct {
+		daemon string
+		want   string
+	}{
+		"same version": {version.Version, "daemon: ok"},
+		"skew":         {"v0.34.3", "daemon: fail"},
+		"no version":   {"", "version not reported"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, buf, cfg := newApp(t)
+			app.Doctor = Doctor{
+				DaemonAddr: "127.0.0.1:8090",
+				Probe:      func(_ context.Context, _, _ string) (string, error) { return tc.daemon, nil },
+			}
+			err := app.Run(context.Background(), []string{"doctor", cfg})
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Fatalf("doctor output = %q, want %q", buf.String(), tc.want)
+			}
+			if wantErr := strings.Contains(tc.want, "fail"); wantErr != (err != nil) {
+				t.Errorf("doctor err = %v, want failure=%v", err, wantErr)
+			}
+			if tc.daemon == version.Version && !strings.Contains(buf.String(), version.Version) {
+				t.Errorf("a matching daemon should still report its version: %q", buf.String())
+			}
+		})
 	}
 }

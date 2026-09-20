@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased - The daemon follows its own releases
+
+The daemon runs the rollouts; the CLI only asks it to. So a client newer than
+the daemon describes behaviour that is not in force — and that is what the
+cluster looked like: `rollopsd:v0.34.3` running while this repository pinned
+`v0.34.8`. Every release bumped a pin nothing applied.
+
+- **rollops deploys rollops.** `deploy/rollops.yaml` targets
+  `rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`
+  and follows the released image (`imagePolicy`, `writeback: pull-request`
+  because main is protected). Watch this repo with `path: deploy` and a release
+  reaches the daemon on its own.
+- **The daemon manifest is the whole desired state again.** The
+  Prometheus-operator RBAC (`podmonitors`, `servicemonitors`) was granted on the
+  live cluster and never written down, so applying the file would have withdrawn
+  it. Self-management makes that a real risk, so the rules are in the file.
+- **Version skew is visible.** Every gRPC response carries the daemon's version
+  (metadata, so no proto change and an older daemon simply omits it).
+  `rollops doctor` prints both versions and fails when they differ; a
+  daemon-mode command prints a one-line warning after it runs.
+
 ## v0.34.9 - Roll back to what was running, or not at all
 
 A production incident on 2026-09-19. A Deployment was updated outside rollops

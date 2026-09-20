@@ -66,6 +66,33 @@ written to disk or the remote URL). `deployKeyPath` is the SSH alternative for
 sets the poll cadence. A "Sync now" button in the UI triggers an immediate
 reconcile.
 
+## rollops deploys rollops
+
+The daemon executes the rollouts; the CLI only asks it to. A client newer than
+the daemon therefore describes behaviour that is not in force — which is how a
+cluster ran `rollopsd:v0.34.3` while this repository pinned `v0.34.8`, four
+releases of rollout fixes that never deployed. Nothing applied the pin.
+
+`deploy/rollops.yaml` is rollops' own rollout config: it targets
+`rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`,
+and carries an `imagePolicy` that follows the released image. Watch this
+repository with `path: deploy` and the daemon keeps itself current: a release
+publishes `ghcr.io/klarlabs-studio/rollopsd:vX.Y.Z`, the daemon notices the new
+tag, opens a PR bumping the tracked image (main is protected, so writeback is
+`pull-request`), and the merge deploys it on the next reconcile.
+
+Two things follow from that:
+
+- **The manifest must be the whole desired state.** Self-management applies
+  `deploy/kubernetes/rollopsd.yaml`, so anything granted by hand on the live
+  cluster and missing from that file is withdrawn on the next apply. The
+  Prometheus-operator RBAC was exactly that, and is now in the file.
+- **Check the skew when something looks wrong.** `rollops doctor` reports the
+  daemon's version beside the client's and **fails** when they differ; every
+  daemon-mode command prints a one-line warning after it runs. A daemon older
+  than the version handshake reports no version, and doctor says so rather than
+  claiming a match.
+
 ## Apply
 
 ```sh

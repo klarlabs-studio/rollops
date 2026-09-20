@@ -55,7 +55,21 @@ func dialBuf(t *testing.T) rollopsv1.RolloutServiceClient {
 	return dialBufWithID(t, func() string { return "ro-grpc" })
 }
 
+// dialBufClient is dialBufWithID returning the CLI's Client — the path a real
+// daemon-mode command takes, interceptors included.
+func dialBufClient(t *testing.T, token string) *Client {
+	t.Helper()
+	c := &Client{token: token}
+	c.rpc = dialBufWith(t, func() string { return "ro-grpc" }, grpc.WithChainUnaryInterceptor(c.versionInterceptor))
+	return c
+}
+
 func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceClient {
+	t.Helper()
+	return dialBufWith(t, idgen)
+}
+
+func dialBufWith(t *testing.T, idgen func() string, extra ...grpc.DialOption) rollopsv1.RolloutServiceClient {
 	t.Helper()
 	db, err := sqlite.Open(t.TempDir() + "/g.db")
 	if err != nil {
@@ -84,9 +98,11 @@ func dialBufWithID(t *testing.T, idgen func() string) rollopsv1.RolloutServiceCl
 	go func() { _ = gs.Serve(lis) }()
 	t.Cleanup(gs.Stop)
 
-	conn, err := grpc.NewClient("passthrough:///bufnet",
+	opts := append([]grpc.DialOption{
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}, extra...)
+	conn, err := grpc.NewClient("passthrough:///bufnet", opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
