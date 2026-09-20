@@ -4,8 +4,9 @@
 
 ## Current State
 
-Cutting **v0.34.10** — rollops deploys rollops (#201, #202, #203, #204, #206).
-Deploy pin `v0.34.10`. The daemon follows its own releases: `rollops.yaml` at
+Cutting **v0.34.11** — an interrupted rollout resolves itself (#208), on top
+of rollops deploying rollops (#201, #202, #203, #204, #206). Deploy pin
+`v0.34.11`. The daemon follows its own releases: `rollops.yaml` at
 the repo root targets `rollops-system/deployment/rollopsd` and renders
 `deploy/kubernetes/rollopsd-deployment.yaml`. The install manifest is split —
 bootstrap (namespace, cert-manager, RBAC, PVC, Service) is applied by a human,

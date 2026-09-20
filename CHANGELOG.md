@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - An interrupted rollout resolves itself
+## v0.34.11 - An interrupted rollout resolves itself
 
 - **A rollout interrupted mid-flight no longer wedges its target.** The rolling
   path saves a rollout as `deploying`, applies, then saves it as `verifying`. A
