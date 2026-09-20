@@ -152,6 +152,12 @@ func (h *api) routes() http.Handler {
 		http.MethodPost: h.planCommand,
 	})
 
+	// A run is readable on its own and not only in the answer to :verify, which
+	// a caller may never have held: the verdict outlives the call that reached it.
+	register("/v2/verification-runs/{id}", methods{
+		http.MethodGet: h.getVerificationRun,
+	})
+
 	// A route nobody registered is still a route this handler answers, so that
 	// a 404 arrives in the same envelope as everything else — and so that it
 	// arrives after authentication rather than before.

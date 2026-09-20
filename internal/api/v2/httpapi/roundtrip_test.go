@@ -824,6 +824,45 @@ func TestVerifyingAnswersWithTheVerdictBesideTheDeployment(t *testing.T) {
 	}
 }
 
+// A verification run outlives the call that produced it, so it is readable on
+// its own rather than only in the answer to :verify — a caller that lost that
+// response, or that never made the call, has no other way back to the verdict.
+// INV-006 is what makes this worth a test of its own: the service has always
+// answered GetVerificationRun and gRPC has always served it, so a run reachable
+// over one transport and not the other is the gap the invariant forbids.
+func TestAVerificationRunIsReadableAtItsOwnPath(t *testing.T) {
+	e := served(t)
+	projectID := e.project(t)
+	envID := e.environment(t, projectID)
+	l := e.landed(t, projectID, envID)
+
+	var got struct {
+		ID           string `json:"id"`
+		DeploymentID string `json:"deployment_id"`
+		Verdict      string `json:"verdict"`
+		Checks       []struct {
+			Verifier struct {
+				Name string `json:"name"`
+			} `json:"verifier"`
+			Verdict string `json:"verdict"`
+		} `json:"checks"`
+	}
+	e.ok(t, "GET", "/v2/verification-runs/"+string(l.run.ID), "", &got)
+
+	if got.ID != string(l.run.ID) {
+		t.Errorf("id = %q, want %q", got.ID, l.run.ID)
+	}
+	if got.DeploymentID != string(l.deployment.ID) {
+		t.Errorf("deployment = %q, want %q", got.DeploymentID, l.deployment.ID)
+	}
+	if got.Verdict != string(verifyv1.VerdictPass) {
+		t.Errorf("verdict = %q, want pass", got.Verdict)
+	}
+	if len(got.Checks) != 1 || got.Checks[0].Verifier.Name != "error-rate" {
+		t.Errorf("checks = %+v", got.Checks)
+	}
+}
+
 // Every collection this API serves answers a read, and a page size it cannot
 // read is the caller's mistake rather than a silent fall back to the default.
 func TestEachCollectionIsListedAtItsOwnPath(t *testing.T) {

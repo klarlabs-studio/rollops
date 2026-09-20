@@ -204,3 +204,17 @@ func (h *api) deploymentEvents(
 	}{mapped(out.Events, wireEvent), out.Next})
 	return nil
 }
+
+// getVerificationRun returns what one verification concluded.
+func (h *api) getVerificationRun(
+	w http.ResponseWriter, r *http.Request, _ identity.Principal,
+) error {
+	run, err := h.svc.GetVerificationRun(r.Context(), apiv2.GetVerificationRunRequest{
+		ID: r.PathValue("id"),
+	})
+	if err != nil {
+		return err
+	}
+	respond(w, http.StatusOK, wireVerificationRun(run))
+	return nil
+}
