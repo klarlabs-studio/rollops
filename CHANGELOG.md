@@ -34,6 +34,14 @@ cluster looked like: `rollopsd:v0.34.3` running while this repository pinned
   Prometheus-operator RBAC (`podmonitors`, `servicemonitors`) was granted on the
   live cluster and never written down, so applying the file would have withdrawn
   it. Self-management makes that a real risk, so the rules are in the file.
+- **A rollout in flight is stepped, never restarted.** The reconciler only
+  looked for an in-flight rollout when the plan reported *no* change, so a
+  target whose plan reported a change while a rollout was in flight could not
+  progress at all: `Apply` refuses with `target busy`, once a minute,
+  indefinitely. rollops' own daemon wedged this way on its first self-deploy —
+  it applied its Deployment, `Recreate` killed the pod driving the rollout, and
+  the replacement had no recorded state for the target, so it planned a create
+  and was refused. The in-flight check now runs before the plan is consulted.
 - **Version skew is visible.** Every gRPC response carries the daemon's version
   (metadata, so no proto change and an older daemon simply omits it).
   `rollops doctor` prints both versions and fails when they differ; a

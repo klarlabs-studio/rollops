@@ -40,19 +40,30 @@ func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout
 	if err != nil {
 		return Outcome{}, fmt.Errorf("reconcile: plan: %w", err)
 	}
-	if !plan.Changed {
-		// An in-flight canary must keep ticking even when Git and the target
-		// already match — Plan.Changed is false after the first Apply, but the
-		// bake is not done.
-		if inf, ok, err := r.eng.InFlight(ctx, c.Spec.Target.Ref); err != nil {
-			return Outcome{}, err
-		} else if ok {
-			rl, err := r.eng.Tick(ctx, inf.ID, c)
-			if err != nil {
-				return Outcome{Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: tick: %w", err)
-			}
-			return r.finalize(ctx, c, by, plan, false, rl)
+	// A rollout already in flight owns this target: step it, never start a
+	// second one. Checked BEFORE the plan is consulted, because the two
+	// conditions are independent — an in-flight canary keeps ticking when Git
+	// and the target match (Plan.Changed is false after the first Apply, but
+	// the bake is not done), and it must equally keep ticking when they do not.
+	//
+	// While this lived under `!plan.Changed` a target whose plan reported a
+	// change while a rollout was in flight could not progress at all: Apply
+	// refuses with ErrTargetBusy, so the rollout never finished and the target
+	// never converged. rollops' own daemon wedged that way on its first
+	// self-deploy — it applied its Deployment, Recreate killed the pod driving
+	// the rollout, and the replacement had no recorded state for the target, so
+	// every reconcile from then on planned a create and was refused as busy.
+	if inf, ok, err := r.eng.InFlight(ctx, c.Spec.Target.Ref); err != nil {
+		return Outcome{}, err
+	} else if ok {
+		rl, tickErr := r.eng.Tick(ctx, inf.ID, c)
+		if tickErr != nil {
+			return Outcome{Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: tick: %w", tickErr)
 		}
+		return r.finalize(ctx, c, by, plan, plan.Changed, rl)
+	}
+
+	if !plan.Changed {
 		// detect mode: live drift found but intentionally not auto-corrected —
 		// record an alert so operators see it, then stop (no apply).
 		if plan.DriftAlert {
