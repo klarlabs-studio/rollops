@@ -58,9 +58,9 @@ Do this **twice**, once per org (`klarlabs-studio`, `felixgeelhaar`):
    (`…/installations/<id>` in the install URL, or via the API).
 3. **Store both private keys in the `rollopsd-git` Secret** (`rollops-system`),
    which is already mounted read-only at `/etc/rollops/git` (see the `git` volume
-   in `deploy/kubernetes/rollopsd.yaml`). Two data keys — `github-app-klarlabs.pem`
+   in `deploy/kubernetes/rollopsd-deployment.yaml`). Two data keys — `github-app-klarlabs.pem`
    and `github-app-fg.pem` — become the two files referenced below. This reuses
-   the existing mount (no `rollopsd.yaml` change) and replaces the old PAT that
+   the existing mount (no manifest change) and replaces the old PAT that
    lived in the same Secret. See `deploy/kubernetes/rollopsd-git.example.yaml` for
    the `kubectl create secret` recipe. (If you want stricter per-org RBAC on the
    Secret objects, split into two Secrets + two mounts instead — separate Apps
@@ -100,7 +100,7 @@ keys with the App keys, picking the installation for that repo's org:
    still pushes (trigger or wait for a bump).
 3. Roll the rest in batches. Cutover is **config-only**: the watch list is the
    `rollopsd-watch` ConfigMap mounted at `ROLLOPS_WATCH=/etc/rollops/watch.json`
-   (see `deploy/kubernetes/rollopsd.yaml`), so a migration is a **ConfigMap edit
+   (see `deploy/kubernetes/rollopsd-deployment.yaml`), so a migration is a **ConfigMap edit
    + pod restart** — no image rebuild.
 4. Once **all** repos run on the App: remove `token`/`tokenFile` from every
    entry (config first — `tokenFile` is read at startup and a missing file is
@@ -163,7 +163,7 @@ Each org's key rotates independently — that isolation is the point of two Apps
   installations.
 - **Cutover = ConfigMap edit + pod restart** — confirmed: the watch list is the
   `rollopsd-watch` ConfigMap (`ROLLOPS_WATCH=/etc/rollops/watch.json`,
-  `deploy/kubernetes/rollopsd.yaml`), not baked into the image.
+  `deploy/kubernetes/rollopsd-deployment.yaml`), not baked into the image.
 - **Permission split (open, low-stakes):** the current PAT is uniform
   `contents: write`. Because image write-back runs fleet-wide, the recommendation
   is to keep each org's App at `contents: write` on its selected repos. Only

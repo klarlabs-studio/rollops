@@ -29,15 +29,6 @@
       "created_at": "2026-08-15T00:00:00Z"
     },
     {
-      "fingerprint": "2678ae2b74948072d76040b950287fb2b6a0cefa18df3abaac9dc4c4e2fe3ce4",
-      "rule_id": "IAC-294",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "The limit this rule asks for is set. Both emptyDir volumes added for the read-only root filesystem declare a 64Mi ceiling, which parsing the manifest confirms: the tmp and kubecache volumes each resolve to a mapping carrying that ceiling. The rule matches on the volume-type key alone and does not read the line beneath it, so it reports the ceiling as absent whether it is written inline or below — neither form satisfies it, which is why this is waived rather than restructured. Deliberately worded without reproducing the flagged text, because the rule would then match this reason and file a fresh finding against the baseline itself. Fingerprint taken from the CI nox-results artifact and confirmed identical to a local scan, unlike TAINT-004 above where the two differed. Re-verify if the ceiling is ever removed from either volume, since the finding would then be correct and indistinguishable from this one.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T14:00:00Z"
-    },
-    {
       "fingerprint": "ab87814a2609c2c6f7863fba5e8b09addb9328a9f061ca0058e79d5f64c47173",
       "rule_id": "SEC-083",
       "file_path": "internal/git/repo_test.go",
@@ -533,27 +524,9 @@
       "created_at": "2026-08-12T00:00:00Z"
     },
     {
-      "fingerprint": "a50c62ec189c0a2ccd84dd16c7208b5cefb64bc29aa27fe16ee6350891fdc223",
-      "rule_id": "IAC-370",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "low",
-      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
       "fingerprint": "4e9bbc1f8718e955456a40e73f1af65f530a720ebbfb70c5e5ee1bc0e4619e06",
       "rule_id": "IAC-464",
       "file_path": "demo/rollops.yaml",
-      "severity": "medium",
-      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "9704d42dd3e3b9e812f5c1bf592a4c83258024a8eab806a644a9f8ed2db0bf69",
-      "rule_id": "IAC-464",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
       "severity": "medium",
       "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
       "owner": "felixgeelhaar",
@@ -614,47 +587,11 @@
       "created_at": "2026-08-12T00:00:00Z"
     },
     {
-      "fingerprint": "3386c33ebe20881fe89dde43524923fae764611daee2e7eae9800447af88680a",
-      "rule_id": "IAC-131",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace — at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
       "fingerprint": "bd22e511722d600b10b5c4a81b07a85374a6056fff08ee0cb52f833a8ebe44c5",
       "rule_id": "IAC-286",
       "file_path": "demo/rollops.yaml",
       "severity": "low",
       "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace — at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "eba64a5789d4fe3e6644e7c98aaea8e63b42f2e5e923c198a85c06fe1ea8b3ef",
-      "rule_id": "IAC-286",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "low",
-      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace — at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "e87eaab88cff9befdc1cfef046fe6e2d09606b60d3a7581d0db9b0c899354864",
-      "rule_id": "IAC-133",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon — per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "6cef67654956ae0f36157fe176dfa722006159232ada8502c7373a929f77c886",
-      "rule_id": "IAC-134",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon — per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
       "owner": "felixgeelhaar",
       "created_at": "2026-08-12T00:00:00Z"
     },
@@ -713,45 +650,9 @@
       "created_at": "2026-08-12T00:00:00Z"
     },
     {
-      "fingerprint": "7d86d7ddab8671848d9a39111ff77415710ccbe43b52e66fe61fba7c1cd99869",
-      "rule_id": "IAC-132",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "4884595af749c12cbc3668cf1aff90f10a0f723ea91242c0fc98afe3c89a34bb",
-      "rule_id": "IAC-141",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "medium",
-      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "3ec8611fa27d92623c12c07d27f67f865b01581ef8cdbb902f2517cd036acada",
-      "rule_id": "IAC-142",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
-      "severity": "low",
-      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
       "fingerprint": "f2df2a8863cb8cef8c918774a63fb852c0f9a89771f08cfff73453cb37d99fab",
       "rule_id": "IAC-183",
       "file_path": "demo/rollops.yaml",
-      "severity": "medium",
-      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
-      "owner": "felixgeelhaar",
-      "created_at": "2026-08-12T00:00:00Z"
-    },
-    {
-      "fingerprint": "56fd048a5d7f5eaf5a7f3affc41059972842ed9ae4ff509bcb0e2086dafdedcb",
-      "rule_id": "IAC-183",
-      "file_path": "deploy/kubernetes/rollopsd.yaml",
       "severity": "medium",
       "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
       "owner": "felixgeelhaar",
@@ -792,6 +693,69 @@
       "reason": "Third fingerprint for a flow triaged and accepted long ago; nox 1.31.0 with taint-analysis 0.7.0 computes a new value for identical source, as 1.29.0 did before it. Taken from the CI nox-results artifact rather than a local scan, for the reason the cosign.go entry above already records: the two differ, and a locally-computed fingerprint silently never matches. ROLLOPS_PLUGIN_PUBLIC_KEY is operator configuration read at startup, so whoever can set the daemon's environment can already read any file it can and this is not a privilege boundary. The flow is also guarded in code, and that guard is held by TestVerifyArtifact_RejectsDotDotInKeyPath, which fails closed — a baseline entry is a fact about a finding and stops noticing the day the mitigation is deleted, so the test is what keeps this honest. The analyser cannot see the guard because it is intraprocedural. Fingerprint churn per release, and filepath.Clean not clearing taint despite being catalogued for path_traversal, are tracked at Nox-HQ/nox-plugin-taint-analysis#41.",
       "owner": "platform",
       "created_at": "2026-08-29T14:47:55.04285Z"
+    },
+    {
+      "fingerprint": "de3548faa45d1c56b8fe894a05f5cd0b9b801582460309527a7081c3fd362065",
+      "rule_id": "IAC-131",
+      "file_path": "deploy/kubernetes/rollopsd-deployment.yaml",
+      "severity": "medium",
+      "reason": "NetworkPolicy is a property of the cluster, not of a shipped manifest. Both rules ask whether a policy exists somewhere in the namespace at runtime, a question a static file cannot answer and this repo cannot decide: the CNI may not enforce policy at all, and shipping a default-deny alongside rollopsd would silently cut the daemon off from the Kubernetes API, the registries it polls and the Git remotes it reconciles in any cluster whose egress assumptions differ from ours. The choice belongs to the operator installing it, and docs/deploy-kubernetes.md is where it is discussed. Re-verify if rollops ever ships an opinionated install (a Helm chart or operator) that owns the whole namespace — at that point a default-deny plus explicit egress becomes ours to write and this stops being someone else's decision.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "dc56d2d8a407a323302af48908d0c2d94c1b573550147c39f40fd2403d1849a6",
+      "rule_id": "IAC-133",
+      "file_path": "deploy/kubernetes/rollopsd-infra.yaml",
+      "severity": "medium",
+      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon — per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "1ce13c2971f42981705225bbce0c51d44a7589b0eca2f7949e792be2e448a5f2",
+      "rule_id": "IAC-134",
+      "file_path": "deploy/kubernetes/rollopsd-infra.yaml",
+      "severity": "medium",
+      "reason": "Namespace-scoped controls aimed at a problem this namespace does not have. rollops-system is created by this manifest and holds exactly one workload, which declares its own requests and limits from measured numbers (see the comment above resources) and caps both of its scratch volumes, so its CPU, memory and ephemeral storage are all already bounded at the pod. A LimitRange only supplies defaults to containers that omit them, and there are none. A ResourceQuota would add a second place those numbers must be kept in sync and would reject the operator's own kubectl debug pod during an incident, in exchange for bounding a namespace whose entire contents we ship. Both are governance a platform team applies across namespaces it does not control, not something a single-tenant install manifest should assert. Re-verify if rollops-system ever hosts more than the daemon — per-tenant plugin pods or user-supplied smoke-test jobs would make a quota bound something real.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "987817ce5996a03757646d9dd273193851b3461bed5028e3e959818f417725e3",
+      "rule_id": "IAC-141",
+      "file_path": "deploy/kubernetes/rollopsd-deployment.yaml",
+      "severity": "medium",
+      "reason": "A category error that follows from the storage model, not an availability gap. rollopsd is one replica with strategy Recreate because it is the single writer to a SQLite database on a ReadWriteOnce PVC; a second replica would not be redundancy, it would be two processes writing one file. Over a single-pod Deployment a PodDisruptionBudget is either inert (maxUnavailable 1, so it protects nothing) or actively harmful (minAvailable 1, which blocks every node drain and turns routine maintenance into a stuck cordon), and anti-affinity across one pod has no peer to be anti-affine to. IAC-183 reads the file as a Helm chart, which it is not. Re-verify when rollopsd's store gains a networked backend (Postgres) or leader election — the replicas: 1 line becomes a real availability decision then, and all three of these rules become answerable.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "244c236847b6c367eec0f3e2c80d924898acb54a6ac3d37cccb47d7def15b8ac",
+      "rule_id": "IAC-294",
+      "file_path": "deploy/kubernetes/rollopsd-deployment.yaml",
+      "severity": "medium",
+      "reason": "The limit this rule asks for is set. Both emptyDir volumes added for the read-only root filesystem declare a ceiling, which parsing the manifest confirms: the tmp and kubecache volumes each resolve to a mapping carrying one (2Gi and 64Mi respectively — tmp holds a git clone of every watched repository, and the old 64Mi evicted the pod in a loop). The rule matches on the volume-type key alone and does not read the line beneath it, so it reports the ceiling as absent whether it is written inline or below — neither form satisfies it, which is why this is waived rather than restructured. Deliberately worded without reproducing the flagged text, because the rule would then match this reason and file a fresh finding against the baseline itself. Fingerprint taken from the CI nox-results artifact and confirmed identical to a local scan, unlike TAINT-004 above where the two differed. Re-verify if the ceiling is ever removed from either volume, since the finding would then be correct and indistinguishable from this one.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T14:00:00Z"
+    },
+    {
+      "fingerprint": "58b7ba976734162c444a0b29042cb892168ca1c0b28514005e9f76de3850a7f5",
+      "rule_id": "IAC-370",
+      "file_path": "deploy/kubernetes/rollopsd-deployment.yaml",
+      "severity": "low",
+      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "22d24c1b18f0b3641cc4a3e1b1f23db6df9b0011b4414c21b814cb14099031d4",
+      "rule_id": "IAC-464",
+      "file_path": "deploy/kubernetes/rollopsd-infra.yaml",
+      "severity": "info",
+      "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-08-12T00:00:00Z"
     }
   ]
 }

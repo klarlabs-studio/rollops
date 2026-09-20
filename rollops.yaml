@@ -1,7 +1,7 @@
 # Rollops deploys rollops.
 #
-# Every release bumps the image pinned in deploy/kubernetes/rollopsd.yaml, and
-# until this config existed nothing applied that bump: the daemon ran v0.34.3
+# Every release bumps the image pinned in deploy/kubernetes/rollopsd-deployment.yaml,
+# and until this config existed nothing applied that bump: the daemon ran v0.34.3
 # while the repository said v0.34.8, four releases of rollout fixes that were
 # never in force. A client is only as correct as the daemon executing its
 # rollouts, so the daemon follows its own releases like any other workload.
@@ -13,7 +13,8 @@
 # is resolved against the repo checkout root by the daemon and against the
 # config file's own directory by the CLI, and `..` is refused — so only a
 # config at the root reads the same way to both. In deploy/ the daemon looked
-# for deploy/kubernetes/rollopsd.yaml at the repo root and refused the batch.
+# for deploy/kubernetes/rollopsd-deployment.yaml at the repo root and refused
+# the batch.
 apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
@@ -33,8 +34,15 @@ spec:
       # The tracked image. imagePolicy bumps this line, and it overrides the
       # container image in the rendered manifest.
       image: ghcr.io/klarlabs-studio/rollopsd:v0.34.9
+      # The Deployment alone. The namespace, cert-manager issuers, RBAC, PVC and
+      # Service are bootstrap (rollopsd-infra.yaml) and are applied by a human:
+      # the daemon's ServiceAccount cannot get cert-manager ClusterIssuers, and
+      # must never be able to rewrite its own ClusterRole. Pointing this at the
+      # full manifest is how the first self-managed apply was refused —
+      #   clusterissuers.cert-manager.io "rollopsd-selfsigned" is forbidden
+      # — with nothing applied, which is the preflight working as intended.
       manifestFrom:
-        path: deploy/kubernetes/rollopsd.yaml
+        path: deploy/kubernetes/rollopsd-deployment.yaml
 
   # Recreate, single replica, one writer to the sqlite PVC: there is no canary
   # to run. The daemon applies this, exits with the old pod, and the new one

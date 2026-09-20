@@ -1,5 +1,5 @@
 # EXAMPLE ONLY — the rollopsd-watch ConfigMap holds the live list of repos the
-# daemon reconciles. It is intentionally NOT part of rollopsd.yaml: applying the
+# daemon reconciles. It is intentionally NOT part of the install manifests: applying
 # main manifest must never overwrite a running fleet's watch list. Manage this
 # ConfigMap on its own, and edit it in place (kubectl edit / your own overlay)
 # rather than re-applying this example.
@@ -40,7 +40,7 @@ data:
         "githubAppPrivateKeyFile": "/etc/rollops/git/github-app-klarlabs.pem"
       },
       {
-        "_comment": "rollops itself. Without this entry the daemon never applies its own release bump: deploy/kubernetes/rollopsd.yaml moves on every release and nothing deploys it. path is the root rollops.yaml, which is where it must live: the daemon resolves manifestFrom against the repo root, the CLI against the config's own directory, and only a root config reads the same to both.",
+        "_comment": "rollops itself. Without this entry the daemon never applies its own release bump: deploy/kubernetes/rollopsd-deployment.yaml moves on every release and nothing deploys it. path is the root rollops.yaml, which is where it must live: the daemon resolves manifestFrom against the repo root, the CLI against the config's own directory, and only a root config reads the same to both.",
         "name": "rollops",
         "url": "https://github.com/klarlabs-studio/rollops",
         "branch": "main",

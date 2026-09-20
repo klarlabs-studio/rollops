@@ -76,7 +76,8 @@ func run(args []string) error {
 		// replaces the command's own output.
 		if got, ok := client.DaemonVersion(); ok && got != version.Version {
 			fmt.Fprintf(os.Stderr, "rollops: this client is %s but the daemon at %s is %s — "+
-				"the daemon runs the rollouts, so update it (deploy/kubernetes/rollopsd.yaml pins the image)\n",
+				"the daemon runs the rollouts, so update it "+
+				"(deploy/kubernetes/rollopsd-deployment.yaml pins the image)\n",
 				version.Version, daemonAddr, got)
 		}
 		return err
