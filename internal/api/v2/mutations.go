@@ -34,6 +34,8 @@ type Deployer interface {
 	Apply(ctx context.Context, cmd deploy.ApplyCommand) (deployment.Deployment, error)
 	Approve(ctx context.Context, cmd deploy.ApproveCommand) (deployment.Deployment, error)
 	Cancel(ctx context.Context, cmd deploy.CancelCommand) (deployment.Deployment, error)
+	Promote(ctx context.Context, cmd deploy.PromoteCommand) (deployment.Deployment, error)
+	Rollback(ctx context.Context, cmd deploy.RollbackCommand) (deployment.Deployment, error)
 }
 
 // CreatePlanRequest asks what deploying a release to an environment would

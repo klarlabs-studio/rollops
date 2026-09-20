@@ -84,12 +84,16 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{deploy.ErrCrossProject, apierr.InvalidArgument},
 		{deploy.ErrUnboundApproval, apierr.InvalidArgument},
 		{deploy.ErrUnexplainedCancellation, apierr.InvalidArgument},
+		{deploy.ErrUnexplainedPromotion, apierr.InvalidArgument},
 		{deploy.ErrNoTarget, apierr.Conflict},
 		{deploy.ErrEnvironmentBusy, apierr.Conflict},
 		{deploy.ErrNotAwaitingApproval, apierr.Conflict},
 		// A deployment that has finished is not a request to fix: the same
 		// command a moment earlier would have worked.
 		{deploy.ErrNotCancellable, apierr.Conflict},
+		{deploy.ErrNotPromotable, apierr.Conflict},
+		{deploy.ErrNotReversible, apierr.Conflict},
+		{deploy.ErrNoWayBack, apierr.Conflict},
 
 		{planner.ErrNothingToDo, apierr.Conflict},
 		{planner.ErrBlocked, apierr.Conflict},

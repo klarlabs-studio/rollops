@@ -91,6 +91,14 @@ func (stubDeployer) Cancel(context.Context, deploy.CancelCommand) (deployment.De
 	return deployment.Deployment{}, errNotWired
 }
 
+func (stubDeployer) Promote(context.Context, deploy.PromoteCommand) (deployment.Deployment, error) {
+	return deployment.Deployment{}, errNotWired
+}
+
+func (stubDeployer) Rollback(context.Context, deploy.RollbackCommand) (deployment.Deployment, error) {
+	return deployment.Deployment{}, errNotWired
+}
+
 var errNotWired = errors.New("the deployer was not meant to be called")
 
 type world struct {

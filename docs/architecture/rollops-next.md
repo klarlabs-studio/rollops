@@ -1886,6 +1886,13 @@ release's version and artifacts but not its labels or annotations. A client
 retrying with the prose corrected is retrying, not asking for something else,
 and refusing it would leave them unable to retry at all.
 
+A command's reason is covered, which is the opposite rule and for the opposite
+cause. Cancelling, promoting past a pause and rolling back record why as the
+only account of the decision, so the prose is not a label on the resource but
+part of what was asked for. A retry that changes it is a different decision, and
+answering it with the first one's record would attribute the act to wording
+nobody wrote — so those keys refuse rather than replay.
+
 ### 23.3 Command responses
 
 Mutation commands **SHOULD** return operation/deployment identity

@@ -226,6 +226,15 @@ func Of(err error) Code {
 		// A deployment past the point of stopping is not a malformed request:
 		// the same command a moment earlier would have worked.
 		errors.Is(err, deploy.ErrNotCancellable),
+		// The same shape one status later: what may be widened or put back is
+		// whatever the state machine has an edge from, and a deployment that has
+		// moved on is a world that will not take the command rather than a
+		// request the caller mistyped.
+		errors.Is(err, deploy.ErrNotPromotable),
+		errors.Is(err, deploy.ErrNotReversible),
+		// A plan that declares no way back is not something the caller can fix
+		// by editing the request: what is wrong is the plan it names.
+		errors.Is(err, deploy.ErrNoWayBack),
 		// An environment with no target, one already at the release, and one
 		// whose target reported a blocker are all the same shape of answer:
 		// the request is fine and the world is not ready for it.
@@ -246,6 +255,7 @@ func Of(err error) Code {
 		// nothing to act on. INTERNAL would invite the retry instead.
 		errors.Is(err, policy.ErrUnexplainedDecision),
 		errors.Is(err, deploy.ErrUnexplainedCancellation),
+		errors.Is(err, deploy.ErrUnexplainedPromotion),
 		errors.Is(err, desired.ErrNothingToDeploy),
 		errors.Is(err, desired.ErrForeignArtifact),
 		// The same isolation breach as desired.ErrForeignArtifact, refused when

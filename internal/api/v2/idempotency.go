@@ -21,13 +21,15 @@ const DefaultKeyLifetime = 24 * time.Hour
 // §18.3 has a CLI generate one per invocation, so two unrelated mutations
 // handed the same string must not replay for each other.
 const (
-	opCreatePlan        = "CreatePlan"
-	opApplyPlan         = "ApplyPlan"
-	opApproveDeployment = "ApproveDeployment"
-	opCancelDeployment  = "CancelDeployment"
-	opCreateRelease     = "CreateRelease"
-	opCreateProject     = "CreateProject"
-	opCreateEnvironment = "CreateEnvironment"
+	opCreatePlan         = "CreatePlan"
+	opApplyPlan          = "ApplyPlan"
+	opApproveDeployment  = "ApproveDeployment"
+	opCancelDeployment   = "CancelDeployment"
+	opPromoteDeployment  = "PromoteDeployment"
+	opRollbackDeployment = "RollbackDeployment"
+	opCreateRelease      = "CreateRelease"
+	opCreateProject      = "CreateProject"
+	opCreateEnvironment  = "CreateEnvironment"
 )
 
 // fingerprint summarises the request a key was first used for, so that a key
