@@ -26,6 +26,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	"go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/policy"
@@ -244,7 +245,14 @@ func Of(err error) Code {
 		errors.Is(err, policy.ErrUnexplainedDecision),
 		errors.Is(err, deploy.ErrUnexplainedCancellation),
 		errors.Is(err, desired.ErrNothingToDeploy),
-		errors.Is(err, desired.ErrForeignArtifact):
+		errors.Is(err, desired.ErrForeignArtifact),
+		// The same isolation breach as desired.ErrForeignArtifact, refused when
+		// the release is created rather than when it is planned.
+		errors.Is(err, release.ErrForeignArtifact),
+		// The domain says what is wrong with the record; the app layer says it
+		// came off the command, so a caller is told to fix their request rather
+		// than to report an outage.
+		errors.Is(err, release.ErrRejected):
 		return InvalidArgument
 	}
 

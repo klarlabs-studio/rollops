@@ -3,15 +3,27 @@ package apiv2
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
 	"go.klarlabs.de/rollops/internal/api/v2/page"
+	apprelease "go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
+	"go.klarlabs.de/rollops/internal/domain/digest"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/provenance"
 	"go.klarlabs.de/rollops/internal/domain/release"
 )
+
+// Registrar is the write side of releases this service projects.
+//
+// Like Deployer it is an interface so that this package depends on the two
+// calls it makes rather than on how the service behind them is assembled.
+type Registrar interface {
+	RegisterArtifact(ctx context.Context, cmd apprelease.RegisterArtifactCommand) (artifact.Artifact, error)
+	Create(ctx context.Context, cmd apprelease.CreateCommand) (release.Release, error)
+}
 
 // Principal is who did something, as the API describes it.
 //
@@ -79,6 +91,152 @@ type Artifact struct {
 	SBOMs      []DocumentRef
 	Signatures []DocumentRef
 	CreatedAt  time.Time
+}
+
+// RegisterArtifactRequest records where a built thing is and what it must
+// hash to. The content is not here and never will be: what is stored is
+// metadata (ADR-0004).
+type RegisterArtifactRequest struct {
+	ProjectID string
+	Kind      string
+	Digest    string
+
+	// Locator has to be pinned to the digest. A tag resolved again at pull time
+	// can hand a different image to production than the one that was verified.
+	Locator   string
+	Size      int64
+	MediaType string
+
+	Metadata   map[string]string
+	Provenance DocumentRef
+	SBOMs      []DocumentRef
+	Signatures []DocumentRef
+
+	Actor identity.Principal
+}
+
+// RegisterArtifact records the artifact, or returns the one already
+// registered.
+//
+// There is no idempotency key here, and it is not an omission: content
+// identifies an artifact, so the digest already is one. A build that reruns
+// registers the same bytes and gets the same artifact back, which is what a
+// key would have bought — without a row to expire or a fingerprint to
+// mismatch.
+func (s *Service) RegisterArtifact(ctx context.Context, req RegisterArtifactRequest) (Artifact, error) {
+	projectID, err := identity.ParseProjectID(req.ProjectID)
+	if err != nil {
+		return Artifact{}, badArgument("apiv2: project id: %w", err)
+	}
+	d, err := digest.Parse(req.Digest)
+	if err != nil {
+		return Artifact{}, badArgument("apiv2: digest: %w", err)
+	}
+	prov, err := parseDocument(req.Provenance)
+	if err != nil {
+		return Artifact{}, badArgument("apiv2: provenance: %w", err)
+	}
+	sboms, err := parseDocuments(req.SBOMs)
+	if err != nil {
+		return Artifact{}, badArgument("apiv2: sbom: %w", err)
+	}
+	signatures, err := parseDocuments(req.Signatures)
+	if err != nil {
+		return Artifact{}, badArgument("apiv2: signature: %w", err)
+	}
+
+	a, err := s.registrar.RegisterArtifact(ctx, apprelease.RegisterArtifactCommand{
+		ProjectID:  projectID,
+		Kind:       artifact.Kind(req.Kind),
+		Digest:     d,
+		Locator:    req.Locator,
+		Size:       req.Size,
+		MediaType:  req.MediaType,
+		Metadata:   req.Metadata,
+		Provenance: prov,
+		SBOMs:      sboms,
+		Signatures: signatures,
+		Actor:      req.Actor,
+	})
+	if err != nil {
+		return Artifact{}, failure("apiv2: register artifact in %s: %w", projectID, err)
+	}
+	return viewArtifact(a), nil
+}
+
+// CreateReleaseRequest fixes the set of artifacts a release will deploy.
+type CreateReleaseRequest struct {
+	ProjectID string
+
+	// Version is how the release is asked for on every surface, so it is unique
+	// within the project.
+	Version   string
+	Artifacts []ReleaseArtifact
+	Source    Source
+
+	Provenance  DocumentRef
+	Labels      map[string]string
+	Annotations map[string]string
+
+	Actor identity.Principal
+
+	// IdempotencyKey lets a retry return the release the first call created.
+	// It matters more here than elsewhere: the version is unique within the
+	// project, so without a key a retry is indistinguishable from a second
+	// attempt to use the name and comes back a conflict.
+	IdempotencyKey string
+}
+
+// CreateRelease fixes the release and returns it.
+func (s *Service) CreateRelease(ctx context.Context, req CreateReleaseRequest) (Release, error) {
+	projectID, err := identity.ParseProjectID(req.ProjectID)
+	if err != nil {
+		return Release{}, badArgument("apiv2: project id: %w", err)
+	}
+	artifacts := make([]release.Artifact, 0, len(req.Artifacts))
+	ids := make([]string, 0, len(req.Artifacts))
+	for _, a := range req.Artifacts {
+		id, err := identity.ParseArtifactID(a.ArtifactID)
+		if err != nil {
+			return Release{}, badArgument("apiv2: artifact id: %w", err)
+		}
+		artifacts = append(artifacts, release.Artifact{Role: a.Role, ArtifactID: id})
+		ids = append(ids, a.Role, string(id))
+	}
+	prov, err := parseDocument(req.Provenance)
+	if err != nil {
+		return Release{}, badArgument("apiv2: provenance: %w", err)
+	}
+
+	fp := fingerprint(append([]string{string(projectID), req.Version, req.Actor.ID}, ids...)...)
+	return once(ctx, s, opCreateRelease, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Release, error) {
+			r, err := s.registrar.Create(ctx, apprelease.CreateCommand{
+				ProjectID: projectID,
+				Version:   req.Version,
+				Artifacts: artifacts,
+				Source: provenance.SourceRevision{
+					Provider:   req.Source.Provider,
+					Repository: req.Source.Repository,
+					Revision:   req.Source.Revision,
+					Ref:        req.Source.Ref,
+					TreeDigest: req.Source.TreeDigest,
+					URL:        req.Source.URL,
+				},
+				Provenance:  prov,
+				Labels:      req.Labels,
+				Annotations: req.Annotations,
+				Actor:       req.Actor,
+			})
+			if err != nil {
+				return "", Release{}, failure("apiv2: release %s in %s: %w", req.Version, projectID, err)
+			}
+			return string(r.ID), viewRelease(r), nil
+		},
+		func(ctx context.Context, id string) (Release, error) {
+			return s.GetRelease(ctx, GetReleaseRequest{ID: id})
+		},
+	)
 }
 
 // GetReleaseRequest names one release.
@@ -228,6 +386,42 @@ func viewDocument(d provenance.DocumentRef) DocumentRef {
 		Locator: d.Locator,
 		Digest:  d.Digest.String(),
 	}
+}
+
+// parseDocument turns a reference the caller sent into one the domain can
+// validate. The zero request means no document, not a malformed one: provenance
+// is optional on both an artifact and a release, and refusing an absent one
+// would make attestation mandatory here rather than in policy, where §14 puts
+// it.
+func parseDocument(d DocumentRef) (provenance.DocumentRef, error) {
+	if d == (DocumentRef{}) {
+		return provenance.DocumentRef{}, nil
+	}
+	parsed, err := digest.Parse(d.Digest)
+	if err != nil {
+		return provenance.DocumentRef{}, err
+	}
+	return provenance.DocumentRef{
+		Kind:    provenance.DocumentKind(d.Kind),
+		Format:  d.Format,
+		Locator: d.Locator,
+		Digest:  parsed,
+	}, nil
+}
+
+func parseDocuments(ds []DocumentRef) ([]provenance.DocumentRef, error) {
+	if len(ds) == 0 {
+		return nil, nil
+	}
+	out := make([]provenance.DocumentRef, 0, len(ds))
+	for i, d := range ds {
+		parsed, err := parseDocument(d)
+		if err != nil {
+			return nil, fmt.Errorf("%d: %w", i, err)
+		}
+		out = append(out, parsed)
+	}
+	return out, nil
 }
 
 func viewPrincipal(p identity.Principal) Principal {

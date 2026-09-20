@@ -214,6 +214,12 @@ func TestAnArtifactWhoseLocatorIsNotPinnedIsRefused(t *testing.T) {
 	if !errors.Is(err, artifact.ErrUnpinnedLocator) {
 		t.Fatalf("err = %v, want ErrUnpinnedLocator", err)
 	}
+	// Also marked as the caller's, so that a transport answers with the code
+	// that sends them back to their request rather than one that has them
+	// reporting an outage.
+	if !errors.Is(err, app.ErrRejected) {
+		t.Errorf("err = %v, want it marked ErrRejected", err)
+	}
 }
 
 func TestRegisteringAnArtifactForAProjectNobodyCreatedIsNotFound(t *testing.T) {
@@ -420,6 +426,9 @@ func TestAReleaseWithNothingInItIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "artifact") {
 		t.Errorf("err = %v; it does not say what was missing", err)
+	}
+	if !errors.Is(err, app.ErrRejected) {
+		t.Errorf("err = %v, want it marked ErrRejected", err)
 	}
 }
 

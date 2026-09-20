@@ -34,6 +34,18 @@ var (
 
 	// ErrIncomplete reports a service constructed without something it needs.
 	ErrIncomplete = errors.New("release: service is missing a dependency")
+
+	// ErrRejected marks a command the domain would not build a record from.
+	//
+	// The domain reports what is wrong with the record; it has no opinion about
+	// whose fault that is. Every field it validates comes straight off the
+	// command, so here the answer is known: the caller's. Without this a
+	// transport cannot tell an unpinned locator from a database that fell over,
+	// and would answer an operator's typo by telling them the system is broken.
+	//
+	// It wraps rather than replaces, so the specific cause — artifact.
+	// ErrUnpinnedLocator, release.ErrDuplicateRole — is still reachable.
+	ErrRejected = errors.New("release: the command was refused")
 )
 
 // Config is what a Service needs.
@@ -131,7 +143,7 @@ func (s *Service) RegisterArtifact(
 		Signatures: cmd.Signatures,
 	})
 	if err != nil {
-		return artifact.Artifact{}, err
+		return artifact.Artifact{}, fmt.Errorf("%w: %w", ErrRejected, err)
 	}
 
 	// Looked up before the write rather than only after it fails, so the common
@@ -204,7 +216,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (release.Releas
 		Annotations: cmd.Annotations,
 	})
 	if err != nil {
-		return release.Release{}, err
+		return release.Release{}, fmt.Errorf("%w: %w", ErrRejected, err)
 	}
 
 	err = s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {

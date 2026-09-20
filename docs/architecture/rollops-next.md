@@ -1780,6 +1780,9 @@ Illustrative HTTP:
 POST /v2/projects
 GET  /v2/projects/{id}
 
+POST /v2/projects/{id}/artifacts
+GET  /v2/projects/{id}/artifacts
+
 POST /v2/projects/{id}/releases
 GET  /v2/projects/{id}/releases
 
@@ -1794,6 +1797,14 @@ POST /v2/deployments/{id}:cancel
 
 GET  /v2/deployments/{id}/events
 ```
+
+Artifact registration is the one mutation that takes no idempotency key.
+Content identifies an artifact (INV-002), so the digest already is one: a build
+that reruns registers the same bytes and is answered with the artifact already
+recorded, which is what a key would have bought without a row to expire or a
+fingerprint to mismatch. Release creation does take one — a version is unique
+within its project, so without a key a retry is indistinguishable from a second
+attempt to use the name and would come back `CONFLICT`.
 
 ### 23.3 Command responses
 

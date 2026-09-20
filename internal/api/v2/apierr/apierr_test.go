@@ -13,6 +13,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	"go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
 	"go.klarlabs.de/rollops/internal/domain/policy"
@@ -92,6 +93,10 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{planner.ErrBlocked, apierr.Conflict},
 		{desired.ErrNothingToDeploy, apierr.InvalidArgument},
 		{desired.ErrForeignArtifact, apierr.InvalidArgument},
+
+		// The same violation caught at the front door rather than at plan time.
+		{release.ErrForeignArtifact, apierr.InvalidArgument},
+		{release.ErrRejected, apierr.InvalidArgument},
 
 		{context.Canceled, apierr.Cancelled},
 		{context.DeadlineExceeded, apierr.DeadlineExceeded},

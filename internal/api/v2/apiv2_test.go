@@ -11,6 +11,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	apprelease "go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
@@ -92,6 +93,21 @@ type world struct {
 // config is every dependency a service needs, so that a test wanting one
 // broken or absent says which rather than repeating the other nine.
 func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) apiv2.Config {
+	// The real registrar rather than a stub, for the reason stubPlanner names:
+	// these tests are about what the API does with an answer, and a fake would
+	// let the API disagree with the service it projects.
+	registrar, err := apprelease.New(apprelease.Config{
+		Transactor: store,
+		Projects:   store.Projects(),
+		Artifacts:  store.Artifacts(),
+		Releases:   store.Releases(),
+		Events:     store.Events(),
+		Clock:      clock,
+		IDs:        identity.NewGenerator(),
+	})
+	if err != nil {
+		panic("apprelease.New: " + err.Error())
+	}
 	return apiv2.Config{
 		Projects:     store.Projects(),
 		Environments: store.Environments(),
@@ -101,6 +117,7 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 		Plans:        store.Plans(),
 		Events:       store.Events(),
 		Deployer:     deployer,
+		Registrar:    registrar,
 		Keys:         store.Idempotency(),
 		Clock:        clock,
 	}

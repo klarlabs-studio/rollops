@@ -55,6 +55,12 @@ type Config struct {
 	// planning and applying it knows through this one interface.
 	Deployer Deployer
 
+	// Registrar records artifacts and fixes them into releases. It is separate
+	// from Deployer because the two answer to different rules: what may be
+	// deployed is a question of policy and environment state, where what may be
+	// released is a question of provenance and project isolation.
+	Registrar Registrar
+
 	// Keys remembers what a mutation already answered, so that a retry
 	// replays rather than repeats (§18.3).
 	Keys port.IdempotencyRepository
@@ -78,6 +84,7 @@ type Service struct {
 	plans        port.PlanRepository
 	events       port.EventReader
 	deployer     Deployer
+	registrar    Registrar
 	keys         port.IdempotencyRepository
 	clock        identity.Clock
 	keyLifetime  time.Duration
@@ -102,6 +109,8 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no event reader")
 	case cfg.Deployer == nil:
 		return nil, errors.New("apiv2: no deployer")
+	case cfg.Registrar == nil:
+		return nil, errors.New("apiv2: no registrar")
 	case cfg.Keys == nil:
 		return nil, errors.New("apiv2: no idempotency repository")
 	case cfg.Clock == nil:
@@ -119,6 +128,7 @@ func New(cfg Config) (*Service, error) {
 		plans:        cfg.Plans,
 		events:       cfg.Events,
 		deployer:     cfg.Deployer,
+		registrar:    cfg.Registrar,
 		keys:         cfg.Keys,
 		clock:        cfg.Clock,
 		keyLifetime:  cfg.KeyLifetime,

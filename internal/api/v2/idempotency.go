@@ -25,6 +25,7 @@ const (
 	opApplyPlan         = "ApplyPlan"
 	opApproveDeployment = "ApproveDeployment"
 	opCancelDeployment  = "CancelDeployment"
+	opCreateRelease     = "CreateRelease"
 )
 
 // fingerprint summarises the request a key was first used for, so that a key
