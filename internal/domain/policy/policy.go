@@ -14,6 +14,7 @@ package policy
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/domain/canonical"
@@ -40,21 +41,23 @@ const (
 	RiskCritical RiskLevel = "critical"
 )
 
-// rank orders the levels. An unrecognised level ranks above critical so that a
-// typo in configuration fails closed rather than reading as harmless.
+// riskLevels is the whole set, least severe first — the order rank imposes,
+// stated once so that publishing the vocabulary and ordering it cannot drift.
+var riskLevels = []RiskLevel{RiskLow, RiskMedium, RiskHigh, RiskCritical}
+
+// RiskLevels returns every band, least severe first. A transport that has to
+// name the whole vocabulary asks here rather than restating it, and the slice
+// is rebuilt on each call so a caller cannot edit the set through it.
+func RiskLevels() []RiskLevel { return slices.Clone(riskLevels) }
+
+// rank orders the levels by their position in riskLevels. An unrecognised level
+// ranks above every declared one so that a typo in configuration fails closed
+// rather than reading as harmless.
 func (l RiskLevel) rank() int {
-	switch l {
-	case RiskLow:
-		return 0
-	case RiskMedium:
-		return 1
-	case RiskHigh:
-		return 2
-	case RiskCritical:
-		return 3
-	default:
-		return 4
+	if i := slices.Index(riskLevels, l); i >= 0 {
+		return i
 	}
+	return len(riskLevels)
 }
 
 // Below reports whether l is less severe than other.
@@ -127,14 +130,19 @@ const (
 	RequireChangeTicket   RequirementType = "change_ticket"
 )
 
-func (t RequirementType) valid() bool {
-	switch t {
-	case RequireApproval, RequireSignedArtifact, RequireProvenance,
-		RequireStagingSuccess, RequireTimeWindow, RequireChangeTicket:
-		return true
-	}
-	return false
+// requirementTypes is the whole set, in the order the constants declare it.
+var requirementTypes = []RequirementType{
+	RequireApproval, RequireSignedArtifact, RequireProvenance,
+	RequireStagingSuccess, RequireTimeWindow, RequireChangeTicket,
 }
+
+// RequirementTypes returns every condition policy can attach to a decision, in
+// a stable order. A transport that has to name the whole vocabulary asks here
+// rather than restating it, and the slice is rebuilt on each call so a caller
+// cannot edit the set through it.
+func RequirementTypes() []RequirementType { return slices.Clone(requirementTypes) }
+
+func (t RequirementType) valid() bool { return slices.Contains(requirementTypes, t) }
 
 // Requirement is a condition attached to a decision. Role and Count qualify an
 // approval requirement; Detail carries the qualifier for the rest.

@@ -9,6 +9,7 @@ package artifact
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,25 @@ var kinds = map[Kind]struct{}{
 	KindManifestBundle: {},
 	KindWASM:           {},
 	KindFile:           {},
+}
+
+// Kinds returns every kind an artifact may be, in a stable order. It is derived
+// from the same table Valid reads rather than written out twice, so a kind
+// added there appears here without anybody remembering to add it — which is
+// what a transport naming the whole vocabulary depends on.
+func Kinds() []Kind {
+	out := make([]Kind, 0, len(kinds))
+	for k := range kinds {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Valid reports whether k is a kind the system knows how to carry.
+func (k Kind) Valid() bool {
+	_, ok := kinds[k]
+	return ok
 }
 
 // ErrUnpinnedLocator reports a registry reference that would be resolved again
@@ -86,7 +106,7 @@ func (a Artifact) Validate() error {
 	if _, err := identity.ParseProjectID(string(a.ProjectID)); err != nil {
 		return fmt.Errorf("artifact: project id: %w", err)
 	}
-	if _, ok := kinds[a.Kind]; !ok {
+	if !a.Kind.Valid() {
 		return fmt.Errorf("artifact: unknown kind %q", a.Kind)
 	}
 	// A non-zero Digest is valid by construction — its fields are unexported

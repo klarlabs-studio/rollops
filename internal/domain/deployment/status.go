@@ -113,6 +113,27 @@ func TerminalStatuses() []Status {
 	return out
 }
 
+// Statuses returns every status the machine knows, in a stable order.
+//
+// It is derived from the same two tables Valid reads rather than written out a
+// third time, so a status added to the transition table appears here without
+// anybody remembering to add it. That matters most to a transport which has to
+// name the whole vocabulary — a proto enum, a JSON schema — where a forgotten
+// value is not a compile error but a caller told the status does not exist.
+func Statuses() []Status {
+	out := make([]Status, 0, len(transitions)+len(terminalStatuses))
+	for s := range transitions {
+		out = append(out, s)
+	}
+	for s := range terminalStatuses {
+		if _, alsoHasEdges := transitions[s]; !alsoHasEdges {
+			out = append(out, s)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 func (s Status) String() string { return string(s) }
 
 // Valid reports whether s is a status the machine knows.

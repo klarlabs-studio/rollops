@@ -3,6 +3,7 @@ package identity
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,6 +21,19 @@ const (
 	PrincipalScheduler PrincipalType = "scheduler"
 	PrincipalSystem    PrincipalType = "system"
 )
+
+// principalTypes is the whole set, in the order the constants declare it:
+// people first, then the things that act on their behalf.
+var principalTypes = []PrincipalType{
+	PrincipalHuman, PrincipalService, PrincipalAgent,
+	PrincipalGit, PrincipalScheduler, PrincipalSystem,
+}
+
+// PrincipalTypes returns every kind of actor a mutation may be attributed to,
+// in a stable order. A transport that has to name the whole vocabulary asks
+// here rather than restating it, and the slice is rebuilt on each call so a
+// caller cannot edit the set through it.
+func PrincipalTypes() []PrincipalType { return slices.Clone(principalTypes) }
 
 // Principal is the actor a mutation is attributed to (INV-005). Every command
 // that changes state carries one; there is no anonymous path.
@@ -65,10 +79,7 @@ func (p Principal) Validate() error {
 	if strings.TrimSpace(p.ID) == "" {
 		return fmt.Errorf("%w: missing id", ErrInvalidPrincipal)
 	}
-	switch p.Type {
-	case PrincipalHuman, PrincipalService, PrincipalAgent,
-		PrincipalGit, PrincipalScheduler, PrincipalSystem:
-	default:
+	if !slices.Contains(principalTypes, p.Type) {
 		return fmt.Errorf("%w: unknown type %q", ErrInvalidPrincipal, p.Type)
 	}
 	return nil

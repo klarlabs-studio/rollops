@@ -3,6 +3,7 @@ package verifyv1
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 // Verdict is what one check concluded (§11.3). There are five, and only one of
@@ -62,6 +63,20 @@ func Combine(verdicts ...Verdict) Verdict {
 		}
 	}
 	return worst
+}
+
+// Verdicts returns all five, from "promote" to "do not promote". It is sorted
+// out of the same table Combine reduces with rather than written out twice, so
+// the order published is the order enforced and a verdict added to the ranking
+// appears here without anybody remembering to add it — which is what a
+// transport naming the whole vocabulary depends on.
+func Verdicts() []Verdict {
+	out := make([]Verdict, 0, len(blocking))
+	for v := range blocking {
+		out = append(out, v)
+	}
+	slices.SortFunc(out, func(a, b Verdict) int { return blocking[a] - blocking[b] })
+	return out
 }
 
 // Interrupted reports the verdict owed to a check whose context ended before it

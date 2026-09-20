@@ -11,6 +11,7 @@ package deployment
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,16 +34,25 @@ const (
 	StrategyRecreate  Strategy = "recreate"
 )
 
+// strategies is the whole set, in the order a rollout gets riskier to operate:
+// recreate takes the service down, rolling replaces in place, and the last two
+// run old and new side by side. The order is published, so it is chosen rather
+// than alphabetical.
+var strategies = []Strategy{
+	StrategyRecreate, StrategyRolling, StrategyCanary, StrategyBlueGreen,
+}
+
+// Strategies returns every rollout strategy the system knows, in a stable
+// order. A transport that has to name the whole vocabulary asks here rather
+// than restating it, and the slice is rebuilt on each call so a caller cannot
+// edit the set through it.
+func Strategies() []Strategy { return slices.Clone(strategies) }
+
 // Valid reports whether s is a rollout strategy the system knows. It is
 // exported because a plan records the strategy it was reviewed under and has
-// to check it without restating the list.
-func (s Strategy) Valid() bool {
-	switch s {
-	case StrategyRolling, StrategyCanary, StrategyBlueGreen, StrategyRecreate:
-		return true
-	}
-	return false
-}
+// to check it without restating the list — and it reads the same slice
+// Strategies publishes, so the two cannot disagree about what exists.
+func (s Strategy) Valid() bool { return slices.Contains(strategies, s) }
 
 // TriggerType names what set a deployment going. It is separate from the actor
 // because "who" and "why" are different questions: a scheduled deployment still
