@@ -31,9 +31,11 @@ type Cluster interface {
 	// Preflight reports whether Apply would be accepted, changing nothing.
 	Preflight(ctx context.Context, manifest []byte) error
 	// LiveChecksum reads the recorded checksum from the live cluster (empty if
-	// the resource is absent or unmanaged).
+	// the resource is absent or unmanaged). A query that FAILED is an error,
+	// never an empty reading — the planner turns empty into a create.
 	LiveChecksum(ctx context.Context) (string, error)
-	// LiveYAML is the live object as YAML (empty if absent). Used with
+	// LiveYAML is the live object as YAML. Empty means absent; a failed query
+	// is an error, for the same reason as LiveChecksum. Used with
 	// ignoreDifferences so ignored field drift is not reported.
 	LiveYAML(ctx context.Context) ([]byte, error)
 	// Healthy reports rollout readiness.

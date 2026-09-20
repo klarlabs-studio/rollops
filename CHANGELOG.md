@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **A failed observation is no longer read as an absent resource.** The
+  Kubernetes target discarded every error from the `kubectl get` behind
+  `Observe`, returning empty — which the planner reads as "no current state
+  observed", i.e. a create. A revoked RBAC rule, an unreachable API server or a
+  throttled request therefore looked exactly like a workload that had never
+  been deployed, and rollops would re-apply a live target every reconcile
+  interval with nothing logged. Only a genuine NotFound is empty now;
+  everything else is an error the reconciler reports. Same hole, same fix, in
+  `LiveYAML` (which feeds `ignoreDifferences` filtering).
+
 ## v0.34.11 - An interrupted rollout resolves itself
 
 - **A rollout interrupted mid-flight no longer wedges its target.** The rolling
