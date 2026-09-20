@@ -1786,6 +1786,10 @@ GET  /v2/projects/{id}/artifacts
 POST /v2/projects/{id}/releases
 GET  /v2/projects/{id}/releases
 
+POST /v2/projects/{id}/environments
+GET  /v2/projects/{id}/environments
+GET  /v2/environments/{id}
+
 POST /v2/environments/{id}/deployments:plan
 POST /v2/deployment-plans/{id}:apply
 
@@ -1805,7 +1809,17 @@ recorded, which is what a key would have bought without a row to expire or a
 fingerprint to mismatch. Release creation does take one — a version is unique
 within its project, so without a key a retry is indistinguishable from a second
 attempt to use the name and would come back `CONFLICT`. Project creation takes
-one for the same reason, a project name being unique across the estate.
+one for the same reason, a project name being unique across the estate, and so
+does environment creation, a name being unique within its project.
+
+An environment is the one resource whose write and read shapes deliberately
+differ. Creating one supplies target configuration and variables as values —
+each either an inline literal or the name of a secret the provider holds, never
+both, because a value that is both has no reading that is not a guess. Reading
+one back returns the **keys** and never the values (INV-012), so the two are
+separate types rather than one pressed into both jobs. A read that carried a
+literal through would be a read that a caller could not tell from one carrying a
+resolved secret.
 
 A key's fingerprint covers what identifies the resource and not what can be
 edited afterwards: a project's name but not its description or labels, a

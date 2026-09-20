@@ -27,6 +27,7 @@ const (
 	opCancelDeployment  = "CancelDeployment"
 	opCreateRelease     = "CreateRelease"
 	opCreateProject     = "CreateProject"
+	opCreateEnvironment = "CreateEnvironment"
 )
 
 // fingerprint summarises the request a key was first used for, so that a key

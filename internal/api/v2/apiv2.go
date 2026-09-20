@@ -30,11 +30,13 @@ import (
 
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
+	appenv "go.klarlabs.de/rollops/internal/app/environment"
 	"go.klarlabs.de/rollops/internal/app/port"
 	appproject "go.klarlabs.de/rollops/internal/app/project"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/project"
+	"go.klarlabs.de/rollops/internal/domain/value"
 )
 
 // Config names what the service reads through. Every field is required: a
@@ -67,6 +69,11 @@ type Config struct {
 	// the one call that needs nothing to exist first.
 	Founder Founder
 
+	// Binder declares environments. What may be deployed and where it may be
+	// deployed to are different questions, and this is the one that answers
+	// where.
+	Binder Binder
+
 	// Keys remembers what a mutation already answered, so that a retry
 	// replays rather than repeats (§18.3).
 	Keys port.IdempotencyRepository
@@ -92,6 +99,7 @@ type Service struct {
 	deployer     Deployer
 	registrar    Registrar
 	founder      Founder
+	binder       Binder
 	keys         port.IdempotencyRepository
 	clock        identity.Clock
 	keyLifetime  time.Duration
@@ -120,6 +128,8 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no registrar")
 	case cfg.Founder == nil:
 		return nil, errors.New("apiv2: no founder")
+	case cfg.Binder == nil:
+		return nil, errors.New("apiv2: no binder")
 	case cfg.Keys == nil:
 		return nil, errors.New("apiv2: no idempotency repository")
 	case cfg.Clock == nil:
@@ -139,6 +149,7 @@ func New(cfg Config) (*Service, error) {
 		deployer:     cfg.Deployer,
 		registrar:    cfg.Registrar,
 		founder:      cfg.Founder,
+		binder:       cfg.Binder,
 		keys:         cfg.Keys,
 		clock:        cfg.Clock,
 		keyLifetime:  cfg.KeyLifetime,
@@ -290,6 +301,147 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) (Li
 		return ListProjectsResponse{}, failure("apiv2: projects: %w", err)
 	}
 	return ListProjectsResponse{Projects: mapped(p.Items, viewProject), Next: p.Next}, nil
+}
+
+// Binder is the write side of environments.
+//
+// The name is what it does: an environment binds a project to the substrates
+// its releases land on and the policies in force over them.
+type Binder interface {
+	Create(ctx context.Context, cmd appenv.CreateCommand) (environment.Environment, error)
+}
+
+// Value is a configured value as a caller supplies it: either an inline
+// literal or the name of a secret the provider holds. Setting both is refused,
+// because there would be no reading of it that was not a guess.
+//
+// There is no read counterpart. A caller that asks for an environment is told
+// which keys it configures and never what they resolve to (INV-012), so the
+// write type and the read type are deliberately different rather than one type
+// pressed into both jobs.
+type Value struct {
+	Literal string
+	Secret  string
+}
+
+// TargetSpec declares a binding to a deployment substrate. See TargetBinding
+// for the shape a read returns instead.
+type TargetSpec struct {
+	Name   string
+	Driver string
+	Config map[string]Value
+	Labels map[string]string
+}
+
+// CreateEnvironmentRequest declares a place to deploy to.
+type CreateEnvironmentRequest struct {
+	ProjectID string
+	Name      string
+
+	// Kind is checked by the domain rather than against a list here. A second
+	// copy of the set of kinds is a second thing to forget to update.
+	Kind string
+
+	Targets   []TargetSpec
+	Policies  []PolicyBinding
+	Variables map[string]Value
+	Labels    map[string]string
+	Lifecycle Lifecycle
+
+	Actor identity.Principal
+
+	// IdempotencyKey lets a retry return the environment the first call made.
+	// A name is unique within its project, so without one a retry is
+	// indistinguishable from a second caller asking for the name.
+	IdempotencyKey string
+}
+
+// CreateEnvironment declares an environment.
+func (s *Service) CreateEnvironment(ctx context.Context, req CreateEnvironmentRequest) (Environment, error) {
+	projectID, err := identity.ParseProjectID(req.ProjectID)
+	if err != nil {
+		return Environment{}, badArgument("apiv2: project id: %w", err)
+	}
+	targets, err := parseTargets(req.Targets)
+	if err != nil {
+		return Environment{}, err
+	}
+	variables, err := parseValues(req.Variables)
+	if err != nil {
+		return Environment{}, badArgument("apiv2: variables: %w", err)
+	}
+	policies := make([]environment.PolicyBinding, 0, len(req.Policies))
+	for _, p := range req.Policies {
+		policies = append(policies, environment.PolicyBinding{
+			Name: p.Name, Ref: p.Ref, Mode: environment.PolicyMode(p.Mode),
+		})
+	}
+
+	// Only what addresses the environment: a retry that came back with a label
+	// added or a target corrected is still a retry, and refusing it would leave
+	// a caller who never learned whether the first call landed unable to send a
+	// second.
+	fp := fingerprint(string(projectID), req.Name, req.Actor.ID)
+	return once(ctx, s, opCreateEnvironment, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Environment, error) {
+			e, err := s.binder.Create(ctx, appenv.CreateCommand{
+				ProjectID: projectID,
+				Name:      req.Name,
+				Kind:      environment.Kind(req.Kind),
+				Targets:   targets,
+				Policies:  policies,
+				Variables: variables,
+				Labels:    req.Labels,
+				Lifecycle: environment.Lifecycle{
+					TTL:           req.Lifecycle.TTL,
+					DeleteOnClose: req.Lifecycle.DeleteOnClose,
+				},
+				Actor: req.Actor,
+			})
+			if err != nil {
+				return "", Environment{}, failure("apiv2: environment %q in %s: %w", req.Name, projectID, err)
+			}
+			return string(e.ID), viewEnvironment(e), nil
+		},
+		func(ctx context.Context, id string) (Environment, error) {
+			return s.GetEnvironment(ctx, GetEnvironmentRequest{ID: id})
+		},
+	)
+}
+
+func parseTargets(specs []TargetSpec) ([]environment.TargetBinding, error) {
+	out := make([]environment.TargetBinding, 0, len(specs))
+	for _, t := range specs {
+		config, err := parseValues(t.Config)
+		if err != nil {
+			return nil, badArgument("apiv2: target %q: %w", t.Name, err)
+		}
+		out = append(out, environment.TargetBinding{
+			Name: t.Name, Driver: t.Driver, Config: config, Labels: t.Labels,
+		})
+	}
+	return out, nil
+}
+
+func parseValues(in map[string]Value) (map[string]value.Ref, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]value.Ref, len(in))
+	for k, v := range in {
+		switch {
+		case v.Secret != "" && v.Literal != "":
+			return nil, fmt.Errorf("%q is both a literal and a secret", k)
+		case v.Secret != "":
+			out[k] = value.Secret(v.Secret)
+		default:
+			// An empty literal is a value somebody meant to set, so the absence
+			// of a secret name is what discriminates rather than the presence
+			// of a literal.
+			out[k] = value.Literal(v.Literal)
+		}
+	}
+	return out, nil
 }
 
 // GetEnvironmentRequest names one environment.

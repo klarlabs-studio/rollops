@@ -12,6 +12,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
+	appenv "go.klarlabs.de/rollops/internal/app/environment"
 	"go.klarlabs.de/rollops/internal/app/port"
 	appproject "go.klarlabs.de/rollops/internal/app/project"
 	"go.klarlabs.de/rollops/internal/app/release"
@@ -99,6 +100,7 @@ func TestDomainErrorsCarryTheCodeACallerCanActOn(t *testing.T) {
 		{release.ErrForeignArtifact, apierr.InvalidArgument},
 		{release.ErrRejected, apierr.InvalidArgument},
 		{appproject.ErrRejected, apierr.InvalidArgument},
+		{appenv.ErrRejected, apierr.InvalidArgument},
 
 		{context.Canceled, apierr.Cancelled},
 		{context.DeadlineExceeded, apierr.DeadlineExceeded},

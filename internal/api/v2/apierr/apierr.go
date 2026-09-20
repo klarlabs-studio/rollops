@@ -25,6 +25,7 @@ import (
 
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
+	appenv "go.klarlabs.de/rollops/internal/app/environment"
 	"go.klarlabs.de/rollops/internal/app/port"
 	appproject "go.klarlabs.de/rollops/internal/app/project"
 	"go.klarlabs.de/rollops/internal/app/release"
@@ -257,7 +258,11 @@ func Of(err error) Code {
 		// The same reasoning one aggregate earlier: a project name that is not
 		// an alias is a typo, and a typo answered with INTERNAL invites the
 		// retry that will fail identically.
-		errors.Is(err, appproject.ErrRejected):
+		errors.Is(err, appproject.ErrRejected),
+		// A misspelt kind, a driver left blank, two targets sharing a name: all
+		// of it came off the command, and all of it is fixed by editing the
+		// request rather than by waiting.
+		errors.Is(err, appenv.ErrRejected):
 		return InvalidArgument
 	}
 

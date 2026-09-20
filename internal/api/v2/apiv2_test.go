@@ -10,6 +10,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
+	appenv "go.klarlabs.de/rollops/internal/app/environment"
 	"go.klarlabs.de/rollops/internal/app/port"
 	appproject "go.klarlabs.de/rollops/internal/app/project"
 	apprelease "go.klarlabs.de/rollops/internal/app/release"
@@ -119,6 +120,17 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 	if err != nil {
 		panic("appproject.New: " + err.Error())
 	}
+	binder, err := appenv.New(appenv.Config{
+		Transactor:   store,
+		Projects:     store.Projects(),
+		Environments: store.Environments(),
+		Events:       store.Events(),
+		Clock:        clock,
+		IDs:          identity.NewGenerator(),
+	})
+	if err != nil {
+		panic("appenv.New: " + err.Error())
+	}
 	return apiv2.Config{
 		Projects:     store.Projects(),
 		Environments: store.Environments(),
@@ -130,6 +142,7 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 		Deployer:     deployer,
 		Registrar:    registrar,
 		Founder:      founder,
+		Binder:       binder,
 		Keys:         store.Idempotency(),
 		Clock:        clock,
 	}
@@ -622,6 +635,270 @@ func TestAnIDThatIsNotAnEnvironmentIDIsTheCallersMistake(t *testing.T) {
 	}
 }
 
+// binding declares one environment wired to one cluster, configured with a
+// literal and a secret. The secret is the point: it has to reach the record and
+// appear in nothing a caller reads back.
+func binding(p string) apiv2.CreateEnvironmentRequest {
+	return apiv2.CreateEnvironmentRequest{
+		ProjectID: p,
+		Name:      "production",
+		Kind:      string(environment.KindProduction),
+		Targets: []apiv2.TargetSpec{{
+			Name:   "api",
+			Driver: "kubernetes",
+			Config: map[string]apiv2.Value{
+				"namespace":  {Literal: "payments"},
+				"kubeconfig": {Secret: "prod/kubeconfig"},
+			},
+		}},
+		Variables: map[string]apiv2.Value{"DATABASE_URL": {Secret: "prod/db"}},
+		Labels:    map[string]string{"tier": "critical"},
+		Actor:     author(),
+	}
+}
+
+func TestCreatingAnEnvironmentReturnsItReadableAtOnce(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+
+	got, err := w.svc.CreateEnvironment(context.Background(), binding(string(p.ID)))
+	if err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+	if got.ID == "" {
+		t.Fatal("no environment id; nothing could be planned against it")
+	}
+	if got.Name != "production" || got.Kind != string(environment.KindProduction) {
+		t.Errorf("environment = %q/%q", got.Name, got.Kind)
+	}
+	read, err := w.svc.GetEnvironment(context.Background(), apiv2.GetEnvironmentRequest{ID: got.ID})
+	if err != nil {
+		t.Fatalf("GetEnvironment: %v", err)
+	}
+	if read.ID != got.ID {
+		t.Errorf("read back %q, want %q", read.ID, got.ID)
+	}
+}
+
+// What went in as a secret name comes back as a key and nothing else. The
+// write type carries values and the read type does not, which is why they are
+// two types rather than one (INV-012).
+func TestWhatWasConfiguredComesBackAsKeysWithoutValues(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+
+	got, err := w.svc.CreateEnvironment(context.Background(), binding(string(p.ID)))
+	if err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+	if len(got.Targets) != 1 {
+		t.Fatalf("got %d targets, want 1", len(got.Targets))
+	}
+	for i, k := range []string{"kubeconfig", "namespace"} {
+		if got.Targets[0].Config[i] != k {
+			t.Errorf("config key %d = %q, want %q", i, got.Targets[0].Config[i], k)
+		}
+	}
+	if len(got.Variables) != 1 || got.Variables[0] != "DATABASE_URL" {
+		t.Errorf("variables = %v, want [DATABASE_URL]", got.Variables)
+	}
+	stored, err := w.store.Environments().Get(context.Background(), identity.EnvironmentID(got.ID))
+	if err != nil {
+		t.Fatalf("Environments.Get: %v", err)
+	}
+	if name := stored.Variables["DATABASE_URL"].SecretName(); name != "prod/db" {
+		t.Errorf("the record names secret %q, want prod/db: the value has to reach storage even though no read returns it", name)
+	}
+}
+
+// The gap this endpoint closes: a plan needs somewhere to land, and until now
+// nothing a caller could reach declared one.
+func TestAnEnvironmentCreatedThroughTheAPICanBePlannedAgainst(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	env, err := w.svc.CreateEnvironment(context.Background(), binding(string(p.ID)))
+	if err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+	r, err := w.svc.CreateRelease(context.Background(), w.creating(t, p.ID))
+	if err != nil {
+		t.Fatalf("CreateRelease: %v", err)
+	}
+
+	got, err := w.svc.CreatePlan(context.Background(), apiv2.CreatePlanRequest{
+		EnvironmentID: env.ID,
+		ReleaseID:     r.ID,
+		Strategy:      string(deployment.StrategyRolling),
+		Actor:         author(),
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	if got.EnvironmentID != env.ID {
+		t.Errorf("plan lands in %q, want %q", got.EnvironmentID, env.ID)
+	}
+}
+
+// A value that is both is not a value with a precedence rule; it is a request
+// whose author meant one of two things, and guessing which would resolve it
+// silently in favour of whichever branch was written first.
+func TestAValueThatIsBothALiteralAndASecretIsRefused(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	req := binding(string(p.ID))
+	req.Variables["DATABASE_URL"] = apiv2.Value{Literal: "postgres://localhost", Secret: "prod/db"}
+
+	_, err := w.svc.CreateEnvironment(context.Background(), req)
+
+	if got := codeOf(t, err); got != apierr.InvalidArgument {
+		t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+	}
+}
+
+func TestAMalformedEnvironmentRequestIsTheCallersMistake(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*apiv2.CreateEnvironmentRequest)
+	}{
+		{"not a project id", func(r *apiv2.CreateEnvironmentRequest) { r.ProjectID = "nonsense" }},
+		{"no name", func(r *apiv2.CreateEnvironmentRequest) { r.Name = "" }},
+		{"unknown kind", func(r *apiv2.CreateEnvironmentRequest) { r.Kind = "prodction" }},
+		{"two targets with one name", func(r *apiv2.CreateEnvironmentRequest) {
+			r.Targets = append(r.Targets, r.Targets[0])
+		}},
+		{"target with no driver", func(r *apiv2.CreateEnvironmentRequest) { r.Targets[0].Driver = "" }},
+		{"target config both ways", func(r *apiv2.CreateEnvironmentRequest) {
+			r.Targets[0].Config["namespace"] = apiv2.Value{Literal: "payments", Secret: "prod/ns"}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := setup(t)
+			p := w.project(t, "checkout")
+			req := binding(string(p.ID))
+			tt.edit(&req)
+
+			_, err := w.svc.CreateEnvironment(context.Background(), req)
+
+			if got := codeOf(t, err); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
+	}
+}
+
+// An environment is filed under a project, so a project that is not there is a
+// missing resource rather than a malformed request.
+func TestAnEnvironmentForAProjectNobodyCreatedIsNotFound(t *testing.T) {
+	w := setup(t)
+	absent, err := identity.NewProjectID(w.ids)
+	if err != nil {
+		t.Fatalf("NewProjectID: %v", err)
+	}
+
+	_, err = w.svc.CreateEnvironment(context.Background(), binding(string(absent)))
+
+	if got := codeOf(t, err); got != apierr.NotFound {
+		t.Errorf("code = %s, want %s", got, apierr.NotFound)
+	}
+}
+
+func TestASecondEnvironmentTakingANameIsAConflict(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	if _, err := w.svc.CreateEnvironment(context.Background(), binding(string(p.ID))); err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+
+	_, err := w.svc.CreateEnvironment(context.Background(), binding(string(p.ID)))
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+func TestTwoCreateEnvironmentCallsWithOneKeyDeclareOneEnvironment(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	req := binding(string(p.ID))
+	req.IdempotencyKey = "k1"
+
+	first, err := w.svc.CreateEnvironment(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first CreateEnvironment: %v", err)
+	}
+	second, err := w.svc.CreateEnvironment(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second CreateEnvironment: %v", err)
+	}
+
+	if second.ID != first.ID {
+		t.Errorf("second call = %q, want the %q the first declared", second.ID, first.ID)
+	}
+	all, err := w.svc.ListEnvironments(context.Background(), apiv2.ListEnvironmentsRequest{
+		ProjectID: string(p.ID),
+	})
+	if err != nil {
+		t.Fatalf("ListEnvironments: %v", err)
+	}
+	if len(all.Environments) != 1 {
+		t.Errorf("%d environments, want 1", len(all.Environments))
+	}
+}
+
+func TestAnEnvironmentKeyReusedForADifferentNameIsRefused(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	req := binding(string(p.ID))
+	req.IdempotencyKey = "k1"
+	if _, err := w.svc.CreateEnvironment(context.Background(), req); err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+
+	other := req
+	other.Name = "staging"
+	_, err := w.svc.CreateEnvironment(context.Background(), other)
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+// The targets and the labels are outside the fingerprint. What a key protects
+// is a second environment being declared, and it is the project and the name
+// that say which environment this is — a retry that came back with the
+// kubeconfig corrected is still a retry.
+func TestAnEnvironmentKeyRetriedWithACorrectedTargetStillReplays(t *testing.T) {
+	w := setup(t)
+	p := w.project(t, "checkout")
+	req := binding(string(p.ID))
+	req.IdempotencyKey = "k1"
+	first, err := w.svc.CreateEnvironment(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+
+	again := binding(string(p.ID))
+	again.IdempotencyKey = "k1"
+	again.Targets[0].Config["kubeconfig"] = apiv2.Value{Secret: "prod/kubeconfig-v2"}
+	again.Labels = map[string]string{"tier": "critical", "owner": "platform"}
+	second, err := w.svc.CreateEnvironment(context.Background(), again)
+	if err != nil {
+		t.Fatalf("second CreateEnvironment: %v", err)
+	}
+
+	if second.ID != first.ID {
+		t.Errorf("second call = %q, want the %q the first declared", second.ID, first.ID)
+	}
+	stored, err := w.store.Environments().Get(context.Background(), identity.EnvironmentID(second.ID))
+	if err != nil {
+		t.Fatalf("Environments.Get: %v", err)
+	}
+	if name := stored.Targets[0].Config["kubeconfig"].SecretName(); name != "prod/kubeconfig" {
+		t.Errorf("target names secret %q, want the recorded prod/kubeconfig: a replay returns what was declared, not what was asked for the second time", name)
+	}
+}
+
 // The broken repositories below fail their list read with something nothing has
 // classified — the shape a driver error arrives in.
 type brokenProjects struct {
@@ -856,6 +1133,7 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 		{"event", func(c *apiv2.Config) { c.Events = nil }},
 		{"deployer", func(c *apiv2.Config) { c.Deployer = nil }},
 		{"founder", func(c *apiv2.Config) { c.Founder = nil }},
+		{"binder", func(c *apiv2.Config) { c.Binder = nil }},
 		{"idempotency", func(c *apiv2.Config) { c.Keys = nil }},
 		{"clock", func(c *apiv2.Config) { c.Clock = nil }},
 	} {
