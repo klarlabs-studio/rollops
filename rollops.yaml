@@ -6,8 +6,14 @@
 # never in force. A client is only as correct as the daemon executing its
 # rollouts, so the daemon follows its own releases like any other workload.
 #
-# Add this repository to ROLLOPS_WATCH with path "deploy" for it to take
+# Add this repository to ROLLOPS_WATCH with path "rollops.yaml" for it to take
 # effect (see deploy/kubernetes/rollopsd-watch.example.yaml).
+#
+# This file sits at the repository root on purpose. A referenced manifest path
+# is resolved against the repo checkout root by the daemon and against the
+# config file's own directory by the CLI, and `..` is refused — so only a
+# config at the root reads the same way to both. In deploy/ the daemon looked
+# for deploy/kubernetes/rollopsd.yaml at the repo root and refused the batch.
 apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
@@ -25,7 +31,7 @@ spec:
       # container image in the rendered manifest.
       image: ghcr.io/klarlabs-studio/rollopsd:v0.34.9
       manifestFrom:
-        path: kubernetes/rollopsd.yaml
+        path: deploy/kubernetes/rollopsd.yaml
 
   # Recreate, single replica, one writer to the sqlite PVC: there is no canary
   # to run. The daemon applies this, exits with the old pod, and the new one
