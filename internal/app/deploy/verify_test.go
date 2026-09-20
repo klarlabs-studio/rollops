@@ -5,12 +5,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
@@ -250,6 +252,162 @@ func TestAVerifierThatBreaksLeavesTheDeploymentVerifying(t *testing.T) {
 		if e.Type == event.DeploymentVerificationDone {
 			t.Error("a verification that never answered was recorded as completed")
 		}
+	}
+}
+
+// run reads back what Verify said it stored. Going through the repository
+// rather than trusting the returned value is the point: what an operator will
+// read months later is the row, not the response.
+func (h *harness) run(t *testing.T, id identity.VerificationRunID) verification.Run {
+	t.Helper()
+	stored, err := h.store.VerificationRuns().Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("read the verification run back: %v", err)
+	}
+	return stored
+}
+
+// The returned identity is the whole reason the run exists: an idempotent
+// verify that is asked twice replays by re-reading the run it already produced,
+// so a verification with no identity cannot be replayed at all.
+func TestAVerificationNamesTheRunItWasRecordedAs(t *testing.T) {
+	h := newHarness(t)
+	d := h.applied(t)
+
+	_, v := h.verify(t, d)
+
+	if v.ID == "" {
+		t.Fatal("the verification names no run; nothing can be replayed by it")
+	}
+	stored := h.run(t, v.ID)
+	if stored.DeploymentID != d.ID {
+		t.Errorf("run is about %q, want %q", stored.DeploymentID, d.ID)
+	}
+	if stored.PlanID != d.PlanID {
+		t.Errorf("run cites plan %q, want %q", stored.PlanID, d.PlanID)
+	}
+	if got := stored.Verdict(); got != v.Verdict {
+		t.Errorf("stored verdict %q, returned %q", got, v.Verdict)
+	}
+}
+
+// The event deliberately drops the reason and the evidence, because it can
+// never be corrected. The run is where they live, and if they do not survive
+// the write the decision to drop them from the event loses them outright.
+func TestTheStoredRunKeepsTheReasonAndEvidenceTheEventDoesNot(t *testing.T) {
+	h := newHarness(t)
+	h.verifier.checks = []deploy.CheckResult{{
+		Verifier: verifyv1.VerifierMetadata{Kind: "prometheus", Name: "errors"},
+		Result: verifyv1.VerificationResult{
+			Verdict:      verifyv1.VerdictFail,
+			Reason:       "error rate climbed above the threshold",
+			Measurements: []verifyv1.Measurement{{Name: "error_rate", Value: 0.04}},
+			Evidence: []verifyv1.EvidenceRef{{
+				Kind: "url",
+				URI:  "https://grafana.example/d/abc",
+			}},
+		},
+	}}
+	d := h.applied(t)
+
+	_, v := h.verify(t, d)
+
+	stored := h.run(t, v.ID)
+	if len(stored.Checks) != 1 {
+		t.Fatalf("got %d checks, want 1", len(stored.Checks))
+	}
+	got := stored.Checks[0]
+	if got.Verifier.Name != "errors" {
+		t.Errorf("check = %q, want errors", got.Verifier.Name)
+	}
+	if got.Result.Reason != "error rate climbed above the threshold" {
+		t.Errorf("reason = %q; the event dropped it and the run is the only copy", got.Result.Reason)
+	}
+	if len(got.Result.Evidence) != 1 || got.Result.Evidence[0].URI != "https://grafana.example/d/abc" {
+		t.Errorf("evidence = %v; a verdict nobody can go and look at is an assertion", got.Result.Evidence)
+	}
+}
+
+// A run states what was observed in a window, so the window has to be the one
+// the checks actually ran in rather than the instant they were written down.
+func TestTheRunSpansTheWindowTheChecksRanIn(t *testing.T) {
+	h := newHarness(t)
+	h.verifier.during = func() { h.clock.now = h.clock.now.Add(30 * time.Second) }
+	d := h.applied(t)
+
+	_, v := h.verify(t, d)
+
+	stored := h.run(t, v.ID)
+	if !stored.StartedAt.Equal(start) {
+		t.Errorf("started at %s, want %s", stored.StartedAt, start)
+	}
+	if want := start.Add(30 * time.Second); !stored.FinishedAt.Equal(want) {
+		t.Errorf("finished at %s, want %s", stored.FinishedAt, want)
+	}
+}
+
+// A run is stored whatever the checks said. A failing verification is the one
+// an operator most needs the evidence for.
+func TestAFailingVerificationIsRecordedTooAndAgainstTheStatusItLeft(t *testing.T) {
+	h := newHarness(t)
+	h.verifier.checks = []deploy.CheckResult{answered(verifyv1.VerdictFail)}
+	d := h.applied(t)
+
+	out, v := h.verify(t, d)
+
+	if out.Status != deployment.StatusPaused {
+		t.Fatalf("status = %q, want paused", out.Status)
+	}
+	if got := h.run(t, v.ID).Verdict(); got != verifyv1.VerdictFail {
+		t.Errorf("stored verdict = %q, want fail", got)
+	}
+	runs, err := h.store.VerificationRuns().ListForDeployment(context.Background(), d.ID)
+	if err != nil {
+		t.Fatalf("ListForDeployment: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Errorf("got %d runs, want 1", len(runs))
+	}
+}
+
+// INV-012. The run is persisted and rendered like everything else here, and a
+// credential that reached it would be as hard to recall as one in an event.
+func TestTheStoredRunCarriesNoSecretFromTheActor(t *testing.T) {
+	h := newHarness(t)
+	d := h.applied(t)
+
+	_, v := h.verify(t, d)
+
+	stored := h.run(t, v.ID)
+	if got := stored.Actor.Claims["token"]; got == actor().Claims["token"] {
+		t.Errorf("the actor's token was stored with the run as %q", got)
+	}
+	if stored.Actor.ID != actor().ID {
+		t.Errorf("actor = %q, want %q", stored.Actor.ID, actor().ID)
+	}
+}
+
+// A verifier that breaks returned no verdict, so there is nothing a run could
+// truthfully say was observed.
+func TestAVerifierThatBreaksRecordsNoRun(t *testing.T) {
+	h := newHarness(t)
+	h.verifier.err = errors.New("prometheus is unreachable")
+	d := h.applied(t)
+
+	_, _, err := h.service.Verify(context.Background(), deploy.VerifyCommand{
+		DeploymentID: d.ID,
+		Actor:        actor(),
+	})
+	if err == nil {
+		t.Fatal("Verify: want the verifier's failure")
+	}
+
+	runs, err := h.store.VerificationRuns().ListForDeployment(context.Background(), d.ID)
+	if err != nil {
+		t.Fatalf("ListForDeployment: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Errorf("got %d runs; nothing was observed", len(runs))
 	}
 }
 

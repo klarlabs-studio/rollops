@@ -189,6 +189,9 @@ func setup(t *testing.T) *world {
 		Clock:        clock,
 		IDs:          ids,
 		Events:       store.Events(),
+
+		VerificationRuns: store.VerificationRuns(),
+
 		PlanLifetime: time.Hour,
 	})
 	if err != nil {

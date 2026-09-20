@@ -58,12 +58,20 @@ type stubVerifier struct {
 	checks []deploy.CheckResult
 	err    error
 	seen   deploy.VerificationRequest
+
+	// during runs while the checks are notionally running. It exists so a test
+	// can wind the clock forward there, which is the only way to tell a window
+	// that was measured apart from two stamps taken at the same instant.
+	during func()
 }
 
 func (v *stubVerifier) Verify(
 	_ context.Context, req deploy.VerificationRequest,
 ) ([]deploy.CheckResult, error) {
 	v.seen = req
+	if v.during != nil {
+		v.during()
+	}
 	return v.checks, v.err
 }
 
@@ -190,6 +198,9 @@ func newHarness(t *testing.T) *harness {
 		Clock:        clk,
 		IDs:          gen,
 		Events:       store.Events(),
+
+		VerificationRuns: store.VerificationRuns(),
+
 		PlanLifetime: time.Hour,
 	})
 	if err != nil {
@@ -242,7 +253,9 @@ func TestAServiceReportsWhatItWasNotGiven(t *testing.T) {
 	// A lifetime of zero is a missing dependency rather than a default: a plan
 	// that never expires defeats the point of planning separately from
 	// applying.
-	for _, name := range []string{"planner", "verifier", "plan lifetime", "transactor"} {
+	for _, name := range []string{
+		"planner", "verifier", "verification run repository", "plan lifetime", "transactor",
+	} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("the error does not mention the missing %s: %s", name, err)
 		}

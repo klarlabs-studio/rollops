@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/domain/deployment"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/event"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/release"
+	"go.klarlabs.de/rollops/internal/domain/verification"
 	verifyv1 "go.klarlabs.de/rollops/pkg/verify/v1"
 )
 
@@ -47,7 +49,13 @@ type Verifier interface {
 
 // Verification is what Verify concluded: the combined verdict and the checks it
 // was combined from.
+//
+// ID names the run the conclusion was stored as. A caller that has to answer
+// the same verify twice — an idempotent transport replaying a retried request —
+// re-reads that run rather than reconstructing a body it never kept, so a
+// verification with no identity is one that cannot be replayed.
 type Verification struct {
+	ID      identity.VerificationRunID
 	Verdict verifyv1.Verdict
 	Checks  []CheckResult
 }
@@ -77,6 +85,11 @@ type VerifyCommand struct {
 // check that may query Prometheus for ten minutes would block every other
 // write to the deployment; a crash in between leaves the deployment verifying,
 // which is the status that says verification is outstanding.
+//
+// What the checks said is stored as a verification run in the second of those
+// transactions, alongside the completion event and the status the verdict
+// implies. All three describe the same conclusion, so a partial write would
+// leave a deployment paused by a verdict with nothing saying what observed it.
 func (s *Service) Verify(
 	ctx context.Context, cmd VerifyCommand,
 ) (deployment.Deployment, Verification, error) {
@@ -100,7 +113,11 @@ func (s *Service) Verify(
 			"deploy: release %s: %w", d.ReleaseID, err)
 	}
 
-	started, err := s.begin(ctx, cmd, d)
+	// One read of the clock serves both the status change and the run's
+	// window, so that the moment the deployment is recorded as entering
+	// verification and the moment the run says the checks began are one fact.
+	startedAt := s.cfg.Clock.Now()
+	started, err := s.begin(ctx, cmd, d, startedAt)
 	if err != nil {
 		return deployment.Deployment{}, Verification{}, err
 	}
@@ -113,23 +130,33 @@ func (s *Service) Verify(
 	if err != nil {
 		return deployment.Deployment{}, Verification{}, fmt.Errorf("deploy: verifying %s: %w", d.ID, err)
 	}
-	out := Verification{Verdict: combine(checks), Checks: checks}
 
-	settled, err := s.settle(ctx, cmd, started, out)
+	run, err := verification.New(s.cfg.IDs, s.cfg.Clock, cmd.Actor, verification.Run{
+		DeploymentID: started.ID,
+		PlanID:       started.PlanID,
+		Checks:       observed(checks),
+		StartedAt:    startedAt,
+	})
+	if err != nil {
+		return deployment.Deployment{}, Verification{}, fmt.Errorf(
+			"deploy: recording what verified %s: %w", d.ID, err)
+	}
+
+	settled, err := s.settle(ctx, cmd, started, run)
 	if err != nil {
 		return deployment.Deployment{}, Verification{}, err
 	}
-	return settled, out, nil
+	return settled, Verification{ID: run.ID, Verdict: run.Verdict(), Checks: checks}, nil
 }
 
 // begin moves the deployment to verifying and says so, so that a check running
 // for minutes is visible as one rather than as a deployment that stopped.
 func (s *Service) begin(
-	ctx context.Context, cmd VerifyCommand, d deployment.Deployment,
+	ctx context.Context, cmd VerifyCommand, d deployment.Deployment, at time.Time,
 ) (deployment.Deployment, error) {
 	var out deployment.Deployment
 	err := s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		moved, err := d.TransitionTo(deployment.StatusVerifying, s.cfg.Clock.Now())
+		moved, err := d.TransitionTo(deployment.StatusVerifying, at)
 		if err != nil {
 			return err
 		}
@@ -150,15 +177,20 @@ func (s *Service) begin(
 	return out, nil
 }
 
-// settle records what the checks concluded and moves the deployment to where
-// the verdict leaves it.
+// settle stores what the checks concluded and moves the deployment to where the
+// verdict leaves it.
+//
+// The verdict is read off the run rather than passed alongside it. A second
+// copy of one fact is a copy that can disagree, and verifyv1.Combine — where
+// "inconclusive MUST NOT silently become pass" and "no checks is not a pass"
+// both live — is what Run.Verdict applies.
 func (s *Service) settle(
-	ctx context.Context, cmd VerifyCommand, d deployment.Deployment, v Verification,
+	ctx context.Context, cmd VerifyCommand, d deployment.Deployment, run verification.Run,
 ) (deployment.Deployment, error) {
 	out := d
 	err := s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		if v.Verdict != verifyv1.VerdictPass {
-			paused, err := d.TransitionTo(deployment.StatusPaused, s.cfg.Clock.Now())
+		if run.Verdict() != verifyv1.VerdictPass {
+			paused, err := d.TransitionTo(deployment.StatusPaused, run.FinishedAt)
 			if err != nil {
 				return err
 			}
@@ -169,7 +201,10 @@ func (s *Service) settle(
 			paused.Revision = rev
 			out = paused
 		}
-		return s.recordVerificationEnd(ctx, cmd, out, v)
+		if err := s.cfg.VerificationRuns.Create(ctx, run); err != nil {
+			return fmt.Errorf("deploy: storing the verification run: %w", err)
+		}
+		return s.recordVerificationEnd(ctx, cmd, out, run)
 	})
 	if err != nil {
 		return deployment.Deployment{}, err
@@ -177,15 +212,15 @@ func (s *Service) settle(
 	return out, nil
 }
 
-// combine reduces the checks to the verdict acted on. It is verifyv1.Combine
-// over the answers, which is where "inconclusive MUST NOT silently become pass"
-// and "no checks is not a pass" both live.
-func combine(checks []CheckResult) verifyv1.Verdict {
-	verdicts := make([]verifyv1.Verdict, len(checks))
+// observed turns the verifier's answers into the record's. The two shapes are
+// identical, and deliberately separate: a port describes what was asked of an
+// adapter, an aggregate describes what is kept.
+func observed(checks []CheckResult) []verification.Check {
+	out := make([]verification.Check, len(checks))
 	for i, c := range checks {
-		verdicts[i] = c.Result.Verdict
+		out[i] = verification.Check{Verifier: c.Verifier, Result: c.Result}
 	}
-	return verifyv1.Combine(verdicts...)
+	return out
 }
 
 // verificationStarted says checks are running, so that a verification nobody
@@ -205,11 +240,15 @@ type verificationStarted struct {
 // in, which is why verifyv1.EvidenceRef is a reference rather than content in
 // the first place. Neither is here. The verdicts and the measurements are what
 // a query matches on, and the verification run holds the rest.
+//
+// RunID is how the timeline gets there. An event that omits both the evidence
+// and any way to reach it would have dropped it rather than moved it.
 type verificationCompleted struct {
-	PlanID  identity.PlanID   `json:"plan_id"`
-	Verdict verifyv1.Verdict  `json:"verdict"`
-	Status  deployment.Status `json:"status"`
-	Checks  []checkOutcome    `json:"checks,omitempty"`
+	PlanID  identity.PlanID            `json:"plan_id"`
+	RunID   identity.VerificationRunID `json:"run_id"`
+	Verdict verifyv1.Verdict           `json:"verdict"`
+	Status  deployment.Status          `json:"status"`
+	Checks  []checkOutcome             `json:"checks,omitempty"`
 }
 
 type checkOutcome struct {
@@ -230,10 +269,10 @@ func (s *Service) recordVerificationStart(
 }
 
 func (s *Service) recordVerificationEnd(
-	ctx context.Context, cmd VerifyCommand, d deployment.Deployment, v Verification,
+	ctx context.Context, cmd VerifyCommand, d deployment.Deployment, run verification.Run,
 ) error {
-	outcomes := make([]checkOutcome, len(v.Checks))
-	for i, c := range v.Checks {
+	outcomes := make([]checkOutcome, len(run.Checks))
+	for i, c := range run.Checks {
 		o := checkOutcome{
 			Name:    c.Verifier.Name,
 			Kind:    c.Verifier.Kind,
@@ -249,7 +288,8 @@ func (s *Service) recordVerificationEnd(
 	}
 	payload, err := encode(verificationCompleted{
 		PlanID:  d.PlanID,
-		Verdict: v.Verdict,
+		RunID:   run.ID,
+		Verdict: run.Verdict(),
 		Status:  d.Status,
 		Checks:  outcomes,
 	})

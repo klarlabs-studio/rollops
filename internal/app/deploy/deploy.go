@@ -118,6 +118,13 @@ type Config struct {
 	// (ADR-0003).
 	Events port.EventLog
 
+	// VerificationRuns is where what the checks said is kept. The event log
+	// records that a verification completed and how it came out, but an event
+	// is append-only and can never be corrected (INV-013), so the reason a
+	// verifier gave and the evidence it pointed at have nowhere there that
+	// INV-012 allows. A run is a record, and a record can be dropped.
+	VerificationRuns port.VerificationRunRepository
+
 	// PlanLifetime is how long a plan stays applicable. It bounds the window in
 	// which the world can drift away from what was reviewed.
 	PlanLifetime time.Duration
@@ -147,6 +154,7 @@ func New(cfg Config) (*Service, error) {
 		{"clock", cfg.Clock != nil},
 		{"id generator", cfg.IDs != nil},
 		{"event log", cfg.Events != nil},
+		{"verification run repository", cfg.VerificationRuns != nil},
 		{"plan lifetime", cfg.PlanLifetime > 0},
 	} {
 		if !d.present {
