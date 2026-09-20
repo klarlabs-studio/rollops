@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -74,14 +75,13 @@ func TestSelfManagementConfigIsValid(t *testing.T) {
 //
 // Bootstrap objects belong in rollopsd-infra.yaml, applied by a human once.
 func TestSelfManagedManifestIsTheDeploymentAlone(t *testing.T) {
-	f, err := os.Open("../../deploy/kubernetes/rollopsd-deployment.yaml")
+	data, err := os.ReadFile("../../deploy/kubernetes/rollopsd-deployment.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
 
 	var kinds []string
-	dec := yaml.NewDecoder(f)
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	for {
 		var doc struct {
 			Kind     string `yaml:"kind"`
