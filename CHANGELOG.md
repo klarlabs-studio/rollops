@@ -8,11 +8,29 @@ cluster looked like: `rollopsd:v0.34.3` running while this repository pinned
 `v0.34.8`. Every release bumped a pin nothing applied.
 
 - **rollops deploys rollops.** `rollops.yaml` (repo root) targets
-  `rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`
-  and follows the released image (`imagePolicy`, `writeback: pull-request`
-  because main is protected). Watch this repo with `path: deploy` and a release
-  reaches the daemon on its own.
-- **The daemon manifest is the whole desired state again.** The
+  `rollops-system/deployment/rollopsd`, renders
+  `deploy/kubernetes/rollopsd-deployment.yaml` and follows the released image
+  (`imagePolicy`, `writeback: pull-request` because main is protected). Watch
+  this repo with `path: rollops.yaml` and a release reaches the daemon on its
+  own.
+- **The daemon manages its Deployment and nothing else.** The install manifest
+  is split: `rollopsd-infra.yaml` (namespace, cert-manager issuers and
+  certificates, ServiceAccount, ClusterRole/Binding, PVC, Service) is applied
+  once by a human, `rollopsd-deployment.yaml` is the object rollops rolls out.
+  The daemon's ServiceAccount cannot get cert-manager `ClusterIssuers`, and it
+  must never be able to rewrite the ClusterRole that grants it everything else —
+  a workload that can widen its own permissions has none. While the self-managed
+  manifest was the full install file, every reconcile was refused at the
+  server-side dry run, applying nothing:
+
+  ```
+  clusterissuers.cert-manager.io "rollopsd-selfsigned" is forbidden: User
+  "system:serviceaccount:rollops-system:rollopsd" cannot get resource
+  "clusterissuers" in API group "cert-manager.io" at the cluster scope
+  ```
+
+  A fresh install now applies both files (`docs/deploy-kubernetes.md`).
+- **The daemon manifest is the whole desired state of what it manages.** The
   Prometheus-operator RBAC (`podmonitors`, `servicemonitors`) was granted on the
   live cluster and never written down, so applying the file would have withdrawn
   it. Self-management makes that a real risk, so the rules are in the file.

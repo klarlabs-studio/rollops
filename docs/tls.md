@@ -94,7 +94,7 @@ listener down.
 
 ## cert-manager setup (Kubernetes)
 
-`deploy/kubernetes/rollopsd.yaml` ships a working default **CA chain** (mTLS
+`deploy/kubernetes/rollopsd-infra.yaml` ships a working default **CA chain** (mTLS
 needs both the server cert and every client cert to chain to one shared CA — a
 bare self-signed leaf can't verify a separately-issued client cert):
 

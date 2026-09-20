@@ -19,11 +19,33 @@ docker push my-registry/rollopsd:v0.15.0
 
 ## Manifests
 
-`deploy/kubernetes/rollopsd.yaml` contains the namespace, ServiceAccount,
-ClusterRole/Binding, watch ConfigMap, PVC, Deployment, and Service. RBAC grants
-apply/observe on workloads, patch on Gateway API `HTTPRoute`s, and read on CRDs
-(for `status.conditions` health). It is cluster-scoped for simplicity; narrow it
-to per-namespace Roles in stricter setups.
+The install is two files, split along the line of what the daemon may apply to
+itself:
+
+- **`deploy/kubernetes/rollopsd-infra.yaml`** — bootstrap: namespace, TLS
+  material (cert-manager ClusterIssuer/Issuer/Certificates), ServiceAccount,
+  ClusterRole/Binding, PVC, and Service. Applied by a human, once. RBAC grants
+  apply/observe on workloads, patch on Gateway API `HTTPRoute`s, and read on
+  CRDs (for `status.conditions` health). It is cluster-scoped for simplicity;
+  narrow it to per-namespace Roles in stricter setups.
+- **`deploy/kubernetes/rollopsd-deployment.yaml`** — the Deployment alone, and
+  the only object rollops manages for itself (see *Self-management* below).
+
+The split is not cosmetic. The daemon's ServiceAccount cannot get cert-manager
+`ClusterIssuers`, and it must not be able to rewrite the ClusterRole that grants
+it everything else — a workload that can widen its own permissions has none.
+While the self-managed manifest was the full install file, every reconcile was
+refused at the server-side dry run and **nothing was applied**:
+
+```
+clusterissuers.cert-manager.io "rollopsd-selfsigned" is forbidden: User
+"system:serviceaccount:rollops-system:rollopsd" cannot get resource
+"clusterissuers" in API group "cert-manager.io" at the cluster scope
+```
+
+The watch ConfigMap is in neither file: re-applying a manifest must never
+clobber a running fleet's watch list. Create it once from
+`rollopsd-watch.example.yaml`.
 
 ## Secrets (out of band — never committed)
 
@@ -74,8 +96,8 @@ cluster ran `rollopsd:v0.34.3` while this repository pinned `v0.34.8`, four
 releases of rollout fixes that never deployed. Nothing applied the pin.
 
 `rollops.yaml` at the repository root is rollops' own rollout config: it targets
-`rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`,
-and carries an `imagePolicy` that follows the released image. It sits at the
+`rollops-system/deployment/rollopsd`, renders
+`deploy/kubernetes/rollopsd-deployment.yaml`, and carries an `imagePolicy` that follows the released image. It sits at the
 root because a referenced manifest resolves against the **repo checkout root**
 for the daemon and against the **config file's own directory** for the CLI,
 and `..` is refused — only a root config reads the same way to both. Watch this
@@ -86,10 +108,13 @@ tag, opens a PR bumping the tracked image (main is protected, so writeback is
 
 Two things follow from that:
 
-- **The manifest must be the whole desired state.** Self-management applies
-  `deploy/kubernetes/rollopsd.yaml`, so anything granted by hand on the live
-  cluster and missing from that file is withdrawn on the next apply. The
-  Prometheus-operator RBAC was exactly that, and is now in the file.
+- **The manifest must be the whole desired state of what it manages.**
+  Self-management applies `deploy/kubernetes/rollopsd-deployment.yaml`, so
+  anything set by hand on the live Deployment and missing from that file is
+  withdrawn on the next apply. Bootstrap objects are outside that loop, so a
+  hand-granted RBAC rule survives — but it also drifts silently from the
+  repository, which is why the Prometheus-operator rules were written back into
+  `rollopsd-infra.yaml` rather than left on the cluster.
 - **Check the skew when something looks wrong.** `rollops doctor` reports the
   daemon's version beside the client's and **fails** when they differ; every
   daemon-mode command prints a one-line warning after it runs. A daemon older
@@ -99,7 +124,8 @@ Two things follow from that:
 ## Apply
 
 ```sh
-kubectl apply -f deploy/kubernetes/rollopsd.yaml
+kubectl apply -f deploy/kubernetes/rollopsd-infra.yaml \
+              -f deploy/kubernetes/rollopsd-deployment.yaml
 kubectl -n rollops-system rollout status deploy/rollopsd
 kubectl -n rollops-system port-forward svc/rollopsd 8080:80   # open http://localhost:8080
 ```
