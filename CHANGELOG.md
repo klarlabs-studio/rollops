@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased - An interrupted rollout resolves itself
+
+- **A rollout interrupted mid-flight no longer wedges its target.** The rolling
+  path saves a rollout as `deploying`, applies, then saves it as `verifying`. A
+  process that dies in between leaves a row that is in flight with no stepper
+  snapshot: `Apply` is refused as `target busy`, `Tick` was refused as
+  "deploying without a stepper snapshot", and nothing could clear either. The
+  daemon did this to itself the first time it deployed itself — the apply it
+  was running replaced its own pod. `Tick` now hands such a rollout to the
+  post-deploy gate, which answers the open question by looking at the live
+  target. Rollback is blocked on the way through: what reached the target is
+  unknown, so the recorded prior is not a verified baseline, and restoring one
+  of those over a healthy service is the 2026-09-19 incident.
+
 ## v0.34.10 - The daemon follows its own releases
 
 The daemon runs the rollouts; the CLI only asks it to. So a client newer than
