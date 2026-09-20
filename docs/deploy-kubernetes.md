@@ -73,10 +73,13 @@ the daemon therefore describes behaviour that is not in force — which is how a
 cluster ran `rollopsd:v0.34.3` while this repository pinned `v0.34.8`, four
 releases of rollout fixes that never deployed. Nothing applied the pin.
 
-`deploy/rollops.yaml` is rollops' own rollout config: it targets
+`rollops.yaml` at the repository root is rollops' own rollout config: it targets
 `rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`,
-and carries an `imagePolicy` that follows the released image. Watch this
-repository with `path: deploy` and the daemon keeps itself current: a release
+and carries an `imagePolicy` that follows the released image. It sits at the
+root because a referenced manifest resolves against the **repo checkout root**
+for the daemon and against the **config file's own directory** for the CLI,
+and `..` is refused — only a root config reads the same way to both. Watch this
+repository with `path: rollops.yaml` and the daemon keeps itself current: a release
 publishes `ghcr.io/klarlabs-studio/rollopsd:vX.Y.Z`, the daemon notices the new
 tag, opens a PR bumping the tracked image (main is protected, so writeback is
 `pull-request`), and the merge deploys it on the next reconcile.

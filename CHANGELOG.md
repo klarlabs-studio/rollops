@@ -7,7 +7,7 @@ the daemon describes behaviour that is not in force — and that is what the
 cluster looked like: `rollopsd:v0.34.3` running while this repository pinned
 `v0.34.8`. Every release bumped a pin nothing applied.
 
-- **rollops deploys rollops.** `deploy/rollops.yaml` targets
+- **rollops deploys rollops.** `rollops.yaml` (repo root) targets
   `rollops-system/deployment/rollopsd`, renders `deploy/kubernetes/rollopsd.yaml`
   and follows the released image (`imagePolicy`, `writeback: pull-request`
   because main is protected). Watch this repo with `path: deploy` and a release
