@@ -40,7 +40,7 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 		return &r, nil
 	}
 	if len(r.StepperSnap) == 0 {
-		return &r, fmt.Errorf("engine: tick: rollout %s is deploying without a stepper snapshot", r.ID)
+		return e.recoverInterrupted(ctx, r)
 	}
 	if cfg.Spec.Target.Ref != r.TargetRef {
 		return &r, fmt.Errorf("engine: tick: config target %q does not match rollout %q", cfg.Spec.Target.Ref, r.TargetRef)
@@ -103,6 +103,43 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 		}
 	}
 	return e.driveStepper(ctx, lc, &r, cfg, persisted.Plan, s, clk, persisted.EnteredAt, &healthErr, r.Initiator)
+}
+
+// recoverInterrupted finishes a rollout that is deploying with no stepper
+// snapshot. That combination means one thing: the process driving it died
+// before it could record any progress — between saving the rollout and saving
+// its first step.
+//
+// It used to be a hard error, which wedged the target permanently. Nothing
+// clears a rollout the engine refuses to touch, and while it sits in
+// `deploying` it is in flight, so every Apply is refused as ErrTargetBusy. The
+// daemon hit this the first time it deployed itself: the apply it was running
+// replaced its own pod mid-rollout.
+//
+// The rollout is handed to the post-deploy gate instead, because the gate
+// answers exactly the open question — it looks at the live target rather than
+// at what we recorded. Rollback is blocked on the way through: we do not know
+// what reached the target, so the recorded prior state is not a verified
+// baseline, and restoring one of those over a healthy service is the 2026-09-19
+// incident. If the gate then fails, the rollout stays in `verifying`, which is
+// not in flight, so the next reconcile converges forward by applying desired.
+func (e *Engine) recoverInterrupted(ctx context.Context, r rollout.Rollout) (*rollout.Rollout, error) {
+	r.Phase = rollout.PhaseVerifying
+	if r.RollbackBlocked == "" {
+		r.RollbackBlocked = "rollout was interrupted before it recorded progress: what reached the target is unknown, so the recorded prior state is not a verified baseline"
+	}
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return &r, fmt.Errorf("engine: tick: recover interrupted rollout %s: %w", r.ID, err)
+	}
+	e.record(audit.Entry{
+		Action:    audit.ActionApply,
+		RolloutID: r.ID,
+		TargetRef: r.TargetRef,
+		Actor:     r.Initiator,
+		Detail:    "interrupted rollout (deploying with no stepper snapshot) handed to the post-deploy gate; rollback blocked",
+	})
+	return &r, nil
 }
 
 // InFlight returns the newest deploying or paused rollout for targetRef.

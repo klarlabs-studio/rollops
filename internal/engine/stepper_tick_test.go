@@ -222,3 +222,58 @@ func TestTick_UnhealthyAtAStepEnteredFromTheTimerFails(t *testing.T) {
 		t.Fatalf("an unhealthy canary is still %s after 5 ticks (step %d)", last.Phase, last.StepIndex)
 	}
 }
+
+// A rollout that is deploying with no stepper snapshot was interrupted before
+// it recorded any progress. Ticking it must resolve it, not refuse it.
+//
+// This is how rollops' own daemon wedged the first time it deployed itself.
+// The rolling path saves the rollout as deploying, applies, then saves it as
+// verifying; the apply replaced the daemon's own pod, so the second save never
+// happened. The row stayed deploying forever, which counts as in flight, so
+// every Apply was refused as busy and every Tick was refused as
+// "deploying without a stepper snapshot" — an engine that would neither
+// advance the rollout nor let anything else near the target.
+func TestTick_InterruptedRolloutIsResolvedNotRefused(t *testing.T) {
+	fake := &fakeTarget{}
+	e, db := newEngine(t, fake)
+	c := loadConfig(t)
+	ctx := context.Background()
+
+	if err := db.SaveRollout(ctx, rollout.Rollout{
+		ID:        "ro-interrupted",
+		TargetRef: c.Spec.Target.Ref,
+		Phase:     rollout.PhaseDeploying,
+		Strategy:  rollout.StrategyRolling,
+		// No StepperSnap: the process died before writing one.
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := e.Tick(ctx, "ro-interrupted", c)
+	if err != nil {
+		t.Fatalf("Tick on an interrupted rollout: %v", err)
+	}
+	if got.Phase != rollout.PhaseVerifying {
+		t.Errorf("phase = %q, want verifying — the post-deploy gate decides what actually landed", got.Phase)
+	}
+	if got.RollbackBlocked == "" {
+		t.Error("rollback must be blocked: what reached the target is unknown, so the recorded prior is not a verified baseline")
+	}
+
+	// The target must be free again: verifying is not in flight, so the next
+	// reconcile can converge forward.
+	if _, inFlight, err := e.InFlight(ctx, c.Spec.Target.Ref); err != nil {
+		t.Fatal(err)
+	} else if inFlight {
+		t.Error("target still reports a rollout in flight: Apply would keep being refused as busy")
+	}
+
+	// Persisted, not just returned — the next process must see the same thing.
+	reloaded, err := db.LoadRollout(ctx, "ro-interrupted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Phase != rollout.PhaseVerifying || reloaded.RollbackBlocked == "" {
+		t.Errorf("persisted rollout = phase %q, blocked %q", reloaded.Phase, reloaded.RollbackBlocked)
+	}
+}
