@@ -9,6 +9,7 @@ package environment
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,14 +40,19 @@ const (
 	KindCustom      Kind = "custom"
 )
 
-func (k Kind) valid() bool {
-	switch k {
-	case KindDevelopment, KindPreview, KindStaging, KindProduction, KindCustom:
-		return true
-	default:
-		return false
-	}
+// kinds is the whole set, in the order an environment gets closer to a
+// customer. The order is published, so it is chosen rather than alphabetical;
+// custom comes last because it is the absence of a place in that progression.
+var kinds = []Kind{
+	KindDevelopment, KindPreview, KindStaging, KindProduction, KindCustom,
 }
+
+// Kinds returns every kind of environment, in a stable order. A transport that
+// has to name the whole vocabulary asks here rather than restating it, and the
+// slice is rebuilt on each call so a caller cannot edit the set through it.
+func Kinds() []Kind { return slices.Clone(kinds) }
+
+func (k Kind) valid() bool { return slices.Contains(kinds, k) }
 
 // PolicyMode is whether a bound policy blocks or reports.
 type PolicyMode string
@@ -55,6 +61,12 @@ const (
 	PolicyEnforce PolicyMode = "enforce"
 	PolicyWarn    PolicyMode = "warn"
 )
+
+// policyModes is the whole set, strictest first.
+var policyModes = []PolicyMode{PolicyEnforce, PolicyWarn}
+
+// PolicyModes returns both modes a policy can be bound in, in a stable order.
+func PolicyModes() []PolicyMode { return slices.Clone(policyModes) }
 
 // TargetBinding names a deployment substrate and configures it. The driver is
 // a plain string resolved through a registry in the adapter layer: a typed
@@ -110,7 +122,7 @@ func (p PolicyBinding) Validate() error {
 	if strings.TrimSpace(p.Ref) == "" {
 		return fmt.Errorf("environment: policy binding %q references no policy", p.Name)
 	}
-	if p.Mode != PolicyEnforce && p.Mode != PolicyWarn {
+	if !slices.Contains(policyModes, p.Mode) {
 		return fmt.Errorf("environment: policy binding %q has mode %q", p.Name, p.Mode)
 	}
 	return nil

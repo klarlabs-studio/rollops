@@ -68,14 +68,20 @@ const (
 	TriggerRollback  TriggerType = "rollback"
 )
 
-func (t TriggerType) valid() bool {
-	switch t {
-	case TriggerManual, TriggerAPI, TriggerGit,
-		TriggerSchedule, TriggerPromotion, TriggerRollback:
-		return true
-	}
-	return false
+// triggerTypes is the whole set, in the order the constants declare it: the
+// two a person causes directly, then the three a system causes on their behalf.
+var triggerTypes = []TriggerType{
+	TriggerManual, TriggerAPI, TriggerGit,
+	TriggerSchedule, TriggerPromotion, TriggerRollback,
 }
+
+// TriggerTypes returns everything that can set a deployment going, in a stable
+// order. A transport that has to name the whole vocabulary asks here rather
+// than restating it, and the slice is rebuilt on each call so a caller cannot
+// edit the set through it.
+func TriggerTypes() []TriggerType { return slices.Clone(triggerTypes) }
+
+func (t TriggerType) valid() bool { return slices.Contains(triggerTypes, t) }
 
 // Trigger is what caused the deployment. Detail is free text for the person
 // reading the timeline — a commit subject, a schedule name, a ticket.

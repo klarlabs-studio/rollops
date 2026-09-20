@@ -73,3 +73,29 @@ func TestAStrategyOutsideTheEnumerationIsNotValid(t *testing.T) {
 		t.Error("Valid() accepted a strategy the enumeration does not list")
 	}
 }
+
+func TestEveryTriggerTypeInTheEnumerationCanCauseADeployment(t *testing.T) {
+	t.Parallel()
+
+	got := deployment.TriggerTypes()
+	if len(got) == 0 {
+		t.Fatal("TriggerTypes() is empty")
+	}
+	for _, ty := range got {
+		d := draft()
+		d.Trigger = deployment.Trigger{Type: ty}
+		if _, err := deployment.New(newGen(), newClock(), author(), d); err != nil {
+			t.Errorf("TriggerTypes() lists %q, which New() rejects: %v", ty, err)
+		}
+	}
+}
+
+func TestATriggerTypeOutsideTheEnumerationIsRejected(t *testing.T) {
+	t.Parallel()
+
+	d := draft()
+	d.Trigger = deployment.Trigger{Type: deployment.TriggerType("telepathy")}
+	if _, err := deployment.New(newGen(), newClock(), author(), d); err == nil {
+		t.Error("New() accepted a trigger type the enumeration does not list")
+	}
+}
