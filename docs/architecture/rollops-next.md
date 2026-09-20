@@ -1804,7 +1804,14 @@ that reruns registers the same bytes and is answered with the artifact already
 recorded, which is what a key would have bought without a row to expire or a
 fingerprint to mismatch. Release creation does take one — a version is unique
 within its project, so without a key a retry is indistinguishable from a second
-attempt to use the name and would come back `CONFLICT`.
+attempt to use the name and would come back `CONFLICT`. Project creation takes
+one for the same reason, a project name being unique across the estate.
+
+A key's fingerprint covers what identifies the resource and not what can be
+edited afterwards: a project's name but not its description or labels, a
+release's version and artifacts but not its labels or annotations. A client
+retrying with the prose corrected is retrying, not asking for something else,
+and refusing it would leave them unable to retry at all.
 
 ### 23.3 Command responses
 

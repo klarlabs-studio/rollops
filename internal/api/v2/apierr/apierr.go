@@ -26,6 +26,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	appproject "go.klarlabs.de/rollops/internal/app/project"
 	"go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/plan"
@@ -252,7 +253,11 @@ func Of(err error) Code {
 		// The domain says what is wrong with the record; the app layer says it
 		// came off the command, so a caller is told to fix their request rather
 		// than to report an outage.
-		errors.Is(err, release.ErrRejected):
+		errors.Is(err, release.ErrRejected),
+		// The same reasoning one aggregate earlier: a project name that is not
+		// an alias is a typo, and a typo answered with INTERNAL invites the
+		// retry that will fail identically.
+		errors.Is(err, appproject.ErrRejected):
 		return InvalidArgument
 	}
 

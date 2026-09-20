@@ -11,6 +11,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/deploy"
 	"go.klarlabs.de/rollops/internal/app/port"
+	appproject "go.klarlabs.de/rollops/internal/app/project"
 	apprelease "go.klarlabs.de/rollops/internal/app/release"
 	"go.klarlabs.de/rollops/internal/domain/artifact"
 	"go.klarlabs.de/rollops/internal/domain/deployment"
@@ -108,6 +109,16 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 	if err != nil {
 		panic("apprelease.New: " + err.Error())
 	}
+	founder, err := appproject.New(appproject.Config{
+		Transactor: store,
+		Projects:   store.Projects(),
+		Events:     store.Events(),
+		Clock:      clock,
+		IDs:        identity.NewGenerator(),
+	})
+	if err != nil {
+		panic("appproject.New: " + err.Error())
+	}
 	return apiv2.Config{
 		Projects:     store.Projects(),
 		Environments: store.Environments(),
@@ -118,6 +129,7 @@ func config(store *memory.Store, clock identity.Clock, deployer apiv2.Deployer) 
 		Events:       store.Events(),
 		Deployer:     deployer,
 		Registrar:    registrar,
+		Founder:      founder,
 		Keys:         store.Idempotency(),
 		Clock:        clock,
 	}
@@ -270,6 +282,173 @@ func TestAProjectNobodyCreatedIsNotFound(t *testing.T) {
 
 	if got := codeOf(t, err); got != apierr.NotFound {
 		t.Errorf("code = %s, want %s", got, apierr.NotFound)
+	}
+}
+
+// founding is the request every creation test starts from.
+func founding() apiv2.CreateProjectRequest {
+	return apiv2.CreateProjectRequest{
+		Name:        "checkout",
+		Description: "the thing that takes the money",
+		Labels:      map[string]string{"team": "platform"},
+		Actor:       author(),
+	}
+}
+
+func TestCreatingAProjectReturnsItReadableAtOnce(t *testing.T) {
+	w := setup(t)
+
+	got, err := w.svc.CreateProject(context.Background(), founding())
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if got.ID == "" {
+		t.Fatal("no project id; nothing could be filed under it")
+	}
+	if got.Name != "checkout" {
+		t.Errorf("name = %q, want checkout", got.Name)
+	}
+	if got.Labels["team"] != "platform" {
+		t.Errorf("labels = %v", got.Labels)
+	}
+
+	read, err := w.svc.GetProject(context.Background(), apiv2.GetProjectRequest{ID: got.ID})
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if read.ID != got.ID {
+		t.Errorf("read back %q, want %q", read.ID, got.ID)
+	}
+}
+
+// The gap this endpoint closes: every other mutation names a project, and
+// until now nothing a caller could reach made one.
+func TestAProjectCreatedThroughTheAPICanHoldAnArtifact(t *testing.T) {
+	w := setup(t)
+	p, err := w.svc.CreateProject(context.Background(), founding())
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	got, err := w.svc.RegisterArtifact(context.Background(), registering(identity.ProjectID(p.ID), "api"))
+	if err != nil {
+		t.Fatalf("RegisterArtifact: %v", err)
+	}
+	if got.ProjectID != p.ID {
+		t.Errorf("artifact filed under %q, want %q", got.ProjectID, p.ID)
+	}
+}
+
+func TestAMalformedProjectRequestIsTheCallersMistake(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*apiv2.CreateProjectRequest)
+	}{
+		{"no name", func(r *apiv2.CreateProjectRequest) { r.Name = "" }},
+		{"not an alias", func(r *apiv2.CreateProjectRequest) { r.Name = "Check Out!" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := setup(t)
+			req := founding()
+			tt.edit(&req)
+
+			_, err := w.svc.CreateProject(context.Background(), req)
+
+			if got := codeOf(t, err); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
+	}
+}
+
+// A name is how a project is addressed on every surface, so a second one
+// asking for it is an ambiguity the caller has to resolve — not a failure to
+// report.
+func TestASecondProjectTakingANameIsAConflict(t *testing.T) {
+	w := setup(t)
+	if _, err := w.svc.CreateProject(context.Background(), founding()); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	_, err := w.svc.CreateProject(context.Background(), founding())
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+// Which is exactly why the key matters here. Without one a retry is
+// indistinguishable from that second caller, and a client that never learned
+// whether its first call landed is told the name is taken — by itself.
+func TestTwoCreateProjectCallsWithOneKeyOpenOneProject(t *testing.T) {
+	w := setup(t)
+	req := founding()
+	req.IdempotencyKey = "k1"
+
+	first, err := w.svc.CreateProject(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first CreateProject: %v", err)
+	}
+	second, err := w.svc.CreateProject(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second CreateProject: %v", err)
+	}
+
+	if second.ID != first.ID {
+		t.Errorf("second call = %q, want the %q the first opened", second.ID, first.ID)
+	}
+	all, err := w.svc.ListProjects(context.Background(), apiv2.ListProjectsRequest{})
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(all.Projects) != 1 {
+		t.Errorf("%d projects, want 1", len(all.Projects))
+	}
+}
+
+func TestAProjectKeyReusedForADifferentNameIsRefused(t *testing.T) {
+	w := setup(t)
+	req := founding()
+	req.IdempotencyKey = "k1"
+	if _, err := w.svc.CreateProject(context.Background(), req); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	other := req
+	other.Name = "billing"
+	_, err := w.svc.CreateProject(context.Background(), other)
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+// The description and the labels are outside the fingerprint. A client that
+// retries having corrected its prose is retrying, not asking for a different
+// project, and refusing it would leave them unable to retry at all.
+func TestAProjectKeyRetriedWithBetterProseStillReplays(t *testing.T) {
+	w := setup(t)
+	req := founding()
+	req.IdempotencyKey = "k1"
+	first, err := w.svc.CreateProject(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	again := req
+	again.Description = "the thing that takes the payments"
+	again.Labels = map[string]string{"team": "payments"}
+	second, err := w.svc.CreateProject(context.Background(), again)
+	if err != nil {
+		t.Fatalf("second CreateProject: %v", err)
+	}
+
+	if second.ID != first.ID {
+		t.Errorf("second call = %q, want the %q the first opened", second.ID, first.ID)
+	}
+	if second.Description != first.Description {
+		t.Errorf("description = %q, want the recorded %q: a replay returns what was created, not what was asked for the second time", second.Description, first.Description)
 	}
 }
 
@@ -676,6 +855,7 @@ func TestAServiceNamesEveryDependencyItWasNotGiven(t *testing.T) {
 		{"plan", func(c *apiv2.Config) { c.Plans = nil }},
 		{"event", func(c *apiv2.Config) { c.Events = nil }},
 		{"deployer", func(c *apiv2.Config) { c.Deployer = nil }},
+		{"founder", func(c *apiv2.Config) { c.Founder = nil }},
 		{"idempotency", func(c *apiv2.Config) { c.Keys = nil }},
 		{"clock", func(c *apiv2.Config) { c.Clock = nil }},
 	} {

@@ -31,6 +31,7 @@ import (
 	"go.klarlabs.de/rollops/internal/api/v2/apierr"
 	"go.klarlabs.de/rollops/internal/api/v2/page"
 	"go.klarlabs.de/rollops/internal/app/port"
+	appproject "go.klarlabs.de/rollops/internal/app/project"
 	"go.klarlabs.de/rollops/internal/domain/environment"
 	"go.klarlabs.de/rollops/internal/domain/identity"
 	"go.klarlabs.de/rollops/internal/domain/project"
@@ -61,6 +62,11 @@ type Config struct {
 	// released is a question of provenance and project isolation.
 	Registrar Registrar
 
+	// Founder opens projects. Separate again, and for the plainest reason of
+	// the three: a project is the namespace the other two write into, so it is
+	// the one call that needs nothing to exist first.
+	Founder Founder
+
 	// Keys remembers what a mutation already answered, so that a retry
 	// replays rather than repeats (§18.3).
 	Keys port.IdempotencyRepository
@@ -85,6 +91,7 @@ type Service struct {
 	events       port.EventReader
 	deployer     Deployer
 	registrar    Registrar
+	founder      Founder
 	keys         port.IdempotencyRepository
 	clock        identity.Clock
 	keyLifetime  time.Duration
@@ -111,6 +118,8 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("apiv2: no deployer")
 	case cfg.Registrar == nil:
 		return nil, errors.New("apiv2: no registrar")
+	case cfg.Founder == nil:
+		return nil, errors.New("apiv2: no founder")
 	case cfg.Keys == nil:
 		return nil, errors.New("apiv2: no idempotency repository")
 	case cfg.Clock == nil:
@@ -129,6 +138,7 @@ func New(cfg Config) (*Service, error) {
 		events:       cfg.Events,
 		deployer:     cfg.Deployer,
 		registrar:    cfg.Registrar,
+		founder:      cfg.Founder,
 		keys:         cfg.Keys,
 		clock:        cfg.Clock,
 		keyLifetime:  cfg.KeyLifetime,
@@ -192,6 +202,56 @@ type Environment struct {
 	Labels    map[string]string
 	Lifecycle Lifecycle
 	Revision  uint64
+}
+
+// Founder is the write side of projects.
+//
+// Like Deployer and Registrar it is an interface so that this package depends
+// on the one call it makes rather than on how the service behind it is
+// assembled.
+type Founder interface {
+	Create(ctx context.Context, cmd appproject.CreateCommand) (project.Project, error)
+}
+
+// CreateProjectRequest opens a namespace.
+type CreateProjectRequest struct {
+	Name        string
+	Description string
+	Labels      map[string]string
+
+	Actor identity.Principal
+
+	// IdempotencyKey lets a retry return the project the first call created.
+	// The name is unique, so without one a retry is indistinguishable from a
+	// second attempt to use the name and comes back a conflict — the same
+	// reason CreateRelease takes a key and RegisterArtifact does not.
+	IdempotencyKey string
+}
+
+// CreateProject opens a project.
+func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (Project, error) {
+	// Labels are outside the fingerprint, and the description with them. What a
+	// key must catch is the same key used for a different project, and it is the
+	// name that says which project this is — refusing a retry that came back
+	// with the description corrected would be pedantry, not protection.
+	fp := fingerprint(req.Name, req.Actor.ID)
+	return once(ctx, s, opCreateProject, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Project, error) {
+			p, err := s.founder.Create(ctx, appproject.CreateCommand{
+				Name:        req.Name,
+				Description: req.Description,
+				Labels:      req.Labels,
+				Actor:       req.Actor,
+			})
+			if err != nil {
+				return "", Project{}, failure("apiv2: project %q: %w", req.Name, err)
+			}
+			return string(p.ID), viewProject(p), nil
+		},
+		func(ctx context.Context, id string) (Project, error) {
+			return s.GetProject(ctx, GetProjectRequest{ID: id})
+		},
+	)
 }
 
 // GetProjectRequest names one project.
