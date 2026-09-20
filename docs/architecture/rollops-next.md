@@ -1149,6 +1149,16 @@ anyway — so rolling back from here would implement one branch of a policy as
 though it were the only one. Pausing discards nothing and leaves every edge
 open, and applying `onFailure`/`onInconclusive` is a layer above this one.
 
+Promoting out of `paused` is §11.4's "promote anyway", and it **MUST** say why.
+A paused deployment was stopped by something, so promoting it anyway is a
+decision to disregard that, and whoever finds the release out in front of
+everyone has to be able to find out who decided so — the rule a cancellation is
+held to, for the same reason. Promoting out of `verifying` needs no such
+justification: that is the ordinary road, and demanding prose for the expected
+next step teaches operators to type anything to get past the prompt. The status
+promoted out of is recorded, because `promoting` alone does not tell the two
+apart.
+
 Starting and settling are two transactions. Holding one open across a check
 that may query Prometheus for ten minutes would block every other write to the
 deployment; a crash in between leaves the deployment `verifying`, which is the
