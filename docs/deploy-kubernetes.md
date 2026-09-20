@@ -115,6 +115,11 @@ Two things follow from that:
   hand-granted RBAC rule survives — but it also drifts silently from the
   repository, which is why the Prometheus-operator rules were written back into
   `rollopsd-infra.yaml` rather than left on the cluster.
+- **A hand-apply strips the target label.** rollops stamps
+  `rollops.klarlabs.de/target` onto what it applies, so the live Deployment
+  carries a label the manifest does not, and `kubectl apply -f` removes it. The
+  next reconcile puts it back; if you are applying by hand *instead of*
+  reconciling, re-add it.
 - **Check the skew when something looks wrong.** `rollops doctor` reports the
   daemon's version beside the client's and **fails** when they differ; every
   daemon-mode command prints a one-line warning after it runs. A daemon older

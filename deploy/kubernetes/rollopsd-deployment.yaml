@@ -10,6 +10,12 @@
 #
 # It is still an ordinary manifest: on a first install apply it by hand together
 # with rollopsd-infra.yaml (see docs/deploy-kubernetes.md).
+#
+# One asymmetry to know about: rollops stamps the label
+# `rollops.klarlabs.de/target` onto what it applies, so the live Deployment
+# carries a label this file does not. `kubectl apply -f` by hand REMOVES it —
+# that happened during the 2026-09-19 incident and had to be put back by hand.
+# The next reconcile restores it either way, so the window is one interval.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
