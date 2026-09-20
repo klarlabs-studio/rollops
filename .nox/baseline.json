@@ -792,6 +792,42 @@
       "reason": "Third fingerprint for a flow triaged and accepted long ago; nox 1.31.0 with taint-analysis 0.7.0 computes a new value for identical source, as 1.29.0 did before it. Taken from the CI nox-results artifact rather than a local scan, for the reason the cosign.go entry above already records: the two differ, and a locally-computed fingerprint silently never matches. ROLLOPS_PLUGIN_PUBLIC_KEY is operator configuration read at startup, so whoever can set the daemon's environment can already read any file it can and this is not a privilege boundary. The flow is also guarded in code, and that guard is held by TestVerifyArtifact_RejectsDotDotInKeyPath, which fails closed — a baseline entry is a fact about a finding and stops noticing the day the mitigation is deleted, so the test is what keeps this honest. The analyser cannot see the guard because it is intraprocedural. Fingerprint churn per release, and filepath.Clean not clearing taint despite being catalogued for path_traversal, are tracked at Nox-HQ/nox-plugin-taint-analysis#41.",
       "owner": "platform",
       "created_at": "2026-08-29T14:47:55.04285Z"
+    },
+    {
+      "fingerprint": "6f5c189df22f666cdde974aa9efcbaeb646c56f666447a05c4a580798a9d83e7",
+      "rule_id": "TAINT-004",
+      "file_path": "internal/config/clusters.go",
+      "severity": "high",
+      "reason": "Fourth fingerprint for the clusters.go flow, on the churn the three entries above already document; nox 1.35.0 computes a new value for identical source. The judgement is unchanged and was re-read rather than assumed: ROLLOPS_CLUSTERS is operator configuration naming the cluster registry file, so whoever can set the daemon's environment can already read any file it can, and LoadClustersFile routes through safeConfigPath, which requires an absolute path and rejects dot-dot before os.ReadFile is reached. That guard is held by TestLoadClustersFile_RejectsUnsafePath and fails closed, which is what keeps this waiver honest — a baseline entry stops noticing the day the mitigation is deleted. Unlike the earlier entries this fingerprint was computed locally, because the local binary and the CI pin are both 1.35.0; confirm against the next nox-results artifact if CI still reports it. Re-verify the underlying judgement only if that path ever becomes settable from a request, a plugin manifest, or any other non-operator source.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-09-20T00:00:00Z"
+    },
+    {
+      "fingerprint": "47b5eb61acfc52d9cd702dc19cde24a66f030ead0eea1dfb33e55c5146d69d7c",
+      "rule_id": "TAINT-004",
+      "file_path": "internal/pluginhost/cosign.go",
+      "severity": "high",
+      "reason": "Fourth fingerprint for the cosign.go flow, on the same churn; nox 1.35.0 computes a new value for identical source. ROLLOPS_PLUGIN_PUBLIC_KEY is operator configuration read at startup, so the threat model that makes this a traversal is one in which the attacker already holds the process environment. VerifyArtifact rejects dot-dot segments before calling filepath.Clean, and the comment there records why that order is the point: Clean does not prevent traversal on its own, so the rejection is the actual guard and Clean only tidies what survives it. TestVerifyArtifact_RejectsDotDotInKeyPath holds that and fails closed. Keep all four fingerprints rather than pruning — `nox baseline update` drops whichever the running version does not produce, which would resurface a high finding as net-new and fail the gate on the next bump. Re-verify only if that key path ever stops being operator configuration.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-09-20T00:00:00Z"
+    },
+    {
+      "fingerprint": "00b922cca1a69104beadc0bbd46b363dfd1c78527e9fda4de9c53a9a77224ef8",
+      "rule_id": "SEC-073",
+      "file_path": "internal/domain/plan/applicable_test.go",
+      "severity": "critical",
+      "reason": "A fabricated connection string that exists so the test can prove it gets redacted. TestASensitiveChangeIsRedacted marks a change Sensitive, calls Redacted(), and asserts the value did not survive into the plan — INV-012, which requires that credentials never reach persisted records, events or logs. The literal is the input to the control rather than a leak past it: deleting it to silence this rule would delete the evidence that redaction works, which is the opposite of what the rule is for. It names no real host and no real account, and nothing reads this file at runtime. Re-verify if this test ever stops asserting redaction, or if the string is moved somewhere a plan is actually built from.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-09-20T00:00:00Z"
+    },
+    {
+      "fingerprint": "b5caa82cd0362542d62e9250a5970f1edce49602e327a6b8bd3663db6c70d84f",
+      "rule_id": "SEC-073",
+      "file_path": "internal/engine/planner/planner_test.go",
+      "severity": "critical",
+      "reason": "The same shape as the applicable_test.go entry above and waived for the same reason. TestTheProviderDiffDoesNotReachThePlan fabricates a connection string, plants it in a fake target's free-form diff and rendered output, and then fails if the resulting proposal carries it anywhere — the premise being that a substrate's CLI output routinely contains the values of secrets, while a plan is persisted and rendered everywhere (INV-012). The literal is the attack the test mounts against its own control, so the rule is firing on the payload of a test that exists to stop exactly what the rule is worried about. Re-verify if this test ever stops asserting the provider diff is dropped.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-09-20T00:00:00Z"
     }
   ]
 }
