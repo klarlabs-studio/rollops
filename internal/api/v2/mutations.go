@@ -33,6 +33,7 @@ type Deployer interface {
 	Plan(ctx context.Context, cmd deploy.PlanCommand) (plan.DeploymentPlan, error)
 	Apply(ctx context.Context, cmd deploy.ApplyCommand) (deployment.Deployment, error)
 	Approve(ctx context.Context, cmd deploy.ApproveCommand) (deployment.Deployment, error)
+	Cancel(ctx context.Context, cmd deploy.CancelCommand) (deployment.Deployment, error)
 }
 
 // CreatePlanRequest asks what deploying a release to an environment would
@@ -140,6 +141,50 @@ func (s *Service) ApplyPlan(ctx context.Context, req ApplyPlanRequest) (Deployme
 			})
 			if err != nil {
 				return "", Deployment{}, failure("apiv2: apply plan %s: %w", planID, err)
+			}
+			return string(d.ID), viewDeployment(d), nil
+		},
+		func(ctx context.Context, id string) (Deployment, error) {
+			return s.GetDeployment(ctx, GetDeploymentRequest{ID: id})
+		},
+	)
+}
+
+// CancelDeploymentRequest stops a deployment before it reaches an outcome of
+// its own.
+type CancelDeploymentRequest struct {
+	DeploymentID string
+
+	// Reason is why, and it is required. A deployment in the cancelled status
+	// with nothing saying who stopped it is indistinguishable from one that
+	// died, and whoever finds it stopped has nothing to act on.
+	Reason string
+
+	Actor          identity.Principal
+	IdempotencyKey string
+}
+
+// CancelDeployment stops the deployment and returns it.
+//
+// Nothing is undone. Cancelling a deployment that had begun applying leaves
+// what it had already changed in place — putting that back is a rollback,
+// which is a deployment of its own and something a caller asks for separately.
+func (s *Service) CancelDeployment(ctx context.Context, req CancelDeploymentRequest) (Deployment, error) {
+	deploymentID, err := identity.ParseDeploymentID(req.DeploymentID)
+	if err != nil {
+		return Deployment{}, badArgument("apiv2: deployment id: %w", err)
+	}
+
+	fp := fingerprint(string(deploymentID), req.Reason, req.Actor.ID)
+	return once(ctx, s, opCancelDeployment, req.IdempotencyKey, fp,
+		func(ctx context.Context) (string, Deployment, error) {
+			d, err := s.deployer.Cancel(ctx, deploy.CancelCommand{
+				DeploymentID: deploymentID,
+				Reason:       req.Reason,
+				Actor:        req.Actor,
+			})
+			if err != nil {
+				return "", Deployment{}, failure("apiv2: cancel deployment %s: %w", deploymentID, err)
 			}
 			return string(d.ID), viewDeployment(d), nil
 		},

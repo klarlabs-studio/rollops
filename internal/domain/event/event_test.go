@@ -362,7 +362,7 @@ func TestTheVocabularyMatchesTheSpec(t *testing.T) {
 		deployment.operation.completed deployment.operation.failed
 		deployment.verification.started deployment.verification.completed
 		deployment.paused deployment.promotion.started deployment.promoted
-		deployment.succeeded deployment.failed
+		deployment.succeeded deployment.failed deployment.cancelled
 		rollback.started rollback.completed rollback.failed
 		drift.detected reconcile.started reconcile.completed reconcile.failed
 		policy.evaluated security.access_denied

@@ -220,6 +220,9 @@ func Of(err error) Code {
 		errors.Is(err, plan.ErrPlanTampered),
 		errors.Is(err, deploy.ErrEnvironmentBusy),
 		errors.Is(err, deploy.ErrNotAwaitingApproval),
+		// A deployment past the point of stopping is not a malformed request:
+		// the same command a moment earlier would have worked.
+		errors.Is(err, deploy.ErrNotCancellable),
 		// An environment with no target, one already at the release, and one
 		// whose target reported a blocker are all the same shape of answer:
 		// the request is fine and the world is not ready for it.
@@ -239,6 +242,7 @@ func Of(err error) Code {
 		// same way however often it is sent, and leaves whoever it stops with
 		// nothing to act on. INTERNAL would invite the retry instead.
 		errors.Is(err, policy.ErrUnexplainedDecision),
+		errors.Is(err, deploy.ErrUnexplainedCancellation),
 		errors.Is(err, desired.ErrNothingToDeploy),
 		errors.Is(err, desired.ErrForeignArtifact):
 		return InvalidArgument

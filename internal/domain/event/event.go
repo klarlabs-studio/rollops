@@ -64,6 +64,7 @@ const (
 	DeploymentPromoted            Type = "deployment.promoted"
 	DeploymentSucceeded           Type = "deployment.succeeded"
 	DeploymentFailed              Type = "deployment.failed"
+	DeploymentCancelled           Type = "deployment.cancelled"
 
 	RollbackStarted   Type = "rollback.started"
 	RollbackCompleted Type = "rollback.completed"
@@ -85,6 +86,7 @@ var types = []Type{
 	DeploymentOperationFailed, DeploymentVerificationStarted,
 	DeploymentVerificationDone, DeploymentPaused, DeploymentPromotionStarted,
 	DeploymentPromoted, DeploymentSucceeded, DeploymentFailed,
+	DeploymentCancelled,
 	RollbackStarted, RollbackCompleted, RollbackFailed,
 	DriftDetected, ReconcileStarted, ReconcileDone, ReconcileFailed,
 	PolicyEvaluated, AccessDenied,

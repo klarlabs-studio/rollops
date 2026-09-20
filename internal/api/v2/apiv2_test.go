@@ -73,6 +73,10 @@ func (stubDeployer) Approve(context.Context, deploy.ApproveCommand) (deployment.
 	return deployment.Deployment{}, errNotWired
 }
 
+func (stubDeployer) Cancel(context.Context, deploy.CancelCommand) (deployment.Deployment, error) {
+	return deployment.Deployment{}, errNotWired
+}
+
 var errNotWired = errors.New("the deployer was not meant to be called")
 
 type world struct {

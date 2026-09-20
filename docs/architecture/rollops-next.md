@@ -1364,6 +1364,7 @@ deployment.promotion.started
 deployment.promoted
 deployment.succeeded
 deployment.failed
+deployment.cancelled
 
 rollback.started
 rollback.completed
@@ -1385,6 +1386,16 @@ pick it up much later. Without this event a deployment has no timeline at all
 between being admitted and being started, so an operator asking what happened
 to their apply sees nothing — and the one question they are asking is whether
 it went through.
+
+`deployment.cancelled` was added for the same reason and is subject to one
+restriction. §23.2 gives an operator a `:cancel` command, and a deployment that
+reaches the `cancelled` status with nothing on its timeline saying who stopped
+it and why leaves the next person to look at it unable to tell a deliberate
+stop from a crash. The restriction is that a cancellation which is somebody's
+answer does not get this event: a deployment stopped by a denied approval
+already carries `deployment.approval.rejected`, and recording both would put
+two causes on the timeline for one act. This event means an operator
+intervened, not merely that the status is `cancelled`.
 
 Pipeline phase later:
 

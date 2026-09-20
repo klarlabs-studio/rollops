@@ -942,6 +942,152 @@ func TestOneKeyMeansDifferentThingsToDifferentOperations(t *testing.T) {
 	}
 }
 
+func (s scene) cancelling(d apiv2.Deployment, key string) apiv2.CancelDeploymentRequest {
+	return apiv2.CancelDeploymentRequest{
+		DeploymentID:   d.ID,
+		Reason:         "the release was cut from the wrong branch",
+		Actor:          planner,
+		IdempotencyKey: key,
+	}
+}
+
+// queued applies a plan and hands back the deployment waiting for the engine,
+// which is where a cancel test starts: somebody has noticed the release is
+// wrong while it is still sitting in the queue.
+func (s scene) queued(t *testing.T) apiv2.Deployment {
+	t.Helper()
+	d, err := s.svc.ApplyPlan(context.Background(), s.applying(s.planned(t), ""))
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	return d
+}
+
+func TestCancellingADeploymentStopsIt(t *testing.T) {
+	s := setup(t).scene(t)
+	d := s.queued(t)
+
+	got, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, ""))
+	if err != nil {
+		t.Fatalf("CancelDeployment: %v", err)
+	}
+	if got.ID != d.ID {
+		t.Errorf("deployment = %q, want the %q that was stopped", got.ID, d.ID)
+	}
+	if got.Status != string(deployment.StatusCancelled) {
+		t.Errorf("status = %q, want %q", got.Status, deployment.StatusCancelled)
+	}
+}
+
+// Cancelling frees the environment, which is most of why an operator reaches
+// for it: the next thing they do is apply the plan they meant to.
+func TestAnEnvironmentTakesANewDeploymentOnceTheLastOneIsCancelled(t *testing.T) {
+	s := setup(t).scene(t)
+	if _, err := s.svc.CancelDeployment(context.Background(), s.cancelling(s.queued(t), "")); err != nil {
+		t.Fatalf("CancelDeployment: %v", err)
+	}
+
+	_, err := s.svc.ApplyPlan(context.Background(), s.applying(s.planned(t), ""))
+
+	if err != nil {
+		t.Fatalf("ApplyPlan after a cancellation: %v", err)
+	}
+}
+
+func TestAMalformedCancelRequestIsTheCallersMistake(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		spoil func(*apiv2.CancelDeploymentRequest)
+	}{
+		{"not an id at all", func(r *apiv2.CancelDeploymentRequest) { r.DeploymentID = "nonsense" }},
+		{"an id of the wrong kind", func(r *apiv2.CancelDeploymentRequest) {
+			r.DeploymentID = "pln_0199a0dd-0000-7000-8000-000000000000"
+		}},
+		// Whoever finds the deployment stopped has to be able to find out why,
+		// which is the rule a denied approval is held to as well.
+		{"no reason", func(r *apiv2.CancelDeploymentRequest) { r.Reason = "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := setup(t).scene(t)
+			req := s.cancelling(s.queued(t), "")
+			tc.spoil(&req)
+
+			_, err := s.svc.CancelDeployment(context.Background(), req)
+
+			if got := codeOf(t, err); got != apierr.InvalidArgument {
+				t.Errorf("code = %s, want %s", got, apierr.InvalidArgument)
+			}
+		})
+	}
+}
+
+func TestCancellingADeploymentNobodyStartedIsNotFound(t *testing.T) {
+	absent := setup(t).scene(t).queued(t)
+	s := setup(t).scene(t)
+
+	_, err := s.svc.CancelDeployment(context.Background(), s.cancelling(absent, ""))
+
+	if got := codeOf(t, err); got != apierr.NotFound {
+		t.Errorf("code = %s, want %s", got, apierr.NotFound)
+	}
+}
+
+// Past the end there is nothing to stop. CONFLICT rather than INVALID_ARGUMENT
+// because the request is fine — the same command a moment earlier would have
+// worked — and reporting success would tell an operator they had prevented
+// something that had already happened.
+func TestCancellingADeploymentThatHasAlreadyStoppedIsRefused(t *testing.T) {
+	s := setup(t).scene(t)
+	d := s.queued(t)
+	if _, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, "")); err != nil {
+		t.Fatalf("first CancelDeployment: %v", err)
+	}
+
+	_, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, ""))
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
+// Without the key the retry would be told the deployment cannot be cancelled,
+// and an operator would go looking for a stop that had in fact happened.
+func TestTwoCancelsWithOneKeyStopItOnce(t *testing.T) {
+	s := setup(t).scene(t)
+	d := s.queued(t)
+
+	first, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, "k-1"))
+	if err != nil {
+		t.Fatalf("first CancelDeployment: %v", err)
+	}
+	second, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, "k-1"))
+	if err != nil {
+		t.Fatalf("second CancelDeployment: %v", err)
+	}
+	if second.ID != first.ID || second.Status != first.Status {
+		t.Errorf("retry = %q/%q, want the first call's %q/%q",
+			second.ID, second.Status, first.ID, first.Status)
+	}
+}
+
+// The reason is on the timeline, so a key reused with a different one would
+// record one explanation and answer with another.
+func TestACancelKeyReusedForADifferentReasonIsRefused(t *testing.T) {
+	s := setup(t).scene(t)
+	d := s.queued(t)
+	if _, err := s.svc.CancelDeployment(context.Background(), s.cancelling(d, "k-1")); err != nil {
+		t.Fatalf("first CancelDeployment: %v", err)
+	}
+	reworded := s.cancelling(d, "k-1")
+	reworded.Reason = "superseded by 2.1.0"
+
+	_, err := s.svc.CancelDeployment(context.Background(), reworded)
+
+	if got := codeOf(t, err); got != apierr.Conflict {
+		t.Errorf("code = %s, want %s", got, apierr.Conflict)
+	}
+}
+
 // serviceWithKeys rebuilds the service against a different key store, keeping
 // everything else the scene already arranged.
 func serviceWithKeys(t *testing.T, w *world, keys port.IdempotencyRepository) *apiv2.Service {
