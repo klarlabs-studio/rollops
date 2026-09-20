@@ -1159,6 +1159,16 @@ next step teaches operators to type anything to get past the prompt. The status
 promoted out of is recorded, because `promoting` alone does not tell the two
 apart.
 
+Rolling back needs no justification, and deliberately not: it heeds a signal
+rather than disregarding one, and `onFailure: rollback` fires with no person
+present to write prose. Requiring a reason would make a configured branch of
+§11.4 impossible to take. It is refused, though, when the plan declares no
+rollback — §4's "claiming a way back that does not exist is worse than
+admitting none" cuts both ways, and moving to `rolling_back` with no operations
+to run would hand the engine an empty instruction and leave the deployment in a
+status nothing can advance. The honest answer is that there is no way back and
+the previous release has to be deployed forward.
+
 Starting and settling are two transactions. Holding one open across a check
 that may query Prometheus for ten minutes would block every other write to the
 deployment; a crash in between leaves the deployment `verifying`, which is the
