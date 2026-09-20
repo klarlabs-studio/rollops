@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - The daemon follows its own releases
+## v0.34.10 - The daemon follows its own releases
 
 The daemon runs the rollouts; the CLI only asks it to. So a client newer than
 the daemon describes behaviour that is not in force — and that is what the

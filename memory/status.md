@@ -4,15 +4,17 @@
 
 ## Current State
 
-Cutting **v0.34.9** — roll back to what was running, or not at all (#198, #199).
-Deploy pin `v0.34.9`. From an incident on a target deployed outside rollops:
-auto-rollback restored a month-old recorded manifest over a healthy service,
-after a 30s health wait called a still-draining rollout unhealthy. Auto, abort
-and manual rollback now refuse a baseline that is not live; the health wait
-follows `progressDeadlineSeconds`; the Kubernetes diff labels like apply does;
-a canary can no longer wedge in `deploying`; and `apply --wait` finishes a
-canary without the daemon. #184 design leftovers (escape hatch / cost) remain
-optional follow-ups.
+Cutting **v0.34.10** — rollops deploys rollops (#201, #202, #203, #204, #206).
+Deploy pin `v0.34.10`. The daemon follows its own releases: `rollops.yaml` at
+the repo root targets `rollops-system/deployment/rollopsd` and renders
+`deploy/kubernetes/rollopsd-deployment.yaml`. The install manifest is split —
+bootstrap (namespace, cert-manager, RBAC, PVC, Service) is applied by a human,
+because the daemon's ServiceAccount cannot get cert-manager ClusterIssuers and
+must never be able to rewrite its own ClusterRole. Version skew between client
+and daemon is now visible (`rollops doctor` fails on it). The first self-apply
+exposed a wedge, also fixed here: a rollout in flight is stepped even when the
+plan reports a change, instead of being refused as `target busy` forever. #184
+design leftovers (escape hatch / cost) remain optional follow-ups.
 
 ---
 
