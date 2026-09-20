@@ -1,0 +1,890 @@
+syntax = "proto3";
+
+// The v2 API as gRPC sees it.
+//
+// This is a projection of internal/api/v2, not a second definition of it. The
+// semantics — what a plan is, when a retry replays, what a missing project
+// means — are settled in that package and every transport carries the same
+// answers (§23.1). What is decided here is only how they are spelled on a wire.
+//
+// Three rules from §24 shape most of what follows. Closed sets are enums, not
+// strings: an enum is checkable by a generated client, where a string is a
+// value somebody has to look up. Open sets stay strings, because an enum whose
+// members a plugin supplies would make every new verifier a breaking change to
+// this file. And nothing here is a domain aggregate — these messages mirror the
+// API's views, so renaming a field inside the domain is not an API change, and
+// a configuration key can be named without its value being on the wire
+// (INV-012).
+//
+// The enums are held to the domain by a test over the vocabularies the domain
+// publishes — deployment.Statuses(), environment.Kinds() and the rest — so a
+// value added there and forgotten here is a build failure rather than a caller
+// being told the status does not exist.
+package rollops.v2;
+
+option go_package = "go.klarlabs.de/rollops/internal/api/v2/grpcapi/rollopsv2;rollopsv2";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// RollOps is the v2 surface: projects and the environments they deploy to,
+// artifacts and the releases that fix them, the plans that say what a
+// deployment would change, and the timeline of what happened.
+//
+// No request carries an actor. Who is calling is established by the transport's
+// authentication and injected server-side, exactly as the HTTP surface does —
+// a field for it would be a field a caller could fill in with somebody else's
+// name.
+service RollOps {
+  // CreateProject opens a namespace.
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  // GetProject returns one project.
+  rpc GetProject(GetProjectRequest) returns (Project);
+  // ListProjects returns a page of projects.
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+
+  // CreateEnvironment declares a place to deploy to.
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (Environment);
+  // GetEnvironment returns one environment.
+  rpc GetEnvironment(GetEnvironmentRequest) returns (Environment);
+  // ListEnvironments returns a page of one project's environments.
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse);
+
+  // RegisterArtifact records where a built thing is and what it must hash to.
+  rpc RegisterArtifact(RegisterArtifactRequest) returns (Artifact);
+  // GetArtifact returns one artifact.
+  rpc GetArtifact(GetArtifactRequest) returns (Artifact);
+  // ListArtifacts returns a page of one project's artifacts.
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+
+  // CreateRelease fixes the set of artifacts a release will deploy.
+  rpc CreateRelease(CreateReleaseRequest) returns (Release);
+  // GetRelease returns one release.
+  rpc GetRelease(GetReleaseRequest) returns (Release);
+  // ListReleases returns a page of one project's releases.
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+
+  // CreatePlan works out what deploying a release would change and has policy
+  // rule on it. It touches no substrate (§8.2).
+  rpc CreatePlan(CreatePlanRequest) returns (Plan);
+  // GetPlan returns one plan.
+  rpc GetPlan(GetPlanRequest) returns (Plan);
+
+  // ApplyPlan admits a deployment for a stored plan and returns as soon as the
+  // deployment is recorded (§23.3). A plan with unmet requirements comes back
+  // awaiting approval rather than as an error.
+  rpc ApplyPlan(ApplyPlanRequest) returns (Deployment);
+  // GetDeployment returns one deployment.
+  rpc GetDeployment(GetDeploymentRequest) returns (Deployment);
+  // ListDeployments returns a page of one environment's deployments.
+  rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
+
+  // ApproveDeployment records one principal's answer about a gated deployment.
+  rpc ApproveDeployment(ApproveDeploymentRequest) returns (Deployment);
+  // CancelDeployment stops a deployment. Nothing already applied is undone.
+  rpc CancelDeployment(CancelDeploymentRequest) returns (Deployment);
+  // PromoteDeployment widens a deployment that is serving.
+  rpc PromoteDeployment(PromoteDeploymentRequest) returns (Deployment);
+  // RollbackDeployment returns a deployment to the release it replaced.
+  rpc RollbackDeployment(RollbackDeploymentRequest) returns (Deployment);
+
+  // VerifyDeployment runs the environment's checks and returns what they found.
+  // A failing verdict is a successful call: the question was answered.
+  rpc VerifyDeployment(VerifyDeploymentRequest) returns (VerifyDeploymentResponse);
+  // GetVerificationRun returns what one verification concluded. This is where a
+  // timeline entry leads — the completion event carries the run id.
+  rpc GetVerificationRun(GetVerificationRunRequest) returns (VerificationRun);
+
+  // ListDeploymentEvents returns a page of one deployment's events, oldest
+  // first.
+  rpc ListDeploymentEvents(ListDeploymentEventsRequest) returns (ListDeploymentEventsResponse);
+}
+
+// PageRequest asks for a page. Every list takes one, from the start, because a
+// list that returns everything cannot grow a limit later without breaking
+// clients that already depend on getting everything (§24).
+message PageRequest {
+  // page_token is opaque and names the last row the caller saw. Empty is the
+  // beginning. A token this API did not issue is refused rather than read as
+  // the beginning, which would hand a client a page it has already processed.
+  string page_token = 1;
+
+  // page_size is the most rows wanted. Zero means the server default; more than
+  // the server maximum is clamped rather than refused.
+  int32 page_size = 2;
+}
+
+// DeploymentStatus is where a deployment got to.
+enum DeploymentStatus {
+  DEPLOYMENT_STATUS_UNSPECIFIED = 0;
+  DEPLOYMENT_STATUS_PLANNED = 1;
+  DEPLOYMENT_STATUS_AWAITING_APPROVAL = 2;
+  DEPLOYMENT_STATUS_QUEUED = 3;
+  DEPLOYMENT_STATUS_APPLYING = 4;
+  DEPLOYMENT_STATUS_VERIFYING = 5;
+  DEPLOYMENT_STATUS_PAUSED = 6;
+  DEPLOYMENT_STATUS_PROMOTING = 7;
+  DEPLOYMENT_STATUS_SUCCEEDED = 8;
+  DEPLOYMENT_STATUS_FAILED = 9;
+  DEPLOYMENT_STATUS_ROLLING_BACK = 10;
+  DEPLOYMENT_STATUS_ROLLED_BACK = 11;
+  DEPLOYMENT_STATUS_CANCELLED = 12;
+}
+
+// Strategy is how a release is rolled out. Its parameters — step weights, bake
+// times, traffic splits — are the environment's target binding's, not a
+// deployment's, and are not here.
+enum Strategy {
+  STRATEGY_UNSPECIFIED = 0;
+  STRATEGY_RECREATE = 1;
+  STRATEGY_ROLLING = 2;
+  STRATEGY_CANARY = 3;
+  STRATEGY_BLUE_GREEN = 4;
+}
+
+// TriggerType is what set a deployment going. It is separate from the actor
+// because "who" and "why" are different questions.
+enum TriggerType {
+  TRIGGER_TYPE_UNSPECIFIED = 0;
+  TRIGGER_TYPE_MANUAL = 1;
+  TRIGGER_TYPE_API = 2;
+  TRIGGER_TYPE_GIT = 3;
+  TRIGGER_TYPE_SCHEDULE = 4;
+  TRIGGER_TYPE_PROMOTION = 5;
+  TRIGGER_TYPE_ROLLBACK = 6;
+}
+
+// EnvironmentKind is what an environment is for. Policy distinguishes
+// environments by kind rather than by name, so that one named "prod" is not
+// treated as production by accident.
+enum EnvironmentKind {
+  ENVIRONMENT_KIND_UNSPECIFIED = 0;
+  ENVIRONMENT_KIND_DEVELOPMENT = 1;
+  ENVIRONMENT_KIND_PREVIEW = 2;
+  ENVIRONMENT_KIND_STAGING = 3;
+  ENVIRONMENT_KIND_PRODUCTION = 4;
+  ENVIRONMENT_KIND_CUSTOM = 5;
+}
+
+// PolicyMode is whether a bound policy blocks or reports.
+enum PolicyMode {
+  POLICY_MODE_UNSPECIFIED = 0;
+  POLICY_MODE_ENFORCE = 1;
+  POLICY_MODE_WARN = 2;
+}
+
+// PrincipalType is what kind of thing acted.
+enum PrincipalType {
+  PRINCIPAL_TYPE_UNSPECIFIED = 0;
+  PRINCIPAL_TYPE_HUMAN = 1;
+  PRINCIPAL_TYPE_SERVICE = 2;
+  PRINCIPAL_TYPE_AGENT = 3;
+  PRINCIPAL_TYPE_GIT = 4;
+  PRINCIPAL_TYPE_SCHEDULER = 5;
+  PRINCIPAL_TYPE_SYSTEM = 6;
+}
+
+// ArtifactKind is what sort of built thing an artifact is.
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_OCI_IMAGE = 1;
+  ARTIFACT_KIND_OCI_ARTIFACT = 2;
+  ARTIFACT_KIND_BINARY = 3;
+  ARTIFACT_KIND_ARCHIVE = 4;
+  ARTIFACT_KIND_HELM_CHART = 5;
+  ARTIFACT_KIND_MANIFEST_BUNDLE = 6;
+  ARTIFACT_KIND_WASM = 7;
+  ARTIFACT_KIND_FILE = 8;
+}
+
+// RiskLevel is how dangerous a change was judged to be. The numbers ascend with
+// the risk, so a client may compare them; a level this file does not declare is
+// UNSPECIFIED, which compares below every real one and must therefore never be
+// read as "safe".
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+  RISK_LEVEL_CRITICAL = 4;
+}
+
+// RequirementType is a condition that must hold before an apply may proceed.
+enum RequirementType {
+  REQUIREMENT_TYPE_UNSPECIFIED = 0;
+  REQUIREMENT_TYPE_APPROVAL = 1;
+  REQUIREMENT_TYPE_SIGNED_ARTIFACT = 2;
+  REQUIREMENT_TYPE_PROVENANCE = 3;
+  REQUIREMENT_TYPE_STAGING_SUCCESS = 4;
+  REQUIREMENT_TYPE_TIME_WINDOW = 5;
+  REQUIREMENT_TYPE_CHANGE_TICKET = 6;
+}
+
+// Verdict is what a check, or a whole run, concluded. The numbers ascend from
+// "promote" to "do not promote", which is the order a run reduces its checks
+// with: the aggregate is the most blocking verdict present, so a pass requires
+// that every check passed.
+enum Verdict {
+  VERDICT_UNSPECIFIED = 0;
+  VERDICT_PASS = 1;
+  VERDICT_INCONCLUSIVE = 2;
+  VERDICT_CANCELLED = 3;
+  VERDICT_ERROR = 4;
+  VERDICT_FAIL = 5;
+}
+
+// Principal is who did something.
+//
+// Claims are absent, and deliberately. An identity provider fills that map, so
+// a token under an unexpected name survives any denylist over it; nothing a
+// reader needs is in there, so it is not on the wire at all (INV-012).
+message Principal {
+  string id = 1;
+  PrincipalType type = 2;
+  string display_name = 3;
+}
+
+// Project is a namespace.
+message Project {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  map<string, string> labels = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+
+  // revision is what an update must be built on. It is returned by the read
+  // because a caller that has to fetch it separately has already raced.
+  uint64 revision = 7;
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  string description = 2;
+  map<string, string> labels = 3;
+
+  // idempotency_key lets a retry return the project the first call created.
+  // The name is unique, so without one a retry is indistinguishable from a
+  // second attempt to use the name and comes back a conflict.
+  string idempotency_key = 4;
+}
+
+message GetProjectRequest {
+  string id = 1;
+}
+
+message ListProjectsRequest {
+  PageRequest page = 1;
+}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+  string next_page_token = 2;
+}
+
+// Value is a configured value as a caller supplies it: either an inline literal
+// or the name of a secret the provider holds. Setting both is refused, because
+// there would be no reading of it that was not a guess.
+//
+// There is no read counterpart, and that asymmetry is the point: a caller that
+// asks for an environment is told which keys it configures and never what they
+// resolve to (INV-012).
+message Value {
+  oneof value {
+    string literal = 1;
+    string secret = 2;
+  }
+}
+
+// TargetSpec declares a binding to a deployment substrate.
+//
+// driver is a plain string rather than an enum. It names a plugin resolved
+// through a registry, and an enum here would make this file the list of every
+// plugin that will ever exist (ADR-0002).
+message TargetSpec {
+  string name = 1;
+  string driver = 2;
+  map<string, Value> config = 3;
+  map<string, string> labels = 4;
+}
+
+// TargetBinding is what a read returns instead of a TargetSpec: the keys the
+// binding sets, and never what they resolve to.
+message TargetBinding {
+  string name = 1;
+  string driver = 2;
+
+  // config_keys lists the keys this binding sets, sorted. The values are as
+  // often as not credentials, and the names alone answer the question a reader
+  // actually has: whether this environment configures the thing they expected.
+  repeated string config_keys = 3;
+
+  map<string, string> labels = 4;
+}
+
+// PolicyBinding puts a policy in force for an environment. Where it applies is
+// not bound here: the decision point reaches the engine as input, and saying it
+// twice would give two places to disagree.
+message PolicyBinding {
+  string name = 1;
+  string ref = 2;
+  PolicyMode mode = 3;
+}
+
+// Lifecycle is how long an environment is meant to last. A preview environment
+// expires; a production one does not, which is the unset TTL.
+message Lifecycle {
+  google.protobuf.Duration ttl = 1;
+  bool delete_on_close = 2;
+}
+
+// Environment is a place a release can be deployed to.
+message Environment {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  EnvironmentKind kind = 4;
+  repeated TargetBinding targets = 5;
+  repeated PolicyBinding policies = 6;
+
+  // variable_names lists the variables the environment sets, sorted. See
+  // TargetBinding.config_keys for why the values are not here.
+  repeated string variable_names = 7;
+
+  map<string, string> labels = 8;
+  Lifecycle lifecycle = 9;
+  uint64 revision = 10;
+}
+
+message CreateEnvironmentRequest {
+  string project_id = 1;
+  string name = 2;
+  EnvironmentKind kind = 3;
+  repeated TargetSpec targets = 4;
+  repeated PolicyBinding policies = 5;
+  map<string, Value> variables = 6;
+  map<string, string> labels = 7;
+  Lifecycle lifecycle = 8;
+
+  // idempotency_key lets a retry return the environment the first call made. A
+  // name is unique within its project, so without one a retry is
+  // indistinguishable from a second caller asking for the name.
+  string idempotency_key = 9;
+}
+
+message GetEnvironmentRequest {
+  string id = 1;
+}
+
+// ListEnvironmentsRequest asks for a page of one project's environments.
+//
+// The project is required rather than optional. Environment names are unique
+// within a project and not across them, so a list spanning projects would show
+// several rows called "production" with nothing to tell them apart.
+message ListEnvironmentsRequest {
+  string project_id = 1;
+  PageRequest page = 2;
+}
+
+message ListEnvironmentsResponse {
+  repeated Environment environments = 1;
+  string next_page_token = 2;
+}
+
+// Source is the commit a release was built from. provider is a string for the
+// reason a target driver is: the set of forges is open.
+message Source {
+  string provider = 1;
+  string repository = 2;
+  string revision = 3;
+  string ref = 4;
+  string tree_digest = 5;
+  string url = 6;
+}
+
+// DocumentRef points at provenance, an SBOM or a signature. It is a reference:
+// the document itself lives wherever it was published, and RollOps stores where
+// it is and what it hashes to (ADR-0004).
+//
+// kind and format are strings rather than enums because attestation formats
+// arrive faster than this file can be revised, and an unrecognised one is
+// something to carry rather than something to refuse.
+message DocumentRef {
+  string kind = 1;
+  string format = 2;
+  string locator = 3;
+  string digest = 4;
+}
+
+// ReleaseArtifact binds one artifact to the role it plays in a release. The
+// role is a name the project chooses, so it is a string.
+message ReleaseArtifact {
+  string role = 1;
+  string artifact_id = 2;
+}
+
+// Artifact is a built thing that has been registered. The content is not here
+// and never will be: what is stored is metadata (ADR-0004).
+message Artifact {
+  string id = 1;
+  string project_id = 2;
+  ArtifactKind kind = 3;
+  string digest = 4;
+  string locator = 5;
+  int64 size = 6;
+  string media_type = 7;
+  map<string, string> metadata = 8;
+  DocumentRef provenance = 9;
+  repeated DocumentRef sboms = 10;
+  repeated DocumentRef signatures = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+// RegisterArtifactRequest records where a built thing is and what it must hash
+// to.
+//
+// There is no idempotency key, and it is not an omission: content identifies an
+// artifact, so the digest already is one (INV-002). A build that reruns
+// registers the same bytes and gets the same artifact back, which is what a key
+// would have bought — without a row to expire or a fingerprint to mismatch.
+message RegisterArtifactRequest {
+  string project_id = 1;
+  ArtifactKind kind = 2;
+  string digest = 3;
+
+  // locator has to be pinned to the digest. A tag resolved again at pull time
+  // can hand a different image to production than the one that was verified.
+  string locator = 4;
+
+  int64 size = 5;
+  string media_type = 6;
+  map<string, string> metadata = 7;
+  DocumentRef provenance = 8;
+  repeated DocumentRef sboms = 9;
+  repeated DocumentRef signatures = 10;
+}
+
+message GetArtifactRequest {
+  string id = 1;
+}
+
+message ListArtifactsRequest {
+  string project_id = 1;
+  PageRequest page = 2;
+}
+
+message ListArtifactsResponse {
+  repeated Artifact artifacts = 1;
+  string next_page_token = 2;
+}
+
+// Release is a fixed set of artifacts, deployable as one thing.
+message Release {
+  string id = 1;
+  string project_id = 2;
+  string version = 3;
+  repeated ReleaseArtifact artifacts = 4;
+  Source source = 5;
+  DocumentRef provenance = 6;
+  Principal created_by = 7;
+  google.protobuf.Timestamp created_at = 8;
+  map<string, string> labels = 9;
+  map<string, string> annotations = 10;
+}
+
+message CreateReleaseRequest {
+  string project_id = 1;
+
+  // version is how the release is asked for on every surface, so it is unique
+  // within the project.
+  string version = 2;
+
+  repeated ReleaseArtifact artifacts = 3;
+  Source source = 4;
+  DocumentRef provenance = 5;
+  map<string, string> labels = 6;
+  map<string, string> annotations = 7;
+
+  // idempotency_key matters more here than elsewhere: the version is unique
+  // within the project, so without one a retry is indistinguishable from a
+  // second attempt to use the name and comes back a conflict.
+  string idempotency_key = 8;
+}
+
+message GetReleaseRequest {
+  string id = 1;
+}
+
+message ListReleasesRequest {
+  string project_id = 1;
+  PageRequest page = 2;
+}
+
+message ListReleasesResponse {
+  repeated Release releases = 1;
+  string next_page_token = 2;
+}
+
+// Change is one field a planned operation would alter.
+//
+// A change marked sensitive arrives with both values blank. The flag is kept
+// rather than the row dropped, because a reader has to be able to tell a
+// deliberate blank from a field that did not change (INV-012).
+message Change {
+  string path = 1;
+  string from = 2;
+  string to = 3;
+  bool sensitive = 4;
+}
+
+// PlannedOperation is one unit of work a plan would carry out. kind names what
+// sort of work, and is a string because a target driver decides what kinds it
+// has.
+message PlannedOperation {
+  string id = 1;
+  string target = 2;
+  string kind = 3;
+  string summary = 4;
+  repeated Change changes = 5;
+  repeated string dependencies = 6;
+  bool reversible = 7;
+}
+
+// Reason explains part of a decision. The code is for matching, the message for
+// the person reading the plan. Policies are authored outside this file, so the
+// code is a string.
+message Reason {
+  string code = 1;
+  string message = 2;
+}
+
+// Requirement is a condition that must hold before an apply may proceed.
+message Requirement {
+  RequirementType type = 1;
+  string role = 2;
+  int32 count = 3;
+  string detail = 4;
+}
+
+// RiskFactor is one explainable contribution to a risk assessment.
+message RiskFactor {
+  string code = 1;
+  string message = 2;
+}
+
+// RiskAssessment is how dangerous the change was judged to be.
+message RiskAssessment {
+  RiskLevel level = 1;
+  double score = 2;
+  repeated RiskFactor factors = 3;
+}
+
+// Decision is the authorization record for a plan. Risk is inside it rather
+// than beside it, so there is one answer to read rather than two that can
+// disagree.
+message Decision {
+  bool allowed = 1;
+  repeated Requirement requirements = 2;
+  repeated Reason reasons = 3;
+  RiskAssessment risk = 4;
+}
+
+// RollbackPlan is how to get back to where the environment was.
+message RollbackPlan {
+  string from_release = 1;
+  string to_release = 2;
+  repeated PlannedOperation operations = 3;
+  bool automatic = 4;
+}
+
+// Plan is what deploying a release to an environment would change, and what
+// policy said about it.
+message Plan {
+  string id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string release_id = 4;
+
+  // base_revision is the environment revision the plan was computed against.
+  // Apply compares it with the live one rather than silently re-planning, so a
+  // caller holding a plan can tell for itself whether it has gone stale.
+  uint64 base_revision = 5;
+
+  Strategy strategy = 6;
+  repeated PlannedOperation operations = 7;
+  Decision policy = 8;
+  RollbackPlan rollback = 9;
+  Principal created_by = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp expires_at = 12;
+
+  // hash is what an approval binds to. An approver needs to be able to say
+  // which plan they approved, and the id alone does not prove the stored plan
+  // is still the one they read.
+  string hash = 13;
+}
+
+message CreatePlanRequest {
+  string environment_id = 1;
+  string release_id = 2;
+
+  // strategy is required. Unspecified is refused rather than defaulted: the
+  // strategy is what the plan's operations are built for, and guessing it would
+  // have an approver review a rollout nobody asked for.
+  Strategy strategy = 3;
+
+  // idempotency_key lets a retry return the plan the first call created instead
+  // of building a second one against a world that has since moved.
+  string idempotency_key = 4;
+}
+
+message GetPlanRequest {
+  string id = 1;
+}
+
+// Trigger is what caused a deployment.
+message Trigger {
+  TriggerType type = 1;
+  string detail = 2;
+}
+
+// Deployment is one attempt to make a release effective in an environment.
+message Deployment {
+  string id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string release_id = 4;
+  string plan_id = 5;
+  Strategy strategy = 6;
+  DeploymentStatus status = 7;
+  Trigger trigger = 8;
+  Principal actor = 9;
+  google.protobuf.Timestamp created_at = 10;
+
+  // started_at and finished_at are unset until they happen, so "not started"
+  // stays distinguishable from "started at the epoch".
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp finished_at = 12;
+
+  // previous_deployment_id is the deployment this one replaces, empty for the
+  // first. It is what makes a rollback target readable from the record.
+  string previous_deployment_id = 13;
+
+  uint64 revision = 14;
+}
+
+// ApplyPlanRequest asks for a stored plan to be carried out.
+//
+// The strategy and the operations are not here. They come from the plan, so
+// what runs is what was reviewed — a request that could restate them would let
+// an applier diverge from the thing an approver read.
+message ApplyPlanRequest {
+  string plan_id = 1;
+
+  // detail is free text for whoever reads the timeline later: a ticket, a
+  // change request, the reason somebody pressed the button. The trigger type is
+  // not the caller's to choose — this is the API, and a request that could claim
+  // "git" or "schedule" would write a cause into the record that nothing else
+  // corroborates.
+  string detail = 2;
+
+  string idempotency_key = 3;
+}
+
+message GetDeploymentRequest {
+  string id = 1;
+}
+
+// ListDeploymentsRequest asks for a page of one environment's deployments, most
+// recent first.
+message ListDeploymentsRequest {
+  string environment_id = 1;
+  PageRequest page = 2;
+}
+
+message ListDeploymentsResponse {
+  repeated Deployment deployments = 1;
+  string next_page_token = 2;
+}
+
+// ApproveDeploymentRequest records one principal's answer about a gated
+// deployment.
+message ApproveDeploymentRequest {
+  string deployment_id = 1;
+
+  // plan_hash is the hash of the plan the approver read, and it is required.
+  // §13 binds an approval to a revision: without one, consent given for what
+  // somebody reviewed would carry over to whatever happens to be stored when it
+  // is spent.
+  string plan_hash = 2;
+
+  // granted says whether the answer is yes.
+  bool granted = 3;
+
+  // reason is why. It is what an auditor reads, and a denial without one tells
+  // whoever has to act on it nothing.
+  string reason = 4;
+
+  string idempotency_key = 5;
+}
+
+// CancelDeploymentRequest stops a deployment before it reaches an outcome of
+// its own. Nothing already applied is undone — putting that back is a rollback,
+// which is a deployment of its own.
+message CancelDeploymentRequest {
+  string deployment_id = 1;
+
+  // reason is why, and it is required. A deployment in the cancelled status
+  // with nothing saying who stopped it is indistinguishable from one that died,
+  // and whoever finds it stopped has nothing to act on.
+  string reason = 2;
+
+  string idempotency_key = 3;
+}
+
+message PromoteDeploymentRequest {
+  string deployment_id = 1;
+
+  // reason is required only for a deployment that is paused. Promoting one of
+  // those disregards whatever paused it, so somebody has to be findable for the
+  // decision; promoting one whose checks are passing heeds the signal and has
+  // nothing to explain.
+  string reason = 2;
+
+  string idempotency_key = 3;
+}
+
+message RollbackDeploymentRequest {
+  string deployment_id = 1;
+
+  // reason is optional, unlike promoting past a pause. A rollback heeds a
+  // signal rather than disregarding one, and a configured automatic rollback
+  // fires with nobody present to write prose.
+  string reason = 2;
+
+  string idempotency_key = 3;
+}
+
+// Verifier names the check that gave an answer. kind is a string because
+// verifiers are supplied by plugins.
+message Verifier {
+  string kind = 1;
+  string name = 2;
+  string version = 3;
+}
+
+// Measurement is one figure a verifier read — an error rate that crossed a
+// threshold, a latency that did not.
+message Measurement {
+  string name = 1;
+  double value = 2;
+}
+
+// EvidenceRef points at what a verifier looked at: a dashboard, a log query, a
+// trace. It is a reference rather than content, and it is rendered: withholding
+// it would leave evidence nobody can reach, which is the same as not having
+// kept it.
+message EvidenceRef {
+  string kind = 1;
+  string uri = 2;
+}
+
+// Check is one verifier's answer.
+message Check {
+  Verifier verifier = 1;
+  Verdict verdict = 2;
+  repeated Measurement measurements = 3;
+
+  // started_at and finished_at are the window this check observed, which is not
+  // the run's: a run's window spans every check it combined.
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp finished_at = 5;
+
+  string reason = 6;
+  repeated EvidenceRef evidence = 7;
+}
+
+// VerificationRun is what the checks said.
+//
+// verdict is derived from the checks rather than stored beside them, so a reader
+// cannot be shown a summary that disagrees with what it summarises.
+message VerificationRun {
+  string id = 1;
+  string deployment_id = 2;
+  string plan_id = 3;
+  Verdict verdict = 4;
+  repeated Check checks = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+  Principal actor = 8;
+}
+
+// VerifyDeploymentRequest asks whether a deployment that has landed is serving.
+//
+// There is no reason field. Verifying asks a question rather than overriding an
+// answer, so there is nothing for a caller to justify.
+message VerifyDeploymentRequest {
+  string deployment_id = 1;
+  string idempotency_key = 2;
+}
+
+// VerifyDeploymentResponse is the verdict and where it left the deployment.
+//
+// Both are here because the verdict decides the status, and a caller that had to
+// fetch the deployment separately would be reading it after whatever happened
+// next. On a replay the deployment is re-read rather than remembered, so a retry
+// arriving after a promotion describes the run as it was and the deployment as
+// it is (§23.3).
+message VerifyDeploymentResponse {
+  Deployment deployment = 1;
+  VerificationRun run = 2;
+}
+
+message GetVerificationRunRequest {
+  string id = 1;
+}
+
+// Event is one durable record of something that happened.
+message Event {
+  string id = 1;
+
+  // type and aggregate_type are strings. The set of event types grows with
+  // every feature, and §16.4 asks a reader that does not recognise one to
+  // tolerate it — which an enum would turn into an UNSPECIFIED that discards
+  // the name it could not match.
+  string type = 2;
+
+  // version is the schema version of payload, per type.
+  int32 version = 3;
+
+  string aggregate_type = 4;
+  string aggregate_id = 5;
+  uint64 sequence = 6;
+  google.protobuf.Timestamp time = 7;
+  Principal principal = 8;
+  string correlation_id = 9;
+  string causation_id = 10;
+
+  // payload is the event body as the log holds it: opaque JSON, which is most
+  // of why adding a field to one is not a migration. It is bytes rather than a
+  // Struct because re-encoding it here would be a chance to change it, and the
+  // log is immutable (INV-013).
+  bytes payload = 11;
+
+  map<string, string> metadata = 12;
+}
+
+// ListDeploymentEventsRequest names the deployment whose log to read.
+//
+// An id nobody deployed is a not-found rather than an empty page: the log
+// cannot tell the two apart, and a client polling a mistyped id would wait
+// forever for a deployment that was never going to report anything.
+message ListDeploymentEventsRequest {
+  string deployment_id = 1;
+  PageRequest page = 2;
+}
+
+message ListDeploymentEventsResponse {
+  repeated Event events = 1;
+  string next_page_token = 2;
+}
