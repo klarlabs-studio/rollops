@@ -1183,6 +1183,44 @@ could plausibly arrive in, which is why `EvidenceRef` is a reference rather than
 content in the first place (INV-012). The verdicts and the measurements are what
 a query matches on; the verification run holds the rest.
 
+The split between the two is **correctability, not sensitivity**. An event is
+append-only and can never be amended (INV-013), so a credential that reaches one
+is there for good; a run is a record, and a record can be dropped. That is the
+whole of the rule, and it is why the run is allowed to keep what the event may
+not. Withholding the evidence from the run as well would leave verification
+pointing at nothing an operator could go and read, which is the same as not
+having kept it. The event carries the run's id, so the timeline still leads
+there — an event that omitted both the evidence and any way to reach it would
+have discarded it rather than relocated it.
+
+A run is written once, when the checks have answered, and never updated. It
+states what was observed in a window that has closed; editing one would rewrite
+an observation, which is the reason an approval has no update either. Verifying
+a second time — a paused canary probed again — is a second run, and which answer
+came last is the question an operator is actually asking, so a deployment's runs
+are ordered.
+
+**The verdict is derived, never stored.** It is `Combine` over the run's checks,
+computed on read. Two copies of one fact can disagree and nothing in a stored
+row says which of them to believe; deriving also means a run written before a
+change to how verdicts combine is read under today's rules, which is the safe
+direction, because `Combine` only ever becomes more blocking. The same reasoning
+keeps a `verdict` column out of `verification_runs` (§35.2).
+
+A run records the word a verifier gave even when this version does not recognise
+it. What a verifier said is a fact, and refusing to store an unrecognised verdict
+would destroy the only evidence of why the run came out an `error` — which is
+what `Combine` already reports for one, and the safe reading.
+
+`internal/domain/verification` imports `pkg/verify/v1`, and it is the one domain
+package that does. The verdict vocabulary and the result shape are the domain's
+own; they are published under `pkg/` so a plugin author can speak them (§11.1),
+not because they belong to the plugin layer. Restating them inside the domain
+would leave two copies of one fact and put `Combine` on the wrong side of the
+boundary where §11.3 is enforced. INV-006 and INV-007 ask that the domain depend
+on no transport and no provider SDK; `verify/v1` is neither, and imports nothing
+beyond `context` and `time`.
+
 ────────
 
 ## 12. Policy Engine
