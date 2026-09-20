@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.klarlabs.de/rollops/internal/api/v2/cliapi"
 	"go.klarlabs.de/rollops/internal/config"
 	"go.klarlabs.de/rollops/internal/engine"
 	"go.klarlabs.de/rollops/internal/governance"
@@ -96,7 +97,14 @@ type fleetOperations interface {
 
 // App is a configured CLI.
 type App struct {
-	Ops           Operations
+	Ops Operations
+
+	// V2 is the release-model surface, which owns the ten top-level names spec
+	// 26.1 lists. It is nil in daemon mode, where there is no local service to
+	// build one over; those names then fall through to the migration notice,
+	// which is what they did everywhere before this was wired.
+	V2 *cliapi.App
+
 	Out           io.Writer
 	Actor         rollout.Identity // the invoking identity (one-shot inherits the local user)
 	Doctor        Doctor
@@ -195,10 +203,17 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		return a.usage()
 	}
+	// The release model is asked before the migration notice, because for the
+	// names the two share the release model is now what the top level means.
+	// The notice survives for the operations only the rollout engine has.
+	if a.V2 != nil && slices.Contains(cliapi.Commands, cmd) {
+		return a.V2.Run(ctx, args)
+	}
 	if slices.Contains(rolloutCommands, cmd) {
 		return movedToRollout(cmd, rest)
 	}
-	return fmt.Errorf("unknown command %q (try: rollout, doctor, plugin, version)", cmd)
+	return fmt.Errorf("unknown command %q (try: %s, rollout, doctor, plugin, version)",
+		cmd, strings.Join(cliapi.Commands, ", "))
 }
 
 // movedToRollout names the new spelling instead of acting. Guessing that a bare
@@ -644,7 +659,13 @@ func specUsesHelm(spec map[string]any) bool {
 }
 
 func (a *App) usage() error {
-	_, _ = fmt.Fprintln(a.Out, "rollops <command> [args]\n\nCommands:\n  rollout <operation>      drive a rollout config (see: rollops rollout help)\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
+	_, _ = fmt.Fprint(a.Out, "rollops <command> [args]\n\n")
+	if a.V2 != nil {
+		// Listed first because they are what the top level now means; a command
+		// that dispatches but appears nowhere in usage is one nobody finds.
+		_, _ = fmt.Fprint(a.Out, "Release model:\n  project <operation>      list, get or create a project\n  environment <operation>  list, get or create an environment\n  release <operation>      list, get or create a release\n  plan <env-id> <release-id>   show what deploying would change\n  deploy <plan-id>         apply a plan\n  status <deployment-id>   show a deployment's state\n  verify <deployment-id>   run the verification checks\n  promote <deployment-id>  promote a verified deployment\n  rollback <deployment-id> roll a deployment back\n  history <aggregate-id>   show the event timeline\n")
+	}
+	_, _ = fmt.Fprintln(a.Out, "Commands:\n  rollout <operation>      drive a rollout config (see: rollops rollout help)\n  doctor [config.yaml]     check config, database, daemon, and notify readiness\n  plugin search [query]    search the plugin marketplace registry\n  plugin info <name>       show registry detail for a marketplace plugin\n  plugin install <src>     install a plugin by marketplace name, path, or https URL\n  plugin list              list installed plugins and their sha256 pins\n  plugin update [--apply]  check (or upgrade) installed plugins against the registry\n  version                  print build version")
 	return nil
 }
 
