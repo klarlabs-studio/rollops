@@ -24,7 +24,10 @@ spec:
     ref: rollops/prod/rollopsd
     criticality: high
     spec:
-      context: felixgeelhaar
+      # No `context`: the daemon applies this from inside the cluster with its
+      # ServiceAccount, where kubeconfig contexts do not exist. Naming one is
+      # how this refused its first real reconcile:
+      #   kubectl apply --dry-run=server: context "felixgeelhaar" does not exist
       namespace: rollops-system
       resource: deployment/rollopsd
       # The tracked image. imagePolicy bumps this line, and it overrides the
