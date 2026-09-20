@@ -1962,6 +1962,43 @@ INTERNAL
 
 Transport layers map domain errors without losing codes.
 
+### 23.5 What HTTP decides for itself
+
+§23.1 puts service semantics in one place, which leaves each transport a narrow
+set of choices genuinely its own. For HTTP/JSON they are these.
+
+**A created resource answers 200, not 201.** The service does not report
+whether a call created something or replayed an earlier one — deliberately,
+because a caller holding an idempotency key wants the resource either way
+(§18.3). A transport that answered 201 would have to guess, and the guess is
+visible: a retry answered 201 states that something was created when nothing
+was. `POST /v2/deployment-plans/{id}:apply` is the exception at 202, because
+there the distinction is real — the deployment is recorded and nothing has been
+applied yet, which is what Accepted means.
+
+**A method the API does not serve on a path is a route it does not serve.**
+§23.4 has no code for a method, and a 405 rendered by the router arrives as
+plain text — a second error shape for a caller to parse, for a case that is
+already `NOT_FOUND`. So a path is registered without a method and the method is
+dispatched inside the handler, which also keeps a GET from reaching a command.
+
+**Authentication happens before routing.** A caller who has not said who they
+are is refused before the handler runs, including on a path nobody registered.
+Answering an anonymous request with 404-here and 401-there draws a map of the
+estate for somebody with no credential.
+
+**The verb shares the id's path segment.** `POST /v2/deployments/{id}:cancel`
+is one segment, not a `{id}/cancel` sub-resource: there is no `/cancel` to
+fetch, and modelling one would invite a GET that means nothing. The transport
+cuts at the first colon — a deployment id contains none — so a verb nobody
+serves is a 404 rather than an id that happens to end in one.
+
+**The wire shape is declared by the transport, not inherited.** The API's view
+types carry no serialization tags. Tagging them would make a field rename a
+breaking published change decided in the wrong layer, and a field added to a
+view would appear on the wire before anybody chose to publish it. The same
+reasoning the storage codec uses for its row structs.
+
 ────────
 
 ## 24. gRPC / Protobuf
