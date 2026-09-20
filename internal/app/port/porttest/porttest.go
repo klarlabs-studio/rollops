@@ -286,7 +286,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("a stored project reads back whole", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -303,10 +303,30 @@ func runProjects(t *testing.T, newRepos Factory) {
 		}
 	})
 
+	t.Run("a created project is handed the revision it was stored at", func(t *testing.T) {
+		f, r := newFixture(), newRepos(t)
+		p := f.project(t, "checkout")
+		rev, err := r.Projects.Create(ctx, p)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		// Compared against what the store holds rather than against one, because
+		// a Create that reported a constant would satisfy the literal and still
+		// hand back a revision the store never agreed to.
+		got, err := r.Projects.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if rev != got.Revision {
+			t.Errorf("Create returned revision %d, stored at %d", rev, got.Revision)
+		}
+	})
+
 	t.Run("a project is addressable by name", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		got, err := r.Projects.GetByName(ctx, "checkout")
@@ -320,10 +340,10 @@ func runProjects(t *testing.T, newRepos Factory) {
 
 	t.Run("a name belongs to one project", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
-		if err := r.Projects.Create(ctx, f.project(t, "checkout")); err != nil {
+		if _, err := r.Projects.Create(ctx, f.project(t, "checkout")); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		err := r.Projects.Create(ctx, f.project(t, "checkout"))
+		_, err := r.Projects.Create(ctx, f.project(t, "checkout"))
 		if !errors.Is(err, port.ErrAlreadyExists) {
 			t.Errorf("Create = %v, want ErrAlreadyExists", err)
 		}
@@ -332,10 +352,10 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("the same project cannot be created twice", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if err := r.Projects.Create(ctx, p); !errors.Is(err, port.ErrAlreadyExists) {
+		if _, err := r.Projects.Create(ctx, p); !errors.Is(err, port.ErrAlreadyExists) {
 			t.Errorf("Create = %v, want ErrAlreadyExists", err)
 		}
 	})
@@ -343,7 +363,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("a project cannot be renamed onto a name in use", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		for _, n := range []string{"checkout", "billing"} {
-			if err := r.Projects.Create(ctx, f.project(t, n)); err != nil {
+			if _, err := r.Projects.Create(ctx, f.project(t, n)); err != nil {
 				t.Fatalf("Create %s: %v", n, err)
 			}
 		}
@@ -374,7 +394,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("an update advances the revision", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		stored, err := r.Projects.Get(ctx, p.ID)
@@ -412,7 +432,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("a second writer loses", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		stale, err := r.Projects.Get(ctx, p.ID)
@@ -439,7 +459,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 	t.Run("a blind write is refused", func(t *testing.T) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		// p is the value Create was handed, so its revision is still zero:
@@ -468,7 +488,7 @@ func runProjects(t *testing.T, newRepos Factory) {
 			t.Errorf("List = %v, want none", empty)
 		}
 		for _, n := range []string{"checkout", "billing", "search"} {
-			if err := r.Projects.Create(ctx, f.project(t, n)); err != nil {
+			if _, err := r.Projects.Create(ctx, f.project(t, n)); err != nil {
 				t.Fatalf("Create %s: %v", n, err)
 			}
 		}
@@ -496,7 +516,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 		t.Helper()
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
 		return f, r, p
@@ -505,7 +525,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("a stored environment reads back whole", func(t *testing.T) {
 		f, r, p := seed(t)
 		e := f.environment(t, p.ID, "production")
-		if err := r.Environments.Create(ctx, e); err != nil {
+		if _, err := r.Environments.Create(ctx, e); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		got, err := r.Environments.Get(ctx, e.ID)
@@ -518,10 +538,27 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 		}
 	})
 
+	t.Run("a created environment is handed the revision it was stored at", func(t *testing.T) {
+		f, r, p := seed(t)
+		e := f.environment(t, p.ID, "production")
+		rev, err := r.Environments.Create(ctx, e)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		got, err := r.Environments.Get(ctx, e.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if rev != got.Revision {
+			t.Errorf("Create returned revision %d, stored at %d", rev, got.Revision)
+		}
+	})
+
 	t.Run("target bindings keep the order they were declared in", func(t *testing.T) {
 		f, r, p := seed(t)
 		e := f.environment(t, p.ID, "production")
-		if err := r.Environments.Create(ctx, e); err != nil {
+		if _, err := r.Environments.Create(ctx, e); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		got, err := r.Environments.Get(ctx, e.ID)
@@ -540,19 +577,19 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 
 	t.Run("a name is unique within a project, not across them", func(t *testing.T) {
 		f, r, p := seed(t)
-		if err := r.Environments.Create(ctx, f.environment(t, p.ID, "production")); err != nil {
+		if _, err := r.Environments.Create(ctx, f.environment(t, p.ID, "production")); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		err := r.Environments.Create(ctx, f.environment(t, p.ID, "production"))
+		_, err := r.Environments.Create(ctx, f.environment(t, p.ID, "production"))
 		if !errors.Is(err, port.ErrAlreadyExists) {
 			t.Errorf("Create = %v, want ErrAlreadyExists", err)
 		}
 
 		other := f.project(t, "billing")
-		if err := r.Projects.Create(ctx, other); err != nil {
+		if _, err := r.Projects.Create(ctx, other); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
-		if err := r.Environments.Create(ctx, f.environment(t, other.ID, "production")); err != nil {
+		if _, err := r.Environments.Create(ctx, f.environment(t, other.ID, "production")); err != nil {
 			t.Errorf("a second project may also have a production: %v", err)
 		}
 	})
@@ -560,10 +597,10 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("the same environment cannot be created twice", func(t *testing.T) {
 		f, r, p := seed(t)
 		e := f.environment(t, p.ID, "production")
-		if err := r.Environments.Create(ctx, e); err != nil {
+		if _, err := r.Environments.Create(ctx, e); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if err := r.Environments.Create(ctx, e); !errors.Is(err, port.ErrAlreadyExists) {
+		if _, err := r.Environments.Create(ctx, e); !errors.Is(err, port.ErrAlreadyExists) {
 			t.Errorf("Create = %v, want ErrAlreadyExists", err)
 		}
 	})
@@ -571,7 +608,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("an environment cannot be renamed onto a name in use", func(t *testing.T) {
 		f, r, p := seed(t)
 		for _, n := range []string{"production", "staging"} {
-			if err := r.Environments.Create(ctx, f.environment(t, p.ID, n)); err != nil {
+			if _, err := r.Environments.Create(ctx, f.environment(t, p.ID, n)); err != nil {
 				t.Fatalf("Create %s: %v", n, err)
 			}
 		}
@@ -588,7 +625,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("an environment needs a project that exists", func(t *testing.T) {
 		f, r, _ := seed(t)
 		absent := f.project(t, "gone")
-		err := r.Environments.Create(ctx, f.environment(t, absent.ID, "production"))
+		_, err := r.Environments.Create(ctx, f.environment(t, absent.ID, "production"))
 		if !errors.Is(err, port.ErrNotFound) {
 			t.Errorf("Create = %v, want ErrNotFound", err)
 		}
@@ -597,7 +634,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("an update replaces the bindings rather than adding to them", func(t *testing.T) {
 		f, r, p := seed(t)
 		e := f.environment(t, p.ID, "production")
-		if err := r.Environments.Create(ctx, e); err != nil {
+		if _, err := r.Environments.Create(ctx, e); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		stored, err := r.Environments.Get(ctx, e.ID)
@@ -624,7 +661,7 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("a second writer loses", func(t *testing.T) {
 		f, r, p := seed(t)
 		e := f.environment(t, p.ID, "production")
-		if err := r.Environments.Create(ctx, e); err != nil {
+		if _, err := r.Environments.Create(ctx, e); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		stale, err := r.Environments.Get(ctx, e.ID)
@@ -642,16 +679,16 @@ func runEnvironments(t *testing.T, newRepos Factory) {
 	t.Run("lookup by name and listing are scoped to the project", func(t *testing.T) {
 		f, r, p := seed(t)
 		other := f.project(t, "billing")
-		if err := r.Projects.Create(ctx, other); err != nil {
+		if _, err := r.Projects.Create(ctx, other); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
-		if err := r.Environments.Create(ctx, f.environment(t, p.ID, "production")); err != nil {
+		if _, err := r.Environments.Create(ctx, f.environment(t, p.ID, "production")); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if err := r.Environments.Create(ctx, f.environment(t, p.ID, "staging")); err != nil {
+		if _, err := r.Environments.Create(ctx, f.environment(t, p.ID, "staging")); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if err := r.Environments.Create(ctx, f.environment(t, other.ID, "production")); err != nil {
+		if _, err := r.Environments.Create(ctx, f.environment(t, other.ID, "production")); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -694,7 +731,7 @@ func runArtifacts(t *testing.T, newRepos Factory) {
 		t.Helper()
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
 		return f, r, p
@@ -765,7 +802,7 @@ func runArtifacts(t *testing.T, newRepos Factory) {
 	t.Run("listing is scoped to the project", func(t *testing.T) {
 		f, r, p := seed(t)
 		other := f.project(t, "billing")
-		if err := r.Projects.Create(ctx, other); err != nil {
+		if _, err := r.Projects.Create(ctx, other); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
 		for _, c := range []string{"app-v1", "app-v2"} {
@@ -801,7 +838,7 @@ func runReleases(t *testing.T, newRepos Factory) {
 		t.Helper()
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
-		if err := r.Projects.Create(ctx, p); err != nil {
+		if _, err := r.Projects.Create(ctx, p); err != nil {
 			t.Fatalf("Create project: %v", err)
 		}
 		as := []artifact.Artifact{f.artifact(t, p.ID, "app-v1"), f.artifact(t, p.ID, "migration-v1")}
@@ -958,11 +995,11 @@ func seedWorld(t *testing.T, newRepos Factory) world {
 	f, r := newFixture(), newRepos(t)
 
 	p := f.project(t, "checkout")
-	if err := r.Projects.Create(ctx, p); err != nil {
+	if _, err := r.Projects.Create(ctx, p); err != nil {
 		t.Fatalf("Create project: %v", err)
 	}
 	e := f.environment(t, p.ID, "production")
-	if err := r.Environments.Create(ctx, e); err != nil {
+	if _, err := r.Environments.Create(ctx, e); err != nil {
 		t.Fatalf("Create environment: %v", err)
 	}
 	// Create returns nothing, so the stored revision is read back: a plan's
@@ -1346,7 +1383,7 @@ func runDeployments(t *testing.T, newRepos Factory) {
 	t.Run("listing is scoped to the environment", func(t *testing.T) {
 		w, _ := stored(t)
 		other := w.f.environment(t, w.proj.ID, "staging")
-		if err := w.r.Environments.Create(ctx, other); err != nil {
+		if _, err := w.r.Environments.Create(ctx, other); err != nil {
 			t.Fatalf("Create environment: %v", err)
 		}
 		got, err := w.r.Deployments.ListForEnvironment(ctx, other.ID)
@@ -1467,10 +1504,11 @@ func runTransactions(t *testing.T, newRepos Factory) {
 		p := f.project(t, "checkout")
 		e := f.environment(t, p.ID, "production")
 		err := r.Tx.WithinTransaction(ctx, func(ctx context.Context) error {
-			if err := r.Projects.Create(ctx, p); err != nil {
+			if _, err := r.Projects.Create(ctx, p); err != nil {
 				return err
 			}
-			return r.Environments.Create(ctx, e)
+			_, err := r.Environments.Create(ctx, e)
+			return err
 		})
 		if err != nil {
 			t.Fatalf("WithinTransaction: %v", err)
@@ -1487,7 +1525,7 @@ func runTransactions(t *testing.T, newRepos Factory) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
 		err := r.Tx.WithinTransaction(ctx, func(ctx context.Context) error {
-			if err := r.Projects.Create(ctx, p); err != nil {
+			if _, err := r.Projects.Create(ctx, p); err != nil {
 				return err
 			}
 			return sentinel
@@ -1504,7 +1542,7 @@ func runTransactions(t *testing.T, newRepos Factory) {
 		f, r := newFixture(), newRepos(t)
 		p := f.project(t, "checkout")
 		err := r.Tx.WithinTransaction(ctx, func(ctx context.Context) error {
-			if err := r.Projects.Create(ctx, p); err != nil {
+			if _, err := r.Projects.Create(ctx, p); err != nil {
 				return err
 			}
 			_, err := r.Projects.Get(ctx, p.ID)
@@ -1520,7 +1558,7 @@ func runTransactions(t *testing.T, newRepos Factory) {
 		p := f.project(t, "checkout")
 		err := r.Tx.WithinTransaction(ctx, func(ctx context.Context) error {
 			return r.Tx.WithinTransaction(ctx, func(ctx context.Context) error {
-				if err := r.Projects.Create(ctx, p); err != nil {
+				if _, err := r.Projects.Create(ctx, p); err != nil {
 					return err
 				}
 				return sentinel

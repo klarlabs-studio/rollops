@@ -50,7 +50,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := store.Projects().Create(context.Background(), proj); err != nil {
+	if _, err := store.Projects().Create(context.Background(), proj); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 
@@ -155,6 +155,19 @@ func TestCreatingAnEnvironmentMakesItDeployableTo(t *testing.T) {
 	}
 }
 
+func TestACreatedEnvironmentReportsTheRevisionItWasStoredAt(t *testing.T) {
+	h := newHarness(t)
+	got := h.create(t, h.creating())
+
+	stored, err := h.store.Environments().Get(context.Background(), got.ID)
+	if err != nil {
+		t.Fatalf("Environments.Get: %v", err)
+	}
+	if got.Revision != stored.Revision {
+		t.Errorf("Create returned revision %d, stored at %d", got.Revision, stored.Revision)
+	}
+}
+
 // A name is how an environment is asked for, and it is unique within a project
 // rather than across them: two projects may each have a production.
 func TestTwoProjectsMayEachHaveAProduction(t *testing.T) {
@@ -165,7 +178,7 @@ func TestTwoProjectsMayEachHaveAProduction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := h.store.Projects().Create(context.Background(), other); err != nil {
+	if _, err := h.store.Projects().Create(context.Background(), other); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 	cmd := h.creating()

@@ -58,8 +58,9 @@ func (s *Store) Idempotency() port.IdempotencyRepository { return idempotencyRep
 
 type projectRepo struct{ s *Store }
 
-func (r projectRepo) Create(ctx context.Context, p project.Project) error {
-	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+func (r projectRepo) Create(ctx context.Context, p project.Project) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.WithinTransaction(ctx, func(ctx context.Context) error {
 		q := r.s.conn(ctx)
 		if err := mustNotExist(ctx, q,
 			`SELECT 1 FROM projects WHERE id = ?`, p.ID,
@@ -79,11 +80,16 @@ func (r projectRepo) Create(ctx context.Context, p project.Project) error {
 		}
 		_, err = q.ExecContext(ctx,
 			`INSERT INTO projects (id, name, description, labels, created_at, updated_at, revision)
-			 VALUES (?, ?, ?, ?, ?, ?, 1)`,
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.Description, labels, encodeTime(p.CreatedAt), encodeTime(p.UpdatedAt),
+			uint64(first),
 		)
 		return wrap("insert project", err)
 	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
 }
 
 func (r projectRepo) Update(ctx context.Context, p project.Project) (identity.Revision, error) {
@@ -171,8 +177,9 @@ func scanProject(sc scanner) (project.Project, error) {
 
 type environmentRepo struct{ s *Store }
 
-func (r environmentRepo) Create(ctx context.Context, e environment.Environment) error {
-	return r.s.WithinTransaction(ctx, func(ctx context.Context) error {
+func (r environmentRepo) Create(ctx context.Context, e environment.Environment) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.WithinTransaction(ctx, func(ctx context.Context) error {
 		q := r.s.conn(ctx)
 		if err := mustExist(ctx, q,
 			`SELECT 1 FROM projects WHERE id = ?`, e.ProjectID,
@@ -199,14 +206,18 @@ func (r environmentRepo) Create(ctx context.Context, e environment.Environment) 
 		if _, err := q.ExecContext(ctx,
 			`INSERT INTO environments
 			   (id, project_id, name, kind, policies, variables, labels, ttl_seconds, delete_on_close, revision)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			e.ID, e.ProjectID, e.Name, string(e.Kind), policies, variables, labels,
-			int64(e.Lifecycle.TTL.Seconds()), e.Lifecycle.DeleteOnClose,
+			int64(e.Lifecycle.TTL.Seconds()), e.Lifecycle.DeleteOnClose, uint64(first),
 		); err != nil {
 			return wrap("insert environment", err)
 		}
 		return insertTargets(ctx, q, e)
 	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
 }
 
 func (r environmentRepo) Update(ctx context.Context, e environment.Environment) (identity.Revision, error) {

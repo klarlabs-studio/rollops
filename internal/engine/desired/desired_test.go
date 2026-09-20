@@ -62,7 +62,7 @@ func newProject(
 	if err != nil {
 		t.Fatalf("project.New: %v", err)
 	}
-	if err := store.Projects().Create(context.Background(), p); err != nil {
+	if _, err := store.Projects().Create(context.Background(), p); err != nil {
 		t.Fatalf("Projects.Create: %v", err)
 	}
 	return p.ID

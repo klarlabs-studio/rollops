@@ -126,9 +126,11 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (environment.En
 	}
 
 	err = s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		if err := s.cfg.Environments.Create(ctx, e); err != nil {
+		rev, err := s.cfg.Environments.Create(ctx, e)
+		if err != nil {
 			return fmt.Errorf("environment: storing %q in %s: %w", e.Name, e.ProjectID, err)
 		}
+		e.Revision = rev
 		return s.record(ctx, cmd.Actor, e)
 	})
 	if err != nil {

@@ -229,7 +229,7 @@ func (w *world) project(t *testing.T, name string) project.Project {
 	if err != nil {
 		t.Fatalf("project.New: %v", err)
 	}
-	if err := w.store.Projects().Create(context.Background(), p); err != nil {
+	if _, err := w.store.Projects().Create(context.Background(), p); err != nil {
 		t.Fatalf("Projects.Create: %v", err)
 	}
 	return p
@@ -245,7 +245,7 @@ func (w *world) environment(t *testing.T, p identity.ProjectID, e environment.En
 	if err != nil {
 		t.Fatalf("environment.New: %v", err)
 	}
-	if err := w.store.Environments().Create(context.Background(), env); err != nil {
+	if _, err := w.store.Environments().Create(context.Background(), env); err != nil {
 		t.Fatalf("Environments.Create: %v", err)
 	}
 	// Read back rather than return what was written: storage assigns the

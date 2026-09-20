@@ -54,7 +54,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := store.Projects().Create(context.Background(), proj); err != nil {
+	if _, err := store.Projects().Create(context.Background(), proj); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func (h *harness) sibling(t *testing.T) project.Project {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := h.store.Projects().Create(context.Background(), p); err != nil {
+	if _, err := h.store.Projects().Create(context.Background(), p); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 	return p

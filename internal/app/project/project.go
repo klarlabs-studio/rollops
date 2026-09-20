@@ -105,9 +105,15 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (project.Projec
 	}
 
 	err = s.cfg.Transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		if err := s.cfg.Projects.Create(ctx, p); err != nil {
+		rev, err := s.cfg.Projects.Create(ctx, p)
+		if err != nil {
 			return fmt.Errorf("project: storing %q: %w", p.Name, err)
 		}
+		// Taken from the store rather than assumed, so the project returned to
+		// the caller — and rendered by every transport behind it — reports the
+		// revision it is actually at rather than the zero of a value that has
+		// never been written.
+		p.Revision = rev
 		return s.record(ctx, cmd.Actor, p)
 	})
 	if err != nil {

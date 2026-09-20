@@ -131,6 +131,23 @@ func TestCreatingAProjectMakesItAddressable(t *testing.T) {
 	}
 }
 
+// The project handed back is what every transport renders, so a revision it
+// reports has to be one the store agreed to. Zero is not: it is what an
+// unwritten value carries, and it is refused by the compare-and-set of the very
+// next edit.
+func TestACreatedProjectReportsTheRevisionItWasStoredAt(t *testing.T) {
+	h := newHarness(t)
+	got := h.create(t, h.creating())
+
+	stored, err := h.store.Projects().Get(context.Background(), got.ID)
+	if err != nil {
+		t.Fatalf("Projects.Get: %v", err)
+	}
+	if got.Revision != stored.Revision {
+		t.Errorf("Create returned revision %d, stored at %d", got.Revision, stored.Revision)
+	}
+}
+
 // A project is how everything else is addressed, so it has to be findable by
 // the name a person will type rather than only by the id a machine minted.
 func TestACreatedProjectIsFoundByName(t *testing.T) {

@@ -62,9 +62,15 @@ type Transactor interface {
 
 // ProjectRepository persists projects.
 type ProjectRepository interface {
-	// Create stores a new project. It returns ErrAlreadyExists if the name is
-	// taken, because a name is how a project is addressed on every surface.
-	Create(ctx context.Context, p project.Project) error
+	// Create stores a new project and returns the revision it committed at. It
+	// returns ErrAlreadyExists if the name is taken, because a name is how a
+	// project is addressed on every surface.
+	//
+	// The revision is returned for the reason DeploymentRepository.Create gives:
+	// the caller's copy is the one that travels onward, and one carrying a
+	// revision the store never agreed to is a falsehood on every surface it
+	// reaches before it is a lost compare-and-set.
+	Create(ctx context.Context, p project.Project) (identity.Revision, error)
 
 	// Update stores a change to an existing project and returns the revision it
 	// committed at. It returns ErrRevisionConflict if p.Revision is not the
@@ -79,9 +85,10 @@ type ProjectRepository interface {
 
 // EnvironmentRepository persists environments and their target bindings.
 type EnvironmentRepository interface {
-	// Create stores a new environment. Names are unique within a project, not
+	// Create stores a new environment and returns the revision it committed at,
+	// as ProjectRepository.Create does. Names are unique within a project, not
 	// globally: two projects may each have a "production".
-	Create(ctx context.Context, e environment.Environment) error
+	Create(ctx context.Context, e environment.Environment) (identity.Revision, error)
 	Update(ctx context.Context, e environment.Environment) (identity.Revision, error)
 
 	Get(ctx context.Context, id identity.EnvironmentID) (environment.Environment, error)

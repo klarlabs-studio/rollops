@@ -130,7 +130,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := store.Projects().Create(ctx, proj); err != nil {
+	if _, err := store.Projects().Create(ctx, proj); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("build environment: %v", err)
 	}
-	if err := store.Environments().Create(ctx, env); err != nil {
+	if _, err := store.Environments().Create(ctx, env); err != nil {
 		t.Fatalf("store environment: %v", err)
 	}
 
@@ -350,7 +350,7 @@ func TestAReleaseCannotBePlannedIntoAnotherProjectsEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build project: %v", err)
 	}
-	if err := h.store.Projects().Create(ctx, stranger); err != nil {
+	if _, err := h.store.Projects().Create(ctx, stranger); err != nil {
 		t.Fatalf("store project: %v", err)
 	}
 
@@ -363,7 +363,7 @@ func TestAReleaseCannotBePlannedIntoAnotherProjectsEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build environment: %v", err)
 	}
-	if err := h.store.Environments().Create(ctx, other); err != nil {
+	if _, err := h.store.Environments().Create(ctx, other); err != nil {
 		t.Fatalf("store environment: %v", err)
 	}
 
@@ -394,7 +394,7 @@ func TestAnEnvironmentWithNoTargetCannotBePlannedFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build environment: %v", err)
 	}
-	if err := h.store.Environments().Create(ctx, bare); err != nil {
+	if _, err := h.store.Environments().Create(ctx, bare); err != nil {
 		t.Fatalf("store environment: %v", err)
 	}
 

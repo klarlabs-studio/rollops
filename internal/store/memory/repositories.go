@@ -27,18 +27,23 @@ import (
 
 type projects struct{ s *Store }
 
-func (r projects) Create(ctx context.Context, p project.Project) error {
-	return r.s.write(ctx, func(st *state) error {
+func (r projects) Create(ctx context.Context, p project.Project) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.write(ctx, func(st *state) error {
 		if _, taken := st.projects[p.ID]; taken {
 			return fmt.Errorf("project %s: %w", p.ID, port.ErrAlreadyExists)
 		}
 		if _, taken := findProjectByName(st, p.Name); taken {
 			return fmt.Errorf("project %q: %w", p.Name, port.ErrAlreadyExists)
 		}
-		p.Revision = 1
+		p.Revision = first
 		st.projects[p.ID] = copyProject(p)
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
 }
 
 func (r projects) Update(ctx context.Context, p project.Project) (identity.Revision, error) {
@@ -113,8 +118,9 @@ func findProjectByName(st *state, name string) (identity.ProjectID, bool) {
 
 type environments struct{ s *Store }
 
-func (r environments) Create(ctx context.Context, e environment.Environment) error {
-	return r.s.write(ctx, func(st *state) error {
+func (r environments) Create(ctx context.Context, e environment.Environment) (identity.Revision, error) {
+	const first identity.Revision = 1
+	err := r.s.write(ctx, func(st *state) error {
 		if _, ok := st.projects[e.ProjectID]; !ok {
 			return fmt.Errorf("project %s: %w", e.ProjectID, port.ErrNotFound)
 		}
@@ -124,10 +130,14 @@ func (r environments) Create(ctx context.Context, e environment.Environment) err
 		if _, taken := findEnvironmentByName(st, e.ProjectID, e.Name); taken {
 			return fmt.Errorf("environment %q: %w", e.Name, port.ErrAlreadyExists)
 		}
-		e.Revision = 1
+		e.Revision = first
 		st.environments[e.ID] = copyEnvironment(e)
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return first, nil
 }
 
 func (r environments) Update(ctx context.Context, e environment.Environment) (identity.Revision, error) {
