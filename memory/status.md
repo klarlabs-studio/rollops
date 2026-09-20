@@ -1,12 +1,18 @@
 # Status — Rollops
 
-*Updated: 2026-09-06*
+*Updated: 2026-09-20*
 
 ## Current State
 
-Cutting **v0.34.8** — warn on dangling Traefik middleware refs (#190 / #182
-suggestion 4). Deploy pin `v0.34.8`. Incident #182 suggestions 1–4 are shipped;
-#184 design leftovers (escape hatch / cost) remain optional follow-ups.
+Cutting **v0.34.9** — roll back to what was running, or not at all (#198, #199).
+Deploy pin `v0.34.9`. From an incident on a target deployed outside rollops:
+auto-rollback restored a month-old recorded manifest over a healthy service,
+after a 30s health wait called a still-draining rollout unhealthy. Auto, abort
+and manual rollback now refuse a baseline that is not live; the health wait
+follows `progressDeadlineSeconds`; the Kubernetes diff labels like apply does;
+a canary can no longer wedge in `deploying`; and `apply --wait` finishes a
+canary without the daemon. #184 design leftovers (escape hatch / cost) remain
+optional follow-ups.
 
 ---
 

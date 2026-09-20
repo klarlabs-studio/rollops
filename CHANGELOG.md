@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Roll back to what was running, or not at all
+## v0.34.9 - Roll back to what was running, or not at all
 
 A production incident on 2026-09-19. A Deployment was updated outside rollops
 (`kubectl set image`), so the last manifest rollops had recorded was a month
