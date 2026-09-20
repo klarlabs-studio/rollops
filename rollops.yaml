@@ -33,7 +33,7 @@ spec:
       resource: deployment/rollopsd
       # The tracked image. imagePolicy bumps this line, and it overrides the
       # container image in the rendered manifest.
-      image: ghcr.io/klarlabs-studio/rollopsd:v0.34.10
+      image: ghcr.io/klarlabs-studio/rollopsd:v0.34.11
       # The Deployment alone. The namespace, cert-manager issuers, RBAC, PVC and
       # Service are bootstrap (rollopsd-infra.yaml) and are applied by a human:
       # the daemon's ServiceAccount cannot get cert-manager ClusterIssuers, and
