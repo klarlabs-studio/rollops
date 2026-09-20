@@ -42,6 +42,11 @@ func TestSelfManagementConfigIsValid(t *testing.T) {
 	if !strings.HasPrefix(image, "ghcr.io/klarlabs-studio/rollopsd:v") {
 		t.Errorf("tracked image = %q", image)
 	}
+	// The daemon applies this from inside the cluster, where kubeconfig
+	// contexts do not exist: a `context` here refuses every reconcile.
+	if ctxName, ok := c.Spec.Target.Spec["context"]; ok {
+		t.Errorf("self-config pins kubeconfig context %v; the in-cluster daemon has none", ctxName)
+	}
 	if c.Spec.ImagePolicy == nil {
 		t.Fatal("no imagePolicy: the daemon would not follow its own releases")
 	}
