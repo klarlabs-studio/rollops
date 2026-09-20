@@ -329,11 +329,16 @@ func TestEveryToolRefusesAnUnidentifiedCaller(t *testing.T) {
 	}
 }
 
-// The secret an environment is declared with. It is a literal here so that a
-// result carrying it through can be found by searching the bytes for it.
+// The secret an environment is declared with. Both are literals here so that a
+// result carrying one through can be found by searching the bytes for it.
+//
+// The value is deliberately not shaped like the credential it stands for. What
+// the assertion needs is a string that could only have come from the fixture,
+// and a real-looking connection string in a test file is a secret scanner's
+// finding for as long as the file exists.
 const (
 	secretName  = "prod/kubeconfig"
-	secretValue = "postgres://user:hunter2@db.internal/payments"
+	secretValue = "THE-VALUE-NO-AGENT-MAY-SEE"
 )
 
 // seeded is a project, an environment, a release, a plan, the deployment
