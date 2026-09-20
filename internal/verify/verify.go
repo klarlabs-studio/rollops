@@ -26,6 +26,36 @@ func window(started time.Time, res verifyv1.VerificationResult) verifyv1.Verific
 	return res
 }
 
+// Unconfigured is what an installation that configured no checks verifies with.
+//
+// A suite must hold at least one check — a runner with none could only ever
+// report an empty set, and an empty set is indistinguishable from a suite that
+// ran and found nothing wrong. So the absence is made into an answer: nobody
+// looked, said out loud, which blocks in Combine exactly as this package's rule
+// requires (§11.3). The alternative is an installation that promotes every
+// deployment on the strength of a verification nobody wrote.
+type Unconfigured struct{}
+
+func (Unconfigured) Metadata() verifyv1.VerifierMetadata {
+	return verifyv1.VerifierMetadata{Kind: "unconfigured", Name: "unconfigured", Version: "v1"}
+}
+
+// Verify reports the misconfiguration rather than the deployment. The reason is
+// the whole point of the type: an operator reading a blocked promotion needs to
+// land on "configure a check", not on a target that looks unhealthy.
+func (Unconfigured) Verify(ctx context.Context, _ verifyv1.VerificationRequest) (verifyv1.VerificationResult, error) {
+	started := time.Now()
+	// A cancelled run and an unconfigured installation lead somewhere
+	// different, and only one of them is fixed by editing configuration.
+	if v := verifyv1.Interrupted(ctx); v != "" {
+		return window(started, verifyv1.VerificationResult{Verdict: v, Reason: ctx.Err().Error()}), nil
+	}
+	return window(started, verifyv1.VerificationResult{
+		Verdict: verifyv1.VerdictInconclusive,
+		Reason:  "no verification checks are configured, so nothing observed this deployment",
+	}), nil
+}
+
 // Health asks the target whether it is serving.
 type Health struct {
 	Target *targetv2.Bound
