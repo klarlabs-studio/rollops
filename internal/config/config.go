@@ -62,6 +62,11 @@ type Spec struct {
 	DependsOn      []string        `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	Schedule       string          `yaml:"schedule,omitempty" json:"schedule,omitempty"`         // RFC3339 future time
 	Verification   string          `yaml:"verification,omitempty" json:"verification,omitempty"` // shallow | detect (default) | full
+	// ContinueOnFailure excludes this config from the batch preflight gate
+	// (#184). Default false: one target's refusal refuses the whole repo tick.
+	// Set true for a mid-migration target that must not block its siblings —
+	// WithoutPreflight is the wholesale escape; this is the surgical one.
+	ContinueOnFailure bool `yaml:"continueOnFailure,omitempty" json:"continueOnFailure,omitempty"`
 }
 
 // Analysis is the optional metric-based rollout analysis feature. When
