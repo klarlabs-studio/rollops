@@ -197,8 +197,11 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(ChecksumAnnotation, ".", `\.`))
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", jsonpath)
 	if err != nil {
-		// Absent resource is not an error for drift purposes — report empty.
-		return "", nil
+		if isNotFound(err) {
+			// Absent resource is not an error for drift purposes — report empty.
+			return "", nil
+		}
+		return "", err
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -206,9 +209,30 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 func (k *kubectlCluster) LiveYAML(ctx context.Context) ([]byte, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "yaml")
 	if err != nil {
-		return nil, nil // absent → empty; Diff falls through
+		if isNotFound(err) {
+			return nil, nil // absent → empty; Diff falls through
+		}
+		return nil, err
 	}
 	return []byte(out), nil
+}
+
+// isNotFound reports whether a kubectl error means the resource is absent, as
+// opposed to the query having failed.
+//
+// The difference decides what an empty observation means, and it used to be
+// discarded: every `get` failure reported "no state", which the planner reads
+// as a create. A revoked RBAC rule, an unreachable API server or a throttled
+// request would therefore look exactly like a resource that was never
+// deployed, and rollops would re-apply a live workload every reconcile
+// interval with nothing logged — no error, no drift alert, just a rollout a
+// minute. An absence we cannot confirm is not an absence.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "notfound") || strings.Contains(msg, "not found")
 }
 
 // rolloutKinds are the workload kinds `kubectl rollout status` understands.
