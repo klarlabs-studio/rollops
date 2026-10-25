@@ -3,9 +3,11 @@ package ftp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/textproto"
 	"time"
 
 	goftp "github.com/jlaffaye/ftp"
@@ -45,10 +47,21 @@ func (f *ftpConn) Store(_ context.Context, path string, content []byte) error {
 func (f *ftpConn) Retrieve(_ context.Context, path string) ([]byte, error) {
 	r, err := f.c.Retr(path)
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, retrieveError(err)
 	}
 	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
+}
+
+// retrieveError maps a RETR failure: reply 550 (file unavailable) means the
+// stamp is absent; anything else — 421, 530, a timeout, a dropped connection —
+// is a failure to read, not proof the target was never deployed.
+func retrieveError(err error) error {
+	var proto *textproto.Error
+	if errors.As(err, &proto) && proto.Code == goftp.StatusFileUnavailable {
+		return ErrNotFound
+	}
+	return fmt.Errorf("ftp: retrieve: %w", err)
 }
 
 func (f *ftpConn) Ping(_ context.Context) error {

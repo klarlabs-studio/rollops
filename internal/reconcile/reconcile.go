@@ -103,8 +103,14 @@ func (r *Reconciler) finalize(ctx context.Context, c *config.Config, by rollout.
 		return Outcome{Drift: drifted, Plan: plan, Rollout: rl}, nil
 	}
 
+	// A store error must not fall back to rl.Desired: the "rollback" would
+	// re-apply the manifest that just failed and record it as rolled back.
 	prior := rl.Desired
-	if p, ok := r.eng.PriorManifest(ctx, rl.TargetRef, rl.Desired.Checksum); ok {
+	p, ok, err := r.eng.PriorManifestErr(ctx, rl.TargetRef, rl.Desired.Checksum)
+	if err != nil {
+		return Outcome{Drift: drifted, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
+	}
+	if ok {
 		prior = p
 	}
 	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, prior, c)

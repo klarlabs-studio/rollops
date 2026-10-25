@@ -158,7 +158,7 @@ func (e *Engine) InFlight(ctx context.Context, targetRef string) (rollout.Rollou
 
 func (e *Engine) stepHealth(ctx context.Context, tgt pt.Target, healthErr *error) progressive.StepHealth {
 	return func(stepIndex, weight int) bool {
-		hs, herr := tgt.Health(ctx)
+		hs, herr := e.healthWithRetry(ctx, tgt)
 		if herr != nil {
 			*healthErr = herr
 			return false
