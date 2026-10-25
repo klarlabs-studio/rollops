@@ -25,6 +25,9 @@
   ServiceMonitor and five alerts: reconcile errors, a rollout stuck mid-deploy,
   pod not ready, scrape down, and a stalled reconcile loop. Apply it after this
   version is running.
+- **Kubernetes events in Loki.** `deploy/kubernetes/cluster-events.yaml` runs a
+  one-replica Alloy that ships every event to Loki for 14 days. The API server
+  keeps them for an hour, and the 09-19 investigation found them gone.
 - **Dependencies.** `golang.org/x/net` v0.60.0 and toolchain go1.26.10 (#216).
 
 An audit for the same bug class, an error read as a state, found twelve more:
