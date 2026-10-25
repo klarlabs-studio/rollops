@@ -39,6 +39,9 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 	default:
 		return &r, nil
 	}
+	if len(r.StepperSnap) == 0 {
+		return e.recoverInterrupted(ctx, r)
+	}
 	if cfg.Spec.Target.Ref != r.TargetRef {
 		return &r, fmt.Errorf("engine: tick: config target %q does not match rollout %q", cfg.Spec.Target.Ref, r.TargetRef)
 	}
@@ -111,35 +114,41 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 	return e.driveStepper(ctx, lc, &r, cfg, persisted.Plan, s, clk, persisted.EnteredAt, &healthErr, r.Initiator)
 }
 
-// recoverOrphanedDeploy restarts a canary whose Apply died between the
-// deploying phase write and the first stepper snapshot. Before this existed
-// the state was terminal: Tick refused it, and because occupancy IS the
-// deploying phase the target stayed claimed, so every later rollout for it got
-// ErrTargetBusy indefinitely. Four production targets sat that way for up to a
-// month.
+// recoverInterrupted finishes a rollout that is deploying with no stepper
+// snapshot. That combination means one thing: the process driving it died
+// before it could record any progress — between saving the rollout and saving
+// its first step.
 //
-// The desired manifest is re-applied rather than assumed live, because
-// deployOnce is the most likely thing the crash interrupted; Apply is
-// idempotent, and treating the cluster as already converged is how a recovery
-// deploys nothing while reporting success. Recovery moves toward the desired
-// state, never backward — a rollback here would fight the operator's intent,
-// which is whatever Git currently declares.
+// It used to be a hard error, which wedged the target permanently. Nothing
+// clears a rollout the engine refuses to touch, and while it sits in
+// `deploying` it is in flight, so every Apply is refused as ErrTargetBusy. The
+// daemon hit this the first time it deployed itself: the apply it was running
+// replaced its own pod mid-rollout.
 //
-// The caller MUST hold the target lease.
-func (e *Engine) recoverOrphanedDeploy(ctx context.Context, r *rollout.Rollout, cfg *config.Config, tgt pt.Target) (*rollout.Rollout, error) {
-	lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
-	if err != nil {
-		return r, err
+// The rollout is handed to the post-deploy gate instead, because the gate
+// answers exactly the open question — it looks at the live target rather than
+// at what we recorded. Rollback is blocked on the way through: we do not know
+// what reached the target, so the recorded prior state is not a verified
+// baseline, and restoring one of those over a healthy service is the 2026-09-19
+// incident. If the gate then fails, the rollout stays in `verifying`, which is
+// not in flight, so the next reconcile converges forward by applying desired.
+func (e *Engine) recoverInterrupted(ctx context.Context, r rollout.Rollout) (*rollout.Rollout, error) {
+	r.Phase = rollout.PhaseVerifying
+	if r.RollbackBlocked == "" {
+		r.RollbackBlocked = "rollout was interrupted before it recorded progress: what reached the target is unknown, so the recorded prior state is not a verified baseline"
+	}
+	r.UpdatedAt = e.now()
+	if err := e.store.SaveRollout(ctx, r); err != nil {
+		return &r, fmt.Errorf("engine: tick: recover interrupted rollout %s: %w", r.ID, err)
 	}
 	e.record(audit.Entry{
-		Action: audit.ActionApply, RolloutID: r.ID, TargetRef: r.TargetRef,
-		Phase: string(r.Phase), Actor: r.Initiator,
-		Detail: "recovered orphaned deploy (no stepper snapshot); re-applying desired manifest",
+		Action:    audit.ActionApply,
+		RolloutID: r.ID,
+		TargetRef: r.TargetRef,
+		Actor:     r.Initiator,
+		Detail:    "interrupted rollout (deploying with no stepper snapshot) handed to the post-deploy gate; rollback blocked",
 	})
-	if err := e.deployOnce(ctx, cfg, tgt, r.Desired); err != nil {
-		return e.failProgressive(ctx, lc, r, cfg, r.Desired, err, r.Initiator)
-	}
-	return e.startStepper(ctx, lc, r, cfg, tgt, r.Initiator)
+	return &r, nil
 }
 
 // InFlight returns the newest deploying or paused rollout for targetRef.
@@ -244,7 +253,12 @@ func (e *Engine) driveStepper(ctx context.Context, lc *rollout.Lifecycle, r *rol
 		} else {
 			clk.Advance(pause)
 		}
-		if s.Aborted() {
+		// A step entered with a failing health gate records Failed, and its
+		// eventless "failed -> aborted" transition does not fire when the step
+		// was entered from a restored timer. Its "ok"-guarded timer then never
+		// fires either, so the canary sat in deploying forever. Failed on the
+		// current step is the abort it was meant to be.
+		if s.Aborted() || s.Context().Failed {
 			err := *healthErr
 			if err == nil {
 				err = fmt.Errorf("progressive: %s step %d/%d health gate failed", plan.Strategy, idx+1, len(plan.Steps))
@@ -302,7 +316,9 @@ func (e *Engine) driveStepper(ctx context.Context, lc *rollout.Lifecycle, r *rol
 // good manifest when configured, otherwise mark rolled-back. The caller MUST
 // already hold the target lock (Apply and Tick both do).
 func (e *Engine) failProgressive(ctx context.Context, lc *rollout.Lifecycle, r *rollout.Rollout, cfg *config.Config, m pt.Manifest, runErr error, actor rollout.Identity) (*rollout.Rollout, error) {
-	if cfg.Spec.Rollback.Auto {
+	if cfg.Spec.Rollback.Auto && r.RollbackBlocked != "" {
+		runErr = fmt.Errorf("%w; auto-rollback was not attempted: %s", runErr, r.RollbackBlocked)
+	} else if cfg.Spec.Rollback.Auto {
 		if prior, ok := e.priorManifest(ctx, r.TargetRef, m.Checksum); ok {
 			prior.Root = m.Root
 			rb, rbErr := e.applyRollback(ctx, r, prior, "auto-rollback on deploy failure: "+runErr.Error(), cfg.Spec.DatabaseRollbackHook(), true)
@@ -399,6 +415,28 @@ func (e *Engine) Abort(ctx context.Context, rolloutID string, by rollout.Identit
 		}
 	}
 	r.StepperSnap = nil
+	// When the recorded prior was not live as this rollout started, re-applying
+	// it is not an abort but a deploy of something that was not running. Halt
+	// the canary and leave the target as it is; the note says why.
+	if r.RollbackBlocked != "" {
+		lc, err := rollout.ResumeLifecycle(r.Phase, rollout.LifeContext{PlanProduced: true})
+		if err != nil {
+			return r, err
+		}
+		if _, err := lc.Send(rollout.EventRollback); err != nil {
+			return r, err
+		}
+		e.resetDelivery(ctx, &r)
+		r.Phase = lc.Phase()
+		r.Note = "aborted by operator; nothing re-applied because " + r.RollbackBlocked
+		r.UpdatedAt = e.now()
+		if err := e.store.SaveRollout(ctx, r); err != nil {
+			return r, err
+		}
+		e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: r.TargetRef, Phase: string(r.Phase), Actor: by, Detail: r.Note})
+		e.notifyDeployment(ctx, notify.RolledBack, r, r.Note)
+		return r, nil
+	}
 	if prior, ok := e.priorManifest(ctx, r.TargetRef, r.Desired.Checksum); ok {
 		prior.Root = r.Desired.Root
 		rb, rbErr := e.applyRollback(ctx, &r, prior, "aborted by operator", nil, true)

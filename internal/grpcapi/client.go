@@ -3,6 +3,7 @@ package grpcapi
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -25,6 +26,38 @@ type Client struct {
 	rpc   rollopsv1.RolloutServiceClient
 	token string
 	conn  *grpc.ClientConn
+	// daemonVersion is the version the daemon announced on the last response,
+	// or "" when it announced none (a daemon older than VersionHeader).
+	mu            sync.Mutex
+	daemonVersion string
+}
+
+// DaemonVersion returns the version the daemon announced, and whether it
+// announced one at all.
+func (c *Client) DaemonVersion() (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.daemonVersion, c.daemonVersion != ""
+}
+
+// recordVersion keeps the version from a response's header.
+func (c *Client) recordVersion(md metadata.MD) {
+	vals := md.Get(VersionHeader)
+	if len(vals) == 0 || vals[0] == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.daemonVersion = vals[0]
+}
+
+// versionInterceptor records the daemon version every call reports, so any
+// command — not only a probe — notices which daemon answered it.
+func (c *Client) versionInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	var md metadata.MD
+	err := invoker(ctx, method, req, reply, cc, append(opts, grpc.Header(&md))...)
+	c.recordVersion(md)
+	return err
 }
 
 // Dial connects to a daemon at addr with a bearer token. With ROLLOPS_TLS_*
@@ -45,11 +78,15 @@ func Dial(addr, token string) (*Client, error) {
 		}
 		creds = credentials.NewTLS(tc)
 	}
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
+	c := &Client{token: token}
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(creds),
+		grpc.WithChainUnaryInterceptor(c.versionInterceptor))
 	if err != nil {
 		return nil, fmt.Errorf("grpc: dial %s: %w", addr, err)
 	}
-	return &Client{rpc: rollopsv1.NewRolloutServiceClient(conn), token: token, conn: conn}, nil
+	c.rpc, c.conn = rollopsv1.NewRolloutServiceClient(conn), conn
+	return c, nil
 }
 
 // Close releases the connection.

@@ -261,3 +261,92 @@ spec:
 		t.Fatalf("third Reconcile = drift=%v reconciled=%v phase=%v, want promoted", out.Drift, out.Reconciled, out.Rollout)
 	}
 }
+
+// A rollout in flight while the target ALSO reads as changed must keep
+// stepping, not start a second one.
+//
+// This wedged rollops' own daemon the first time it deployed itself. The
+// daemon applied its Deployment, the Recreate strategy killed the pod that was
+// driving the rollout, and the replacement saw a target it had no recorded
+// state for:
+//
+//	rollops/prod/rollopsd [kubernetes]: create — deploy checksum 0febba30dc2a
+//	  (no current state observed)
+//	rollopsd: reconcile rollops/rollops.yaml: reconcile: apply: engine: target
+//	  busy: a rollout is already in progress
+//
+// Plan.Changed was true, so the in-flight branch — which only ran when the plan
+// reported no change — was unreachable, and every reconcile from then on tried
+// a fresh Apply that the engine refused. The rollout could never finish and the
+// target could never converge, once a minute, indefinitely.
+func TestReconcile_TicksInFlightRolloutEvenWhenPlanChanged(t *testing.T) {
+	fake := &fakeTarget{}
+	db, err := sqlite.Open(t.TempDir() + "/r.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	eng := engine.New(db, reg,
+		engine.WithClock(func() time.Time { return now }),
+		engine.WithIDGen(func() string { return "ro-wedge" }),
+	)
+	rec := New(eng, nil)
+	c, err := config.Load([]byte(`
+apiVersion: rollops.klarlabs.de/v1
+kind: RolloutConfig
+metadata:
+  name: demo
+spec:
+  target:
+    kind: fake
+    ref: demo/prod/app
+    criticality: low
+    spec:
+      x: 1
+  strategy:
+    type: canary
+    steps:
+      - weight: 10
+        pause: 50ms
+      - weight: 100
+        pause: 50ms
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	out, err := rec.Reconcile(ctx, c, actor)
+	if err != nil {
+		t.Fatalf("first Reconcile: %v", err)
+	}
+	if out.Rollout == nil || out.Rollout.Phase != rollout.PhaseDeploying {
+		t.Fatalf("expected a deploying rollout, got %+v", out.Rollout)
+	}
+	// The observation stops matching desired — the daemon restarted and has no
+	// recorded state for this target, so every later plan reports a change.
+	fake.fp = pt.Fingerprint{}
+
+	// Five intervals is far more than this two-step canary needs. The rollout
+	// must reach a terminal phase; what it must never do is spin.
+	for i := 0; i < 5; i++ {
+		now = now.Add(50 * time.Millisecond)
+		out, err = rec.Reconcile(ctx, c, actor)
+		if err != nil {
+			t.Fatalf("Reconcile %d with a changed plan and a rollout in flight: %v", i+1, err)
+		}
+		if out.Rollout == nil {
+			t.Fatalf("Reconcile %d returned no rollout", i+1)
+		}
+		if out.Rollout.ID != "ro-wedge" {
+			t.Fatalf("Reconcile %d stepped %q, want the in-flight ro-wedge", i+1, out.Rollout.ID)
+		}
+		if out.Rollout.Phase != rollout.PhaseDeploying && out.Rollout.Phase != rollout.PhasePaused {
+			return // reached a terminal phase: the rollout finished
+		}
+	}
+	t.Error("the in-flight rollout never left deploying: still wedged after five reconciles")
+}

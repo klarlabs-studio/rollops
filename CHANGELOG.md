@@ -1,5 +1,159 @@
 # Changelog
 
+## v0.34.11 - An interrupted rollout resolves itself
+
+- **A rollout interrupted mid-flight no longer wedges its target.** The rolling
+  path saves a rollout as `deploying`, applies, then saves it as `verifying`. A
+  process that dies in between leaves a row that is in flight with no stepper
+  snapshot: `Apply` is refused as `target busy`, `Tick` was refused as
+  "deploying without a stepper snapshot", and nothing could clear either. The
+  daemon did this to itself the first time it deployed itself — the apply it
+  was running replaced its own pod. `Tick` now hands such a rollout to the
+  post-deploy gate, which answers the open question by looking at the live
+  target. Rollback is blocked on the way through: what reached the target is
+  unknown, so the recorded prior is not a verified baseline, and restoring one
+  of those over a healthy service is the 2026-09-19 incident.
+
+## v0.34.10 - The daemon follows its own releases
+
+The daemon runs the rollouts; the CLI only asks it to. So a client newer than
+the daemon describes behaviour that is not in force — and that is what the
+cluster looked like: `rollopsd:v0.34.3` running while this repository pinned
+`v0.34.8`. Every release bumped a pin nothing applied.
+
+- **rollops deploys rollops.** `rollops.yaml` (repo root) targets
+  `rollops-system/deployment/rollopsd`, renders
+  `deploy/kubernetes/rollopsd-deployment.yaml` and follows the released image
+  (`imagePolicy`, `writeback: pull-request` because main is protected). Watch
+  this repo with `path: rollops.yaml` and a release reaches the daemon on its
+  own.
+- **The daemon manages its Deployment and nothing else.** The install manifest
+  is split: `rollopsd-infra.yaml` (namespace, cert-manager issuers and
+  certificates, ServiceAccount, ClusterRole/Binding, PVC, Service) is applied
+  once by a human, `rollopsd-deployment.yaml` is the object rollops rolls out.
+  The daemon's ServiceAccount cannot get cert-manager `ClusterIssuers`, and it
+  must never be able to rewrite the ClusterRole that grants it everything else —
+  a workload that can widen its own permissions has none. While the self-managed
+  manifest was the full install file, every reconcile was refused at the
+  server-side dry run, applying nothing:
+
+  ```
+  clusterissuers.cert-manager.io "rollopsd-selfsigned" is forbidden: User
+  "system:serviceaccount:rollops-system:rollopsd" cannot get resource
+  "clusterissuers" in API group "cert-manager.io" at the cluster scope
+  ```
+
+  A fresh install now applies both files (`docs/deploy-kubernetes.md`).
+- **The daemon manifest is the whole desired state of what it manages.** The
+  Prometheus-operator RBAC (`podmonitors`, `servicemonitors`) was granted on the
+  live cluster and never written down, so applying the file would have withdrawn
+  it. Self-management makes that a real risk, so the rules are in the file.
+- **A rollout in flight is stepped, never restarted.** The reconciler only
+  looked for an in-flight rollout when the plan reported *no* change, so a
+  target whose plan reported a change while a rollout was in flight could not
+  progress at all: `Apply` refuses with `target busy`, once a minute,
+  indefinitely. rollops' own daemon wedged this way on its first self-deploy —
+  it applied its Deployment, `Recreate` killed the pod driving the rollout, and
+  the replacement had no recorded state for the target, so it planned a create
+  and was refused. The in-flight check now runs before the plan is consulted.
+- **Version skew is visible.** Every gRPC response carries the daemon's version
+  (metadata, so no proto change and an older daemon simply omits it).
+  `rollops doctor` prints both versions and fails when they differ; a
+  daemon-mode command prints a one-line warning after it runs.
+
+## v0.34.9 - Roll back to what was running, or not at all
+
+A production incident on 2026-09-19. A Deployment was updated outside rollops
+(`kubectl set image`), so the last manifest rollops had recorded was a month
+old. The next `rollops apply` was healthy but slow: old pods were still
+terminating when the health check gave up. Auto-rollback then "restored" the
+recorded manifest, replacing the running service with the month-old one: an
+older image, and a spec missing environment variables that had been added since.
+
+- **Auto-rollback checks its target was live.** Before deploying, the recorded
+  rollback manifest is diffed against the live state. If they differ, or the
+  diff can't be computed, auto-rollback is disabled for that rollout, and the
+  reason is persisted (`rollback_blocked`) and audited. A failure then stops
+  and reports instead of restoring something that was never running. The
+  stamped checksum could not catch this, because an out-of-band edit leaves
+  the stamp intact.
+- **The Kubernetes health wait follows the resource's progress deadline.**
+  `kubectl rollout status` waited a fixed 30s, so a rollout still draining old
+  pods counted as unhealthy. It now waits up to `progressDeadlineSeconds`
+  (Kubernetes' 600s default when unset) plus 30s. `rollout status` returns as
+  soon as Kubernetes marks a Deployment `ProgressDeadlineExceeded`, so a
+  genuinely stuck rollout fails just as fast as before.
+- **The manual paths honour the same check.** `rollops abort` of a canary
+  whose baseline wasn't live now halts it and re-applies nothing, with the
+  reason in its note. `rollops rollback` refuses unless `--force`, because
+  "the previous version" would otherwise be an older one.
+- **A canary no longer wedges in `deploying`.** A step entered from its timer
+  with a failing health gate recorded the failure, but the abort didn't fire,
+  and the step's timer then never fired either. Whenever each tick arrived
+  after the step's pause had elapsed, an unhealthy canary stayed `deploying`
+  forever. It now fails like any other health-gate failure.
+- **`rollops apply --wait [--wait-timeout 30m]`.** Without the daemon, a canary
+  with timed pauses stopped at `deploying` and nothing advanced it. `--wait`
+  runs the same engine steps `rollopsd` does (tick, then the post-deploy gate)
+  until the rollout is promoted or rolled back. It never applies anything
+  new. In daemon mode it watches instead.
+- **The Kubernetes diff compares what apply sends.** Apply labels every
+  resource with `rollops.klarlabs.de/target`, and the diff didn't. Every
+  in-sync target therefore showed the label's removal as drift, in `plan`, in
+  detect-mode verification, and in apply's own no-op check.
+
+## v0.34.8 - Name the dangling Middleware before Traefik does
+
+An Ingress whose `router.middlewares` annotation names a Middleware that is
+neither in the same apply batch nor already live left Traefik unable to build
+the router (#182). Preflight stops the half-apply; this release **warns** when
+the reference itself is dangling — soft only, so a hand-applied Middleware
+still in the cluster stays quiet.
+
+Also closes the remaining #182 suggestions for the incident:
+
+- suggestion 3 (v0.34.7): stop retrying permanent `Forbidden`
+- suggestion 4 (this): warn on dangling Traefik middleware refs
+
+## v0.34.7 - Forbidden is not a blip
+
+After the Ingress/Middleware outage in #182, a permanent RBAC refusal
+(`Forbidden`) still retried every reconcile interval with the same log line.
+Waiting cannot heal missing ClusterRole rules.
+
+Identical apply/preflight failures now escalate once and go quiet (#188):
+
+- `Forbidden` / `Unauthorized` escalate on the **first** tick, audit once, then
+  **hold** — further dry-run/apply attempts are skipped until desired state
+  changes or the process restarts
+- other identical errors still retry, but escalate once after ten identical
+  ticks and stop repeating the same line every interval
+
+#182 suggestion 4 (warn on dangling middleware references) is still open.
+
+## v0.34.6 - Refuse the whole batch rather than apply half of it
+
+An Ingress applied while the Traefik Middleware its `router.middlewares`
+annotation named was rolled back on RBAC. Traefik never built the router; the
+apex domain served 404. Neither target was wrong on its own — the breakage
+lived only in the pair (#182).
+
+Compensating rollback cannot fix that: rolling back a create means deleting,
+and rollopsd deliberately holds no `delete` on PVCs, CronJobs, or middlewares.
+So the batch must fail **before** it applies anything (#184 / #185):
+
+- optional `pt.Preflighter` — skipped when absent (ftp/ssh/plugin unchanged)
+- `kubernetes.Preflight` — `kubectl apply --dry-run=server` (full admission)
+- watcher runs it across the repo and refuses the tick if any target objects
+
+Also grants `traefik.io/middlewares` (`get/list/watch/create/update/patch`, no
+`delete`) so the service account can manage what Ingress annotations reference
+(#183).
+
+And a wiring fix: `Engine.Preflight` had built targets through `step.Guarded`,
+which drops optional capabilities, so every Kubernetes preflight was silently
+skipped (#186). It now uses `BuildTarget`, same as Diff/Resources/Reap.
+
 ## v0.34.5 - Ready stayed green while nothing could fork
 
 The v0.34.3 zombie leak left the pod `1/1 Ready` while every reconcile failed

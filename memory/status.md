@@ -1,12 +1,21 @@
 # Status — Rollops
 
-*Updated: 2026-09-03*
+*Updated: 2026-09-20*
 
 ## Current State
 
-Cutting **v0.34.5** — `/livez` PID-pressure probe (#180) so a full cgroup
-restarts instead of staying Ready while reconciles cannot fork. Deploy pin
-`v0.34.5`.
+Cutting **v0.34.11** — an interrupted rollout resolves itself (#208), on top
+of rollops deploying rollops (#201, #202, #203, #204, #206). Deploy pin
+`v0.34.11`. The daemon follows its own releases: `rollops.yaml` at
+the repo root targets `rollops-system/deployment/rollopsd` and renders
+`deploy/kubernetes/rollopsd-deployment.yaml`. The install manifest is split —
+bootstrap (namespace, cert-manager, RBAC, PVC, Service) is applied by a human,
+because the daemon's ServiceAccount cannot get cert-manager ClusterIssuers and
+must never be able to rewrite its own ClusterRole. Version skew between client
+and daemon is now visible (`rollops doctor` fails on it). The first self-apply
+exposed a wedge, also fixed here: a rollout in flight is stepped even when the
+plan reports a change, instead of being refused as `target busy` forever. #184
+design leftovers (escape hatch / cost) remain optional follow-ups.
 
 ---
 

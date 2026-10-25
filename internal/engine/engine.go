@@ -39,6 +39,7 @@ import (
 	"go.klarlabs.de/rollops/internal/step"
 	"go.klarlabs.de/rollops/internal/store"
 	itarget "go.klarlabs.de/rollops/internal/target"
+	k8s "go.klarlabs.de/rollops/internal/target/kubernetes"
 	"go.klarlabs.de/rollops/internal/trafficrouting"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
@@ -317,9 +318,14 @@ func defaultOwner() string {
 // Preflight reports whether every target in cs would apply, without applying
 // any of them. A nil error means none of them objected.
 //
-// It renders and builds each target exactly as Plan does, because a config that
-// cannot render or whose target cannot be constructed is a failure the batch
-// must hear about before it starts applying the others.
+// It renders each target exactly as Plan does, because a config that cannot
+// render or whose target cannot be constructed is a failure the batch must
+// hear about before it starts applying the others.
+//
+// The target is built WITHOUT the fortify wrapper (BuildTarget, same path as
+// Diff/Resources/Reap). Preflighter is an optional capability on the concrete
+// target; step.Guarded only forwards Apply/Observe/Health, so wrapping would
+// silently drop the capability and the batch gate would never fire (#185).
 //
 // Targets that do not implement pt.Preflighter are skipped rather than assumed
 // good: they contribute nothing to the decision, which is precisely the
@@ -336,7 +342,7 @@ func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
 			out = append(out, fmt.Errorf("%s: render: %w", c.Spec.Target.Ref, err))
 			continue
 		}
-		tgt, err := e.build(c.Spec.Target)
+		tgt, err := e.BuildTarget(c.Spec.Target)
 		if err != nil {
 			out = append(out, fmt.Errorf("%s: build target: %w", c.Spec.Target.Ref, err))
 			continue
@@ -353,6 +359,49 @@ func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
 		}
 	}
 	return out
+}
+
+// WarnDanglingMiddlewares reports Ingress→Middleware references that are
+// neither in this batch nor live in the cluster (#182 suggestion 4).
+//
+// Warn-only: a dangling reference is almost always a mistake, but refusing the
+// batch here would reinvent Preflight. Callers log the strings and continue.
+func (e *Engine) WarnDanglingMiddlewares(ctx context.Context, cs []*config.Config) []string {
+	var docs [][]byte
+	for _, c := range cs {
+		m, err := manifestFromConfig(c, rootFromContext(ctx))
+		if err != nil {
+			continue
+		}
+		if _, err := e.stampReferencedChecksum(ctx, c.Spec.Target.Ref, &m); err != nil {
+			continue
+		}
+		if len(m.Rendered) > 0 {
+			docs = append(docs, m.Rendered)
+			continue
+		}
+		tgt, err := e.BuildTarget(c.Spec.Target)
+		if err != nil {
+			continue
+		}
+		r, ok := tgt.(pt.Renderer)
+		if !ok {
+			closeTarget(tgt)
+			continue
+		}
+		out, err := r.Render(ctx, m)
+		closeTarget(tgt)
+		if err != nil || len(out) == 0 {
+			continue
+		}
+		docs = append(docs, out)
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	return k8s.DanglingMiddlewareWarnings(docs, func(ns, name string) (bool, error) {
+		return k8s.AmbientMiddlewareExists(ctx, ns, name)
+	})
 }
 
 func (e *Engine) Plan(ctx context.Context, c *config.Config) (*Plan, error) {
@@ -931,10 +980,20 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.SmokeTest = b
 		}
 	}
+	// Decide now, while the prior state is still observable, whether a failure
+	// may be auto-rolled back. Once the new manifest is applied, what was live
+	// before can no longer be compared.
+	if cfg.Spec.Rollback.Auto {
+		r.RollbackBlocked = e.rollbackBaseline(ctx, ref, m)
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
 	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator})
+	if r.RollbackBlocked != "" {
+		e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator,
+			Detail: "auto-rollback disabled for this rollout: " + r.RollbackBlocked})
+	}
 	if r.Phase == rollout.PhaseAwaitingApproval {
 		e.notifyEvent(ctx, notify.Event{Kind: notify.ApprovalNeeded, TargetRef: ref, RolloutID: r.ID})
 		return &r, nil // halt: gate requires human approval, target untouched
@@ -981,6 +1040,9 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	if failed {
 		if !auto {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
+		}
+		if r.RollbackBlocked != "" {
+			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed and auto-rollback was not attempted (%s): %s", r.RollbackBlocked, reason)
 		}
 		// Auto-rollback forces past the backward-compatibility gate: the deploy
 		// already failed, so recovering to the prior state beats leaving it up.
@@ -1790,6 +1852,48 @@ func (e *Engine) priorManifest(ctx context.Context, targetRef, excludeChecksum s
 	return pt.Manifest{}, false
 }
 
+// rollbackBaseline reports why auto-rollback must not run for a rollout about
+// to deploy, or "" when it may.
+//
+// Auto-rollback restores the last manifest rollops recorded for the target.
+// That is only a rollback if it is what was live: a target changed outside
+// rollops (a `kubectl set image`, an apply from a laptop) leaves the record
+// behind, and restoring it replaces the running service with an older one —
+// the stamped checksum cannot see this, because an out-of-band edit leaves the
+// stamp intact. So the recorded manifest is diffed against live before
+// deploying, and any difference, or a comparison that cannot be made, disables
+// auto-rollback for this rollout. A target that cannot diff is trusted as
+// before, since there is nothing to compare with.
+func (e *Engine) rollbackBaseline(ctx context.Context, ref string, desired pt.Manifest) string {
+	prior, ok := e.priorManifest(ctx, ref, desired.Checksum)
+	if !ok {
+		return ""
+	}
+	// Differ lives on the raw target, not the fortify wrapper Apply deploys
+	// through: asserting it on the wrapper never matches.
+	raw, err := e.rawTarget(ref, desired)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	defer closeTarget(raw)
+	differ, ok := raw.(pt.Differ)
+	if !ok {
+		return ""
+	}
+	if prior.Root == "" {
+		prior.Root = rootFromContext(ctx)
+	}
+	diff, err := differ.Diff(ctx, prior)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	if strings.TrimSpace(diff) != "" {
+		return "the live state is not the last manifest rollops recorded (it was changed outside rollops), " +
+			"so rolling back would restore something that was not running"
+	}
+	return ""
+}
+
 // PriorManifest exposes the last-known-good manifest for a target (the most
 // recent rollout whose desired checksum differs from excludeChecksum). The
 // reconcile loop uses it to hand VerifyOrRollback the correct prior to revert
@@ -1820,6 +1924,14 @@ func (e *Engine) RollbackLast(ctx context.Context, targetRef string, force bool)
 	prior, ok := e.priorManifest(ctx, targetRef, current.Desired.Checksum)
 	if !ok {
 		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
+	}
+	// The "previous" state rollops would restore is only a rollback if it was
+	// live when the current rollout started. When it was not, a human asking
+	// for "the previous version" would get an older one; say so, and require
+	// force to apply it anyway.
+	if current.RollbackBlocked != "" && !force {
+		return rollout.Rollout{}, fmt.Errorf("engine: rollback: the manifest rollops would restore was not live when %s started (%s); "+
+			"force the rollback to apply it anyway", current.ID, current.RollbackBlocked)
 	}
 	return e.Rollback(ctx, current.ID, prior, force)
 }

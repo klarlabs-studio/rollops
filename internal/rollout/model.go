@@ -106,6 +106,13 @@ type Rollout struct {
 	// keep this model decoupled from the config package, mirroring the
 	// delivery-descriptor capture above.
 	Analysis []byte
+	// RollbackBlocked says why auto-rollback must not run for this rollout, or
+	// is empty when it may. Decided before deploying, while the prior state is
+	// still observable: auto-rollback restores the last manifest rollops
+	// recorded, and when the target was changed outside rollops that manifest
+	// was not what was running — restoring it would replace a working service
+	// with an old one. A blocked rollout that fails is left for a human.
+	RollbackBlocked string
 	// Smoke-test descriptor captured at deploy time as opaque JSON
 	// (config.SmokeTest), so a later manual Verify — and the Promote that follows
 	// it — can run the same smoke gate as the auto path, which still holds the

@@ -25,7 +25,7 @@ scan:
     # Deployment TEMPLATES, not deployed manifests: placeholder values and
     # comments describing auth options (IAC-351 fires on a comment reading
     # "tokenFile / token : a (broad) PAT"). The real manifests
-    # (deploy/kubernetes/rollopsd.yaml) stay scanned.
+    # (deploy/kubernetes/rollopsd-infra.yaml, rollopsd-deployment.yaml) stay scanned.
     - "deploy/kubernetes/*.example.yaml"
 
     # Integration test harness: docker-compose fixtures with deliberately
