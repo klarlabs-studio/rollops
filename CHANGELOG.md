@@ -28,6 +28,10 @@
 - **Kubernetes events in Loki.** `deploy/kubernetes/cluster-events.yaml` runs a
   one-replica Alloy that ships every event to Loki for 14 days. The API server
   keeps them for an hour, and the 09-19 investigation found them gone.
+- **The database volume is replicated and kept.** `rollopsd-data` moved from a
+  single-replica volume deleted with its claim to `longhorn-retain` (three
+  replicas, Retain), and `rollopsd-infra.yaml` now names that class. Its old
+  storageClassName hint sat under `metadata`, where it did nothing.
 - **Dependencies.** `golang.org/x/net` v0.60.0 and toolchain go1.26.10 (#216).
 
 An audit for the same bug class, an error read as a state, found twelve more:
