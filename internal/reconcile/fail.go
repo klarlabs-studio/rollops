@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"strings"
+	"time"
 
 	"go.klarlabs.de/rollops/internal/audit"
 )
@@ -39,18 +40,29 @@ type failStreak struct {
 	msg   map[string]string
 	fired map[string]bool
 	perm  map[string]bool
+	// heldAt is when a permanent refusal last happened; the hold lasts
+	// permanentHoldFor from then.
+	heldAt map[string]time.Time
+	now    func() time.Time
 }
+
+// permanentHoldFor bounds a permanent-failure hold. Without a bound, one 401
+// during a credential rotation held the target until Git changed or the
+// process restarted; with it, a real RBAC refusal costs one retry per hold.
+const permanentHoldFor = 30 * time.Minute
 
 func newFailStreak(after int) *failStreak {
 	if after < 1 {
 		after = 1
 	}
 	return &failStreak{
-		after: after,
-		n:     map[string]int{},
-		msg:   map[string]string{},
-		fired: map[string]bool{},
-		perm:  map[string]bool{},
+		after:  after,
+		n:      map[string]int{},
+		msg:    map[string]string{},
+		fired:  map[string]bool{},
+		perm:   map[string]bool{},
+		heldAt: map[string]time.Time{},
+		now:    time.Now,
 	}
 }
 
@@ -81,6 +93,9 @@ func (f *failStreak) note(key, errText string) failVerdict {
 		return failFresh
 	}
 	perm := permanentFailure(errText)
+	if perm {
+		f.heldAt[key] = f.now()
+	}
 	if f.msg[key] != errText {
 		f.msg[key] = errText
 		f.n[key] = 1
@@ -111,6 +126,9 @@ func (f *failStreak) held(key string) (string, bool) {
 	if f == nil || !f.fired[key] || !f.perm[key] {
 		return "", false
 	}
+	if f.now().Sub(f.heldAt[key]) > permanentHoldFor {
+		return "", false // let one attempt through; a repeat holds again
+	}
 	return f.msg[key], true
 }
 
@@ -122,6 +140,7 @@ func (f *failStreak) clear(key string) {
 	delete(f.msg, key)
 	delete(f.fired, key)
 	delete(f.perm, key)
+	delete(f.heldAt, key)
 }
 
 // clearRepo drops every streak for a repo (the repo key itself and every

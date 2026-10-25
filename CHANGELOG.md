@@ -27,6 +27,34 @@
   version is running.
 - **Dependencies.** `golang.org/x/net` v0.60.0 and toolchain go1.26.10 (#216).
 
+An audit for the same bug class, an error read as a state, found twelve more:
+
+- **`kubectl diff` errors are errors.** A failed diff printed nothing and read as
+  "in sync", so an unknown live state passed as a verified rollback baseline.
+- **FTP and SSH read errors are not "never deployed".** Only FTP reply 550 and a
+  missing file over SSH count as absent.
+- **Health checks that cannot reach the API server have no verdict.** They used
+  to report unhealthy, which failed the gate and auto-rolled-back a healthy
+  deploy. Both health gates now retry an error three times, 10 s apart.
+- **The freeze is read from the store on every apply.** A freeze set by the CLI,
+  or through another replica, never reached the leader. An unreadable freeze
+  now blocks.
+- **A store error blocks rollback** instead of skipping the baseline check or
+  re-applying the failed manifest as its own "prior".
+- **Undecodable rollout rows are refused by every reader.** The list kept them
+  with empty fields while a load rejected them, wedging the target as busy.
+- **An unusable stepper snapshot is recovered like a missing one** instead of
+  failing every tick. Recovery now waits for the target lease, so it can no
+  longer take over an Apply that is still running.
+- **A rollout left in verifying is verified again** when live matches Git.
+  Nothing re-ran its gate, so it was never promoted and its `dependsOn`
+  dependents waited forever.
+- **A plan error no longer stops an in-flight rollout from being stepped**, and
+  neither does a permanent-failure hold. That hold now expires after 30 minutes,
+  so one 401 during a credential rotation no longer stops a target until restart.
+- **An analysis that ends on a measurement error fails.** Errors within the
+  failure limit at the end of a run passed it with Prometheus unreachable.
+
 ## v0.34.11 - An interrupted rollout resolves itself
 
 - **A rollout interrupted mid-flight no longer wedges its target.** The rolling

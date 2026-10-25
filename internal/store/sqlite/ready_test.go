@@ -75,3 +75,29 @@ func TestReady_ClosedStoreIsNotReady(t *testing.T) {
 		t.Fatal("Ready returned nil for a closed store")
 	}
 }
+
+// ListRollouts kept a row it could not decode, with an empty manifest and
+// zero timestamps, while LoadRollout rejected the same row. The row still
+// read as in flight, every Tick/Abort through LoadRollout failed, and its
+// manifest vanished from rollback selection: a silent wedge. Both readers
+// now refuse it, naming the row.
+func TestListRollouts_UndecodableRowIsAnError(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+	if err := db.SaveRollout(ctx, sampleRollout("r-good", rollout.PhasePromoted)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveRollout(ctx, sampleRollout("r-bad", rollout.PhaseDeploying)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE rollouts SET manifest = '{not json' WHERE id = 'r-bad'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ListRollouts(ctx, 0)
+	if err == nil || !strings.Contains(err.Error(), "r-bad") {
+		t.Fatalf("ListRollouts = %v; want an error naming r-bad", err)
+	}
+	if _, err := db.LoadRollout(ctx, "r-bad"); err == nil {
+		t.Fatal("LoadRollout accepted the undecodable row")
+	}
+}

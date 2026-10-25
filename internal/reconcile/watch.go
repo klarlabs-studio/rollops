@@ -430,7 +430,9 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 			out = append(out, RepoOutcome{Repo: key, Changed: changed})
 			continue
 		}
-		if msg, held := w.failures.held(key); held {
+		if msg, held := w.failures.held(key); held && !w.inFlight(ctx, p.cfg.Spec.Target.Ref) {
+			// An in-flight rollout is still stepped: holding it would keep the
+			// target busy for as long as the hold lasts.
 			out = append(out, RepoOutcome{Repo: key, Changed: changed, Err: fmt.Errorf("%s", msg)})
 			continue
 		}
@@ -609,4 +611,11 @@ func (w *Watcher) clearAwaiting(repo, path string) {
 		return
 	}
 	delete(w.awaiting, repo+"/"+path)
+}
+
+// inFlight reports whether targetRef has a rollout in flight. A store error
+// reads as "yes", so the reconcile runs and reports it rather than holding.
+func (w *Watcher) inFlight(ctx context.Context, targetRef string) bool {
+	_, ok, err := w.rec.eng.InFlight(ctx, targetRef)
+	return ok || err != nil
 }

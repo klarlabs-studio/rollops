@@ -401,7 +401,7 @@ func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, err
 	// every failure as "in sync" — trusted as a verified rollback baseline and
 	// as "already at desired" by Apply.
 	var exit *exec.ExitError
-	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
+	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
 		return "", fmt.Errorf("kubernetes: diff: %w", err)
 	}
 	// Empty diff = in sync; return "" so the caller/UI owns the "no changes"
