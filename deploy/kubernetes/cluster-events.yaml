@@ -104,6 +104,10 @@ spec:
           readinessProbe:
             httpGet: { path: /-/ready, port: http-metrics }
             periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: http-metrics }
+            initialDelaySeconds: 30
+            periodSeconds: 30
           resources:
             requests: { cpu: 10m, memory: 64Mi }
             limits: { cpu: 100m, memory: 192Mi }
@@ -111,6 +115,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
           volumeMounts:
             - { name: config, mountPath: /etc/alloy, readOnly: true }
             - { name: state, mountPath: /var/lib/alloy }
@@ -118,4 +123,24 @@ spec:
         - name: config
           configMap: { name: alloy-events }
         - name: state
-          emptyDir: {}
+          # Holds only the last-shipped event position.
+          emptyDir: { sizeLimit: 16Mi }
+---
+# Nothing needs to reach the collector except Prometheus scraping its
+# metrics, which runs in this namespace; same shape as isolate-prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-alloy-events
+  namespace: observability
+  labels: { app.kubernetes.io/name: alloy-events }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: alloy-events }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - { port: 12345, protocol: TCP }
