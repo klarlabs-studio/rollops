@@ -1,6 +1,9 @@
 package reconcile
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestPermanentFailureClassification(t *testing.T) {
 	cases := []struct {
@@ -112,5 +115,33 @@ func TestFailStreak_ScopesPerKey(t *testing.T) {
 	f.note("a", "connection refused")
 	if v := f.note("b", "connection refused"); v != failFresh {
 		t.Fatalf("b escalated on its first tick: %v", v)
+	}
+}
+
+// A permanent refusal was held until Git changed or the process restarted.
+// One 401 during a token rotation therefore stopped the target, and any
+// canary in flight on it, indefinitely. The hold now expires, rollops tries
+// once more, and a refusal that repeats is held again without a new log line.
+func TestFailStreak_PermanentHoldExpires(t *testing.T) {
+	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	f := newFailStreak(3)
+	f.now = func() time.Time { return now }
+	const msg = "apply: Unauthorized"
+
+	if v := f.note("repo/a", msg); v != failEscalate {
+		t.Fatalf("first permanent failure = %v, want escalate", v)
+	}
+	if _, held := f.held("repo/a"); !held {
+		t.Fatal("not held right after a permanent failure")
+	}
+	now = now.Add(permanentHoldFor + time.Minute)
+	if _, held := f.held("repo/a"); held {
+		t.Fatal("still held after the hold expired; a transient 401 would block forever")
+	}
+	if v := f.note("repo/a", msg); v != failQuiet {
+		t.Fatalf("same refusal after the retry = %v, want quiet (already reported)", v)
+	}
+	if _, held := f.held("repo/a"); !held {
+		t.Fatal("a refusal that repeats after the retry must be held again")
 	}
 }

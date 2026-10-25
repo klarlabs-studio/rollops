@@ -33,8 +33,9 @@ spec:
 `
 
 type fakeTarget struct {
-	applied []pt.Manifest
-	fp      pt.Fingerprint
+	applied    []pt.Manifest
+	fp         pt.Fingerprint
+	observeErr error
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -42,7 +43,12 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 	f.fp = pt.Fingerprint{Value: m.Checksum} // deploy stamps the checksum
 	return pt.Result{Changed: true}, nil
 }
-func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
+func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) {
+	if f.observeErr != nil {
+		return pt.Fingerprint{}, f.observeErr
+	}
+	return f.fp, nil
+}
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
 	return pt.HealthStatus{State: pt.HealthHealthy}, nil
 }

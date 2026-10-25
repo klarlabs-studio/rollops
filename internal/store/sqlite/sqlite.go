@@ -322,11 +322,24 @@ func (s *Store) ListRollouts(ctx context.Context, limit int) ([]rollout.Rollout,
 		r.Analysis = blobBytes(analysis)
 		r.SmokeTest = blobBytes(smokeTest)
 		r.StepperSnap = blobBytes(stepperSnap)
-		r.DBRollbackCmd, _ = decodeDBCmd(dbCmd)
-		r.DBMigrateCmd, _ = decodeDBCmd(migCmd)
-		_ = json.Unmarshal(manifest, &r.Desired)
-		r.CreatedAt, _ = time.Parse(timeFormat, created)
-		r.UpdatedAt, _ = time.Parse(timeFormat, updated)
+		// Decode exactly as LoadRollout does. Keeping an undecodable row with
+		// zero values let it read as in flight while every load of it failed.
+		var err error
+		if r.DBRollbackCmd, err = decodeDBCmd(dbCmd); err != nil {
+			return nil, fmt.Errorf("sqlite: rollout %s: unmarshal db rollback cmd: %w", r.ID, err)
+		}
+		if r.DBMigrateCmd, err = decodeDBCmd(migCmd); err != nil {
+			return nil, fmt.Errorf("sqlite: rollout %s: unmarshal db migrate cmd: %w", r.ID, err)
+		}
+		if err := json.Unmarshal(manifest, &r.Desired); err != nil {
+			return nil, fmt.Errorf("sqlite: rollout %s: unmarshal manifest: %w", r.ID, err)
+		}
+		if r.CreatedAt, err = time.Parse(timeFormat, created); err != nil {
+			return nil, fmt.Errorf("sqlite: rollout %s: parse created_at: %w", r.ID, err)
+		}
+		if r.UpdatedAt, err = time.Parse(timeFormat, updated); err != nil {
+			return nil, fmt.Errorf("sqlite: rollout %s: parse updated_at: %w", r.ID, err)
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()

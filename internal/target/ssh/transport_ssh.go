@@ -137,14 +137,32 @@ func (t *sshTransport) WriteFile(ctx context.Context, path string, content []byt
 }
 
 func (t *sshTransport) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	code, out, err := t.Run(ctx, "cat "+shellQuote(path))
+	code, out, err := t.Run(ctx, readFileCommand(path))
 	if err != nil {
 		return nil, err
 	}
-	if code != 0 {
+	return readFileResult(code, out)
+}
+
+// missingFileExit is the exit status readFileCommand uses for "no such file".
+// Every non-zero `cat` used to read as absent, so a permission error or an I/O
+// failure made a deployed target look like it had never been deployed.
+const missingFileExit = 44
+
+func readFileCommand(path string) string {
+	q := shellQuote(path)
+	return fmt.Sprintf("if [ -e %s ]; then cat %s; else exit %d; fi", q, q, missingFileExit)
+}
+
+func readFileResult(code int, out string) ([]byte, error) {
+	switch code {
+	case 0:
+		return []byte(out), nil
+	case missingFileExit:
 		return nil, ErrNotFound
+	default:
+		return nil, fmt.Errorf("ssh: read file: exit status %d", code)
 	}
-	return []byte(out), nil
 }
 
 // shellQuote wraps a value for safe interpolation into a remote shell command.
