@@ -309,37 +309,29 @@ correlation that must be run down before the storage-layer hypothesis above is a
 
 ## What was fixed
 
-Commit `20d1f3e`, `fix(engine): recover a deploy orphaned before its first snapshot`.
+Released in **v0.34.11** as #208 (61a07f1), `fix(engine): resolve an interrupted rollout
+instead of refusing to touch it`.
 
-`Tick` now recovers an orphaned deploy instead of refusing it in a loop. Three design
-points, each of which was a decision rather than an obvious step:
+A rollout that is `deploying` with no stepper snapshot no longer counts as a hard error.
+`Tick` now hands it to `recoverInterrupted` (`internal/engine/stepper.go`), which passes it
+to the post-deploy gate. The gate answers the question that is actually open, what is live,
+rather than trusting what was recorded. Two design points:
 
-**The check moved below `acquireTarget`.** It previously ran first, on the reasonable
-theory that you should reject a bad row cheaply. But holding the target lease is precisely
-what proves no `Apply` is mid-flight: `AcquireLease` is TTL-based and a crashed process's
-lease expires on its own. That is a *proof*, not a staleness heuristic with a tunable
-threshold, and it is the entire reason recovery is safe rather than a race against a live
-peer.
+**Forward only, rollback blocked.** Nobody knows what reached the target before the
+process died, so the recorded prior state is not a verified baseline. Restoring an
+unverified baseline over a healthy service is exactly the failure this incident's second
+half produced.
 
-**Recovery re-applies the desired manifest** rather than assuming the cluster already
-converged. `deployOnce` is the likeliest thing the crash interrupted; `Apply` is idempotent;
-and presuming convergence is how a recovery deploys nothing while reporting success.
+**A gate failure is not in flight.** It leaves the rollout in `verifying`, so the target
+is released and the next reconcile converges forward instead of wedging.
 
-**Recovery moves forward only.** No rollback. Git is the operator's stated intent, and a
-recovery path that reverts toward an older manifest would be fighting it.
+The regression test is `TestTick_InterruptedRolloutIsResolvedNotRefused`
+(`internal/engine/stepper_tick_test.go`).
 
-An audit entry (`recovered orphaned deploy (no stepper snapshot); re-applying desired
-manifest`) is emitted, because silently self-healing a state that is supposed to be
-unreachable is how the next such window goes unnoticed for another month.
-
-Three tests, written red first:
-
-- `TestTick_OrphanedDeployRecoversInsteadOfWedging` — the regression test proper
-- `TestTick_OrphanedDeployDoesNotStealALiveApply` — guards the premise; with the lease held
-  elsewhere, `Tick` must return `ErrTargetBusy` and re-apply nothing
-- `TestTick_OrphanRecoveryIsAudited` — the recovery stays visible
-
-Full suite green (39 packages).
+An earlier proposal, PR #197 (commit `20d1f3e`), recovered by re-applying the desired
+manifest after taking the target lease. It was superseded by #208: re-applying presumes the
+manifest in Git is what should be live, while the gate checks what is live before deciding.
+This postmortem was merged from that PR without its code.
 
 ---
 
@@ -354,7 +346,7 @@ Ordered by the gap they close, not by effort.
 | 3 | **Give `/readyz` real checks** — at minimum a store read — or stop probing it | It currently cannot fail, including when the database is unreadable | open |
 | 4 | **Expose and scrape `/metrics`**: add the container port, a Service port, and a ServiceMonitor | Instrumentation is complete and entirely unobserved | open |
 | 5 | **Alert on `rate(reconcileTotal{result="error"}[5m]) > 0`** and on a rollout held in a non-terminal phase beyond a threshold | Zero of 38 PrometheusRules mention rollops; this alert would have fired on day one | open |
-| 6 | **Release `20d1f3e`** and include it in the upgrade above | The deployed v0.34.3 will recreate the wedge on the next badly-timed restart | open |
+| 6 | **Release the interrupted-rollout fix** and include it in the upgrade above | The deployed v0.34.3 will recreate the wedge on the next badly-timed restart | done: #208, released in v0.34.11 |
 | 7 | **Resolve the two paused vorhut targets** (`dep-redis`, `vorhut-executor`) via `resume` | Different bug, still outstanding, and it logs nothing | open |
 | 8 | **Identify `rollops-dbfix`** and what it did to the volume | Ran two minutes before the corruption began; blocks the storage hypothesis | open |
 | 9 | **Move `rollopsd-data` off `longhorn-r1`**; raise replicas, set `reclaimPolicy: Retain` | Single replica, revision counter disabled, `Delete` reclaim, for the daemon's only durable state | open |

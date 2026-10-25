@@ -65,15 +65,6 @@ func (e *Engine) Tick(ctx context.Context, rolloutID string, cfg *config.Config)
 	}
 	defer closeTarget(tgt)
 
-	// A deploying rollout with no snapshot is an orphan: Apply persisted the
-	// deploying phase and then died before driveStepper wrote the first
-	// snapshot. This check must stay *after* acquireTarget — holding the lease
-	// is what proves no Apply is mid-flight, and it is the whole reason
-	// recovery is safe rather than a race against a peer.
-	if len(r.StepperSnap) == 0 {
-		return e.recoverOrphanedDeploy(ctx, &r, cfg, tgt)
-	}
-
 	var persisted stepperPersist
 	if err := json.Unmarshal(r.StepperSnap, &persisted); err != nil {
 		return &r, fmt.Errorf("engine: tick: snapshot: %w", err)
