@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.34.12 - Readiness, alerts, and failures that say why
+
+- **`/readyz` checks the store.** It answered 200 unconditionally, so a pod with
+  a corrupt database stayed in service while every apply failed for every repo
+  (#196, the 2026-09-19 incident). It now runs `PRAGMA quick_check` and a read of
+  the rollouts table, and answers 503 with the reason.
+- **An unreachable API server is no longer "resource absent".** The Kubernetes
+  target turned every `kubectl get` error into an empty live checksum. On
+  2026-10-24 the API server refused connections for a moment, every vorhut target
+  looked undeployed, and rollops re-applied 14 unchanged manifests, failed, and
+  recorded 14 rollbacks. Only a NotFound now counts as absent; any other error
+  fails the plan and the next tick retries.
+- **A failed rollout records why.** A deploy step that failed without an
+  automatic rollback, and a failed scheduled apply, stored the rollout as
+  rolled-back with an empty note. The reason reached only the container log,
+  which rotates within hours.
+- **Metrics are recorded.** `rollops_reconcile_total`, `rollops_drift_detected_total`
+  and `rollops_rollout_outcomes_total` were registered but never incremented, so
+  a scrape returned zeros. Each watcher tick now records its results, and the new
+  `rollops_rollout_inflight_oldest_seconds` reports the oldest target held in
+  deploying or verifying.
+- **Scraping and alerts.** `deploy/kubernetes/rollopsd-monitoring.yaml` adds a
+  ServiceMonitor and five alerts: reconcile errors, a rollout stuck mid-deploy,
+  pod not ready, scrape down, and a stalled reconcile loop. Apply it after this
+  version is running.
+- **Dependencies.** `golang.org/x/net` v0.60.0 and toolchain go1.26.10 (#216).
+
 ## v0.34.11 - An interrupted rollout resolves itself
 
 - **A rollout interrupted mid-flight no longer wedges its target.** The rolling

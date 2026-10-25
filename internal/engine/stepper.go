@@ -323,6 +323,9 @@ func (e *Engine) failProgressive(ctx context.Context, lc *rollout.Lifecycle, r *
 	_, _ = lc.Send(rollout.EventError)
 	r.Phase = lc.Phase()
 	r.UpdatedAt = e.now()
+	// The rollout row and its history are the durable record; the audit line
+	// below only reaches the container log, which rotates within hours.
+	r.Note = appendNote(r.Note, "deploy failed: "+runErr.Error())
 	_ = e.store.SaveRollout(ctx, *r)
 	e.record(audit.Entry{Action: audit.ActionRollback, RolloutID: r.ID, TargetRef: r.TargetRef, Phase: string(r.Phase), Actor: actor, Detail: runErr.Error()})
 	e.notifyDeployment(ctx, notify.Failed, *r, runErr.Error())

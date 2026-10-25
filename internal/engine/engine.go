@@ -2028,6 +2028,7 @@ func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout)
 	if _, err := tgt.Apply(ctx, s.Desired); err != nil {
 		r.Phase = rollout.PhaseRolledBack
 		r.UpdatedAt = e.now()
+		r.Note = "scheduled apply failed: " + err.Error()
 		_ = e.store.SaveRollout(ctx, r)
 		return r, fmt.Errorf("apply: %w", err)
 	}

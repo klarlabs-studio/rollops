@@ -45,6 +45,7 @@ type Watcher struct {
 	now       func() time.Time
 	logf      func(format string, args ...any)
 	imageAuto *ImageAuto
+	metrics   MetricsSink
 
 	// preflight asks every target in a repo whether its apply would be
 	// accepted, and refuses the whole tick if any says no. Default ON: the
@@ -504,15 +505,24 @@ func orderByDependsOn(ncs []config.NamedConfig, cfgs []*config.Config) []cfgPair
 func (w *Watcher) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	w.logOutcomes(w.Tick(ctx)) // reconcile immediately on start
+	w.tickAndRecord(ctx) // reconcile immediately on start
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			w.logOutcomes(w.Tick(ctx))
+			w.tickAndRecord(ctx)
 		}
 	}
+}
+
+// tickAndRecord runs one tick, logs it, and records it to the metrics sink.
+func (w *Watcher) tickAndRecord(ctx context.Context) {
+	start := time.Now()
+	outcomes := w.Tick(ctx)
+	w.logOutcomes(outcomes)
+	recordTick(w.metrics, time.Since(start), outcomes)
+	w.recordInFlight(ctx)
 }
 
 // logOutcomes surfaces each tick's result so an operator sees reconcile errors
