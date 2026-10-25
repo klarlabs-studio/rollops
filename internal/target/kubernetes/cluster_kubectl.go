@@ -197,16 +197,31 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(ChecksumAnnotation, ".", `\.`))
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", jsonpath)
 	if err != nil {
-		// Absent resource is not an error for drift purposes — report empty.
-		return "", nil
+		// An absent resource is not an error for drift purposes — report empty.
+		// Anything else is: on 2026-10-24 an unreachable API server read as
+		// "absent", so every target looked undeployed and rollops re-applied
+		// unchanged manifests, failed, and recorded the failures as rollbacks.
+		if isNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("kubernetes: read live checksum: %w", err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// isNotFound reports whether a kubectl error is the API server saying the
+// resource does not exist, as opposed to failing to answer at all.
+func isNotFound(err error) bool {
+	return strings.Contains(err.Error(), "(NotFound)")
 }
 
 func (k *kubectlCluster) LiveYAML(ctx context.Context) ([]byte, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "yaml")
 	if err != nil {
-		return nil, nil // absent → empty; Diff falls through
+		if isNotFound(err) {
+			return nil, nil // absent → empty; Diff falls through
+		}
+		return nil, fmt.Errorf("kubernetes: read live object: %w", err)
 	}
 	return []byte(out), nil
 }

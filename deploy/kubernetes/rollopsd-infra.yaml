@@ -250,6 +250,8 @@ kind: Service
 metadata:
   name: rollopsd
   namespace: rollops-system
+  # Selected by the ServiceMonitor in rollopsd-monitoring.yaml.
+  labels: { app: rollopsd }
 spec:
   selector: { app: rollopsd }
   ports:

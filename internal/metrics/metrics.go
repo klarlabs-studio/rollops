@@ -19,6 +19,7 @@ type Metrics struct {
 	driftTotal       prometheus.Counter
 	rolloutOutcomes  *prometheus.CounterVec
 	reconcileTotal   *prometheus.CounterVec
+	oldestInFlight   prometheus.Gauge
 }
 
 // New builds the metric set on a fresh registry.
@@ -28,7 +29,7 @@ func New() *Metrics {
 		reg: reg,
 		reconcileLatency: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "rollops_reconcile_latency_seconds",
-			Help:    "Time spent in a single reconcile.",
+			Help:    "Time spent in one reconcile tick across all watched repos.",
 			Buckets: prometheus.DefBuckets,
 		}),
 		driftTotal: prometheus.NewCounter(prometheus.CounterOpts{
@@ -41,10 +42,14 @@ func New() *Metrics {
 		}, []string{"outcome"}),
 		reconcileTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "rollops_reconcile_total",
-			Help: "Reconcile runs by result (insync, reconciled, error).",
+			Help: "Per-repo reconcile results by tick (insync, drift, reconciled, error).",
 		}, []string{"result"}),
+		oldestInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "rollops_rollout_inflight_oldest_seconds",
+			Help: "Age of the oldest target held in deploying or verifying (0 when none).",
+		}),
 	}
-	reg.MustRegister(m.reconcileLatency, m.driftTotal, m.rolloutOutcomes, m.reconcileTotal)
+	reg.MustRegister(m.reconcileLatency, m.driftTotal, m.rolloutOutcomes, m.reconcileTotal, m.oldestInFlight)
 	return m
 }
 
@@ -53,11 +58,14 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.reg, promhttp.HandlerOpts{})
 }
 
-// ObserveReconcile records a reconcile's duration and result.
-func (m *Metrics) ObserveReconcile(d time.Duration, result string) {
-	m.reconcileLatency.Observe(d.Seconds())
-	m.reconcileTotal.WithLabelValues(result).Inc()
-}
+// ObserveTick records how long one reconcile tick took.
+func (m *Metrics) ObserveTick(d time.Duration) { m.reconcileLatency.Observe(d.Seconds()) }
+
+// CountReconcile counts one repo's reconcile result in a tick.
+func (m *Metrics) CountReconcile(result string) { m.reconcileTotal.WithLabelValues(result).Inc() }
+
+// SetOldestInFlight reports the oldest rollout held mid-deploy, in seconds.
+func (m *Metrics) SetOldestInFlight(seconds float64) { m.oldestInFlight.Set(seconds) }
 
 // IncDrift counts a detected drift event.
 func (m *Metrics) IncDrift() { m.driftTotal.Inc() }

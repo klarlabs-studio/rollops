@@ -24,7 +24,9 @@ func TestMetrics_RecordsAndExposes(t *testing.T) {
 	m.IncDrift()
 	m.IncOutcome("promoted")
 	m.IncOutcome("rolled-back")
-	m.ObserveReconcile(50*time.Millisecond, "reconciled")
+	m.ObserveTick(50 * time.Millisecond)
+	m.CountReconcile("reconciled")
+	m.SetOldestInFlight(5400)
 
 	out := scrape(t, m)
 	for _, want := range []string{
@@ -33,6 +35,7 @@ func TestMetrics_RecordsAndExposes(t *testing.T) {
 		`rollops_rollout_outcomes_total{outcome="rolled-back"} 1`,
 		`rollops_reconcile_total{result="reconciled"} 1`,
 		"rollops_reconcile_latency_seconds_count 1",
+		"rollops_rollout_inflight_oldest_seconds 5400",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("scrape missing %q\n---\n%s", want, out)
