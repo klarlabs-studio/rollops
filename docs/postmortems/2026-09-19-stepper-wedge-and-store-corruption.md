@@ -341,19 +341,19 @@ Ordered by the gap they close, not by effort.
 
 | # | Action | Why | Owner |
 |---|---|---|---|
-| 1 | **Upgrade rollopsd from v0.34.3 and apply `deploy/kubernetes/rollopsd.yaml` as a unit** | Brings `/livez` (v0.34.5) and the manifest's correct liveness probe together; neither works without the other | open |
-| 2 | **Stop applying the rollopsd manifest by hand.** Reconcile it from Git like everything else, or record explicitly why it is exempt | The live Deployment has drifted from the repo's own manifest; selective hand-application is what stranded the probe fix | open |
-| 3 | **Give `/readyz` real checks** — at minimum a store read — or stop probing it | It currently cannot fail, including when the database is unreadable | open |
-| 4 | **Expose and scrape `/metrics`**: add the container port, a Service port, and a ServiceMonitor | Instrumentation is complete and entirely unobserved | open |
-| 5 | **Alert on `rate(reconcileTotal{result="error"}[5m]) > 0`** and on a rollout held in a non-terminal phase beyond a threshold | Zero of 38 PrometheusRules mention rollops; this alert would have fired on day one | open |
+| 1 | **Upgrade rollopsd from v0.34.3 and apply `deploy/kubernetes/rollopsd.yaml` as a unit** | Brings `/livez` (v0.34.5) and the manifest's correct liveness probe together; neither works without the other | done: running v0.34.12 (2026-10-26); the Deployment deploys itself from `rollops.yaml` and the bootstrap manifest was applied with it |
+| 2 | **Stop applying the rollopsd manifest by hand.** Reconcile it from Git like everything else, or record explicitly why it is exempt | The live Deployment has drifted from the repo's own manifest; selective hand-application is what stranded the probe fix | done: `rollops.yaml` reconciles the Deployment from Git; bootstrap (namespace, cert-manager, RBAC, PVC, Service) stays hand-applied on purpose, recorded there |
+| 3 | **Give `/readyz` real checks** — at minimum a store read — or stop probing it | It currently cannot fail, including when the database is unreadable | done: #218, `PRAGMA quick_check` plus a rollouts read; 503 with the reason |
+| 4 | **Expose and scrape `/metrics`**: add the container port, a Service port, and a ServiceMonitor | Instrumentation is complete and entirely unobserved | done: #218, ServiceMonitor in `rollopsd-monitoring.yaml`; scrape verified up 2026-10-26 |
+| 5 | **Alert on `rate(reconcileTotal{result="error"}[5m]) > 0`** and on a rollout held in a non-terminal phase beyond a threshold | Zero of 38 PrometheusRules mention rollops; this alert would have fired on day one | done: #218, five PrometheusRules loaded 2026-10-26 |
 | 6 | **Release the interrupted-rollout fix** and include it in the upgrade above | The deployed v0.34.3 will recreate the wedge on the next badly-timed restart | done: #208, released in v0.34.11 |
-| 7 | **Resolve the two paused vorhut targets** (`dep-redis`, `vorhut-executor`) via `resume` | Different bug, still outstanding, and it logs nothing | open |
-| 8 | **Identify `rollops-dbfix`** and what it did to the volume | Ran two minutes before the corruption began; blocks the storage hypothesis | open |
-| 9 | **Move `rollopsd-data` off `longhorn-r1`**; raise replicas, set `reclaimPolicy: Retain` | Single replica, revision counter disabled, `Delete` reclaim, for the daemon's only durable state | open |
-| 10 | **Remove one of the two default StorageClasses** | `local-path` and `longhorn-r1` are both marked default | open |
-| 11 | **Attempt `sqlite3 .recover`** on `corrupt-20260919T094151Z-rollops.db` | It is the only remaining copy of all rollout history | open |
-| 12 | **Raise event retention / `revisionHistoryLimit`** | Forensics currently has a ~47-minute horizon; three of four wedge causes are unknowable | open |
-| 13 | **Audit for other unreachable-state assertions** that return an error from a reconcile path while holding occupancy | The bug class, not the bug | open |
+| 7 | **Resolve the two paused vorhut targets** (`dep-redis`, `vorhut-executor`) via `resume` | Different bug, still outstanding, and it logs nothing | done: nothing paused and no freeze active (checked 2026-10-25) |
+| 8 | **Identify `rollops-dbfix`** and what it did to the volume | Ran two minutes before the corruption began; blocks the storage hypothesis | closed, unresolvable: no pod, job or event remains and the cluster keeps no audit log; item 12 is what would have caught it |
+| 9 | **Move `rollopsd-data` off `longhorn-r1`**; raise replicas, set `reclaimPolicy: Retain` | Single replica, revision counter disabled, `Delete` reclaim, for the daemon's only durable state | done 2026-10-25: moved to `longhorn-retain` (3 replicas, Retain), integrity checked, old volume kept for rollback |
+| 10 | **Remove one of the two default StorageClasses** | `local-path` and `longhorn-r1` are both marked default | done 2026-10-25: `local-path` no longer default; `local-storage.yaml.skip` on edge-1 keeps k3s from restoring it |
+| 11 | **Attempt `sqlite3 .recover`** on `corrupt-20260919T094151Z-rollops.db` | It is the only remaining copy of all rollout history | done 2026-10-25: recovered, integrity ok, 691 rollouts; encrypted copy in `storagebox:db/rollops-forensics/` |
+| 12 | **Raise event retention / `revisionHistoryLimit`** | Forensics currently has a ~47-minute horizon; three of four wedge causes are unknowable | done: #219, `deploy/kubernetes/cluster-events.yaml` ships every event to Loki for 14 days |
+| 13 | **Audit for other unreachable-state assertions** that return an error from a reconcile path while holding occupancy | The bug class, not the bug | done: #219, twelve more instances of the bug class fixed |
 
 ---
 
