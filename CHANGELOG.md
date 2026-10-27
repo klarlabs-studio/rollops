@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **A stale clone directory no longer wedges a repo.** The watcher cloned straight
+  into `<base>/<repo>`, so a directory left by an interrupted run made every
+  `git clone` fail with "destination path already exists and is not an empty
+  directory", and the repo was skipped until a restart that hit the same leftover
+  (#196, defect 3). The clone directory is a cache, so it is now cleared before
+  each clone and after a failed one.
+
 ## v0.34.12 - Readiness, alerts, and failures that say why
 
 - **`/readyz` checks the store.** It answered 200 unconditionally, so a pod with

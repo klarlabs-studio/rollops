@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -145,8 +146,18 @@ func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []Re
 	for _, s := range specs {
 		s.Ref = s.Ref.WithDefaults()
 		dir := filepath.Join(baseDir, s.Name)
+		// The directory is a cache of the remote, owned by this watcher. Whatever
+		// an interrupted run left in it would make git refuse to clone, and as
+		// baseDir usually outlives the container, no restart would clear it.
+		if err := os.RemoveAll(dir); err != nil {
+			if w.logf != nil {
+				w.logf("watch: skip repo %q (clear stale clone directory): %v", s.Name, err)
+			}
+			continue
+		}
 		src, err := git.Clone(ctx, s.URL, s.Ref.Branch, dir, s.Auth)
 		if err != nil {
+			_ = os.RemoveAll(dir) // a partial checkout must not block the next attempt
 			// One unreachable repo must not take the whole daemon down: log and
 			// skip it; the other repos still reconcile. It is retried at restart.
 			if w.logf != nil {
