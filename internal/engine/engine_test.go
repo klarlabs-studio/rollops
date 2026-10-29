@@ -34,11 +34,17 @@ spec:
 // fakeTarget is an in-memory Target the registry hands back, so tests can
 // inspect what the engine applied and steer Observe/Health.
 type fakeTarget struct {
-	applied  []pt.Manifest
-	fp       pt.Fingerprint
-	health   pt.HealthStatus
-	applyErr error
-	diffErr  error // when set, Diff returns this error (drives the drift fail-closed path)
+	applied []pt.Manifest
+	fp      pt.Fingerprint
+	health  pt.HealthStatus
+	// healthErrs are returned by successive Health calls before health.
+	healthErrs []error
+	applyErr   error
+	diffErr    error // when set, Diff returns this error (drives the drift fail-closed path)
+	// liveAwareDiff makes Diff report "in sync" for the manifest that was
+	// applied last — what a real target's diff says about the live state —
+	// instead of the default of always reporting a difference.
+	liveAwareDiff bool
 	// referenced + rendered exercise the pt.Renderer capability: when referenced
 	// is true the engine stamps the checksum over rendered (default off, so
 	// existing tests are unaffected).
@@ -54,10 +60,20 @@ func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) 
 	return pt.Result{Changed: true}, nil
 }
 func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) { return f.fp, nil }
-func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) { return f.health, nil }
+func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
+	if len(f.healthErrs) > 0 {
+		err := f.healthErrs[0]
+		f.healthErrs = f.healthErrs[1:]
+		return pt.HealthStatus{}, err
+	}
+	return f.health, nil
+}
 func (f *fakeTarget) Diff(_ context.Context, m pt.Manifest) (string, error) {
 	if f.diffErr != nil {
 		return "", f.diffErr
+	}
+	if f.liveAwareDiff && len(f.applied) > 0 && f.applied[len(f.applied)-1].Checksum == m.Checksum {
+		return "", nil
 	}
 	return "diff for " + m.Checksum, nil
 }

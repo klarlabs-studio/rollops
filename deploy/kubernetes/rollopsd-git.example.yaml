@@ -1,5 +1,6 @@
 # EXAMPLE ONLY — the `rollopsd-git` Secret holds the git-auth material the daemon
-# mounts at /etc/rollops/git (see the `git` volume in rollopsd.yaml). With the
+# mounts at /etc/rollops/git (see the `git` volume in
+# rollopsd-deployment.yaml). With the
 # recommended SEPARATE-App-per-org setup (docs/git-auth-migration.md) it holds the
 # two GitHub App private keys — one per org. Each data key becomes a file at
 # /etc/rollops/git/<key>, referenced by `githubAppPrivateKeyFile` in the

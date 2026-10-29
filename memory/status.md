@@ -1,12 +1,23 @@
 # Status — Rollops
 
-*Updated: 2026-09-06*
+*Updated: 2026-10-26*
 
 ## Current State
 
-Cutting **v0.34.8** — warn on dangling Traefik middleware refs (#190 / #182
-suggestion 4). Deploy pin `v0.34.8`. Incident #182 suggestions 1–4 are shipped;
-#184 design leftovers (escape hatch / cost) remain optional follow-ups.
+Cutting **v0.34.12** — the 2026-09-19 postmortem's action items: readiness
+checks the store, failures record why, metrics and alerts (#218), and an audit
+that stops errors being read as states (#219). Deploy pin `v0.34.12`. Earlier:
+an interrupted rollout resolves itself (#208), on top of rollops deploying
+rollops (#201, #202, #203, #204, #206). The daemon follows its own releases: `rollops.yaml` at
+the repo root targets `rollops-system/deployment/rollopsd` and renders
+`deploy/kubernetes/rollopsd-deployment.yaml`. The install manifest is split —
+bootstrap (namespace, cert-manager, RBAC, PVC, Service) is applied by a human,
+because the daemon's ServiceAccount cannot get cert-manager ClusterIssuers and
+must never be able to rewrite its own ClusterRole. Version skew between client
+and daemon is now visible (`rollops doctor` fails on it). The first self-apply
+exposed a wedge, also fixed here: a rollout in flight is stepped even when the
+plan reports a change, instead of being refused as `target busy` forever. #184
+design leftovers (escape hatch / cost) remain optional follow-ups.
 
 ---
 

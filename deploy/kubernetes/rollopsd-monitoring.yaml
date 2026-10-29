@@ -1,0 +1,86 @@
+# Scraping and alerting for rollopsd (kube-prometheus-stack).
+#
+# Applied by a human with rollopsd-infra.yaml, not by the daemon: rollopsd's
+# ServiceAccount has no business editing its own alerts.
+#
+#   kubectl apply -f deploy/kubernetes/rollopsd-monitoring.yaml
+#
+# Why it exists: on 2026-09-19 a target was wedged for 31 days and the store
+# went corrupt, and nothing alerted. Rollops had metrics, but nothing scraped
+# them, and no rule mentioned rollops (postmortem action items 4 and 5).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rollopsd
+  namespace: rollops-system
+  labels: { app: rollopsd, release: kps }
+spec:
+  selector:
+    matchLabels: { app: rollopsd }
+  endpoints:
+    - port: https
+      path: /metrics
+      interval: 60s
+      scheme: https
+      # /metrics needs no client certificate (VerifyClientCertIfGiven); the
+      # scrape verifies the server against rollopsd's own CA.
+      tlsConfig:
+        ca:
+          secret: { name: rollopsd-tls, key: ca.crt }
+        serverName: rollopsd.rollops-system.svc
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rollopsd
+  namespace: rollops-system
+  labels: { app: rollopsd, release: kps }
+spec:
+  groups:
+    - name: rollopsd
+      rules:
+        - alert: RollopsReconcileErrors
+          expr: sum(rate(rollops_reconcile_total{result="error"}[5m])) > 0
+          # Long enough to ride out an API-server restart; on 2026-09-19
+          # this would have fired on day one instead of day 31.
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: rollopsd reconciles are failing
+            description: >-
+              At least one watched repo has failed to reconcile for 15 minutes.
+              `kubectl -n rollops-system logs deploy/rollopsd | grep reconcile` names the repo and error.
+        - alert: RollopsRolloutStuck
+          expr: max(rollops_rollout_inflight_oldest_seconds) > 1800
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: a rollout has been mid-deploy for over 30 minutes
+            description: >-
+              A target's latest rollout has been in deploying or verifying for
+              {{ $value | humanizeDuration }}. That is the 2026-09-19 wedge: the
+              target stays claimed and every later rollout fails as busy.
+        - alert: RollopsNotReady
+          expr: max(kube_pod_status_ready{namespace="rollops-system", pod=~"rollopsd-.*", condition="true"}) < 1
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: rollopsd is not ready
+            description: >-
+              /readyz has failed for 5 minutes. It fails when the SQLite store is
+              unreadable or corrupt (#196). The probe's response body says why:
+              `kubectl -n rollops-system describe pod -l app=rollopsd`.
+        - alert: RollopsScrapeDown
+          expr: absent(up{job="rollopsd"} == 1)
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: Prometheus cannot scrape rollopsd
+            description: Without the scrape, every other rollopsd alert is silent.
+        - alert: RollopsReconcileLoopStalled
+          expr: sum(increase(rollops_reconcile_total[30m])) == 0 and on() (up{job="rollopsd"} == 1)
+          for: 15m
+          labels: { severity: critical }
+          annotations:
+            summary: rollopsd has not reconciled anything for 30 minutes
+            description: The process is up and scraped but its reconcile loop is not ticking.

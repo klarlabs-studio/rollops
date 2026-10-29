@@ -61,10 +61,16 @@ func (c Config) Options(ctx context.Context) ([]engine.Option, error) {
 		c.logf("rollops: freeze restored (%s)\n", rec.Reason)
 	}
 
+	st := c.Store
 	guard := &security.Guardrails{
 		Floor:      security.DefaultPolicyFloor(),
 		Freeze:     fz,
 		AgentLimit: security.NewAgentLimiter(20, time.Minute),
+		// The persisted row is the freeze; memory is only this process's copy.
+		FreezeSource: func(ctx context.Context) (bool, string, error) {
+			rec, err := st.LoadFreeze(ctx)
+			return rec.Active, rec.Reason, err
+		},
 	}
 
 	owner := c.getenv("ROLLOPS_INSTANCE_ID")

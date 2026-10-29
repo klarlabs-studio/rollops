@@ -1,7 +1,7 @@
 # Client certificates for machine callers of the rollopsd control plane. With
 # mTLS enabled (ROLLOPS_TLS_CLIENT_CA set on the daemon), the REST API, gRPC, and
 # MCP surfaces REQUIRE a client cert signed by the same CA as the server. These
-# Certificates are issued from the `rollopsd-ca` Issuer created in rollopsd.yaml,
+# Certificates are issued from the `rollopsd-ca` Issuer created in rollopsd-infra.yaml,
 # so they chain to the CA the daemon trusts.
 #
 # One cert per caller (distinct name + commonName) so any single caller can be

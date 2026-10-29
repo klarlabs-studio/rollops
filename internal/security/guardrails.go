@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,6 +20,11 @@ type Guardrails struct {
 	Floor      PolicyFloor
 	Freeze     *Freeze
 	AgentLimit *AgentLimiter
+	// FreezeSource, when set, is the authoritative freeze state and is read
+	// on every check. Freeze alone is this process's memory: a freeze set by
+	// the CLI against the shared store, or by another replica, never reached
+	// it, so the leader kept applying through an engaged kill-switch.
+	FreezeSource func(ctx context.Context) (active bool, reason string, err error)
 }
 
 // Sentinel errors.
@@ -31,7 +37,16 @@ var (
 // ErrRateLimited to block outright, and forceApproval=true when the policy floor
 // requires a human regardless of the computed risk score.
 func (g *Guardrails) CheckApply(ctx context.Context, id rollout.Identity, t FloorInput) (forceApproval bool, err error) {
-	if g.Freeze != nil {
+	if g.FreezeSource != nil {
+		active, reason, err := g.FreezeSource(ctx)
+		if err != nil {
+			// Fail closed: a kill-switch that cannot be read is not "off".
+			return false, fmt.Errorf("%w (freeze state unreadable: %v)", ErrFrozen, err)
+		}
+		if active {
+			return false, fmt.Errorf("%w: %s", ErrFrozen, reason)
+		}
+	} else if g.Freeze != nil {
 		if active, _ := g.Freeze.Active(); active {
 			return false, ErrFrozen
 		}

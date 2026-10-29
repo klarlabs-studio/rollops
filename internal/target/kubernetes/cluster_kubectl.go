@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.klarlabs.de/rollops/internal/security"
@@ -196,16 +198,58 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(ChecksumAnnotation, ".", `\.`))
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", jsonpath)
 	if err != nil {
-		// Absent resource is not an error for drift purposes — report empty.
-		return "", nil
+		// An absent resource is not an error for drift purposes — report empty.
+		// Anything else is: on 2026-10-24 an unreachable API server read as
+		// "absent", so every target looked undeployed and rollops re-applied
+		// unchanged manifests, failed, and recorded the failures as rollbacks.
+		if isNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("kubernetes: read live checksum: %w", err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// unreachableMarkers are what kubectl prints when it could not get an answer
+// from the API server at all, as opposed to an answer that the resource is
+// unhealthy.
+var unreachableMarkers = []string{
+	"Unable to connect to the server",
+	"The connection to the server",
+	"connection refused",
+	"i/o timeout",
+	"TLS handshake timeout",
+	"(ServiceUnavailable)",
+	"(InternalError)",
+	"the server is currently unable to handle the request",
+}
+
+// isUnreachable reports whether a kubectl error means the API server did not
+// answer. A health check that cannot reach it has no verdict; reporting
+// "unhealthy" failed the gate and auto-rolled-back healthy deploys.
+func isUnreachable(err error) bool {
+	msg := err.Error()
+	for _, m := range unreachableMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNotFound reports whether a kubectl error is the API server saying the
+// resource does not exist, as opposed to failing to answer at all.
+func isNotFound(err error) bool {
+	return strings.Contains(err.Error(), "(NotFound)")
 }
 
 func (k *kubectlCluster) LiveYAML(ctx context.Context) ([]byte, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "yaml")
 	if err != nil {
-		return nil, nil // absent → empty; Diff falls through
+		if isNotFound(err) {
+			return nil, nil // absent → empty; Diff falls through
+		}
+		return nil, fmt.Errorf("kubernetes: read live object: %w", err)
 	}
 	return []byte(out), nil
 }
@@ -231,13 +275,40 @@ func resourceKind(resource string) string {
 // Available/Succeeded condition. An explicit healthCondition pins the type.
 func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
 	if k.healthCond == "" && rolloutKinds[resourceKind(k.resource)] {
-		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout=30s")
+		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout="+k.rolloutWait(ctx))
 		if err != nil {
+			if isUnreachable(err) {
+				return false, "", fmt.Errorf("kubernetes: health: %w", err)
+			}
 			return false, strings.TrimSpace(out), nil
 		}
 		return true, "", nil
 	}
 	return k.conditionHealthy(ctx)
+}
+
+// defaultProgressDeadline is Kubernetes' own default for a Deployment's
+// spec.progressDeadlineSeconds, used for kinds that have no such field.
+const defaultProgressDeadline = 600
+
+// rolloutWait bounds `kubectl rollout status` by the resource's own progress
+// deadline rather than a fixed 30 seconds.
+//
+// A rollout that is still progressing is not failing: old pods draining
+// through their termination grace period routinely take longer than 30s, and
+// treating that as unhealthy aborted healthy canaries and triggered
+// auto-rollback. Kubernetes already defines failure for a Deployment — it
+// marks Progressing=False with ProgressDeadlineExceeded — and `rollout status`
+// returns as soon as that happens, so waiting up to the deadline costs nothing
+// when a rollout genuinely fails and only waits when one is still healthy.
+func (k *kubectlCluster) rolloutWait(ctx context.Context) string {
+	deadline := defaultProgressDeadline
+	if out, err := k.run(ctx, nil, "get", k.resource, "-o", "jsonpath={.spec.progressDeadlineSeconds}"); err == nil {
+		if n, perr := strconv.Atoi(strings.TrimSpace(out)); perr == nil && n > 0 {
+			deadline = n
+		}
+	}
+	return strconv.Itoa(deadline+30) + "s"
 }
 
 type statusCondition struct {
@@ -256,6 +327,9 @@ type statusCondition struct {
 func (k *kubectlCluster) conditionHealthy(ctx context.Context) (bool, string, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "jsonpath={.status.conditions}")
 	if err != nil {
+		if isUnreachable(err) {
+			return false, "", fmt.Errorf("kubernetes: health: %w", err)
+		}
 		return false, strings.TrimSpace(out), nil
 	}
 	return evalConditions(out, k.healthCond)
@@ -314,7 +388,22 @@ func conditionReason(c statusCondition) string {
 // non-zero (1) when differences exist, with the diff on stdout — that is not an
 // error here, it is the result.
 func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, error) {
-	out, _ := k.run(ctx, manifest, "diff", "-f", "-")
+	// Diff what Apply would send. Apply labels every resource with PruneLabel,
+	// and that label lands in last-applied-configuration; diffing the unlabelled
+	// manifest therefore shows the label's removal on every in-sync target,
+	// which reads as drift where there is none.
+	if labeled, err := labelManifest(manifest, k.pruneVal); err == nil {
+		manifest = labeled
+	}
+	out, err := k.run(ctx, manifest, "diff", "-f", "-")
+	// kubectl diff exits 1 when there are differences and >1 on an error. A
+	// failed diff prints nothing to stdout, so ignoring the exit status read
+	// every failure as "in sync" — trusted as a verified rollback baseline and
+	// as "already at desired" by Apply.
+	var exit *exec.ExitError
+	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+		return "", fmt.Errorf("kubernetes: diff: %w", err)
+	}
 	// Empty diff = in sync; return "" so the caller/UI owns the "no changes"
 	// copy rather than treating a human message as diff content.
 	if strings.TrimSpace(out) == "" {

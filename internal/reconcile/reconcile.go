@@ -36,22 +36,54 @@ type Outcome struct {
 // Reconcile observes the target, detects drift, and — if drifted — alerts and
 // reconciles back to desired. In sync, it is a cheap no-op (the heartbeat).
 func (r *Reconciler) Reconcile(ctx context.Context, c *config.Config, by rollout.Identity) (Outcome, error) {
+	// A rollout already in flight owns this target: step it, never start a
+	// second one. Checked BEFORE the plan is consulted, because the two
+	// conditions are independent — an in-flight canary keeps ticking when Git
+	// and the target match (Plan.Changed is false after the first Apply, but
+	// the bake is not done), and it must equally keep ticking when they do not.
+	//
+	// While this lived under `!plan.Changed` a target whose plan reported a
+	// change while a rollout was in flight could not progress at all: Apply
+	// refuses with ErrTargetBusy, so the rollout never finished and the target
+	// never converged. rollops' own daemon wedged that way on its first
+	// self-deploy — it applied its Deployment, Recreate killed the pod driving
+	// the rollout, and the replacement had no recorded state for the target, so
+	// every reconcile from then on planned a create and was refused as busy.
+	//
+	// The plan comes after the tick: a plan that fails (the target cannot be
+	// observed) must not also stop the in-flight rollout from being stepped.
+	if inf, ok, err := r.eng.InFlight(ctx, c.Spec.Target.Ref); err != nil {
+		return Outcome{}, err
+	} else if ok {
+		rl, tickErr := r.eng.Tick(ctx, inf.ID, c)
+		if tickErr != nil {
+			return Outcome{Rollout: rl}, fmt.Errorf("reconcile: tick: %w", tickErr)
+		}
+		plan, err := r.eng.Plan(ctx, c)
+		if err != nil {
+			return Outcome{Rollout: rl}, fmt.Errorf("reconcile: plan: %w", err)
+		}
+		return r.finalize(ctx, c, by, plan, plan.Changed, rl)
+	}
+
 	plan, err := r.eng.Plan(ctx, c)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("reconcile: plan: %w", err)
 	}
+
 	if !plan.Changed {
-		// An in-flight canary must keep ticking even when Git and the target
-		// already match — Plan.Changed is false after the first Apply, but the
-		// bake is not done.
-		if inf, ok, err := r.eng.InFlight(ctx, c.Spec.Target.Ref); err != nil {
-			return Outcome{}, err
-		} else if ok {
-			rl, err := r.eng.Tick(ctx, inf.ID, c)
-			if err != nil {
-				return Outcome{Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: tick: %w", err)
-			}
-			return r.finalize(ctx, c, by, plan, false, rl)
+		// A rollout left in verifying (its gate failed with auto-rollback off
+		// or blocked) is otherwise never looked at again once live matches
+		// Git: nothing changes, so nothing applies. It is not in flight, but
+		// it is not promoted either, and every dependsOn dependent waits on it
+		// forever. Run its gate again; a target that has since become healthy
+		// is promoted.
+		stuck, err := r.stuckVerifying(ctx, c.Spec.Target.Ref, plan.Desired.Checksum)
+		if err != nil {
+			return Outcome{Plan: plan}, fmt.Errorf("reconcile: %w", err)
+		}
+		if stuck != nil {
+			return r.finalize(ctx, c, by, plan, false, stuck)
 		}
 		// detect mode: live drift found but intentionally not auto-corrected —
 		// record an alert so operators see it, then stop (no apply).
@@ -92,8 +124,14 @@ func (r *Reconciler) finalize(ctx context.Context, c *config.Config, by rollout.
 		return Outcome{Drift: drifted, Plan: plan, Rollout: rl}, nil
 	}
 
+	// A store error must not fall back to rl.Desired: the "rollback" would
+	// re-apply the manifest that just failed and record it as rolled back.
 	prior := rl.Desired
-	if p, ok := r.eng.PriorManifest(ctx, rl.TargetRef, rl.Desired.Checksum); ok {
+	p, ok, err := r.eng.PriorManifestErr(ctx, rl.TargetRef, rl.Desired.Checksum)
+	if err != nil {
+		return Outcome{Drift: drifted, Plan: plan, Rollout: rl}, fmt.Errorf("reconcile: verify: %w", err)
+	}
+	if ok {
 		prior = p
 	}
 	out, err := r.eng.VerifyOrRollback(ctx, rl.ID, prior, c)
@@ -127,6 +165,25 @@ func (r *Reconciler) waitingOn(ctx context.Context, c *config.Config) (string, e
 		}
 	}
 	return "", nil
+}
+
+// stuckVerifying returns the target's newest rollout when it is verifying and
+// for the checksum that is live and desired, or nil.
+func (r *Reconciler) stuckVerifying(ctx context.Context, targetRef, checksum string) (*rollout.Rollout, error) {
+	rs, err := r.eng.List(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rs { // newest first
+		if rs[i].TargetRef != targetRef {
+			continue
+		}
+		if rs[i].Phase == rollout.PhaseVerifying && rs[i].Desired.Checksum == checksum {
+			return &rs[i], nil
+		}
+		return nil, nil
+	}
+	return nil, nil
 }
 
 func (r *Reconciler) isPromoted(ctx context.Context, targetRef string) (bool, error) {

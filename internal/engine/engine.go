@@ -46,15 +46,18 @@ import (
 
 // Engine orchestrates rollouts over a Store and a target Registry.
 type Engine struct {
-	store    store.Store
-	reg      *itarget.Registry
-	locks    *keyedLocks
-	policy   step.Policy
-	smoke    SmokeRunner
-	now      func() time.Time
-	newID    func() string
-	owner    string
-	leaseTTL time.Duration
+	// healthRetryDelay is the wait between health checks that returned an
+	// error; see healthWithRetry.
+	healthRetryDelay time.Duration
+	store            store.Store
+	reg              *itarget.Registry
+	locks            *keyedLocks
+	policy           step.Policy
+	smoke            SmokeRunner
+	now              func() time.Time
+	newID            func() string
+	owner            string
+	leaseTTL         time.Duration
 
 	// Optional trust/delivery collaborators. When set, Apply enforces them in
 	// order; nil means that stage is skipped (keeps the bare engine simple for
@@ -83,6 +86,12 @@ type Option func(*Engine)
 
 // WithClock overrides the time source (deterministic tests).
 func WithClock(f func() time.Time) Option { return func(e *Engine) { e.now = f } }
+
+// WithHealthRetryDelay sets the wait between health checks that returned an
+// error (default 10s). Tests pass 0.
+func WithHealthRetryDelay(d time.Duration) Option {
+	return func(e *Engine) { e.healthRetryDelay = d }
+}
 
 // WithIDGen overrides the rollout id generator (deterministic tests).
 func WithIDGen(f func() string) Option { return func(e *Engine) { e.newID = f } }
@@ -284,18 +293,19 @@ func (e *Engine) build(t config.Target) (pt.Target, error) {
 // time.Now; both are injectable for tests.
 func New(st store.Store, reg *itarget.Registry, opts ...Option) *Engine {
 	e := &Engine{
-		store:        st,
-		reg:          reg,
-		locks:        newKeyedLocks(),
-		policy:       step.DefaultPolicy(),
-		smoke:        execSmoke{},
-		dbRollback:   execDBRollback{},
-		owner:        defaultOwner(),
-		leaseTTL:     2 * time.Minute,
-		flagBuild:    featureflags.BuildProvider,
-		routerBuild:  trafficrouting.BuildRouter,
-		metricsBuild: metricplugin.Build,
-		now:          func() time.Time { return time.Now().UTC() },
+		healthRetryDelay: 10 * time.Second,
+		store:            st,
+		reg:              reg,
+		locks:            newKeyedLocks(),
+		policy:           step.DefaultPolicy(),
+		smoke:            execSmoke{},
+		dbRollback:       execDBRollback{},
+		owner:            defaultOwner(),
+		leaseTTL:         2 * time.Minute,
+		flagBuild:        featureflags.BuildProvider,
+		routerBuild:      trafficrouting.BuildRouter,
+		metricsBuild:     metricplugin.Build,
+		now:              func() time.Time { return time.Now().UTC() },
 	}
 	e.newID = func() string { return "ro-" + e.now().Format("20060102T150405.000000000") }
 	for _, o := range opts {
@@ -980,10 +990,20 @@ func (e *Engine) Apply(ctx context.Context, req ApplyRequest) (*rollout.Rollout,
 			r.SmokeTest = b
 		}
 	}
+	// Decide now, while the prior state is still observable, whether a failure
+	// may be auto-rolled back. Once the new manifest is applied, what was live
+	// before can no longer be compared.
+	if cfg.Spec.Rollback.Auto {
+		r.RollbackBlocked = e.rollbackBaseline(ctx, ref, m)
+	}
 	if err := e.store.SaveRollout(ctx, r); err != nil {
 		return nil, err
 	}
 	e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator})
+	if r.RollbackBlocked != "" {
+		e.record(audit.Entry{Action: audit.ActionApply, RolloutID: r.ID, TargetRef: ref, Phase: string(r.Phase), Actor: req.Initiator,
+			Detail: "auto-rollback disabled for this rollout: " + r.RollbackBlocked})
+	}
 	if r.Phase == rollout.PhaseAwaitingApproval {
 		e.notifyEvent(ctx, notify.Event{Kind: notify.ApprovalNeeded, TargetRef: ref, RolloutID: r.ID})
 		return &r, nil // halt: gate requires human approval, target untouched
@@ -1030,6 +1050,9 @@ func (e *Engine) VerifyOrRollback(ctx context.Context, rolloutID string, prior p
 	if failed {
 		if !auto {
 			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed (auto-rollback disabled): %s", reason)
+		}
+		if r.RollbackBlocked != "" {
+			return VerifyOutcome{Rollout: r, Reason: reason}, fmt.Errorf("engine: verify failed and auto-rollback was not attempted (%s): %s", r.RollbackBlocked, reason)
 		}
 		// Auto-rollback forces past the backward-compatibility gate: the deploy
 		// already failed, so recovering to the prior state beats leaving it up.
@@ -1174,16 +1197,45 @@ func (e *Engine) gateHealth(ctx context.Context, r rollout.Rollout) GateResult {
 		return GateResult{Gate: GateHealth, Status: GateFail, Detail: "health gate unavailable: " + err.Error()}
 	}
 	defer closeTarget(tgt)
-	hs, herr := tgt.Health(ctx)
+	hs, herr := e.healthWithRetry(ctx, tgt)
 	if herr != nil || hs.State == pt.HealthUnhealthy {
 		detail := "health check failed"
-		if hs.Reason != "" {
+		if herr != nil {
+			detail = "health check failed: " + herr.Error()
+		} else if hs.Reason != "" {
 			detail = "health check failed: " + hs.Reason
 		}
 		return GateResult{Gate: GateHealth, Status: GateFail, Detail: detail}
 	}
 	// A degraded target still passes (only Unhealthy fails), so report which.
 	return GateResult{Gate: GateHealth, Status: GatePass, Detail: healthStateName(hs.State)}
+}
+
+// healthAttempts is how many times a health check that errors is tried.
+const healthAttempts = 3
+
+// healthWithRetry asks for health, retrying only when the check returns an
+// error (it could not get a verdict, e.g. the API server did not answer).
+// An unhealthy verdict is returned at once. A transient error used to fail
+// the gate, and a failed gate auto-rolls-back.
+func (e *Engine) healthWithRetry(ctx context.Context, tgt pt.Target) (pt.HealthStatus, error) {
+	var (
+		hs  pt.HealthStatus
+		err error
+	)
+	for attempt := range healthAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return hs, err
+			case <-time.After(e.healthRetryDelay):
+			}
+		}
+		if hs, err = tgt.Health(ctx); err == nil {
+			return hs, nil
+		}
+	}
+	return hs, err
 }
 
 // healthStateName renders a health verdict for report output. Kept local rather
@@ -1824,19 +1876,72 @@ func (e *Engine) Resources(ctx context.Context, rolloutID string) ([]pt.Resource
 // roll back to. Shared by RollbackLast (manual/UI) and Apply's auto-rollback so
 // the prior-good selection is defined and tested in exactly one place.
 func (e *Engine) priorManifest(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool) {
+	m, ok, _ := e.priorManifestErr(ctx, targetRef, excludeChecksum)
+	return m, ok
+}
+
+// priorManifestErr is priorManifest that tells "no prior state" apart from
+// "the store could not be read". Callers deciding whether a rollback is safe
+// must use it: treating a store error as "no prior" skips the baseline check.
+func (e *Engine) priorManifestErr(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool, error) {
 	rs, err := e.store.ListRollouts(ctx, 0) // newest first
 	if err != nil {
-		return pt.Manifest{}, false
+		return pt.Manifest{}, false, fmt.Errorf("engine: read prior manifest: %w", err)
 	}
 	for i := range rs {
 		if rs[i].TargetRef != targetRef {
 			continue
 		}
 		if rs[i].Desired.Checksum != "" && rs[i].Desired.Checksum != excludeChecksum {
-			return rs[i].Desired, true
+			return rs[i].Desired, true, nil
 		}
 	}
-	return pt.Manifest{}, false
+	return pt.Manifest{}, false, nil
+}
+
+// rollbackBaseline reports why auto-rollback must not run for a rollout about
+// to deploy, or "" when it may.
+//
+// Auto-rollback restores the last manifest rollops recorded for the target.
+// That is only a rollback if it is what was live: a target changed outside
+// rollops (a `kubectl set image`, an apply from a laptop) leaves the record
+// behind, and restoring it replaces the running service with an older one —
+// the stamped checksum cannot see this, because an out-of-band edit leaves the
+// stamp intact. So the recorded manifest is diffed against live before
+// deploying, and any difference, or a comparison that cannot be made, disables
+// auto-rollback for this rollout. A target that cannot diff is trusted as
+// before, since there is nothing to compare with.
+func (e *Engine) rollbackBaseline(ctx context.Context, ref string, desired pt.Manifest) string {
+	prior, ok, err := e.priorManifestErr(ctx, ref, desired.Checksum)
+	if err != nil {
+		return "the recorded rollback target could not be read: " + err.Error()
+	}
+	if !ok {
+		return ""
+	}
+	// Differ lives on the raw target, not the fortify wrapper Apply deploys
+	// through: asserting it on the wrapper never matches.
+	raw, err := e.rawTarget(ref, desired)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	defer closeTarget(raw)
+	differ, ok := raw.(pt.Differ)
+	if !ok {
+		return ""
+	}
+	if prior.Root == "" {
+		prior.Root = rootFromContext(ctx)
+	}
+	diff, err := differ.Diff(ctx, prior)
+	if err != nil {
+		return "the live state could not be compared with the recorded rollback target: " + err.Error()
+	}
+	if strings.TrimSpace(diff) != "" {
+		return "the live state is not the last manifest rollops recorded (it was changed outside rollops), " +
+			"so rolling back would restore something that was not running"
+	}
+	return ""
 }
 
 // PriorManifest exposes the last-known-good manifest for a target (the most
@@ -1846,6 +1951,11 @@ func (e *Engine) priorManifest(ctx context.Context, targetRef, excludeChecksum s
 // manifest. Returns false when the target has no distinct prior state.
 func (e *Engine) PriorManifest(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool) {
 	return e.priorManifest(ctx, targetRef, excludeChecksum)
+}
+
+// PriorManifestErr is PriorManifest that also reports a store read failure.
+func (e *Engine) PriorManifestErr(ctx context.Context, targetRef, excludeChecksum string) (pt.Manifest, bool, error) {
+	return e.priorManifestErr(ctx, targetRef, excludeChecksum)
 }
 
 // RollbackLast rolls a target back to its previous distinct desired state by
@@ -1869,6 +1979,14 @@ func (e *Engine) RollbackLast(ctx context.Context, targetRef string, force bool)
 	prior, ok := e.priorManifest(ctx, targetRef, current.Desired.Checksum)
 	if !ok {
 		return rollout.Rollout{}, fmt.Errorf("engine: no prior state to roll back %q to", targetRef)
+	}
+	// The "previous" state rollops would restore is only a rollback if it was
+	// live when the current rollout started. When it was not, a human asking
+	// for "the previous version" would get an older one; say so, and require
+	// force to apply it anyway.
+	if current.RollbackBlocked != "" && !force {
+		return rollout.Rollout{}, fmt.Errorf("engine: rollback: the manifest rollops would restore was not live when %s started (%s); "+
+			"force the rollback to apply it anyway", current.ID, current.RollbackBlocked)
 	}
 	return e.Rollback(ctx, current.ID, prior, force)
 }
@@ -1965,6 +2083,7 @@ func (e *Engine) applyScheduled(ctx context.Context, s rollout.ScheduledRollout)
 	if _, err := tgt.Apply(ctx, s.Desired); err != nil {
 		r.Phase = rollout.PhaseRolledBack
 		r.UpdatedAt = e.now()
+		r.Note = "scheduled apply failed: " + err.Error()
 		_ = e.store.SaveRollout(ctx, r)
 		return r, fmt.Errorf("apply: %w", err)
 	}

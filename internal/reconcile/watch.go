@@ -45,6 +45,7 @@ type Watcher struct {
 	now       func() time.Time
 	logf      func(format string, args ...any)
 	imageAuto *ImageAuto
+	metrics   MetricsSink
 
 	// preflight asks every target in a repo whether its apply would be
 	// accepted, and refuses the whole tick if any says no. Default ON: the
@@ -433,7 +434,9 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 			out = append(out, RepoOutcome{Repo: key, Changed: changed})
 			continue
 		}
-		if msg, held := w.failures.held(key); held {
+		if msg, held := w.failures.held(key); held && !w.inFlight(ctx, p.cfg.Spec.Target.Ref) {
+			// An in-flight rollout is still stepped: holding it would keep the
+			// target busy for as long as the hold lasts.
 			out = append(out, RepoOutcome{Repo: key, Changed: changed, Err: fmt.Errorf("%s", msg)})
 			continue
 		}
@@ -508,15 +511,24 @@ func orderByDependsOn(ncs []config.NamedConfig, cfgs []*config.Config) []cfgPair
 func (w *Watcher) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	w.logOutcomes(w.Tick(ctx)) // reconcile immediately on start
+	w.tickAndRecord(ctx) // reconcile immediately on start
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			w.logOutcomes(w.Tick(ctx))
+			w.tickAndRecord(ctx)
 		}
 	}
+}
+
+// tickAndRecord runs one tick, logs it, and records it to the metrics sink.
+func (w *Watcher) tickAndRecord(ctx context.Context) {
+	start := time.Now()
+	outcomes := w.Tick(ctx)
+	w.logOutcomes(outcomes)
+	recordTick(w.metrics, time.Since(start), outcomes)
+	w.recordInFlight(ctx)
 }
 
 // logOutcomes surfaces each tick's result so an operator sees reconcile errors
@@ -603,4 +615,11 @@ func (w *Watcher) clearAwaiting(repo, path string) {
 		return
 	}
 	delete(w.awaiting, repo+"/"+path)
+}
+
+// inFlight reports whether targetRef has a rollout in flight. A store error
+// reads as "yes", so the reconcile runs and reports it rather than holding.
+func (w *Watcher) inFlight(ctx context.Context, targetRef string) bool {
+	_, ok, err := w.rec.eng.InFlight(ctx, targetRef)
+	return ok || err != nil
 }

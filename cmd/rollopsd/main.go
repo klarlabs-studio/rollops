@@ -141,7 +141,7 @@ func run(args []string) error {
 	met := metrics.New()
 	top := http.NewServeMux()
 	top.Handle("/metrics", met.Handler())
-	top.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	top.HandleFunc("/readyz", readyzHandler(db.Ready))
 	// /livez fails when the cgroup is nearly out of process slots — the gap
 	// the v0.34.3 zombie leak exposed: readiness stayed green while every
 	// reconcile failed with "cannot fork". See internal/procgroup.
@@ -251,6 +251,7 @@ func run(args []string) error {
 				},
 			}))
 		}
+		watcherOpts = append(watcherOpts, reconcile.WithMetrics(met))
 		w, err := reconcile.NewWatcher(ctx, rec, workdir, specs, watcherOpts...)
 		if err != nil {
 			return err

@@ -192,7 +192,8 @@ func (t *Target) ReapTarget(ctx context.Context) (int, error) {
 func (t *Target) Health(ctx context.Context) (pt.HealthStatus, error) {
 	ok, reason, err := t.cl.Healthy(ctx)
 	if err != nil {
-		return pt.HealthStatus{State: pt.HealthUnhealthy, Reason: err.Error()}, nil
+		// No verdict: the gates retry an error, and fail only if it persists.
+		return pt.HealthStatus{}, err
 	}
 	if !ok {
 		return pt.HealthStatus{State: pt.HealthUnhealthy, Reason: reason}, nil

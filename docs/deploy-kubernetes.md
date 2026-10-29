@@ -19,11 +19,33 @@ docker push my-registry/rollopsd:v0.15.0
 
 ## Manifests
 
-`deploy/kubernetes/rollopsd.yaml` contains the namespace, ServiceAccount,
-ClusterRole/Binding, watch ConfigMap, PVC, Deployment, and Service. RBAC grants
-apply/observe on workloads, patch on Gateway API `HTTPRoute`s, and read on CRDs
-(for `status.conditions` health). It is cluster-scoped for simplicity; narrow it
-to per-namespace Roles in stricter setups.
+The install is two files, split along the line of what the daemon may apply to
+itself:
+
+- **`deploy/kubernetes/rollopsd-infra.yaml`** — bootstrap: namespace, TLS
+  material (cert-manager ClusterIssuer/Issuer/Certificates), ServiceAccount,
+  ClusterRole/Binding, PVC, and Service. Applied by a human, once. RBAC grants
+  apply/observe on workloads, patch on Gateway API `HTTPRoute`s, and read on
+  CRDs (for `status.conditions` health). It is cluster-scoped for simplicity;
+  narrow it to per-namespace Roles in stricter setups.
+- **`deploy/kubernetes/rollopsd-deployment.yaml`** — the Deployment alone, and
+  the only object rollops manages for itself (see *Self-management* below).
+
+The split is not cosmetic. The daemon's ServiceAccount cannot get cert-manager
+`ClusterIssuers`, and it must not be able to rewrite the ClusterRole that grants
+it everything else — a workload that can widen its own permissions has none.
+While the self-managed manifest was the full install file, every reconcile was
+refused at the server-side dry run and **nothing was applied**:
+
+```
+clusterissuers.cert-manager.io "rollopsd-selfsigned" is forbidden: User
+"system:serviceaccount:rollops-system:rollopsd" cannot get resource
+"clusterissuers" in API group "cert-manager.io" at the cluster scope
+```
+
+The watch ConfigMap is in neither file: re-applying a manifest must never
+clobber a running fleet's watch list. Create it once from
+`rollopsd-watch.example.yaml`.
 
 ## Secrets (out of band — never committed)
 
@@ -66,10 +88,49 @@ written to disk or the remote URL). `deployKeyPath` is the SSH alternative for
 sets the poll cadence. A "Sync now" button in the UI triggers an immediate
 reconcile.
 
+## rollops deploys rollops
+
+The daemon executes the rollouts; the CLI only asks it to. A client newer than
+the daemon therefore describes behaviour that is not in force — which is how a
+cluster ran `rollopsd:v0.34.3` while this repository pinned `v0.34.8`, four
+releases of rollout fixes that never deployed. Nothing applied the pin.
+
+`rollops.yaml` at the repository root is rollops' own rollout config: it targets
+`rollops-system/deployment/rollopsd`, renders
+`deploy/kubernetes/rollopsd-deployment.yaml`, and carries an `imagePolicy` that follows the released image. It sits at the
+root because a referenced manifest resolves against the **repo checkout root**
+for the daemon and against the **config file's own directory** for the CLI,
+and `..` is refused — only a root config reads the same way to both. Watch this
+repository with `path: rollops.yaml` and the daemon keeps itself current: a release
+publishes `ghcr.io/klarlabs-studio/rollopsd:vX.Y.Z`, the daemon notices the new
+tag, opens a PR bumping the tracked image (main is protected, so writeback is
+`pull-request`), and the merge deploys it on the next reconcile.
+
+Two things follow from that:
+
+- **The manifest must be the whole desired state of what it manages.**
+  Self-management applies `deploy/kubernetes/rollopsd-deployment.yaml`, so
+  anything set by hand on the live Deployment and missing from that file is
+  withdrawn on the next apply. Bootstrap objects are outside that loop, so a
+  hand-granted RBAC rule survives — but it also drifts silently from the
+  repository, which is why the Prometheus-operator rules were written back into
+  `rollopsd-infra.yaml` rather than left on the cluster.
+- **A hand-apply strips the target label.** rollops stamps
+  `rollops.klarlabs.de/target` onto what it applies, so the live Deployment
+  carries a label the manifest does not, and `kubectl apply -f` removes it. The
+  next reconcile puts it back; if you are applying by hand *instead of*
+  reconciling, re-add it.
+- **Check the skew when something looks wrong.** `rollops doctor` reports the
+  daemon's version beside the client's and **fails** when they differ; every
+  daemon-mode command prints a one-line warning after it runs. A daemon older
+  than the version handshake reports no version, and doctor says so rather than
+  claiming a match.
+
 ## Apply
 
 ```sh
-kubectl apply -f deploy/kubernetes/rollopsd.yaml
+kubectl apply -f deploy/kubernetes/rollopsd-infra.yaml \
+              -f deploy/kubernetes/rollopsd-deployment.yaml
 kubectl -n rollops-system rollout status deploy/rollopsd
 kubectl -n rollops-system port-forward svc/rollopsd 8080:80   # open http://localhost:8080
 ```

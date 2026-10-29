@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"go.klarlabs.de/rollops/internal/rollout"
 	"go.klarlabs.de/rollops/internal/store/sqlite"
 	itarget "go.klarlabs.de/rollops/internal/target"
+	"go.klarlabs.de/rollops/internal/version"
 	pt "go.klarlabs.de/rollops/pkg/target"
 )
 
@@ -39,6 +41,14 @@ spec:
 type fakeTarget struct {
 	applied   int
 	manifests []pt.Manifest
+	// health is what Health reports; the zero value reads as healthy so tests
+	// that never set it keep their behaviour.
+	mu     sync.Mutex
+	health pt.HealthStatus
+	// failAfter > 0 makes every Health call after the first failAfter report
+	// unhealthy — a deterministic "breaks mid-canary".
+	failAfter   int
+	healthCalls int
 }
 
 func (f *fakeTarget) Apply(_ context.Context, m pt.Manifest) (pt.Result, error) {
@@ -50,7 +60,16 @@ func (f *fakeTarget) Observe(context.Context) (pt.Fingerprint, error) {
 	return pt.Fingerprint{}, nil
 }
 func (f *fakeTarget) Health(context.Context) (pt.HealthStatus, error) {
-	return pt.HealthStatus{State: pt.HealthHealthy}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.healthCalls++
+	if f.failAfter > 0 && f.healthCalls > f.failAfter {
+		return pt.HealthStatus{State: pt.HealthUnhealthy, Reason: "CrashLoopBackOff"}, nil
+	}
+	if f.health.State == pt.HealthUnknown {
+		return pt.HealthStatus{State: pt.HealthHealthy}, nil
+	}
+	return f.health, nil
 }
 
 func newApp(t *testing.T) (*App, *bytes.Buffer, string) {
@@ -60,6 +79,18 @@ func newApp(t *testing.T) (*App, *bytes.Buffer, string) {
 
 func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App, *bytes.Buffer, string) {
 	t.Helper()
+	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	tick := 0
+	return newAppWithClock(t, fake, idgen, func() time.Time {
+		tick++
+		return clock.Add(time.Duration(tick) * time.Second)
+	})
+}
+
+// newAppWithClock is newAppWithTarget with the engine clock under the test's
+// control.
+func newAppWithClock(t *testing.T, fake *fakeTarget, idgen func() string, now func() time.Time) (*App, *bytes.Buffer, string) {
+	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "c.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,12 +98,7 @@ func newAppWithTarget(t *testing.T, fake *fakeTarget, idgen func() string) (*App
 	t.Cleanup(func() { _ = db.Close() })
 	reg := itarget.NewRegistry()
 	reg.Register("fake", func(config.Target) (pt.Target, error) { return fake, nil })
-	clock := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	tick := 0
-	eng := engine.New(db, reg, engine.WithClock(func() time.Time {
-		tick++
-		return clock.Add(time.Duration(tick) * time.Second)
-	}), engine.WithIDGen(idgen))
+	eng := engine.New(db, reg, engine.WithClock(now), engine.WithIDGen(idgen))
 
 	var buf bytes.Buffer
 	actor := rollout.Identity{Kind: "human", Name: "felix"}
@@ -498,9 +524,9 @@ func TestCLI_DoctorDaemon(t *testing.T) {
 	app.Doctor = Doctor{
 		DaemonAddr: "127.0.0.1:8090",
 		Token:      "devtoken",
-		Probe: func(_ context.Context, addr, token string) error {
+		Probe: func(_ context.Context, addr, token string) (string, error) {
 			gotAddr, gotToken = addr, token
-			return nil
+			return version.Version, nil
 		},
 	}
 	if err := app.Run(context.Background(), []string{"doctor", cfg}); err != nil {
@@ -555,5 +581,37 @@ func TestCLI_PlanRolloutSetAndRefuseApply(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "2 rollout(s)") {
 		t.Fatalf("doctor = %q", buf.String())
+	}
+}
+
+// The daemon runs the rollouts, so a daemon on another version means this
+// client's behaviour is not what is deploying. doctor fails on that, and says
+// plainly when the daemon is too old to report a version at all.
+func TestCLI_DoctorReportsDaemonVersionSkew(t *testing.T) {
+	for name, tc := range map[string]struct {
+		daemon string
+		want   string
+	}{
+		"same version": {version.Version, "daemon: ok"},
+		"skew":         {"v0.34.3", "daemon: fail"},
+		"no version":   {"", "version not reported"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, buf, cfg := newApp(t)
+			app.Doctor = Doctor{
+				DaemonAddr: "127.0.0.1:8090",
+				Probe:      func(_ context.Context, _, _ string) (string, error) { return tc.daemon, nil },
+			}
+			err := app.Run(context.Background(), []string{"doctor", cfg})
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Fatalf("doctor output = %q, want %q", buf.String(), tc.want)
+			}
+			if wantErr := strings.Contains(tc.want, "fail"); wantErr != (err != nil) {
+				t.Errorf("doctor err = %v, want failure=%v", err, wantErr)
+			}
+			if tc.daemon == version.Version && !strings.Contains(buf.String(), version.Version) {
+				t.Errorf("a matching daemon should still report its version: %q", buf.String())
+			}
+		})
 	}
 }
