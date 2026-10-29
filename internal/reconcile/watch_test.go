@@ -714,3 +714,54 @@ func TestWatcher_ReportsVanishedConfig(t *testing.T) {
 		}
 	}
 }
+
+// The clone directory is a cache of the remote, not state. A directory left by
+// an interrupted clone must not wedge the repo: it used to fail every attempt
+// with "destination path already exists and is not an empty directory", and
+// because the node's /tmp outlives the container, a restart did not clear it.
+func TestNewWatcher_ReclonesOverStaleDirectory(t *testing.T) {
+	upstream := makeRepo(t, repoConfigV1)
+	w := newWatcher(t, &fakeTarget{fp: pt.Fingerprint{Value: "stale"}})
+
+	base := t.TempDir()
+	stale := filepath.Join(base, "demo")
+	if err := os.MkdirAll(filepath.Join(stale, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, "leftover"), []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := RepoSpec{Name: "demo", URL: "file://" + upstream, Ref: config.RepoRef{Branch: "main", Path: "rollops.yaml"}}
+	got, err := NewWatcher(context.Background(), w.rec, base, []RepoSpec{spec})
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	if len(got.repos) != 1 {
+		t.Fatalf("repo skipped after a stale directory: %d watched", len(got.repos))
+	}
+	if _, err := os.Stat(filepath.Join(stale, "leftover")); !os.IsNotExist(err) {
+		t.Fatalf("stale content survived the re-clone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stale, "rollops.yaml")); err != nil {
+		t.Fatalf("fresh checkout missing: %v", err)
+	}
+}
+
+// A clone that fails leaves nothing behind that could block the next attempt.
+func TestNewWatcher_FailedCloneLeavesNoDirectory(t *testing.T) {
+	w := newWatcher(t, &fakeTarget{fp: pt.Fingerprint{Value: "stale"}})
+	base := t.TempDir()
+
+	spec := RepoSpec{Name: "gone", URL: "file://" + filepath.Join(base, "does-not-exist"), Ref: config.RepoRef{Branch: "main", Path: "rollops.yaml"}}
+	got, err := NewWatcher(context.Background(), w.rec, base, []RepoSpec{spec})
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	if len(got.repos) != 0 {
+		t.Fatalf("an unreachable repo should be skipped, got %d", len(got.repos))
+	}
+	if _, err := os.Stat(filepath.Join(base, "gone")); !os.IsNotExist(err) {
+		t.Fatalf("failed clone left a directory behind: %v", err)
+	}
+}
