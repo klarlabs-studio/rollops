@@ -756,6 +756,24 @@
       "reason": "Informational rules with nothing to act on. IAC-464 reports only that a Namespace object is defined, which is the manifest doing its job — the install has to create rollops-system before anything can be placed in it. IAC-370 asks that the fsGroup be a deliberate GID: it is 10001, matching runAsUser 10001 in the same securityContext and the adduser -u 10001 in the Dockerfile that owns /var/lib/rollops, which is what makes the SQLite PVC writable by a non-root process. Verified against both files rather than assumed. IAC-379 asks that a CronJob schedule's timezone be intentional, on a schedule inside a documentation example. Re-verify if the uid/gid pair is ever changed in one file and not the other — the daemon would then fail to write its database on a fresh volume.",
       "owner": "felixgeelhaar",
       "created_at": "2026-08-12T00:00:00Z"
+    },
+    {
+      "fingerprint": "3cb3aac0852cc605ec6e3e806f3329d771e1471eb2f5e07201ccc19980c38972",
+      "rule_id": "SEC-679",
+      "file_path": "deploy/kubernetes/cluster-events.yaml",
+      "severity": "high",
+      "reason": "Not a credential: line 92 is the container image reference for the event collector, pinned by its content digest, the same pinned image the node log collector runs. The rule matches the vendor name followed by a long hex string, which is what any digest-pinned image from that registry namespace looks like. Removing the pin to silence it would trade a supply-chain control for a false positive, so it is waived instead. Two fingerprints are reported for the one line and both are waived. Fingerprints taken from the CI nox-results artifact of #219, not a local scan. Re-verify if that line ever holds anything other than an image reference.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-10-25T00:00:00Z"
+    },
+    {
+      "fingerprint": "5e9396091ad9e1d5d46f65b952fb7059f9249932e837ace6dc75ad6efbca1a26",
+      "rule_id": "SEC-679",
+      "file_path": "deploy/kubernetes/cluster-events.yaml",
+      "severity": "high",
+      "reason": "Not a credential: line 92 is the container image reference for the event collector, pinned by its content digest, the same pinned image the node log collector runs. The rule matches the vendor name followed by a long hex string, which is what any digest-pinned image from that registry namespace looks like. Removing the pin to silence it would trade a supply-chain control for a false positive, so it is waived instead. Two fingerprints are reported for the one line and both are waived. Fingerprints taken from the CI nox-results artifact of #219, not a local scan. Re-verify if that line ever holds anything other than an image reference.",
+      "owner": "felixgeelhaar",
+      "created_at": "2026-10-25T00:00:00Z"
     }
   ]
 }

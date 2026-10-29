@@ -75,3 +75,49 @@ func TestCLI_ApplyWaitFailsWhenTheRolloutRollsBack(t *testing.T) {
 		t.Fatalf("a rolled-back rollout must fail --wait, got %v\n%s", err, buf)
 	}
 }
+
+// A canary started without --wait stops at "deploying" with nothing to
+// advance it when no daemon watches the repo, and every later apply was
+// refused as busy. apply --wait finishes that rollout instead of refusing,
+// and applies nothing new while doing it.
+func TestCLI_ApplyWaitFinishesARolloutAlreadyInFlight(t *testing.T) {
+	old := waitPoll
+	waitPoll = time.Millisecond
+	t.Cleanup(func() { waitPoll = old })
+
+	fake := &fakeTarget{health: pt.HealthStatus{State: pt.HealthHealthy}}
+	n := 0
+	// Frozen while the first apply runs, so it stops in the first step's bake;
+	// moving afterwards, as a later command would see it.
+	start := time.Date(2026, 10, 2, 8, 0, 0, 0, time.UTC)
+	moving, tick := false, 0
+	now := func() time.Time {
+		if !moving {
+			return start
+		}
+		tick++
+		return start.Add(time.Duration(tick) * time.Second)
+	}
+	app, buf, _ := newAppWithClock(t, fake, func() string { n++; return "ro-" + string(rune('a'+n-1)) }, now)
+	cfg := filepath.Join(t.TempDir(), "canary.yaml")
+	if err := os.WriteFile(cfg, []byte(waitCanaryYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"apply", cfg}); err != nil {
+		t.Fatalf("apply: %v\n%s", err, buf)
+	}
+	if !strings.Contains(buf.String(), "rollout ro-a: deploying") {
+		t.Fatalf("test premise: the first apply leaves the canary deploying:\n%s", buf)
+	}
+	moving = true
+	if err := app.Run(context.Background(), []string{"apply", cfg, "--wait", "--wait-timeout", "1m"}); err != nil {
+		t.Fatalf("apply --wait on a target with a rollout in flight: %v\n%s", err, buf)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "rollout ro-a already in flight") || !strings.Contains(out, "rollout ro-a: promoted") {
+		t.Errorf("apply --wait did not finish the rollout in flight:\n%s", out)
+	}
+	if strings.Contains(out, "rollout ro-b") {
+		t.Errorf("apply --wait started a second rollout:\n%s", out)
+	}
+}

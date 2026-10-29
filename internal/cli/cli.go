@@ -6,6 +6,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,7 +54,8 @@ type EngineOps struct {
 // Drive advances one rollout one step, the way rollopsd does each tick: an
 // in-flight canary is ticked, and a rollout that reached verifying runs the
 // post-deploy gate (promote, or roll back). It never applies anything new —
-// --wait finishes the rollout it started, and a drift-triggered re-apply here
+// --wait finishes the rollout it started (or the one already in flight for
+// its target), and a drift-triggered re-apply here
 // would start another.
 func (o EngineOps) Drive(ctx context.Context, c *config.Config, id string) (rollout.Rollout, error) {
 	r, err := o.Status(ctx, id)
@@ -314,6 +316,20 @@ func (a *App) apply(ctx context.Context, args []string) error {
 	}
 	r, err := a.Ops.Apply(ctx, engine.ApplyRequest{Config: c, Root: root, Initiator: a.Actor, Planned: true, Risk: engine.RiskFromConfig(c)})
 	if err != nil {
+		// A canary started without --wait (or by a build that did not have
+		// it) stops at "deploying" with nothing to advance it when no daemon
+		// watches the repo, and every later apply is refused as busy. With
+		// --wait, finish that rollout instead: the same steps, nothing new
+		// applied.
+		if wait && errors.Is(err, engine.ErrTargetBusy) {
+			if f, ok := a.Ops.(inFlightFinder); ok {
+				if inf, found, ferr := f.InFlight(ctx, c.Spec.Target.Ref); ferr == nil && found {
+					_, _ = fmt.Fprintf(a.Out, "rollout %s already in flight (%s, %s): waiting for it; nothing new is applied\n",
+						inf.ID, inf.Phase, inf.TargetRef)
+					return a.waitForRollout(ctx, c, inf, waitTimeout)
+				}
+			}
+		}
 		return err
 	}
 	_, _ = fmt.Fprintf(a.Out, "rollout %s: %s (%s)\n", r.ID, r.Phase, r.TargetRef)
@@ -321,6 +337,12 @@ func (a *App) apply(ctx context.Context, args []string) error {
 		return nil
 	}
 	return a.waitForRollout(ctx, c, *r, waitTimeout)
+}
+
+// inFlightFinder finds the rollout in flight for a target, so apply --wait
+// can finish one it did not start.
+type inFlightFinder interface {
+	InFlight(ctx context.Context, targetRef string) (rollout.Rollout, bool, error)
 }
 
 // waitPoll is how often --wait advances or re-reads a rollout.

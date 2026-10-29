@@ -1,0 +1,146 @@
+# Kubernetes events, kept in Loki.
+#
+# The API server keeps events for one hour (k3s default --event-ttl). The
+# 2026-09-19 investigation needed the pod kills, probe failures and volume
+# events from the night before, and they were gone (postmortem action item
+# 12). This ships every event to Loki, which keeps them for 14 days.
+#
+# It is a single replica on purpose. The node log collector is a DaemonSet,
+# and an events source there would ship every event once per node.
+#
+# Applied by hand, like the rest of the observability stack:
+#   kubectl apply -f deploy/kubernetes/cluster-events.yaml
+# Query: {job="kubernetes-events"} in Grafana, or by namespace with
+#   {job="kubernetes-events", namespace="rollops-system"}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy-events
+  namespace: observability
+  labels: { app.kubernetes.io/name: alloy-events }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-events
+  labels: { app.kubernetes.io/name: alloy-events }
+rules:
+  - apiGroups: [""]
+    resources: [events, namespaces]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-events
+  labels: { app.kubernetes.io/name: alloy-events }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-events
+subjects:
+  - kind: ServiceAccount
+    name: alloy-events
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-events
+  namespace: observability
+  labels: { app.kubernetes.io/name: alloy-events }
+data:
+  config.alloy: |
+    loki.source.kubernetes_events "cluster" {
+      job_name   = "kubernetes-events"
+      log_format = "logfmt"
+      forward_to = [loki.write.loki.receiver]
+    }
+
+    loki.write "loki" {
+      endpoint {
+        url = "http://loki-gateway.observability.svc/loki/api/v1/push"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alloy-events
+  namespace: observability
+  labels: { app.kubernetes.io/name: alloy-events }
+spec:
+  replicas: 1
+  # One watcher at a time; two would ship each event twice during a rollout.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: alloy-events }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: alloy-events }
+    spec:
+      serviceAccountName: alloy-events
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 473
+        runAsGroup: 473
+        fsGroup: 473
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: alloy
+          # Same pinned image as the node log collector (the alloy DaemonSet).
+          image: docker.io/grafana/alloy@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            # Remembers the last event shipped, so a container restart does
+            # not resend the API server's whole hour of events. A new pod
+            # starts empty and resends at most that hour, once.
+            - --storage.path=/var/lib/alloy
+            - --server.http.listen-addr=0.0.0.0:12345
+            - --disable-reporting
+          ports:
+            - { name: http-metrics, containerPort: 12345 }
+          readinessProbe:
+            httpGet: { path: /-/ready, port: http-metrics }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: http-metrics }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+          volumeMounts:
+            - { name: config, mountPath: /etc/alloy, readOnly: true }
+            - { name: state, mountPath: /var/lib/alloy }
+      volumes:
+        - name: config
+          configMap: { name: alloy-events }
+        - name: state
+          # Holds only the last-shipped event position.
+          emptyDir: { sizeLimit: 16Mi }
+---
+# Nothing needs to reach the collector except Prometheus scraping its
+# metrics, which runs in this namespace; same shape as isolate-prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-alloy-events
+  namespace: observability
+  labels: { app.kubernetes.io/name: alloy-events }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: alloy-events }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - { port: 12345, protocol: TCP }
