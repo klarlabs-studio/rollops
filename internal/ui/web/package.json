@@ -7,21 +7,23 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vue/server-renderer": "^3.5.44",
     "d3-hierarchy": "^3.1.2",
     "d3-selection": "^3.0.0",
     "d3-shape": "^3.2.0",
     "d3-zoom": "^3.0.0",
-    "vue": "^3.5.13",
+    "source-map-js": "^1.2.2",
+    "vue": "^3.5.44",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/d3-hierarchy": "^3.1.7",
-    "@types/d3-selection": "^3.0.11",
-    "@types/d3-shape": "^3.1.8",
-    "@types/d3-zoom": "^3.0.8",
-    "@vue/compiler-dom": "^3.5.35",
-    "esbuild": "^0.28.1",
-    "typescript": "^5.7.2"
+    "@types/d3-selection": "^3.0.12",
+    "@types/d3-shape": "^3.2.0",
+    "@types/d3-zoom": "^3.0.9",
+    "@vue/compiler-dom": "^3.5.44",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "postcss": "^8.5.18"
