@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.34.12 - Readiness, alerts, and failures that say why
+
+- **`/readyz` checks the store.** It answered 200 unconditionally, so a pod with
+  a corrupt database stayed in service while every apply failed for every repo
+  (#196, the 2026-09-19 incident). It now runs `PRAGMA quick_check` and a read of
+  the rollouts table, and answers 503 with the reason.
+- **An unreachable API server is no longer "resource absent".** The Kubernetes
+  target turned every `kubectl get` error into an empty live checksum. On
+  2026-10-24 the API server refused connections for a moment, every vorhut target
+  looked undeployed, and rollops re-applied 14 unchanged manifests, failed, and
+  recorded 14 rollbacks. Only a NotFound now counts as absent; any other error
+  fails the plan and the next tick retries.
+- **A failed rollout records why.** A deploy step that failed without an
+  automatic rollback, and a failed scheduled apply, stored the rollout as
+  rolled-back with an empty note. The reason reached only the container log,
+  which rotates within hours.
+- **Metrics are recorded.** `rollops_reconcile_total`, `rollops_drift_detected_total`
+  and `rollops_rollout_outcomes_total` were registered but never incremented, so
+  a scrape returned zeros. Each watcher tick now records its results, and the new
+  `rollops_rollout_inflight_oldest_seconds` reports the oldest target held in
+  deploying or verifying.
+- **Scraping and alerts.** `deploy/kubernetes/rollopsd-monitoring.yaml` adds a
+  ServiceMonitor and five alerts: reconcile errors, a rollout stuck mid-deploy,
+  pod not ready, scrape down, and a stalled reconcile loop. Apply it after this
+  version is running.
+- **Kubernetes events in Loki.** `deploy/kubernetes/cluster-events.yaml` runs a
+  one-replica Alloy that ships every event to Loki for 14 days. The API server
+  keeps them for an hour, and the 09-19 investigation found them gone.
+- **The database volume is replicated and kept.** `rollopsd-data` moved from a
+  single-replica volume deleted with its claim to `longhorn-retain` (three
+  replicas, Retain), and `rollopsd-infra.yaml` now names that class. Its old
+  storageClassName hint sat under `metadata`, where it did nothing.
+- **Dependencies.** `golang.org/x/net` v0.60.0 and toolchain go1.26.10 (#216).
+
+An audit for the same bug class, an error read as a state, found twelve more:
+
+- **`kubectl diff` errors are errors.** A failed diff printed nothing and read as
+  "in sync", so an unknown live state passed as a verified rollback baseline.
+- **FTP and SSH read errors are not "never deployed".** Only FTP reply 550 and a
+  missing file over SSH count as absent.
+- **Health checks that cannot reach the API server have no verdict.** They used
+  to report unhealthy, which failed the gate and auto-rolled-back a healthy
+  deploy. Both health gates now retry an error three times, 10 s apart.
+- **The freeze is read from the store on every apply.** A freeze set by the CLI,
+  or through another replica, never reached the leader. An unreadable freeze
+  now blocks.
+- **A store error blocks rollback** instead of skipping the baseline check or
+  re-applying the failed manifest as its own "prior".
+- **Undecodable rollout rows are refused by every reader.** The list kept them
+  with empty fields while a load rejected them, wedging the target as busy.
+- **An unusable stepper snapshot is recovered like a missing one** instead of
+  failing every tick. Recovery now waits for the target lease, so it can no
+  longer take over an Apply that is still running.
+- **A rollout left in verifying is verified again** when live matches Git.
+  Nothing re-ran its gate, so it was never promoted and its `dependsOn`
+  dependents waited forever.
+- **A plan error no longer stops an in-flight rollout from being stepped**, and
+  neither does a permanent-failure hold. That hold now expires after 30 minutes,
+  so one 401 during a credential rotation no longer stops a target until restart.
+- **An analysis that ends on a measurement error fails.** Errors within the
+  failure limit at the end of a run passed it with Prometheus unreachable.
+
 ## v0.34.11 - An interrupted rollout resolves itself
 
 - **A rollout interrupted mid-flight no longer wedges its target.** The rolling

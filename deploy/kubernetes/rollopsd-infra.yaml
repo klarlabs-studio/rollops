@@ -232,14 +232,20 @@ subjects:
 # ENVIRONMENT-SPECIFIC: set the storageClass, and if your cluster already holds
 # the data volume under a different name, adjust BOTH this claim's name and the
 # Deployment's `data` volume `claimName` to match — that claim must be the PVC
-# that actually holds `/var/lib/rollops/rollops.db`. A default 1Gi RWO claim:
+# that actually holds `/var/lib/rollops/rollops.db`. A 1Gi RWO claim.
+#
+# The class must replicate the volume and keep it when the claim is deleted:
+# the 2026-09-19 store corruption hit a single-replica, Delete-reclaim volume
+# (postmortem item 9). On the reference cluster that is `longhorn-retain`
+# (three replicas, Retain). A claim's spec is immutable once bound, so this
+# must match the live claim or re-applying this file fails on it.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: rollopsd-data
   namespace: rollops-system
-  # storageClassName: longhorn   # set your cluster's storage class
 spec:
+  storageClassName: longhorn-retain
   accessModes: [ReadWriteOnce]
   resources:
     requests:
@@ -250,6 +256,8 @@ kind: Service
 metadata:
   name: rollopsd
   namespace: rollops-system
+  # Selected by the ServiceMonitor in rollopsd-monitoring.yaml.
+  labels: { app: rollopsd }
 spec:
   selector: { app: rollopsd }
   ports:

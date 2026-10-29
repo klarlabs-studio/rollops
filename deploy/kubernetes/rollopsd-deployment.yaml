@@ -40,7 +40,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: rollopsd
-          image: ghcr.io/klarlabs-studio/rollopsd:v0.34.11
+          image: ghcr.io/klarlabs-studio/rollopsd:v0.34.12
           # Container hardening. The pod already runs as uid 10001; these remove the
           # privileges that a non-root process can still acquire or retain.
           #
@@ -98,6 +98,12 @@ spec:
             # Registry-poll image automation. Optional secrets so the daemon
             # still starts without them (automation/private repos just disabled).
             - { name: ROLLOPS_IMAGE_AUTOMATION, value: "1" }
+            # Evaluate spec.analysis (Prometheus) gates after a deploy. Without it a
+            # config's analysis block is captured and ignored. It changes nothing
+            # for configs that declare no `analysis:`. Prometheus must admit this
+            # pod on :9090 (cluster-observability isolate-prometheus), or a gate
+            # fails closed.
+            - { name: ROLLOPS_ANALYSIS, value: "1" }
             - name: ROLLOPS_REGISTRY_USER
               valueFrom: { secretKeyRef: { name: rollopsd-registry, key: user, optional: true } }
             - name: ROLLOPS_REGISTRY_TOKEN

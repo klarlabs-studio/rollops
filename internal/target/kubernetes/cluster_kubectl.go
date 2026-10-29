@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -197,16 +198,58 @@ func (k *kubectlCluster) LiveChecksum(ctx context.Context) (string, error) {
 	jsonpath := fmt.Sprintf(`jsonpath={.metadata.annotations.%s}`, strings.ReplaceAll(ChecksumAnnotation, ".", `\.`))
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", jsonpath)
 	if err != nil {
-		// Absent resource is not an error for drift purposes — report empty.
-		return "", nil
+		// An absent resource is not an error for drift purposes — report empty.
+		// Anything else is: on 2026-10-24 an unreachable API server read as
+		// "absent", so every target looked undeployed and rollops re-applied
+		// unchanged manifests, failed, and recorded the failures as rollbacks.
+		if isNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("kubernetes: read live checksum: %w", err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// unreachableMarkers are what kubectl prints when it could not get an answer
+// from the API server at all, as opposed to an answer that the resource is
+// unhealthy.
+var unreachableMarkers = []string{
+	"Unable to connect to the server",
+	"The connection to the server",
+	"connection refused",
+	"i/o timeout",
+	"TLS handshake timeout",
+	"(ServiceUnavailable)",
+	"(InternalError)",
+	"the server is currently unable to handle the request",
+}
+
+// isUnreachable reports whether a kubectl error means the API server did not
+// answer. A health check that cannot reach it has no verdict; reporting
+// "unhealthy" failed the gate and auto-rolled-back healthy deploys.
+func isUnreachable(err error) bool {
+	msg := err.Error()
+	for _, m := range unreachableMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNotFound reports whether a kubectl error is the API server saying the
+// resource does not exist, as opposed to failing to answer at all.
+func isNotFound(err error) bool {
+	return strings.Contains(err.Error(), "(NotFound)")
 }
 
 func (k *kubectlCluster) LiveYAML(ctx context.Context) ([]byte, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "yaml")
 	if err != nil {
-		return nil, nil // absent → empty; Diff falls through
+		if isNotFound(err) {
+			return nil, nil // absent → empty; Diff falls through
+		}
+		return nil, fmt.Errorf("kubernetes: read live object: %w", err)
 	}
 	return []byte(out), nil
 }
@@ -234,6 +277,9 @@ func (k *kubectlCluster) Healthy(ctx context.Context) (bool, string, error) {
 	if k.healthCond == "" && rolloutKinds[resourceKind(k.resource)] {
 		out, err := k.run(ctx, nil, "rollout", "status", k.resource, "--timeout="+k.rolloutWait(ctx))
 		if err != nil {
+			if isUnreachable(err) {
+				return false, "", fmt.Errorf("kubernetes: health: %w", err)
+			}
 			return false, strings.TrimSpace(out), nil
 		}
 		return true, "", nil
@@ -281,6 +327,9 @@ type statusCondition struct {
 func (k *kubectlCluster) conditionHealthy(ctx context.Context) (bool, string, error) {
 	out, err := k.run(ctx, nil, "get", k.resource, "-o", "jsonpath={.status.conditions}")
 	if err != nil {
+		if isUnreachable(err) {
+			return false, "", fmt.Errorf("kubernetes: health: %w", err)
+		}
 		return false, strings.TrimSpace(out), nil
 	}
 	return evalConditions(out, k.healthCond)
@@ -346,7 +395,15 @@ func (k *kubectlCluster) Diff(ctx context.Context, manifest []byte) (string, err
 	if labeled, err := labelManifest(manifest, k.pruneVal); err == nil {
 		manifest = labeled
 	}
-	out, _ := k.run(ctx, manifest, "diff", "-f", "-")
+	out, err := k.run(ctx, manifest, "diff", "-f", "-")
+	// kubectl diff exits 1 when there are differences and >1 on an error. A
+	// failed diff prints nothing to stdout, so ignoring the exit status read
+	// every failure as "in sync" — trusted as a verified rollback baseline and
+	// as "already at desired" by Apply.
+	var exit *exec.ExitError
+	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+		return "", fmt.Errorf("kubernetes: diff: %w", err)
+	}
 	// Empty diff = in sync; return "" so the caller/UI owns the "no changes"
 	// copy rather than treating a human message as diff content.
 	if strings.TrimSpace(out) == "" {

@@ -213,6 +213,13 @@ func (a *Analyzer) Run(ctx context.Context) Result {
 		}
 		consecutiveFail = 0
 	}
+	// Errors are missing evidence, not tolerated failures, once nothing came
+	// after them: a run that ends unable to measure (Prometheus down), or
+	// never measured at all, says nothing about the canary.
+	if last := res.Measurements[len(res.Measurements)-1]; last.Err != nil {
+		res.Reason = "the last measurement could not be taken: " + last.Err.Error()
+		return res
+	}
 	res.Passed = true
 	return res
 }
