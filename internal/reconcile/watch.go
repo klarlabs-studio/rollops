@@ -38,7 +38,7 @@ type RepoSpec struct {
 type Watcher struct {
 	rec       *Reconciler
 	baseDir   string
-	repos     []watched
+	repos     []*watched
 	locks     *repoLocks
 	leases    store.LeaseStore
 	owner     string
@@ -97,6 +97,10 @@ type Watcher struct {
 // notices an article missing.
 const stuckAfterCycles = 10
 
+// watched is one repo of the watch list. src is nil until its clone succeeds:
+// a repo that could not be cloned stays on the list and is cloned again on
+// every tick, so access granted later (a GitHub App installation, a deploy
+// key) takes effect without a restart.
 type watched struct {
 	spec RepoSpec
 	src  *git.Source
@@ -135,7 +139,8 @@ func WithImageAutomation(ia *ImageAuto) WatcherOption {
 	return func(w *Watcher) { w.imageAuto = ia }
 }
 
-// NewWatcher clones each repo into baseDir and returns a ready watcher.
+// NewWatcher clones each repo into baseDir and returns a ready watcher. A repo
+// whose clone fails is kept and retried on every tick.
 func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []RepoSpec, opts ...WatcherOption) (*Watcher, error) {
 	// preflight defaults ON — see the field comment.
 	w := &Watcher{rec: rec, baseDir: baseDir, locks: newRepoLocks(), owner: "watcher", leaseTTL: 2 * time.Minute, now: time.Now, preflight: true,
@@ -145,36 +150,41 @@ func NewWatcher(ctx context.Context, rec *Reconciler, baseDir string, specs []Re
 	}
 	for _, s := range specs {
 		s.Ref = s.Ref.WithDefaults()
-		dir := filepath.Join(baseDir, s.Name)
-		// The directory is a cache of the remote, owned by this watcher. Whatever
-		// an interrupted run left in it would make git refuse to clone, and as
-		// baseDir usually outlives the container, no restart would clear it.
-		if err := os.RemoveAll(dir); err != nil {
-			if w.logf != nil {
-				w.logf("watch: skip repo %q (clear stale clone directory): %v", s.Name, err)
-			}
-			continue
+		r := &watched{spec: s}
+		w.repos = append(w.repos, r)
+		// One unreachable repo must not take the whole daemon down: the other
+		// repos still reconcile, and this one is cloned again on every tick
+		// (tickOne), where a lasting failure is logged once and then held quiet.
+		if err := w.clone(ctx, r); err != nil && w.logf != nil {
+			w.logf("watch: repo %q not cloned, retrying every tick: %v", s.Name, err)
 		}
-		src, err := git.Clone(ctx, s.URL, s.Ref.Branch, dir, s.Auth)
-		if err != nil {
-			_ = os.RemoveAll(dir) // a partial checkout must not block the next attempt
-			// One unreachable repo must not take the whole daemon down: log and
-			// skip it; the other repos still reconcile. It is retried at restart.
-			if w.logf != nil {
-				w.logf("watch: skip repo %q (clone failed): %v", s.Name, err)
-			}
-			continue
-		}
-		w.repos = append(w.repos, watched{spec: s, src: src})
 	}
 	return w, nil
+}
+
+// clone checks r out into its cache directory under baseDir.
+func (w *Watcher) clone(ctx context.Context, r *watched) error {
+	dir := filepath.Join(w.baseDir, r.spec.Name)
+	// The directory is a cache of the remote, owned by this watcher. Whatever
+	// an interrupted run left in it would make git refuse to clone, and as
+	// baseDir usually outlives the container, no restart would clear it.
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("clear stale clone directory: %w", err)
+	}
+	src, err := git.Clone(ctx, r.spec.URL, r.spec.Ref.Branch, dir, r.spec.Auth)
+	if err != nil {
+		_ = os.RemoveAll(dir) // a partial checkout must not block the next attempt
+		return err
+	}
+	r.src = src
+	return nil
 }
 
 // AddExisting registers a repo whose working tree is already present (used in
 // tests and for pre-cloned trees).
 func (w *Watcher) AddExisting(s RepoSpec, src *git.Source) {
 	s.Ref = s.Ref.WithDefaults()
-	w.repos = append(w.repos, watched{spec: s, src: src})
+	w.repos = append(w.repos, &watched{spec: s, src: src})
 }
 
 // RepoOutcome is the result of reconciling one watched repo on a tick.
@@ -212,11 +222,11 @@ func (w *Watcher) TickHint(ctx context.Context, repoHint string) []RepoOutcome {
 	return out
 }
 
-func (w *Watcher) matching(hint string) []watched {
+func (w *Watcher) matching(hint string) []*watched {
 	if strings.TrimSpace(hint) == "" {
 		return w.repos
 	}
-	matched := make([]watched, 0, 1)
+	matched := make([]*watched, 0, 1)
 	for _, r := range w.repos {
 		if git.SameRepo(r.spec.URL, hint) {
 			matched = append(matched, r)
@@ -228,17 +238,32 @@ func (w *Watcher) matching(hint string) []watched {
 	return matched
 }
 
-func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
+func (w *Watcher) tickOne(ctx context.Context, r *watched) []RepoOutcome {
 	release, ok := w.locks.tryAcquire(r.spec.Name)
 	if !ok {
 		return []RepoOutcome{{Repo: r.spec.Name, Err: fmt.Errorf("watch: repo %s busy", r.spec.Name)}}
 	}
 	defer release()
 
+	cloned := false
+	if r.src == nil {
+		// Logged by logOutcomes through failStreak: the first failure is named,
+		// identical ones after it are held quiet, so retrying every tick does
+		// not repeat the same line every interval.
+		if err := w.clone(ctx, r); err != nil {
+			return []RepoOutcome{{Repo: r.spec.Name, Err: fmt.Errorf("watch: clone: %w", err)}}
+		}
+		cloned = true
+		if w.logf != nil {
+			w.logf("watch: repo %q cloned", r.spec.Name)
+		}
+	}
 	changed, _, err := r.src.Pull(ctx)
 	if err != nil {
 		return []RepoOutcome{{Repo: r.spec.Name, Err: fmt.Errorf("watch: pull: %w", err)}}
 	}
+	// A fresh checkout is new desired state, however HEAD compares.
+	changed = changed || cloned
 	// A repo path may address a single config file or a directory of them
 	// (manage many apps from one repo). Each config reconciles independently.
 	configs, err := config.LoadAllFromDir(r.src.Dir(), r.spec.Ref)

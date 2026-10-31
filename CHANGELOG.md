@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A repo that could not be cloned is retried, not dropped.** A clone failure
+  at startup removed the repo from the watch list until the next restart, so
+  access granted afterwards (a GitHub App installation, a deploy key) changed
+  nothing, and after the first line nothing said the repo was missing. It now
+  stays on the list and is cloned again on every tick; a lasting failure is
+  logged like any other, escalated after ten identical ticks, then held quiet.
+
 ## v0.34.13 - Configs outside the repo root, and database hooks that take a dump
 
 - **A config outside the repo root can apply.** The batch preflight rendered a

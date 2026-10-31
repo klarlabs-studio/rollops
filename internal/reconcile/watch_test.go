@@ -758,11 +758,71 @@ func TestNewWatcher_FailedCloneLeavesNoDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
-	if len(got.repos) != 0 {
-		t.Fatalf("an unreachable repo should be skipped, got %d", len(got.repos))
+	if len(got.repos) != 1 || got.repos[0].src != nil {
+		t.Fatalf("an unreachable repo should stay watched, uncloned: %+v", got.repos)
 	}
 	if _, err := os.Stat(filepath.Join(base, "gone")); !os.IsNotExist(err) {
 		t.Fatalf("failed clone left a directory behind: %v", err)
+	}
+}
+
+// A repo that cannot be cloned at startup is cloned on a later tick once it
+// can be. Before, it was dropped until the daemon restarted: a GitHub App
+// granted access to the repo after startup changed nothing, and the repo sat
+// absent with no line after the first saying so.
+func TestWatcher_RetriesAFailedCloneOnEveryTick(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	fake := &fakeTarget{fp: pt.Fingerprint{Value: "stale"}}
+	w := newWatcher(t, fake)
+	var logs []string
+	logf := func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) }
+
+	upstream := filepath.Join(t.TempDir(), "later")
+	spec := RepoSpec{Name: "later", URL: "file://" + upstream, Ref: config.RepoRef{Branch: "main", Path: "rollops.yaml"}}
+	got, err := NewWatcher(context.Background(), w.rec, t.TempDir(), []RepoSpec{spec}, WithLogger(logf), WithoutPreflight())
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+
+	// The failure is named every tick, like any transient error, until it has
+	// repeated stuckAfterCycles times; it is then escalated once and held quiet.
+	for i := range stuckAfterCycles + 1 {
+		out := got.Tick(context.Background())
+		if len(out) != 1 || out[0].Err == nil || !strings.Contains(out[0].Err.Error(), "clone") {
+			t.Fatalf("tick %d before the repo exists = %+v, want a clone error", i, out)
+		}
+		got.logOutcomes(out) // as tickAndRecord does
+	}
+	if !strings.Contains(strings.Join(logs, "\n"), "still failing") {
+		t.Errorf("a lasting clone failure was never escalated: %q", logs)
+	}
+	before := len(logs)
+	got.logOutcomes(got.Tick(context.Background()))
+	if len(logs) != before {
+		t.Errorf("an escalated clone failure is still logged every tick: %q", logs[before:])
+	}
+
+	if err := os.MkdirAll(upstream, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, upstream, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(upstream, "rollops.yaml"), []byte(repoConfigV1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, upstream, "add", ".")
+	gitRun(t, upstream, "commit", "-m", "init")
+
+	out := got.Tick(context.Background())
+	if len(out) != 1 || out[0].Err != nil {
+		t.Fatalf("tick after the repo appeared = %+v", out)
+	}
+	if !out[0].Changed || !out[0].Outcome.Reconciled {
+		t.Errorf("the fresh clone was not reconciled: %+v", out[0])
+	}
+	if len(fake.applied) != 1 {
+		t.Errorf("applied %d times, want 1", len(fake.applied))
 	}
 }
 
