@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.34.13 - Configs outside the repo root, and database hooks that take a dump
+
+- **A config outside the repo root can apply.** The batch preflight rendered a
+  config's referenced manifests (kustomize, helm, path) against the checkout
+  root, while its reconcile rendered them against the config file's own
+  directory. For a config at the root the two agree; for one in `deploy/` no
+  relative path satisfied both, so the batch was refused before anything
+  applied. Preflight and the dangling-middleware warning now use the config's
+  own directory, like the reconcile (#226).
+- **A database hook can take a dump, and a repo can ship its network
+  policies.** The daemon's ClusterRole may create Jobs (a `pre-deploy`
+  `database.migrate` can run `kubectl create job --from=cronjob/...`) and
+  manage NetworkPolicies, and Traefik `serverstransports` join `middlewares`.
+  Hook commands see `KUBERNETES_SERVICE_HOST`/`PORT` so an in-cluster `kubectl`
+  works under the confined environment. The ClusterRole is bootstrap: re-apply
+  `rollopsd-infra.yaml` (#225).
 - **A stale clone directory no longer wedges a repo.** The watcher cloned straight
   into `<base>/<repo>`, so a directory left by an interrupted run made every
   `git clone` fail with "destination path already exists and is not an empty
