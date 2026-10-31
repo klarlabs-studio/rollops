@@ -392,12 +392,8 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 		if msg, held := w.failures.held(r.spec.Name); held {
 			return []RepoOutcome{{Repo: r.spec.Name, Changed: changed, Err: fmt.Errorf("%s", msg)}}
 		}
-		pcfgs := make([]*config.Config, 0, len(ordered))
-		for _, p := range ordered {
-			pcfgs = append(pcfgs, p.cfg)
-		}
-		root := r.src.Dir()
-		if errs := w.rec.eng.Preflight(engine.WithRoot(ctx, root), pcfgs); len(errs) > 0 {
+		pcfgs := rootedConfigs(r.src.Dir(), ordered)
+		if errs := w.rec.eng.Preflight(ctx, pcfgs); len(errs) > 0 {
 			msgs := make([]string, 0, len(errs))
 			for _, e := range errs {
 				msgs = append(msgs, e.Error())
@@ -416,12 +412,7 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 	// Soft only: Preflight already decided every target would apply; a dangling
 	// Traefik annotation is still almost always a mistake (#182 suggestion 4).
 	{
-		pcfgs := make([]*config.Config, 0, len(ordered))
-		for _, p := range ordered {
-			pcfgs = append(pcfgs, p.cfg)
-		}
-		root := r.src.Dir()
-		for _, warn := range w.rec.eng.WarnDanglingMiddlewares(engine.WithRoot(ctx, root), pcfgs) {
+		for _, warn := range w.rec.eng.WarnDanglingMiddlewares(ctx, rootedConfigs(r.src.Dir(), ordered)) {
 			if w.logf != nil {
 				w.logf("reconcile %s: warning: %s", r.spec.Name, warn)
 			}
@@ -447,10 +438,7 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 			out = append(out, RepoOutcome{Repo: key, Changed: changed, Err: fmt.Errorf("%s", msg)})
 			continue
 		}
-		// Relative referenced manifest sources resolve against the config file's
-		// own directory within the checkout — not the daemon CWD — so a rendered
-		// kustomize/helm/path points at the polled desired state.
-		root := filepath.Join(r.src.Dir(), filepath.Dir(p.nc.Path))
+		root := configRoot(r.src.Dir(), p.nc.Path)
 		o, rerr := w.rec.Reconcile(engine.WithRoot(ctx, root), p.cfg, r.spec.Initiator)
 		// Only an error-free reconcile says anything about drift. A failed one
 		// did not observe the target, so it must not extend OR reset a streak.
@@ -468,6 +456,24 @@ func (w *Watcher) tickOne(ctx context.Context, r watched) []RepoOutcome {
 type cfgPair struct {
 	nc  config.NamedConfig
 	cfg *config.Config
+}
+
+// configRoot is the directory a config's relative referenced manifest sources
+// resolve against: the config file's own directory within the checkout, not
+// the checkout root or the daemon CWD, so a rendered kustomize/helm/path points
+// at the polled desired state.
+func configRoot(checkout, configPath string) string {
+	return filepath.Join(checkout, filepath.Dir(configPath))
+}
+
+// rootedConfigs pairs each config with its own root, so the batch checks
+// render every config exactly as its reconcile will.
+func rootedConfigs(checkout string, ps []cfgPair) []engine.RootedConfig {
+	out := make([]engine.RootedConfig, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, engine.RootedConfig{Config: p.cfg, Root: configRoot(checkout, p.nc.Path)})
+	}
+	return out
 }
 
 // orderByDependsOn topological-sorts configs in a repo so a dependency is

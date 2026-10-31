@@ -765,3 +765,65 @@ func TestNewWatcher_FailedCloneLeavesNoDirectory(t *testing.T) {
 		t.Fatalf("failed clone left a directory behind: %v", err)
 	}
 }
+
+// rootRecorder is a fakeTarget that also preflights, recording the root each
+// manifest was rendered against.
+type rootRecorder struct {
+	fakeTarget
+	preflightRoots []string
+}
+
+func (r *rootRecorder) Preflight(_ context.Context, m pt.Manifest) error {
+	r.preflightRoots = append(r.preflightRoots, m.Root)
+	return nil
+}
+
+// A config that is not at the checkout root (deploy/rollops.yaml) references
+// its manifests relative to its own directory. The batch preflight must render
+// it against that directory too: it once used the checkout root, so a
+// kustomize path that applied cleanly was refused before it could.
+func TestWatcher_PreflightResolvesAgainstTheConfigsDirectory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	upstream := t.TempDir()
+	gitRun(t, upstream, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(upstream, "deploy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(upstream, "deploy", "rollops.yaml"), []byte(repoConfigV1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, upstream, "add", ".")
+	gitRun(t, upstream, "commit", "-m", "init")
+
+	rec := &rootRecorder{fakeTarget: fakeTarget{fp: pt.Fingerprint{Value: "stale"}}}
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := itarget.NewRegistry()
+	reg.Register("fake", func(config.Target) (pt.Target, error) { return rec, nil })
+	eng := engine.New(db, reg, engine.WithIDGen(func() string { return "ro" }))
+	w := &Watcher{rec: New(eng, audit.New(io.Discard)), locks: newRepoLocks(), preflight: true}
+
+	co := filepath.Join(t.TempDir(), "co")
+	src, err := git.Clone(context.Background(), "file://"+upstream, "main", co, git.Auth{})
+	if err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	w.AddExisting(RepoSpec{Name: "demo", Ref: config.RepoRef{Branch: "main", Path: "deploy/rollops.yaml"}, Initiator: rollout.Identity{Kind: "ci", Name: "watcher"}}, src)
+
+	results := w.Tick(context.Background())
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("tick = %+v", results)
+	}
+	want := filepath.Join(src.Dir(), "deploy")
+	if len(rec.preflightRoots) != 1 || rec.preflightRoots[0] != want {
+		t.Errorf("preflight rendered against %v, want [%s]", rec.preflightRoots, want)
+	}
+	if len(rec.applied) != 1 || rec.applied[0].Root != want {
+		t.Fatalf("applied = %+v, want one apply rendered against %s", rec.applied, want)
+	}
+}
