@@ -2,14 +2,15 @@
 
 ## Unreleased
 
-## v0.34.14 - A repo that could not be cloned is retried
+## v0.34.14 - Failed clones retried, PrometheusRules granted
 
 - **A repo that could not be cloned is retried, not dropped.** A clone failure
   at startup removed the repo from the watch list until the next restart, so
   access granted afterwards (a GitHub App installation, a deploy key) changed
   nothing, and after the first line nothing said the repo was missing. It now
   stays on the list and is cloned again on every tick; a lasting failure is
-  logged like any other, escalated after ten identical ticks, then held quiet.
+  logged like any other, escalated after ten identical ticks, then held quiet
+  (#229).
 
 - **The daemon's ClusterRole can read and manage PrometheusRules.**
   `rollopsd-infra.yaml` granted `podmonitors` and `servicemonitors` but not
@@ -17,7 +18,7 @@
   been added to the live cluster by hand. A repository that ships a
   PrometheusRule then failed the all-or-nothing preflight and none of its
   targets applied, which fired `RollopsReconcileErrors`. No `delete`, as for
-  the other monitoring resources.
+  the other monitoring resources (#230).
 
 ## v0.34.13 - Configs outside the repo root, and database hooks that take a dump
 
