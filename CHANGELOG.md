@@ -9,6 +9,14 @@
   stays on the list and is cloned again on every tick; a lasting failure is
   logged like any other, escalated after ten identical ticks, then held quiet.
 
+- **The daemon's ClusterRole can read and manage PrometheusRules.**
+  `rollopsd-infra.yaml` granted `podmonitors` and `servicemonitors` but not
+  `prometheusrules`, so re-applying the bootstrap withdrew a grant that had
+  been added to the live cluster by hand. A repository that ships a
+  PrometheusRule then failed the all-or-nothing preflight and none of its
+  targets applied, which fired `RollopsReconcileErrors`. No `delete`, as for
+  the other monitoring resources.
+
 ## v0.34.13 - Configs outside the repo root, and database hooks that take a dump
 
 - **A config outside the repo root can apply.** The batch preflight rendered a
