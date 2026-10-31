@@ -9,12 +9,11 @@
 # Add this repository to ROLLOPS_WATCH with path "rollops.yaml" for it to take
 # effect (see deploy/kubernetes/rollopsd-watch.example.yaml).
 #
-# This file sits at the repository root on purpose. A referenced manifest path
-# is resolved against the repo checkout root by the daemon and against the
-# config file's own directory by the CLI, and `..` is refused — so only a
-# config at the root reads the same way to both. In deploy/ the daemon looked
-# for deploy/kubernetes/rollopsd-deployment.yaml at the repo root and refused
-# the batch.
+# A referenced manifest path resolves against this file's own directory, in
+# the daemon and the CLI alike, and `..` is refused, so the file sits at the
+# root to reach deploy/. (Before v0.34.13 the daemon's batch preflight used the
+# checkout root while its reconcile used the file's directory, so a config
+# outside the root could not apply at all.)
 apiVersion: rollops.klarlabs.de/v1
 kind: RolloutConfig
 metadata:
