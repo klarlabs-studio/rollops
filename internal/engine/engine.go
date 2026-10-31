@@ -325,6 +325,24 @@ func defaultOwner() string {
 // Plan computes what an apply would change without applying it: the desired
 // manifest, the target's current fingerprint, and whether they differ. Drift =
 // current fingerprint != desired checksum.
+// RootedConfig is a config paired with the directory its relative referenced
+// manifest sources (kustomize, helm, path) resolve against: the config file's
+// own directory. One batch can hold configs from different directories of a
+// repo, so the root travels with each config rather than once in the context.
+type RootedConfig struct {
+	Config *config.Config
+	// Root is empty for a config with no directory of its own; it then falls
+	// back to the context's root (see WithRoot).
+	Root string
+}
+
+func (rc RootedConfig) root(ctx context.Context) string {
+	if rc.Root != "" {
+		return rc.Root
+	}
+	return rootFromContext(ctx)
+}
+
 // Preflight reports whether every target in cs would apply, without applying
 // any of them. A nil error means none of them objected.
 //
@@ -340,10 +358,11 @@ func defaultOwner() string {
 // Targets that do not implement pt.Preflighter are skipped rather than assumed
 // good: they contribute nothing to the decision, which is precisely the
 // behaviour that existed before this method.
-func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
+func (e *Engine) Preflight(ctx context.Context, cs []RootedConfig) []error {
 	var out []error
-	for _, c := range cs {
-		m, err := manifestFromConfig(c, rootFromContext(ctx))
+	for _, rc := range cs {
+		c := rc.Config
+		m, err := manifestFromConfig(c, rc.root(ctx))
 		if err != nil {
 			out = append(out, fmt.Errorf("%s: render: %w", c.Spec.Target.Ref, err))
 			continue
@@ -376,10 +395,11 @@ func (e *Engine) Preflight(ctx context.Context, cs []*config.Config) []error {
 //
 // Warn-only: a dangling reference is almost always a mistake, but refusing the
 // batch here would reinvent Preflight. Callers log the strings and continue.
-func (e *Engine) WarnDanglingMiddlewares(ctx context.Context, cs []*config.Config) []string {
+func (e *Engine) WarnDanglingMiddlewares(ctx context.Context, cs []RootedConfig) []string {
 	var docs [][]byte
-	for _, c := range cs {
-		m, err := manifestFromConfig(c, rootFromContext(ctx))
+	for _, rc := range cs {
+		c := rc.Config
+		m, err := manifestFromConfig(c, rc.root(ctx))
 		if err != nil {
 			continue
 		}

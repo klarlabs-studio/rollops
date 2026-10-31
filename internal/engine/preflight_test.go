@@ -48,7 +48,7 @@ func TestPreflight_ReachesThroughFortifyWrapper(t *testing.T) {
 	fake := &preflightFake{err: errors.New(`Forbidden: middlewares.traefik.io "x" is forbidden`)}
 	e := engineWithTarget(t, fake)
 
-	errs := e.Preflight(context.Background(), []*config.Config{loadConfig(t)})
+	errs := e.Preflight(context.Background(), []RootedConfig{{Config: loadConfig(t)}})
 	if fake.n != 1 {
 		t.Fatalf("Preflight called %d times, want 1 — capability was dropped by the fortify wrapper", fake.n)
 	}
@@ -67,7 +67,7 @@ func TestPreflight_NoObjectionWhenClear(t *testing.T) {
 	fake := &preflightFake{}
 	e := engineWithTarget(t, fake)
 
-	errs := e.Preflight(context.Background(), []*config.Config{loadConfig(t)})
+	errs := e.Preflight(context.Background(), []RootedConfig{{Config: loadConfig(t)}})
 	if fake.n != 1 {
 		t.Fatalf("Preflight called %d times, want 1", fake.n)
 	}
@@ -81,7 +81,7 @@ func TestPreflight_SkipsNonPreflighter(t *testing.T) {
 	// rather than invent a refusal (that was the pre-#185 behaviour).
 	e := engineWithTarget(t, &fakeTarget{})
 
-	errs := e.Preflight(context.Background(), []*config.Config{loadConfig(t)})
+	errs := e.Preflight(context.Background(), []RootedConfig{{Config: loadConfig(t)}})
 	if len(errs) != 0 {
 		t.Fatalf("errs = %v, want none for a non-Preflighter", errs)
 	}
