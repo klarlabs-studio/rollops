@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.34.14 - A repo that could not be cloned is retried
+
 - **A repo that could not be cloned is retried, not dropped.** A clone failure
   at startup removed the repo from the watch list until the next restart, so
   access granted afterwards (a GitHub App installation, a deploy key) changed
